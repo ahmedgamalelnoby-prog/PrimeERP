@@ -27,7 +27,7 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.txt
       - name: Install dependencies
-        run: python -m pip install --upgrade pip && pip install -r requirements.txt
+        run: python -m pip install --upgrade pip && pip install -r requirements.txt && pip install pytest
       - name: Compile Python sources
         run: python -m compileall -q app
       - name: Run tests
