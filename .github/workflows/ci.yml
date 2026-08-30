@@ -14,6 +14,20 @@ jobs:
   backend:
     name: Backend - compile, tests and migrations
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: primeerp
+          POSTGRES_PASSWORD: primeerp
+          POSTGRES_DB: primeerp_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U primeerp -d primeerp_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     defaults:
       run:
         working-directory: backend
@@ -33,11 +47,11 @@ jobs:
       - name: Prepare CI database
         run: python -m alembic upgrade head
         env:
-          DATABASE_URL: sqlite:///./ci.db
+          DATABASE_URL: postgresql+psycopg://primeerp:primeerp@127.0.0.1:5432/primeerp_ci
       - name: Check Alembic configuration
         run: python -m alembic check
         env:
-          DATABASE_URL: sqlite:///./ci.db
+          DATABASE_URL: postgresql+psycopg://primeerp:primeerp@127.0.0.1:5432/primeerp_ci
       - name: Run tests
         run: |
           if [ -d tests ] && find tests -type f -name 'test_*.py' -print -quit | grep -q .; then
