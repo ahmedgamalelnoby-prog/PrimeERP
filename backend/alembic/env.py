@@ -5,32 +5,21 @@ import sys
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-# إضافة مجلد backend إلى Python path
+# Add backend to Python path.
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BACKEND_DIR))
 
 from app.core.config import settings
 from app.database.base import Base
 
-# تحميل جميع الـ Models حتى يتعرف عليها Alembic
-from app.core.config import settings
-from app.database.base import Base
-
-# Import all models so Alembic can load Base.metadata
+# Import all models so Alembic can load Base.metadata.
 from app.database import models  # noqa: F401
 
-from app.modules.platform.features.models import Feature
-
-# فعّل هذه الاستيرادات فقط إذا كانت الملفات موجودة فعليًا
+# Keep feature models registered when available.
 try:
-    from app.modules.companies.models import Company
+    from app.modules.platform.features.models import Feature  # noqa: F401
 except ImportError:
-    Company = None
-
-try:
-    from app.modules.branches.models import Branch
-except ImportError:
-    Branch = None
+    Feature = None
 
 
 config = context.config
@@ -38,8 +27,25 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# الـ MetaData التي يقارنها Alembic بقاعدة البيانات
+# Metadata used by Alembic for schema comparison.
 target_metadata = Base.metadata
+
+
+def include_object(object_, name, type_, reflected, compare_to):
+    """Exclude legacy database objects that are intentionally no longer modeled.
+
+    The `plans` table is created by the historical 208197108ac1 migration, while
+    the current SaaS model uses `subscription_plans`. We keep the legacy table
+    intact for existing databases and prevent `alembic check` from generating a
+    destructive DROP TABLE / DROP INDEX operation for it.
+    """
+    if type_ == "table" and reflected and compare_to is None and name == "plans":
+        return False
+
+    if type_ == "index" and reflected and object_.table.name == "plans":
+        return False
+
+    return True
 
 
 def run_migrations_offline() -> None:
@@ -50,6 +56,7 @@ def run_migrations_offline() -> None:
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
         compare_server_default=True,
+        include_object=include_object,
     )
 
     with context.begin_transaction():
@@ -57,10 +64,7 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    configuration = config.get_section(
-        config.config_ini_section
-    ) or {}
-
+    configuration = config.get_section(config.config_ini_section) or {}
     configuration["sqlalchemy.url"] = settings.DATABASE_URL
 
     connectable = engine_from_config(
@@ -75,6 +79,7 @@ def run_migrations_online() -> None:
             target_metadata=target_metadata,
             compare_type=True,
             compare_server_default=True,
+            include_object=include_object,
         )
 
         with context.begin_transaction():
