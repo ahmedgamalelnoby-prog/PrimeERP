@@ -1,3 +1,5 @@
+import client from "@/shared/api/client";
+
 export interface RegisterRequest {
   business_name: string;
   owner_name: string;
@@ -12,7 +14,11 @@ export interface RegisterRequest {
   branch_name?: string;
 }
 
-async function register(
+export interface RegisterResponse {
+  [key: string]: unknown;
+}
+
+export async function register(
   payload: RegisterRequest,
 ): Promise<RegisterResponse> {
   const requestPayload = {
@@ -25,19 +31,14 @@ async function register(
     password: payload.password,
     country_code: payload.country_code ?? "EG",
     language: payload.language ?? "ar",
-    company_name:
-      payload.company_name?.trim() ||
-      payload.business_name.trim(),
-    branch_name:
-      payload.branch_name?.trim() ||
-      "الفرع الرئيسي",
+    company_name: payload.company_name?.trim() || payload.business_name.trim(),
+    branch_name: payload.branch_name?.trim() || "الفرع الرئيسي",
   };
 
-  const response =
-    await client.post<RegisterResponse>(
-      "/saas/register",
-      requestPayload,
-    );
+  const response = await client.post<RegisterResponse>(
+    "/saas/register",
+    requestPayload,
+  );
 
   return response.data;
 }
