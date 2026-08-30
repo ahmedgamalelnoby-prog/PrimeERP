@@ -19,20 +19,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           cache: pip
           cache-dependency-path: backend/requirements.txt
-
       - name: Install dependencies
         run: python -m pip install --upgrade pip && pip install -r requirements.txt
-
       - name: Compile Python sources
         run: python -m compileall -q app
-
       - name: Run tests
         run: |
           if [ -d tests ] && find tests -type f -name 'test_*.py' -print -quit | grep -q .; then
@@ -40,7 +36,6 @@ jobs:
           else
             echo "No backend tests found; compile check passed."
           fi
-
       - name: Check Alembic configuration
         run: python -m alembic check
         env:
@@ -55,44 +50,43 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-
       - name: Install dependencies
         run: npm ci
-
       - name: Lint
         run: npm run lint
-
       - name: Production build
         run: npm run build
 
   repository:
-    name: Repository hygiene
+    name: Repository boundaries and hygiene
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Check for committed secrets and generated files
+      - name: Reject cross-system references and generated files
         shell: bash
         run: |
           set -euo pipefail
           bad=0
           while IFS= read -r -d '' file; do
             case "$file" in
-              *.env|*.env.*|*/.env|*/.env.*|*.pyc|*/__pycache__/*|*/.venv/*|*.backup|*.bak)
+              *.env|*.env.*|*/.env|*/.env.*|*.pyc|*/__pycache__/*|*/.venv/*|*.backup|*.bak|*/node_modules/*|*/dist/*)
                 echo "Forbidden tracked/generated file: $file"
                 bad=1
                 ;;
             esac
           done < <(git ls-files -z)
-          if [ "$bad" -ne 0 ]; then
-            exit 1
+
+          if git grep -n -I -E 'CommercialERP|ContentAI|commercialERP|contentai|D:\\(commercialERP|ContentAI)' -- ':!docs/SYSTEM_BOUNDARIES.md' ':!.github/workflows/ci.yml'; then
+            echo "Cross-system reference detected in PrimeERP."
+            bad=1
           fi
-          echo "Repository hygiene check passed."
+
+          if [ "$bad" -ne 0 ]; then exit 1; fi
+          echo "PrimeERP repository boundary check passed."
