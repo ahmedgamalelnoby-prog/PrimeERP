@@ -1,0 +1,3 @@
+# Windows-only runtime/developer dependencies.
+# Keep these out of the cross-platform backend requirements used by CI/Linux.
+pywin32==310
