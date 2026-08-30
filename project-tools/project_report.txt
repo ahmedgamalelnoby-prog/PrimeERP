@@ -1,0 +1,295 @@
+================================================================================
+📊 تقرير تحليل المشروع - 2026-07-28 13:33
+================================================================================
+
+📦 **الوحدات النمطية في Backend:**
+------------------------------------------------------------
+✅ auth: 100% مكتمل
+✅ branches: 100% مكتمل
+✅ companies: 100% مكتمل
+✅ crm: 100% مكتمل
+✅ notifications: 100% مكتمل
+✅ purchasing: 100% مكتمل
+✅ settings: 100% مكتمل
+✅ accounting: 80% مكتمل
+✅ approvals: 80% مكتمل
+✅ assets: 80% مكتمل
+✅ audit: 80% مكتمل
+✅ checks: 80% مكتمل
+✅ commissions: 80% مكتمل
+✅ cost_centers: 80% مكتمل
+✅ customers: 80% مكتمل
+✅ egyptian_einvoice: 80% مكتمل
+✅ expenses: 80% مكتمل
+✅ hr: 80% مكتمل
+✅ installments: 80% مكتمل
+✅ insurance: 80% مكتمل
+✅ inventory: 80% مكتمل
+✅ loyalty: 80% مكتمل
+✅ manufacturing: 80% مكتمل
+✅ mobile: 80% مكتمل
+✅ operations: 80% مكتمل
+✅ pos: 80% مكتمل
+✅ products: 80% مكتمل
+✅ promotions: 80% مكتمل
+✅ rentals: 80% مكتمل
+✅ reports: 80% مكتمل
+✅ reservations: 80% مكتمل
+✅ restaurant: 80% مكتمل
+✅ saas: 80% مكتمل
+✅ sales: 80% مكتمل
+✅ shipping: 80% مكتمل
+✅ subscriptions: 80% مكتمل
+✅ suppliers: 80% مكتمل
+✅ taxes: 80% مكتمل
+✅ time_tracking: 80% مكتمل
+✅ workflow: 80% مكتمل
+✅ work_orders: 80% مكتمل
+⚠️ roles: 40% مكتمل
+❌ dashboard: 0% مكتمل
+❌ identity: 0% مكتمل
+❌ organization: 0% مكتمل
+❌ platform: 0% مكتمل
+❌ transactions: 0% مكتمل
+   └── 📂 assets: 100%
+   └── 📂 balance_sheet: 100%
+   └── 📂 banks: 100%
+   └── 📂 cash: 100%
+   └── 📂 cash_flow: 100%
+   └── 📂 chart_of_accounts: 100%
+   └── 📂 checks: 100%
+   └── 📂 cost_centers: 100%
+   └── 📂 customers: 100%
+   └── 📂 depreciation: 100%
+   └── 📂 financial_reports: 100%
+   └── 📂 general_ledger: 100%
+   └── 📂 income_statement: 100%
+   └── 📂 journal_entries: 100%
+   └── 📂 payments: 100%
+   └── 📂 receipts: 100%
+   └── 📂 suppliers: 100%
+   └── 📂 trial_balance: 100%
+   └── 📂 vat: 100%
+   └── 📂 withholding_tax: 100%
+   └── 📂 calculations: 80%
+   └── 📂 rules: 80%
+   └── 📂 settlements: 80%
+   └── 📂 targets: 80%
+   └── 📂 activities: 80%
+   └── 📂 calls: 80%
+   └── 📂 complaints: 80%
+   └── 📂 leads: 80%
+   └── 📂 opportunities: 80%
+   └── 📂 visits: 80%
+   └── 📂 charts: 100%
+   └── 📂 executive: 100%
+   └── 📂 kpis: 100%
+   └── 📂 statistics: 100%
+   └── 📂 widgets: 100%
+   └── 📂 codes: 80%
+   └── 📂 credit_notes: 80%
+   └── 📂 debit_notes: 80%
+   └── 📂 documents: 80%
+   └── 📂 settings: 80%
+   └── 📂 status: 80%
+   └── 📂 submission: 80%
+   └── 📂 attendance: 100%
+   └── 📂 departments: 100%
+   └── 📂 employees: 100%
+   └── 📂 leaves: 100%
+   └── 📂 payroll: 100%
+   └── 📂 performance: 100%
+   └── 📂 positions: 100%
+   └── 📂 recruitment: 100%
+   └── 📂 training: 100%
+   └── 📂 api: 20%
+   └── 📂 contracts: 80%
+   └── 📂 overdue: 80%
+   └── 📂 payments: 80%
+   └── 📂 plans: 80%
+   └── 📂 barcode: 100%
+   └── 📂 categories: 100%
+   └── 📂 food_cost: 100%
+   └── 📂 items: 100%
+   └── 📂 locations: 100%
+   └── 📂 recipes: 100%
+   └── 📂 recipe_items: 100%
+   └── 📂 stock: 100%
+   └── 📂 transfers: 100%
+   └── 📂 units: 100%
+   └── 📂 warehouses: 100%
+   └── 📂 waste: 100%
+   └── 📂 points: 80%
+   └── 📂 programs: 80%
+   └── 📂 redemptions: 80%
+   └── 📂 rewards: 80%
+   └── 📂 tiers: 80%
+   └── 📂 bom: 80%
+   └── 📂 costing: 80%
+   └── 📂 operations: 80%
+   └── 📂 production_orders: 80%
+   └── 📂 quality: 80%
+   └── 📂 waste: 80%
+   └── 📂 work_centers: 80%
+   └── 📂 attendance: 80%
+   └── 📂 expenses: 80%
+   └── 📂 inventory_count: 80%
+   └── 📂 management: 80%
+   └── 📂 pos: 80%
+   └── 📂 approvals: 80%
+   └── 📂 tasks: 80%
+   └── 📂 time_tracking: 80%
+   └── 📂 workflows: 80%
+   └── 📂 work_orders: 80%
+   └── 📂 api: 20%
+   └── 📂 addons: 80%
+   └── 📂 api: 20%
+   └── 📂 features: 80%
+   └── 📂 plans: 80%
+   └── 📂 subscriptions: 80%
+   └── 📂 tenants: 80%
+   └── 📂 usage: 80%
+   └── 📂 cashiers: 80%
+   └── 📂 desktop: 80%
+   └── 📂 devices: 80%
+   └── 📂 mobile: 80%
+   └── 📂 orders: 80%
+   └── 📂 payments: 80%
+   └── 📂 sessions: 80%
+   └── 📂 coupons: 80%
+   └── 📂 discounts: 80%
+   └── 📂 offers: 80%
+   └── 📂 price_rules: 80%
+   └── 📂 collections: 80%
+   └── 📂 contracts: 80%
+   └── 📂 insurance: 80%
+   └── 📂 renewals: 80%
+   └── 📂 tenants: 80%
+   └── 📂 units: 80%
+   └── 📂 accounting: 100%
+   └── 📂 analytics: 100%
+   └── 📂 customers: 100%
+   └── 📂 hr: 100%
+   └── 📂 inventory: 100%
+   └── 📂 kitchen: 100%
+   └── 📂 restaurant: 100%
+   └── 📂 sales: 100%
+   └── 📂 suppliers: 100%
+   └── 📂 categories: 100%
+   └── 📂 coupons: 100%
+   └── 📂 customers: 100%
+   └── 📂 delivery: 100%
+   └── 📂 floors: 100%
+   └── 📂 kitchen: 100%
+   └── 📂 loyalty: 100%
+   └── 📂 menu: 100%
+   └── 📂 orders: 100%
+   └── 📂 printers: 100%
+   └── 📂 products: 100%
+   └── 📂 reports: 100%
+   └── 📂 reservations: 100%
+   └── 📂 shifts: 100%
+   └── 📂 tables: 100%
+   └── 📂 invoices: 80%
+   └── 📂 price_lists: 80%
+   └── 📂 quotations: 80%
+   └── 📂 returns: 80%
+   └── 📂 salespersons: 80%
+   └── 📂 sales_orders: 80%
+   └── 📂 targets: 80%
+   └── 📂 collections: 80%
+   └── 📂 companies: 80%
+   └── 📂 pricing_rules: 80%
+   └── 📂 returns: 80%
+   └── 📂 settlements: 80%
+   └── 📂 shipments: 80%
+   └── 📂 tracking: 80%
+   └── 📂 zones: 80%
+   └── 📂 billing: 80%
+   └── 📂 memberships: 80%
+   └── 📂 plans: 80%
+   └── 📂 renewals: 80%
+   └── 📂 certificates: 80%
+   └── 📂 returns: 80%
+   └── 📂 table_tax: 80%
+   └── 📂 vat: 80%
+   └── 📂 withholding: 80%
+   └── 📂 api: 20%
+
+📊 عدد النماذج في قاعدة البيانات: 0
+
+
+📱 **الوحدات النمطية في Frontend:**
+------------------------------------------------------------
+✅ accounting: 3 صفحة
+✅ approvals: 1 صفحة
+✅ assets: 1 صفحة
+✅ audit: 1 صفحة
+❌ auth: 0 صفحة
+❌ branches: 0 صفحة
+✅ checks: 1 صفحة
+✅ commissions: 1 صفحة
+❌ companies: 0 صفحة
+✅ cost-centers: 1 صفحة
+✅ crm: 1 صفحة
+✅ customers: 1 صفحة
+✅ egyptian-einvoice: 1 صفحة
+✅ expenses: 1 صفحة
+❌ hotels: 0 صفحة
+✅ hr: 1 صفحة
+✅ identity: 3 صفحة
+✅ installments: 1 صفحة
+✅ insurance: 1 صفحة
+✅ inventory: 1 صفحة
+❌ language: 0 صفحة
+✅ loyalty: 1 صفحة
+✅ manufacturing: 1 صفحة
+✅ mobile: 1 صفحة
+✅ notifications: 1 صفحة
+✅ operations: 1 صفحة
+❌ permissions: 0 صفحة
+✅ platform: 4 صفحة
+✅ pos: 1 صفحة
+✅ products: 1 صفحة
+✅ promotions: 1 صفحة
+✅ public: 2 صفحة
+✅ purchasing: 1 صفحة
+❌ real-estate: 0 صفحة
+✅ rentals: 1 صفحة
+✅ reports: 1 صفحة
+✅ reservations: 1 صفحة
+✅ restaurant: 1 صفحة
+✅ roles: 1 صفحة
+✅ saas: 1 صفحة
+✅ sales: 1 صفحة
+✅ settings: 1 صفحة
+✅ shipping: 1 صفحة
+✅ subscriptions: 1 صفحة
+✅ suppliers: 1 صفحة
+✅ taxes: 1 صفحة
+✅ time-tracking: 1 صفحة
+✅ transactions: 1 صفحة
+✅ users: 1 صفحة
+✅ work-orders: 1 صفحة
+✅ workflow: 1 صفحة
+
+🧩 **المكونات المشتركة:** 20 مكون
+
+🔗 **المسارات المعرفة:** 0 مسار
+المسارات النشطة:
+
+
+⚠️ **المشاكل والتوصيات:**
+------------------------------------------------------------
+1. 🟡 بعض الوحدات في Backend غير مكتملة
+2. 🟡 توجد ملفات __pycache__ يجب حذفها
+3. 🟡 بعض الوحدات في Frontend ليس لديها صفحات أو خدمات
+4. 💡 يوصى بحذف الوحدات غير المستخدمة
+
+🗑️ **الوحدات الموصى بحذفها (غير مكتملة):**
+------------------------------------------------------------
+   ❌ dashboard (اكتمال: 0%)
+   ❌ identity (اكتمال: 0%)
+   ❌ organization (اكتمال: 0%)
+   ❌ platform (اكتمال: 0%)
+   ❌ transactions (اكتمال: 0%)
