@@ -16,6 +16,12 @@ from app.modules.saas.models import (
     TenantModule,
 )
 
+# Platform models.
+# Plan owns the `plans` table created by the platform plans migration.
+# It must be imported here so Alembic can compare the database against
+# the complete SQLAlchemy metadata.
+from app.modules.platform.plans.models import Plan
+
 # Organization models.
 from app.modules.companies.models import Company
 from app.modules.branches.models import Branch
@@ -71,6 +77,9 @@ __all__ = [
     "PlanModule",
     "TenantModule",
 
+    # Platform
+    "Plan",
+
     # Organization
     "Company",
     "Branch",
@@ -101,5 +110,4 @@ __all__ = [
     "AccountingJournal",
     "JournalEntry",
     "JournalEntryLine",
-
 ]
