@@ -12,6 +12,8 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.database.base import Base
+from app.modules.roles.models import Role
+from app.modules.saas.models import Tenant
 
 
 class User(Base):
@@ -135,14 +137,17 @@ class User(Base):
         nullable=False,
     )
 
+    # Import the related classes explicitly so User can also be imported
+    # directly by scripts/tests without depending on a separate registry
+    # import to resolve SQLAlchemy string relationships.
     tenant = relationship(
-        "Tenant",
+        Tenant,
         back_populates="users",
         foreign_keys=[tenant_id],
     )
 
     role = relationship(
-        "Role",
+        Role,
         back_populates="users",
         foreign_keys=[role_id],
     )
