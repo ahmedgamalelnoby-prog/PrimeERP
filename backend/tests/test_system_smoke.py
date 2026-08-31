@@ -18,8 +18,8 @@ from sqlalchemy.orm import configure_mappers
 import app.modules
 from app.database.base import Base
 from app.database.models import User
-from app.main import app
 from app.modules.identity.models.user import User as IdentityUser
+from main import app
 
 
 def _iter_backend_modules() -> list[str]:
