@@ -4,7 +4,7 @@ These tests intentionally validate boundaries that the previous CI did not cover
 - every importable backend module can be imported;
 - SQLAlchemy mappers can be configured together;
 - the users table has exactly one authoritative User model;
-- the identity login route is actually registered in the FastAPI application.
+- the identity login and refresh operations are exposed in the final API schema.
 """
 
 from __future__ import annotations
@@ -68,15 +68,12 @@ def test_identity_router_defines_login_and_refresh() -> None:
     assert ("POST", "/refresh") in routes
 
 
-def test_identity_login_route_is_registered() -> None:
+def test_identity_auth_operations_are_in_openapi() -> None:
     assert isinstance(app, FastAPI)
 
-    routes = {
-        (method, route.path)
-        for route in app.routes
-        if hasattr(route, "methods")
-        for method in route.methods
-    }
+    paths = app.openapi()["paths"]
 
-    assert ("POST", "/api/v1/identity/login") in routes
-    assert ("POST", "/api/v1/identity/refresh") in routes
+    assert "/api/v1/identity/login" in paths
+    assert "post" in paths["/api/v1/identity/login"]
+    assert "/api/v1/identity/refresh" in paths
+    assert "post" in paths["/api/v1/identity/refresh"]
