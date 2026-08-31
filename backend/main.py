@@ -5,7 +5,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.v1.router import router as api_v1_router
 from app.core.config import settings
 from app.core.context import get_request_context
 from app.core.exceptions import register_exception_handlers
@@ -19,10 +18,15 @@ def create_application() -> FastAPI:
     """
     Create and configure the PrimeERP FastAPI application.
 
-    API v1 is the single source of truth for API route registration.  In
-    particular, identity/auth routes are registered by app.api.v1.router, so
-    they must not be mounted again here.
+    API v1 is loaded lazily here as the single source of truth for API route
+    registration.  Loading it after the application/core imports are complete
+    avoids partially-initialized router modules during test/application startup.
     """
+    # Keep the router import inside the factory.  The v1 router imports all
+    # feature routers (including identity/auth); importing it at module scope
+    # can leave an APIRouter partially initialized when model/service imports
+    # are evaluated during application startup.
+    from app.api.v1.router import router as api_v1_router
 
     application = FastAPI(
         title=settings.APP_NAME,
