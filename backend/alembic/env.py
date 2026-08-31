@@ -28,11 +28,8 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
-# These tables are managed by explicit migrations in the SaaS platform layer.
-# They are intentionally not represented in the legacy ORM metadata yet, so
-# autogenerate must not interpret them as candidates for destructive DROP TABLE
-# operations. This keeps `alembic check` non-destructive while the domain models
-# are migrated to the new modular registry incrementally.
+# Tables introduced by explicit migrations but not yet represented by the
+# legacy ORM metadata. They must not be interpreted as destructive drops.
 MANAGED_SAAS_TABLES = {
     "platform_settings",
     "module_prices",
@@ -48,9 +45,16 @@ MANAGED_SAAS_TABLES = {
 
 LEGACY_TABLES = {"plans"}
 
+# Explicitly-created primary-key indexes in the legal migration are redundant
+# with PostgreSQL primary-key constraints and are not modeled by the ORM.
+MANAGED_INDEXES = {
+    "ix_legal_acceptances_id",
+    "ix_legal_documents_id",
+}
+
 
 def include_object(object_, name, type_, reflected, compare_to):
-    """Keep Alembic comparison safe for explicitly managed legacy/SaaS tables."""
+    """Keep Alembic autogenerate limited to intentional schema changes."""
     if type_ == "table" and reflected and compare_to is None:
         if name in MANAGED_SAAS_TABLES or name in LEGACY_TABLES:
             return False
@@ -59,9 +63,7 @@ def include_object(object_, name, type_, reflected, compare_to):
         table_name = getattr(object_.table, "name", None)
         if table_name in MANAGED_SAAS_TABLES or table_name in LEGACY_TABLES:
             return False
-        # Primary-key indexes created by older migrations are redundant and are
-        # not represented as explicit ORM indexes.
-        if name in {"ix_legal_acceptances_id", "ix_legal_documents_id"}:
+        if name in MANAGED_INDEXES:
             return False
 
     return True
@@ -74,9 +76,6 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
-        # Server defaults in the existing legal schema are managed by explicit
-        # migrations; do not generate noisy ALTER DEFAULT operations from ORM
-        # metadata that does not declare them explicitly.
         compare_server_default=False,
         include_object=include_object,
     )
