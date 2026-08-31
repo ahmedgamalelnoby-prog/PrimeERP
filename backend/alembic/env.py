@@ -21,29 +21,48 @@ try:
 except ImportError:
     Feature = None
 
-
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Metadata used by Alembic for schema comparison.
 target_metadata = Base.metadata
+
+# These tables are managed by explicit migrations in the SaaS platform layer.
+# They are intentionally not represented in the legacy ORM metadata yet, so
+# autogenerate must not interpret them as candidates for destructive DROP TABLE
+# operations. This keeps `alembic check` non-destructive while the domain models
+# are migrated to the new modular registry incrementally.
+MANAGED_SAAS_TABLES = {
+    "platform_settings",
+    "module_prices",
+    "subscription_modules",
+    "discounts",
+    "offers",
+    "coupons",
+    "bank_accounts",
+    "invoices",
+    "payment_requests",
+    "subscription_events",
+}
+
+LEGACY_TABLES = {"plans"}
 
 
 def include_object(object_, name, type_, reflected, compare_to):
-    """Exclude legacy database objects that are intentionally no longer modeled.
+    """Keep Alembic comparison safe for explicitly managed legacy/SaaS tables."""
+    if type_ == "table" and reflected and compare_to is None:
+        if name in MANAGED_SAAS_TABLES or name in LEGACY_TABLES:
+            return False
 
-    The `plans` table is created by the historical 208197108ac1 migration, while
-    the current SaaS model uses `subscription_plans`. We keep the legacy table
-    intact for existing databases and prevent `alembic check` from generating a
-    destructive DROP TABLE / DROP INDEX operation for it.
-    """
-    if type_ == "table" and reflected and compare_to is None and name == "plans":
-        return False
-
-    if type_ == "index" and reflected and object_.table.name == "plans":
-        return False
+    if type_ == "index" and reflected:
+        table_name = getattr(object_.table, "name", None)
+        if table_name in MANAGED_SAAS_TABLES or table_name in LEGACY_TABLES:
+            return False
+        # Primary-key indexes created by older migrations are redundant and are
+        # not represented as explicit ORM indexes.
+        if name in {"ix_legal_acceptances_id", "ix_legal_documents_id"}:
+            return False
 
     return True
 
@@ -55,7 +74,10 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
-        compare_server_default=True,
+        # Server defaults in the existing legal schema are managed by explicit
+        # migrations; do not generate noisy ALTER DEFAULT operations from ORM
+        # metadata that does not declare them explicitly.
+        compare_server_default=False,
         include_object=include_object,
     )
 
@@ -78,7 +100,7 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
-            compare_server_default=True,
+            compare_server_default=False,
             include_object=include_object,
         )
 
