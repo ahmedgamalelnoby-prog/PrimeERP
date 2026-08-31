@@ -15,9 +15,10 @@ import pkgutil
 from fastapi import FastAPI
 from sqlalchemy.orm import configure_mappers
 
-import app.modules
+import app.modules as modules_pkg
 from app.database.base import Base
 from app.database.models import User
+from app.modules.identity.api.router import router as identity_router
 from app.modules.identity.models.user import User as IdentityUser
 from main import app
 
@@ -25,8 +26,8 @@ from main import app
 def _iter_backend_modules() -> list[str]:
     names: list[str] = []
     for module_info in pkgutil.walk_packages(
-        app.modules.__path__,
-        prefix=f"{app.modules.__name__}.",
+        modules_pkg.__path__,
+        prefix=f"{modules_pkg.__name__}.",
     ):
         name = module_info.name
         if ".tests" in name or name.endswith(".tests"):
@@ -53,6 +54,18 @@ def test_sqlalchemy_mappers_are_consistent() -> None:
     assert User is IdentityUser
     assert User.__tablename__ == "users"
     assert Base.metadata.tables["users"] is User.__table__
+
+
+def test_identity_router_defines_login_and_refresh() -> None:
+    routes = {
+        (method, route.path)
+        for route in identity_router.routes
+        if hasattr(route, "methods")
+        for method in route.methods
+    }
+
+    assert ("POST", "/login") in routes
+    assert ("POST", "/refresh") in routes
 
 
 def test_identity_login_route_is_registered() -> None:
