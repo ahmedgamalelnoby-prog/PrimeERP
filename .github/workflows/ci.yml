@@ -110,3 +110,5 @@ jobs:
 
           if [ "$bad" -ne 0 ]; then exit 1; fi
           echo "PrimeERP repository boundary check passed."
+
+# Trigger CI for the latest SaaS/Auth fixes.
