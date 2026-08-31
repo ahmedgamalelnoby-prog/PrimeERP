@@ -5,6 +5,10 @@ import os
 
 from sqlalchemy.orm import Session
 
+# Always load the central model registry before using ORM queries. This is
+# required for string-based relationships (for example User -> Tenant) to be
+# resolvable even when this script is executed directly.
+import app.database.models as _database_models  # noqa: F401,E402
 from app.database.session import SessionLocal
 from app.modules.identity.models import Role, User
 from app.modules.identity.services.password_service import password_service
