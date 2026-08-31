@@ -4,7 +4,6 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.routing import APIRoute
 
 from app.api.v1.router import router as api_v1_router
 from app.core.config import settings
@@ -16,44 +15,13 @@ from app.core.middleware import RequestContextMiddleware
 from app.database import models as database_models  # noqa: F401
 
 
-def _has_route(application: FastAPI, method: str, path: str) -> bool:
-    """Return True when an exact API route is already registered."""
-    return any(
-        isinstance(route, APIRoute)
-        and route.path == path
-        and method.upper() in route.methods
-        for route in application.routes
-    )
-
-
-def _ensure_identity_routes(application: FastAPI) -> None:
-    """Ensure the canonical identity auth endpoints are mounted exactly once.
-
-    The API v1 router is the primary registration point.  The explicit guard
-    below makes application startup resilient to import-order/circular-import
-    situations while preventing duplicate route registration.
-    """
-    required_routes = (
-        ("POST", "/api/v1/identity/login"),
-        ("POST", "/api/v1/identity/refresh"),
-        ("GET", "/api/v1/identity/me"),
-    )
-
-    if all(_has_route(application, method, path) for method, path in required_routes):
-        return
-
-    from app.modules.identity.api.router import router as identity_router
-
-    application.include_router(
-        identity_router,
-        prefix=f"{settings.API_V1_STR}/identity",
-        tags=["identity"],
-    )
-
-
 def create_application() -> FastAPI:
     """
     Create and configure the PrimeERP FastAPI application.
+
+    API v1 is the single source of truth for API route registration.  In
+    particular, identity/auth routes are registered by app.api.v1.router, so
+    they must not be mounted again here.
     """
 
     application = FastAPI(
@@ -82,14 +50,11 @@ def create_application() -> FastAPI:
         expose_headers=["X-Request-ID"],
     )
 
+    # Single registration point for all API v1 routes, including identity.
     application.include_router(
         api_v1_router,
         prefix=settings.API_V1_STR,
     )
-
-    # Identity auth is a core platform capability. Ensure its canonical
-    # endpoints exist once even if router import order changes.
-    _ensure_identity_routes(application)
 
     return application
 
