@@ -9,6 +9,7 @@ from app.modules.platform.plans.router import router as plans_router
 from app.modules.platform.tenants.router import router as tenants_router
 from app.modules.platform.saas_router import router as platform_saas_router
 from app.modules.platform.billing_router import router as billing_router
+from app.modules.platform.promotions_router import router as promotions_router
 from app.modules.legal.router import router as legal_router
 
 router = APIRouter()
@@ -18,6 +19,7 @@ router.include_router(features_router)
 router.include_router(saas_router, prefix="/saas", tags=["saas"])
 router.include_router(platform_saas_router)
 router.include_router(billing_router)
+router.include_router(promotions_router)
 router.include_router(transactions_router, prefix="/transactions", tags=["transactions"])
 router.include_router(fiscal_years_router, prefix="/accounting/fiscal-years", tags=["accounting-fiscal-years"])
 router.include_router(plans_router)
