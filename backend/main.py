@@ -4,6 +4,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 
 from app.api.v1.router import router as api_v1_router
 from app.core.config import settings
@@ -15,6 +16,41 @@ from app.core.middleware import RequestContextMiddleware
 from app.database import models as database_models  # noqa: F401
 
 
+def _has_route(application: FastAPI, method: str, path: str) -> bool:
+    """Return True when an exact API route is already registered."""
+    return any(
+        isinstance(route, APIRoute)
+        and route.path == path
+        and method.upper() in route.methods
+        for route in application.routes
+    )
+
+
+def _ensure_identity_routes(application: FastAPI) -> None:
+    """Ensure the canonical identity auth endpoints are mounted exactly once.
+
+    The API v1 router is the primary registration point.  The explicit guard
+    below makes application startup resilient to import-order/circular-import
+    situations while preventing duplicate route registration.
+    """
+    required_routes = (
+        ("POST", "/api/v1/identity/login"),
+        ("POST", "/api/v1/identity/refresh"),
+        ("GET", "/api/v1/identity/me"),
+    )
+
+    if all(_has_route(application, method, path) for method, path in required_routes):
+        return
+
+    from app.modules.identity.api.router import router as identity_router
+
+    application.include_router(
+        identity_router,
+        prefix=f"{settings.API_V1_STR}/identity",
+        tags=["identity"],
+    )
+
+
 def create_application() -> FastAPI:
     """
     Create and configure the PrimeERP FastAPI application.
@@ -24,9 +60,7 @@ def create_application() -> FastAPI:
         title=settings.APP_NAME,
         version=settings.APP_VERSION,
         description="PrimeERP - نظام إدارة المؤسسات",
-        openapi_url=(
-            f"{settings.API_V1_STR}/openapi.json"
-        ),
+        openapi_url=f"{settings.API_V1_STR}/openapi.json",
         docs_url="/docs",
         redoc_url="/redoc",
     )
@@ -35,17 +69,13 @@ def create_application() -> FastAPI:
     register_exception_handlers(application)
 
     # يتم تسجيل Request Context أولًا.
-    application.add_middleware(
-        RequestContextMiddleware,
-    )
+    application.add_middleware(RequestContextMiddleware)
 
     # يتم تسجيل CORS بعده حتى يكون الطبقة الخارجية
     # ويضيف CORS Headers حتى عند حدوث أخطاء.
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=(
-            settings.BACKEND_CORS_ORIGINS
-        ),
+        allow_origins=settings.BACKEND_CORS_ORIGINS,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -57,24 +87,22 @@ def create_application() -> FastAPI:
         prefix=settings.API_V1_STR,
     )
 
+    # Identity auth is a core platform capability. Ensure its canonical
+    # endpoints exist once even if router import order changes.
+    _ensure_identity_routes(application)
+
     return application
 
 
 app = create_application()
 
 
-@app.get(
-    "/",
-    tags=["System"],
-)
+@app.get("/", tags=["System"])
 async def root() -> JSONResponse:
     return JSONResponse(
         content={
             "success": True,
-            "message": (
-                f"Welcome to "
-                f"{settings.APP_NAME} API"
-            ),
+            "message": f"Welcome to {settings.APP_NAME} API",
             "data": {
                 "version": settings.APP_VERSION,
                 "status": "online",
@@ -85,10 +113,7 @@ async def root() -> JSONResponse:
     )
 
 
-@app.get(
-    "/health",
-    tags=["System"],
-)
+@app.get("/health", tags=["System"])
 async def health_check() -> JSONResponse:
     return JSONResponse(
         content={
@@ -103,10 +128,7 @@ async def health_check() -> JSONResponse:
     )
 
 
-@app.get(
-    "/debug/request-context",
-    tags=["System"],
-)
+@app.get("/debug/request-context", tags=["System"])
 async def debug_request_context() -> dict:
     context = get_request_context()
 
