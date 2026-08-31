@@ -17,9 +17,6 @@ from app.modules.saas.models import (
 )
 
 # Platform models.
-# Plan owns the `plans` table created by the platform plans migration.
-# It must be imported here so Alembic can compare the database against
-# the complete SQLAlchemy metadata.
 from app.modules.platform.plans.models import Plan
 
 # Organization models.
@@ -27,12 +24,15 @@ from app.modules.companies.models import Company
 from app.modules.branches.models import Branch
 
 # Identity models.
+# User lives exclusively in the identity module. The legacy
+# app.modules.auth.models.User duplicate has been removed so SQLAlchemy
+# has a single authoritative mapper for the users table.
+from app.modules.identity.models.user import User
 from app.modules.roles.models import (
     Permission,
     Role,
     role_permissions,
 )
-from app.modules.auth.models import User
 
 # Restaurant models.
 from app.modules.restaurant.models import (
