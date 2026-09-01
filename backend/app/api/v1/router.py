@@ -11,7 +11,7 @@ from app.modules.legal.router import router as legal_router
 
 
 def build_router() -> APIRouter:
-    """Build an isolated API v1 router for each application instance."""
+    """Build an isolated API v1 router tree for one application instance."""
     api_router = APIRouter()
     api_router.include_router(identity_router, prefix="/identity", tags=["identity"])
     api_router.include_router(features_router)
@@ -26,7 +26,3 @@ def build_router() -> APIRouter:
     api_router.include_router(tenants_router, prefix="/platform")
     api_router.include_router(legal_router)
     return api_router
-
-
-# Backwards-compatible export for modules that still import `router` directly.
-router = build_router()
