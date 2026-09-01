@@ -4,6 +4,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 
 from app.api.v1.router import build_router
 from app.core.config import settings
@@ -11,6 +12,32 @@ from app.core.context import get_request_context
 from app.core.exceptions import register_exception_handlers
 from app.core.middleware import RequestContextMiddleware
 from app.database import models as database_models  # noqa: F401
+from app.modules.identity.api.router import router as identity_router
+
+
+def _register_api_routes(application: FastAPI) -> None:
+    """Register the v1 API once, including the mandatory identity contract."""
+    api_router = build_router()
+    application.include_router(
+        api_router,
+        prefix=settings.API_V1_STR,
+    )
+
+    # Keep the authentication contract explicit at the application boundary.
+    # This protects production startup from accidental router-state changes while
+    # avoiding duplicate registration when build_router() already contains it.
+    login_path = f"{settings.API_V1_STR}/identity/login"
+    if not any(
+        isinstance(route, APIRoute)
+        and route.path == login_path
+        and "POST" in route.methods
+        for route in application.routes
+    ):
+        application.include_router(
+            identity_router,
+            prefix=f"{settings.API_V1_STR}/identity",
+            tags=["identity"],
+        )
 
 
 def create_application() -> FastAPI:
@@ -35,10 +62,7 @@ def create_application() -> FastAPI:
         expose_headers=["X-Request-ID"],
     )
 
-    application.include_router(
-        build_router(),
-        prefix=settings.API_V1_STR,
-    )
+    _register_api_routes(application)
 
     @application.get("/", tags=["System"])
     async def root() -> JSONResponse:
