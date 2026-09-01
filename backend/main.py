@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.v1.router import router as api_v1_router
+from app.api.v1.router import build_router
 from app.core.config import settings
 from app.core.context import get_request_context
 from app.core.exceptions import register_exception_handlers
@@ -14,7 +14,7 @@ from app.database import models as database_models  # noqa: F401
 
 
 def create_application() -> FastAPI:
-    """Build the single production FastAPI application."""
+    """Build a fresh production FastAPI application with isolated routers."""
     application = FastAPI(
         title=settings.APP_NAME,
         version=settings.APP_VERSION,
@@ -36,7 +36,7 @@ def create_application() -> FastAPI:
     )
 
     application.include_router(
-        api_v1_router,
+        build_router(),
         prefix=settings.API_V1_STR,
     )
 
