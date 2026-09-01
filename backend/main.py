@@ -5,18 +5,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api.v1.router import router as api_v1_router
 from app.core.config import settings
 from app.core.context import get_request_context
 from app.core.exceptions import register_exception_handlers
 from app.core.middleware import RequestContextMiddleware
-from app.api.v1.router import router as api_v1_router
-
-# Import models so SQLAlchemy metadata is populated for migrations/tests.
 from app.database import models as database_models  # noqa: F401
 
 
 def create_application() -> FastAPI:
-    """Create the single production FastAPI application instance."""
+    """Build the single production FastAPI application."""
     application = FastAPI(
         title=settings.APP_NAME,
         version=settings.APP_VERSION,
@@ -37,62 +35,62 @@ def create_application() -> FastAPI:
         expose_headers=["X-Request-ID"],
     )
 
-    # The v1 router is the only registration point for API routes.
-    application.include_router(api_v1_router, prefix=settings.API_V1_STR)
+    application.include_router(
+        api_v1_router,
+        prefix=settings.API_V1_STR,
+    )
+
+    @application.get("/", tags=["System"])
+    async def root() -> JSONResponse:
+        return JSONResponse(
+            content={
+                "success": True,
+                "message": f"Welcome to {settings.APP_NAME} API",
+                "data": {
+                    "version": settings.APP_VERSION,
+                    "status": "online",
+                    "docs": "/docs",
+                    "redoc": "/redoc",
+                },
+            }
+        )
+
+    @application.get("/health", tags=["System"])
+    async def health_check() -> JSONResponse:
+        return JSONResponse(
+            content={
+                "success": True,
+                "message": "Service is healthy.",
+                "data": {
+                    "status": "healthy",
+                    "service": settings.APP_NAME,
+                    "version": settings.APP_VERSION,
+                },
+            }
+        )
+
+    @application.get("/debug/request-context", tags=["System"])
+    async def debug_request_context() -> dict:
+        context = get_request_context()
+        return {
+            "success": True,
+            "data": {
+                "request_id": context.request_id,
+                "ip_address": context.ip_address,
+                "user_agent": context.user_agent,
+                "language": context.language,
+                "timezone": context.timezone,
+                "user_id": context.user_id,
+                "tenant_id": context.tenant_id,
+                "company_id": context.company_id,
+                "branch_id": context.branch_id,
+            },
+        }
+
     return application
 
 
 app = create_application()
-
-
-@app.get("/", tags=["System"])
-async def root() -> JSONResponse:
-    return JSONResponse(
-        content={
-            "success": True,
-            "message": f"Welcome to {settings.APP_NAME} API",
-            "data": {
-                "version": settings.APP_VERSION,
-                "status": "online",
-                "docs": "/docs",
-                "redoc": "/redoc",
-            },
-        }
-    )
-
-
-@app.get("/health", tags=["System"])
-async def health_check() -> JSONResponse:
-    return JSONResponse(
-        content={
-            "success": True,
-            "message": "Service is healthy.",
-            "data": {
-                "status": "healthy",
-                "service": settings.APP_NAME,
-                "version": settings.APP_VERSION,
-            },
-        }
-    )
-
-
-@app.get("/debug/request-context", tags=["System"])
-async def debug_request_context() -> dict:
-    context = get_request_context()
-    return {
-        "success": True,
-        "data": {
-            "request_id": context.request_id,
-            "ip_address": context.ip_address,
-            "user_agent": context.user_agent,
-            "language": context.language,
-            "timezone": context.timezone,
-            "user_id": context.user_id,
-            "tenant_id": context.tenant_id,
-            "company_id": context.company_id,
-            "branch_id": context.branch_id,
-        },
-    }
 
 
 if __name__ == "__main__":
