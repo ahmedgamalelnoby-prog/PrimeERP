@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, true
 from sqlalchemy.sql import func
 
 from app.database.base import Base
@@ -14,7 +14,7 @@ class LegalDocument(Base):
     content_ar = Column(Text, nullable=False, default="")
     content_en = Column(Text, nullable=False, default="")
     version = Column(Integer, nullable=False, server_default="1")
-    is_published = Column(Boolean, nullable=False, server_default=func.true(), index=True)
+    is_published = Column(Boolean, nullable=False, server_default=true(), index=True)
     published_at = Column(DateTime(timezone=True), nullable=True)
     updated_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
