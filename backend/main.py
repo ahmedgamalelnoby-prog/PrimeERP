@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.v1.router import build_router
+from app.api.router import build_router
 from app.core.config import settings
 from app.core.context import get_request_context
 from app.core.exceptions import register_exception_handlers
@@ -14,7 +14,7 @@ from app.database import models as database_models  # noqa: F401
 
 
 def create_application() -> FastAPI:
-    """Build a fresh PrimeERP application with a fresh API router tree."""
+    """Build a fresh PrimeERP application with an isolated API router tree."""
     application = FastAPI(
         title=settings.APP_NAME,
         version=settings.APP_VERSION,
@@ -35,9 +35,7 @@ def create_application() -> FastAPI:
         expose_headers=["X-Request-ID"],
     )
 
-    # Build a new router tree for every application instance. This avoids
-    # shared module-level router state and guarantees the identity routes are
-    # part of the same v1 API registration as every other module.
+    # The application boundary owns exactly one router tree.
     application.include_router(
         build_router(),
         prefix=settings.API_V1_STR,
