@@ -9,25 +9,14 @@ from app.core.config import settings
 from app.core.context import get_request_context
 from app.core.exceptions import register_exception_handlers
 from app.core.middleware import RequestContextMiddleware
+from app.api.v1.router import router as api_v1_router
 
-# استيراد الموديلات لضمان تسجيلها داخل SQLAlchemy metadata
+# Import models so SQLAlchemy metadata is populated for migrations/tests.
 from app.database import models as database_models  # noqa: F401
 
 
 def create_application() -> FastAPI:
-    """
-    Create and configure the PrimeERP FastAPI application.
-
-    API v1 is loaded lazily here as the single source of truth for API route
-    registration.  Loading it after the application/core imports are complete
-    avoids partially-initialized router modules during test/application startup.
-    """
-    # Keep the router import inside the factory.  The v1 router imports all
-    # feature routers (including identity/auth); importing it at module scope
-    # can leave an APIRouter partially initialized when model/service imports
-    # are evaluated during application startup.
-    from app.api.v1.router import router as api_v1_router
-
+    """Create the single production FastAPI application instance."""
     application = FastAPI(
         title=settings.APP_NAME,
         version=settings.APP_VERSION,
@@ -37,14 +26,8 @@ def create_application() -> FastAPI:
         redoc_url="/redoc",
     )
 
-    # تسجيل معالجات الأخطاء
     register_exception_handlers(application)
-
-    # يتم تسجيل Request Context أولًا.
     application.add_middleware(RequestContextMiddleware)
-
-    # يتم تسجيل CORS بعده حتى يكون الطبقة الخارجية
-    # ويضيف CORS Headers حتى عند حدوث أخطاء.
     application.add_middleware(
         CORSMiddleware,
         allow_origins=settings.BACKEND_CORS_ORIGINS,
@@ -54,12 +37,8 @@ def create_application() -> FastAPI:
         expose_headers=["X-Request-ID"],
     )
 
-    # Single registration point for all API v1 routes, including identity.
-    application.include_router(
-        api_v1_router,
-        prefix=settings.API_V1_STR,
-    )
-
+    # The v1 router is the only registration point for API routes.
+    application.include_router(api_v1_router, prefix=settings.API_V1_STR)
     return application
 
 
@@ -100,7 +79,6 @@ async def health_check() -> JSONResponse:
 @app.get("/debug/request-context", tags=["System"])
 async def debug_request_context() -> dict:
     context = get_request_context()
-
     return {
         "success": True,
         "data": {
