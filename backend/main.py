@@ -5,17 +5,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.v1.router import build_router
+from app.api.router import build_router
 from app.core.config import settings
 from app.core.context import get_request_context
 from app.core.exceptions import register_exception_handlers
 from app.core.middleware import RequestContextMiddleware
 from app.database import models as database_models  # noqa: F401
-
-
-def _register_api_routes(application: FastAPI) -> None:
-    """Register the complete v1 API exactly once."""
-    application.include_router(build_router(), prefix=settings.API_V1_STR)
 
 
 def create_application() -> FastAPI:
@@ -40,7 +35,8 @@ def create_application() -> FastAPI:
         expose_headers=["X-Request-ID"],
     )
 
-    _register_api_routes(application)
+    # The application boundary owns exactly one, freshly-built API tree.
+    application.include_router(build_router(), prefix=settings.API_V1_STR)
 
     @application.get("/", tags=["System"])
     async def root() -> JSONResponse:
