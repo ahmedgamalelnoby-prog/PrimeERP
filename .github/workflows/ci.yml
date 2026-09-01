@@ -2,7 +2,7 @@ name: PrimeERP CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/saas-platform-core]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -87,6 +87,8 @@ jobs:
     name: Repository boundaries and hygiene
     runs-on: ubuntu-latest
     steps:
+      - name: Set up job
+        run: true
       - name: Checkout
         uses: actions/checkout@v4
       - name: Reject cross-system references and generated files
@@ -110,5 +112,3 @@ jobs:
 
           if [ "$bad" -ne 0 ]; then exit 1; fi
           echo "PrimeERP repository boundary check passed."
-
-# Trigger CI for the latest SaaS/Auth fixes.
