@@ -1,6 +1,6 @@
 """HTTP API for Chart of Accounts read operations."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
@@ -17,7 +17,10 @@ router = APIRouter(prefix="/chart-of-accounts", tags=["Accounting - Chart of Acc
 
 def _company_id(company_id: int) -> int:
     if company_id <= 0:
-        raise ValueError("company_id must be positive")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="company_id must be positive",
+        )
     return company_id
 
 
