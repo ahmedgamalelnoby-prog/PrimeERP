@@ -1,8 +1,3 @@
-from app.core.module_engine.manifest import manifest
+"""Legacy compatibility manifest during incremental Inventory migration."""
 
-MANIFEST = manifest(
-    technical_name="inventory/inventory_core",
-    display_name="Inventory Core",
-    version="1.0.0",
-    domain="inventory",
-)
+from app.modules.inventory.inventory_core.__manifest__ import MANIFEST
