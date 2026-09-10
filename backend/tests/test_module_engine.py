@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 import unittest
 
 from app.core.module_engine import (
+    ModuleArchitectureError,
     ModuleContext,
     ModuleEntitlement,
     ModuleEvent,
@@ -10,6 +11,9 @@ from app.core.module_engine import (
     ModulePermissionService,
     ModuleRegistry,
     ModuleRegistryError,
+    catalog,
+    validate_catalog_dependencies,
+    validate_manifests,
 )
 from app.core.module_engine.discovery import discover_manifests
 from app.core.module_engine.lifecycle import ModuleLifecycle
@@ -109,6 +113,15 @@ class ModuleEngineTests(unittest.TestCase):
         manifests = discover_manifests(["app.modules.accounting", "app.modules.sales"])
         keys = [item.key for item in manifests]
         self.assertEqual(keys, sorted(set(keys)))
+
+    def test_canonical_catalog_is_self_consistent(self):
+        validate_catalog_dependencies()
+        keys = [entry.technical_name for entry in catalog()]
+        self.assertEqual(len(keys), len(set(keys)))
+
+    def test_manifest_validation_rejects_unknown_catalog_module(self):
+        with self.assertRaises(ModuleArchitectureError):
+            validate_manifests([self.manifest("unknown/not_catalogued")])
 
 
 if __name__ == "__main__":
