@@ -3,6 +3,7 @@
 from .bus import ModuleEventBus, get_module_event_bus
 from .context import ModuleContext
 from .contracts import ModuleContractError, ModuleEvent
+from .discovery import discover_manifests, register_discovered
 from .entitlement import ModuleEntitlement, ModuleEntitlementStore
 from .manifest import ModuleManifest
 from .permissions import ModulePermissionService
@@ -20,6 +21,8 @@ __all__ = [
     "ModuleRegistry",
     "ModuleRegistryError",
     "ModuleState",
+    "discover_manifests",
     "get_module_event_bus",
     "get_module_registry",
+    "register_discovered",
 ]
