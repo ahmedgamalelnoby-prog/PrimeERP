@@ -12,6 +12,7 @@ class ModuleLifecycle:
         self.registry = registry
 
     def install_and_enable(self, technical_name: str) -> None:
+        self.registry.install(technical_name)
         self.registry.enable(technical_name)
 
     def uninstall(self, technical_name: str) -> None:
