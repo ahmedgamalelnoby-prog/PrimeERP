@@ -5,11 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Set
 
+from .entitlement import ModuleEntitlementStore
 from .manifest import ModuleManifest
 
 
 class ModuleRegistryError(ValueError):
-    """Raised when the module graph is invalid."""
+    """Raised when the module graph or lifecycle state is invalid."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,13 +18,15 @@ class ModuleState:
     manifest: ModuleManifest
     installed: bool = False
     enabled: bool = False
+    installed_version: str | None = None
 
 
 class ModuleRegistry:
-    """Central registry used by discovery and future SaaS entitlements."""
+    """Central platform registry for installed add-ons and tenant entitlements."""
 
-    def __init__(self) -> None:
+    def __init__(self, entitlements: ModuleEntitlementStore | None = None) -> None:
         self._modules: Dict[str, ModuleState] = {}
+        self.entitlements = entitlements or ModuleEntitlementStore()
 
     def register(self, module: ModuleManifest) -> None:
         existing = self._modules.get(module.key)
@@ -35,10 +38,10 @@ class ModuleRegistry:
             module,
             existing.installed if existing else False,
             existing.enabled if existing else False,
+            existing.installed_version if existing else None,
         )
 
     def register_many(self, modules: Iterable[ModuleManifest]) -> None:
-        """Register as a batch so dependency order does not matter."""
         for module in modules:
             self.register(module)
         self.validate_graph()
@@ -58,6 +61,16 @@ class ModuleRegistry:
         except KeyError as exc:
             raise ModuleRegistryError(f"Unknown module: {technical_name}") from exc
 
+    def install(self, technical_name: str) -> None:
+        module = self.get(technical_name)
+        self._ensure_dependencies_registered(module)
+        self._modules[technical_name] = ModuleState(
+            module,
+            installed=True,
+            enabled=self.state(technical_name).enabled,
+            installed_version=module.version,
+        )
+
     def enable(self, technical_name: str) -> None:
         module = self.get(technical_name)
         if not module.installable:
@@ -68,7 +81,18 @@ class ModuleRegistry:
                 raise ModuleRegistryError(
                     f"Cannot enable {technical_name}: dependency {dependency} is not enabled"
                 )
-        self._modules[technical_name] = ModuleState(module, installed=True, enabled=True)
+        current = self.state(technical_name)
+        self._modules[technical_name] = ModuleState(
+            module, installed=True, enabled=True, installed_version=module.version
+        )
+
+    def enable_for_tenant(self, tenant_id: str, technical_name: str) -> None:
+        if not self.entitlements.is_enabled(tenant_id, technical_name):
+            raise ModuleRegistryError(
+                f"Module {technical_name} is not entitled for tenant {tenant_id}"
+            )
+        if not self.state(technical_name).enabled:
+            self.enable(technical_name)
 
     def disable(self, technical_name: str) -> None:
         self.state(technical_name)
@@ -82,7 +106,11 @@ class ModuleRegistry:
                 f"Cannot disable {technical_name}: enabled dependents exist: {', '.join(dependents)}"
             )
         module = self.get(technical_name)
-        self._modules[technical_name] = ModuleState(module, installed=True, enabled=False)
+        current = self.state(technical_name)
+        self._modules[technical_name] = ModuleState(
+            module, installed=current.installed, enabled=False,
+            installed_version=current.installed_version,
+        )
 
     def validate_graph(self) -> None:
         for module in self._modules.values():
@@ -103,6 +131,9 @@ class ModuleRegistry:
 
         for name in self._modules:
             visit(name)
+
+    def _ensure_dependencies_registered(self, module: ModuleManifest) -> None:
+        self._validate_dependency_names(module)
 
     def _validate_dependency_names(self, module: ModuleManifest) -> None:
         missing = [name for name in module.dependencies if name not in self._modules]
