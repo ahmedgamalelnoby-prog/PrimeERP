@@ -26,12 +26,10 @@ class ModuleRegistry:
         self._modules: Dict[str, ModuleState] = {}
 
     def register(self, module: ModuleManifest) -> None:
-        """Register metadata without requiring dependency order."""
         existing = self._modules.get(module.key)
         if existing and existing.manifest.version != module.version:
             raise ModuleRegistryError(
-                f"Module {module.key!r} is already registered with version "
-                f"{existing.manifest.version}"
+                f"Module {module.key!r} is already registered with version {existing.manifest.version}"
             )
         self._modules[module.key] = ModuleState(
             module,
@@ -40,6 +38,7 @@ class ModuleRegistry:
         )
 
     def register_many(self, modules: Iterable[ModuleManifest]) -> None:
+        """Register as a batch so dependency order does not matter."""
         for module in modules:
             self.register(module)
         self.validate_graph()
@@ -52,6 +51,12 @@ class ModuleRegistry:
 
     def all(self) -> List[ModuleManifest]:
         return [state.manifest for state in self._modules.values()]
+
+    def state(self, technical_name: str) -> ModuleState:
+        try:
+            return self._modules[technical_name]
+        except KeyError as exc:
+            raise ModuleRegistryError(f"Unknown module: {technical_name}") from exc
 
     def enable(self, technical_name: str) -> None:
         module = self.get(technical_name)
@@ -66,6 +71,7 @@ class ModuleRegistry:
         self._modules[technical_name] = ModuleState(module, installed=True, enabled=True)
 
     def disable(self, technical_name: str) -> None:
+        self.state(technical_name)
         dependents = [
             name
             for name, state in self._modules.items()
