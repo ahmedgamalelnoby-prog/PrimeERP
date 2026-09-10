@@ -10,11 +10,18 @@ from app.core.config import settings
 from app.core.context import get_request_context
 from app.core.exceptions import register_exception_handlers
 from app.core.middleware import RequestContextMiddleware
+from app.core.module_engine.bootstrap import bootstrap_module_registry
+from app.core.module_engine.registry import ModuleRegistry
 from app.database import models as database_models  # noqa: F401
 
 
 def create_application() -> FastAPI:
     """Build a fresh PrimeERP application with an isolated API router tree."""
+    # Discover and validate add-ons before the application starts serving traffic.
+    # Discovery only registers metadata; module business state remains disabled
+    # until an explicit lifecycle/tenant entitlement operation enables it.
+    module_registry: ModuleRegistry = bootstrap_module_registry()
+
     application = FastAPI(
         title=settings.APP_NAME,
         version=settings.APP_VERSION,
@@ -23,6 +30,7 @@ def create_application() -> FastAPI:
         docs_url="/docs",
         redoc_url="/redoc",
     )
+    application.state.module_registry = module_registry
 
     register_exception_handlers(application)
     application.add_middleware(RequestContextMiddleware)
@@ -67,6 +75,31 @@ def create_application() -> FastAPI:
                     "service": settings.APP_NAME,
                     "version": settings.APP_VERSION,
                 },
+            }
+        )
+
+    @application.get("/modules", tags=["System"])
+    async def module_inventory() -> JSONResponse:
+        """Return the platform module inventory without exposing tenant secrets."""
+        modules = []
+        for manifest in sorted(module_registry.all(), key=lambda item: item.key):
+            state = module_registry.state(manifest.key)
+            modules.append(
+                {
+                    "technical_name": manifest.key,
+                    "display_name": manifest.display_name,
+                    "version": manifest.version,
+                    "domain": manifest.domain,
+                    "dependencies": list(manifest.dependencies),
+                    "installable": manifest.installable,
+                    "installed": state.installed,
+                    "enabled": state.enabled,
+                }
+            )
+        return JSONResponse(
+            content={
+                "success": True,
+                "data": {"count": len(modules), "modules": modules},
             }
         )
 
