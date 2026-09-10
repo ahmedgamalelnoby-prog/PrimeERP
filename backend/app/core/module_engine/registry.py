@@ -64,10 +64,11 @@ class ModuleRegistry:
     def install(self, technical_name: str) -> None:
         module = self.get(technical_name)
         self._ensure_dependencies_registered(module)
+        current = self.state(technical_name)
         self._modules[technical_name] = ModuleState(
             module,
             installed=True,
-            enabled=self.state(technical_name).enabled,
+            enabled=current.enabled,
             installed_version=module.version,
         )
 
@@ -81,18 +82,31 @@ class ModuleRegistry:
                 raise ModuleRegistryError(
                     f"Cannot enable {technical_name}: dependency {dependency} is not enabled"
                 )
-        current = self.state(technical_name)
+        self._ensure_dependencies_registered(module)
         self._modules[technical_name] = ModuleState(
             module, installed=True, enabled=True, installed_version=module.version
         )
 
-    def enable_for_tenant(self, tenant_id: str, technical_name: str) -> None:
-        if not self.entitlements.is_enabled(tenant_id, technical_name):
+    def is_available_for_tenant(self, tenant_id: str, technical_name: str) -> bool:
+        """Return whether a tenant can use an enabled platform module.
+
+        Platform state and tenant entitlement are deliberately independent:
+        granting a tenant access must never globally enable a module.
+        """
+        state = self.state(technical_name)
+        return state.installed and state.enabled and self.entitlements.is_enabled(
+            tenant_id, technical_name
+        )
+
+    def require_tenant_enabled(self, tenant_id: str, technical_name: str) -> None:
+        if not self.is_available_for_tenant(tenant_id, technical_name):
             raise ModuleRegistryError(
-                f"Module {technical_name} is not entitled for tenant {tenant_id}"
+                f"Module {technical_name!r} is not available for tenant {tenant_id}"
             )
-        if not self.state(technical_name).enabled:
-            self.enable(technical_name)
+
+    def enable_for_tenant(self, tenant_id: str, technical_name: str) -> None:
+        """Validate tenant access without changing global module state."""
+        self.require_tenant_enabled(tenant_id, technical_name)
 
     def disable(self, technical_name: str) -> None:
         self.state(technical_name)
@@ -108,7 +122,9 @@ class ModuleRegistry:
         module = self.get(technical_name)
         current = self.state(technical_name)
         self._modules[technical_name] = ModuleState(
-            module, installed=current.installed, enabled=False,
+            module,
+            installed=current.installed,
+            enabled=False,
             installed_version=current.installed_version,
         )
 
