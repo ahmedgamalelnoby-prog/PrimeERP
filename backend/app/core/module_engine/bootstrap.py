@@ -2,32 +2,31 @@
 
 from __future__ import annotations
 
+import importlib
 from typing import Sequence
 
 from .architecture import validate_catalog_dependencies, validate_manifests
 from .discovery import discover_manifests
 from .registry import ModuleRegistry, get_module_registry
 
-DEFAULT_MODULE_PACKAGES: tuple[str, ...] = (
-    "app.modules.accounting",
-    "app.modules.sales",
-    "app.modules.inventory",
-    "app.modules.companies",
-    "app.modules.branches",
-    "app.modules.crm",
-    "app.modules.hr",
-    "app.modules.identity",
-    "app.modules.platform",
-)
+DEFAULT_MODULE_PACKAGE = "app.modules"
 
 
 def bootstrap_module_registry(
-    package_names: Sequence[str] = DEFAULT_MODULE_PACKAGES,
+    package_names: Sequence[str] | None = None,
     registry: ModuleRegistry | None = None,
 ) -> ModuleRegistry:
-    """Discover and register all available add-ons without enabling them."""
+    """Discover and register every available add-on without enabling it.
+
+    Discovery is rooted at ``app.modules`` by default, so adding a new domain
+    package does not require editing application startup code. Explicit package
+    names remain supported for tests and controlled deployments.
+    """
     validate_catalog_dependencies()
-    manifests = discover_manifests(package_names)
+    packages = tuple(package_names) if package_names is not None else (DEFAULT_MODULE_PACKAGE,)
+    for package_name in packages:
+        importlib.import_module(package_name)
+    manifests = discover_manifests(packages)
     validate_manifests(manifests)
     target = registry or get_module_registry()
     target.register_many(manifests)
