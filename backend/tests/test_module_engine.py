@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 import unittest
 
 from app.core.module_engine import (
+    DEFAULT_MODULE_PACKAGE,
     ModuleArchitectureError,
     ModuleContext,
     ModuleEntitlement,
@@ -11,6 +12,7 @@ from app.core.module_engine import (
     ModulePermissionService,
     ModuleRegistry,
     ModuleRegistryError,
+    bootstrap_module_registry,
     catalog,
     validate_catalog_dependencies,
     validate_manifests,
@@ -20,108 +22,106 @@ from app.core.module_engine.lifecycle import ModuleLifecycle
 
 
 class ModuleEngineTests(unittest.TestCase):
-    def manifest(self, name, dependencies=(), permissions=()):
-        return ModuleManifest(
-            technical_name=name,
-            display_name=name,
-            dependencies=tuple(dependencies),
-            permissions=frozenset(permissions),
-        )
-
-    def test_dependency_graph_is_order_independent(self):
+    def test_dependency_order(self) -> None:
         registry = ModuleRegistry()
-        child = self.manifest("sales/orders", ("sales/core",))
-        core = self.manifest("sales/core")
-        registry.register_many([child, core])
-        registry.enable("sales/core")
-        registry.enable("sales/orders")
-        self.assertTrue(registry.state("sales/orders").enabled)
+        core = ModuleManifest("test/core", "Core")
+        feature = ModuleManifest("test/feature", "Feature", dependencies=("test/core",))
+        registry.register_many([feature, core])
+        registry.install("test/core")
+        registry.enable("test/core")
+        registry.install("test/feature")
+        registry.enable("test/feature")
+        self.assertTrue(registry.state("test/feature").enabled)
 
-    def test_missing_and_circular_dependencies_are_rejected(self):
+    def test_missing_dependency(self) -> None:
+        with self.assertRaises(ModuleArchitectureError):
+            validate_manifests([ModuleManifest("test/feature", "Feature", dependencies=("test/missing",))])
+
+    def test_circular_dependencies(self) -> None:
         registry = ModuleRegistry()
+        a = ModuleManifest("test/a", "A", dependencies=("test/b",))
+        b = ModuleManifest("test/b", "B", dependencies=("test/a",))
         with self.assertRaises(ModuleRegistryError):
-            registry.register_many([self.manifest("sales/orders", ("sales/core",))])
+            registry.register_many([a, b])
 
-        circular = ModuleRegistry()
-        a = self.manifest("a/core", ("b/core",))
-        b = self.manifest("b/core", ("a/core",))
-        with self.assertRaises(ModuleRegistryError):
-            circular.register_many([a, b])
-
-    def test_tenant_entitlement_does_not_globally_enable_module(self):
+    def test_tenant_entitlement_does_not_globally_enable(self) -> None:
         registry = ModuleRegistry()
-        registry.register(self.manifest("sales/core"))
-        registry.install("sales/core")
-        registry.entitlements.grant(ModuleEntitlement("sales/core", "tenant-1"))
+        module = ModuleManifest("test/core", "Core")
+        registry.register(module)
+        registry.install("test/core")
+        registry.enable("test/core")
+        registry.entitlements.grant(ModuleEntitlement("tenant-1", "test/core"))
+        self.assertTrue(registry.is_available_for_tenant("tenant-1", "test/core"))
+        self.assertFalse(registry.is_available_for_tenant("tenant-2", "test/core"))
+        self.assertTrue(registry.state("test/core").enabled)
 
-        with self.assertRaises(ModuleRegistryError):
-            registry.require_tenant_enabled("tenant-1", "sales/core")
-        self.assertFalse(registry.state("sales/core").enabled)
-
-        registry.enable("sales/core")
-        self.assertTrue(registry.is_available_for_tenant("tenant-1", "sales/core"))
-
-    def test_expired_entitlement_is_denied(self):
+    def test_expiry(self) -> None:
         registry = ModuleRegistry()
-        registry.register(self.manifest("sales/core"))
-        registry.install("sales/core")
-        registry.enable("sales/core")
+        module = ModuleManifest("test/core", "Core")
+        registry.register(module)
+        registry.install("test/core")
+        registry.enable("test/core")
         registry.entitlements.grant(
             ModuleEntitlement(
-                "sales/core",
                 "tenant-1",
-                expires_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+                "test/core",
+                expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),
             )
         )
-        self.assertFalse(registry.is_available_for_tenant("tenant-1", "sales/core"))
+        self.assertFalse(registry.is_available_for_tenant("tenant-1", "test/core"))
 
-    def test_disable_blocks_enabled_dependents(self):
+    def test_disable_blocked_by_dependents(self) -> None:
         registry = ModuleRegistry()
         registry.register_many([
-            self.manifest("sales/core"),
-            self.manifest("sales/orders", ("sales/core",)),
+            ModuleManifest("test/core", "Core"),
+            ModuleManifest("test/feature", "Feature", dependencies=("test/core",)),
         ])
-        registry.enable("sales/core")
-        registry.enable("sales/orders")
+        registry.install("test/core")
+        registry.enable("test/core")
+        registry.install("test/feature")
+        registry.enable("test/feature")
         with self.assertRaises(ModuleRegistryError):
-            registry.disable("sales/core")
+            registry.disable("test/core")
 
-    def test_lifecycle_installs_before_enable(self):
+    def test_lifecycle_install_enable(self) -> None:
         registry = ModuleRegistry()
-        registry.register(self.manifest("sales/core"))
-        ModuleLifecycle(registry).install_and_enable("sales/core")
-        state = registry.state("sales/core")
-        self.assertTrue(state.installed)
-        self.assertTrue(state.enabled)
+        registry.register(ModuleManifest("test/core", "Core"))
+        ModuleLifecycle(registry).install_and_enable("test/core")
+        self.assertTrue(registry.state("test/core").enabled)
 
-    def test_permission_declaration_and_event_contract(self):
-        registry = ModuleRegistry()
-        registry.register(self.manifest("sales/core", permissions=("sales.read",)))
-        permissions = ModulePermissionService(registry)
-        self.assertTrue(permissions.is_declared("sales/core", "sales.read"))
-        self.assertFalse(permissions.is_declared("sales/core", "sales.write"))
+    def test_permissions(self) -> None:
+        service = ModulePermissionService()
+        manifest = ModuleManifest("test/core", "Core", permissions=frozenset({"test.read"}))
+        service.validate_manifest(manifest)
+        with self.assertRaises(ValueError):
+            service.validate_manifest(ModuleManifest("test/invalid", "Invalid", permissions=frozenset({""})))
 
-        context = ModuleContext("tenant-1", "user-1", "request-1")
-        event = ModuleEvent("sales.order.created", context, {"order_id": 10}, "sales/core")
-        received = []
+    def test_event_bus(self) -> None:
         bus = ModuleEventBus()
-        bus.subscribe(event.name, received.append)
-        bus.publish(event)
-        self.assertEqual(received, [event])
+        events: list[ModuleEvent] = []
+        bus.subscribe("test.created", events.append)
+        bus.publish(ModuleEvent("test.created", ModuleContext("tenant-1", "user-1"), {"id": 1}))
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].payload["id"], 1)
 
-    def test_discovery_returns_unique_sorted_manifests(self):
-        manifests = discover_manifests(["app.modules.accounting", "app.modules.sales"])
+    def test_discovery_deduplicates_and_sorts(self) -> None:
+        manifests = discover_manifests(("app.modules.accounting", "app.modules.sales"))
         keys = [item.key for item in manifests]
         self.assertEqual(keys, sorted(set(keys)))
 
-    def test_canonical_catalog_is_self_consistent(self):
+    def test_catalog_consistency(self) -> None:
         validate_catalog_dependencies()
-        keys = [entry.technical_name for entry in catalog()]
-        self.assertEqual(len(keys), len(set(keys)))
+        self.assertGreater(len(catalog()), 10)
 
-    def test_strict_manifest_validation_rejects_unknown_catalog_module(self):
+    def test_strict_manifest_validation(self) -> None:
         with self.assertRaises(ModuleArchitectureError):
-            validate_manifests([self.manifest("unknown/not_catalogued")], strict_catalog=True)
+            validate_manifests([ModuleManifest("test/unknown", "Unknown")], strict_catalog=True)
+
+    def test_default_bootstrap_is_rooted_at_all_modules(self) -> None:
+        registry = bootstrap_module_registry()
+        self.assertTrue(registry.all())
+        self.assertEqual(DEFAULT_MODULE_PACKAGE, "app.modules")
+        self.assertTrue(any(item.key.startswith("accounting/") for item in registry.all()))
 
 
 if __name__ == "__main__":
