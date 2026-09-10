@@ -123,6 +123,13 @@ class ModuleEngineTests(unittest.TestCase):
         self.assertEqual(DEFAULT_MODULE_PACKAGE, "app.modules")
         self.assertTrue(any(item.key.startswith("accounting/") for item in registry.all()))
 
+    def test_canonical_journal_boundary_is_discovered_once(self) -> None:
+        manifests = discover_manifests(("app.modules.accounting",))
+        matches = [item for item in manifests if item.key == "accounting/journal_entries"]
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0].version, "1.0.1")
+        self.assertIn("accounting/chart_of_accounts", matches[0].dependencies)
+
 
 if __name__ == "__main__":
     unittest.main()
