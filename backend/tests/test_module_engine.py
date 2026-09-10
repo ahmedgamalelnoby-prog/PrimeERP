@@ -119,9 +119,9 @@ class ModuleEngineTests(unittest.TestCase):
         keys = [entry.technical_name for entry in catalog()]
         self.assertEqual(len(keys), len(set(keys)))
 
-    def test_manifest_validation_rejects_unknown_catalog_module(self):
+    def test_strict_manifest_validation_rejects_unknown_catalog_module(self):
         with self.assertRaises(ModuleArchitectureError):
-            validate_manifests([self.manifest("unknown/not_catalogued")])
+            validate_manifests([self.manifest("unknown/not_catalogued")], strict_catalog=True)
 
 
 if __name__ == "__main__":
