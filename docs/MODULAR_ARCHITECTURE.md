@@ -1,49 +1,46 @@
 # PrimeERP Modular Architecture
 
-PrimeERP uses a **modular monolith + add-on engine**. Domain folders group related capabilities, while each meaningful business capability is an independent add-on.
+PrimeERP is a **modular monolith + add-on platform**. Domain folders group related capabilities, while each meaningful business capability is an independent installable add-on.
 
-## Rules
+## Non-negotiable rules
 
-1. A module has one coherent business responsibility; do not create an add-on for a single button or UI action.
-2. Every add-on owns its backend models, schemas, services, API, permissions, data, migrations, tests, and frontend surface where applicable.
-3. Every add-on declares dependencies in `__manifest__.py`.
-4. Cross-module imports must follow declared dependencies. Optional integrations use contracts/events rather than hard imports.
-5. The core module engine owns discovery, dependency validation, installation state, activation state, and the future SaaS entitlement boundary.
-6. Existing modules are migrated incrementally. Compatibility adapters keep existing APIs working during migration.
-7. Do not convert PrimeERP into microservices at this stage. The modular boundaries are designed so a high-value module can be extracted later if scale requires it.
+1. One add-on = one coherent business responsibility, not one screen/button.
+2. Every installable add-on owns its `__manifest__.py` and declares dependencies.
+3. Backend add-ons keep models, schemas, services, API, security, data, migrations and tests together.
+4. Frontend surfaces mirror the same technical module boundaries.
+5. Cross-module integration uses declared contracts/events; modules must not import another module's ORM internals.
+6. Platform installation/enabling and tenant entitlement are separate states.
+7. User roles/permissions are separate from tenant subscription entitlement.
+8. Financial records are reversed/adjusted, never deleted by module lifecycle operations.
+9. Legacy root packages are temporary compatibility adapters only.
+10. Empty scaffolding is removed when no compatibility import requires it.
+11. Industry modules compose common capabilities; they do not duplicate accounting, inventory, identity or security engines.
+12. Modular monolith now; extraction to services later is possible because boundaries are explicit.
 
-## Backend layout
+## Layering
 
 ```text
-backend/app/
-├── core/
-│   └── module_engine/
-└── modules/
-    ├── accounting/
-    │   ├── accounting_core/
-    │   ├── chart_of_accounts/
-    │   ├── journal_entries/
-    │   ├── taxes/
-    │   ├── receivables/
-    │   └── ...
-    ├── sales/
-    │   ├── sales_core/
-    │   ├── quotations/
-    │   ├── sales_orders/
-    │   ├── pricing/
-    │   └── ...
-    └── inventory/
-        ├── inventory_core/
-        ├── products/
-        ├── warehouses/
-        ├── stock_moves/
-        └── ...
+CORE
+  ↓
+ORGANIZATION / PLATFORM / CONFIGURATION
+  ↓
+FINANCE / ACCOUNTING
+  ↓
+BUSINESS: CRM / SALES / INVENTORY / PROJECTS / CONTRACTS
+  ↓
+PEOPLE
+  ↓
+INDUSTRY
+  ↓
+LOCALIZATION / EXTERNAL INTEGRATIONS
 ```
 
-Each add-on follows:
+Lower layers never depend on industry implementations.
+
+## Canonical backend layout
 
 ```text
-<addon>/
+backend/app/modules/<domain>/<addon>/
 ├── __init__.py
 ├── __manifest__.py
 ├── models/
@@ -53,41 +50,114 @@ Each add-on follows:
 ├── security/
 ├── data/
 ├── migrations/
-├── tests/
-└── frontend/
+└── tests/
 ```
 
-## Dependency example
+The repository currently contains legacy flat modules. They are retained only where existing imports/API compatibility requires them and are migrated slice-by-slice.
+
+## Canonical finance graph
 
 ```text
+accounting/accounting_core
+├── chart_of_accounts
+├── fiscal_periods
+├── taxes
+├── journal_entries
+│   └── journal_items
+├── receivables
+├── payables
+├── bank_reconciliation
+├── assets
+├── budgets
+├── cost_centers
+└── reports
+```
+
+## Canonical business graph
+
+```text
+organization/companies
+└── organization/branches
+
+crm/crm_core
+├── crm/leads
+├── crm/opportunities
+└── crm/activities
+
 sales/sales_core
-    ├── sales/quotations
-    ├── sales/sales_orders
-    ├── sales/sales_inventory
-    ├── sales/sales_accounting
-    └── sales/sales_delivery
+├── sales/quotations
+├── sales/sales_orders
+├── sales/pricing
+├── sales/discounts
+├── sales/returns
+└── sales/commissions
+
+inventory/inventory_core
+├── inventory/products
+├── inventory/warehouses
+├── inventory/locations
+├── inventory/stock_moves
+├── inventory/transfers
+├── inventory/adjustments
+├── inventory/lots
+├── inventory/serial_numbers
+├── inventory/costing
+└── inventory/valuation
 ```
 
-The registry validates missing dependencies and circular dependency graphs before activation.
-
-## SaaS boundary
-
-Module availability is separate from user permissions:
+## End-to-end transaction flow
 
 ```text
-Platform catalog
+CRM / Customer
       ↓
-Customer plan / entitlement
+Quotation → Sales Order → Delivery / Stock Move
+      ↓                    ↓
+Invoice / Receivable ← Inventory Valuation
       ↓
-Tenant module enabled
+Journal Entry → Journal Items
       ↓
-User permission
+Treasury / Bank Reconciliation
       ↓
-Business rule / object access
+Reports / Tax / E-Invoice
 ```
 
-This allows PrimeERP to sell individual modules, bundles, users, branches, and future add-ons without coupling billing logic to business modules.
+Payroll, assets, purchasing, POS, hospitality, real estate and manufacturing feed the same accounting contracts instead of creating parallel ledgers.
 
-## Migration strategy
+## Industry composition
 
-The current PrimeERP modules are not blindly moved in one commit. Existing functionality remains intact while capabilities are extracted into add-ons one domain at a time. Compatibility routers/adapters are retained until consumers are migrated, then removed.
+- **Restaurant:** restaurant core → POS, tables, floors, kitchen, recipes, delivery, loyalty.
+- **Hospitality:** hospitality core → rooms, reservations, folios, housekeeping, operator/revenue-share integrations.
+- **Real Estate:** real-estate core → properties, units, leases, tenants, rent, revenue share and collections.
+- **Retail:** retail core → POS, products, pricing, promotions, stock, returns and loyalty.
+- **Manufacturing:** manufacturing core → BOM, work orders, MRP, production, quality and costing.
+
+## SaaS entitlement boundary
+
+```text
+Platform Module Catalog
+        ↓
+Plan / Subscription
+        ↓
+Tenant Entitlement
+        ↓
+Module Available to Tenant
+        ↓
+User Role / Permission
+        ↓
+Object Access + Business Rules
+```
+
+Granting a tenant access must never globally enable a module.
+
+## Migration completion criteria
+
+A module is considered migrated only when:
+
+- its real business logic is inside the canonical add-on;
+- its manifest and dependencies are declared;
+- existing APIs/database mappings remain compatible or are explicitly versioned;
+- tests cover the migrated behavior;
+- no module imports another module's internal implementation without a declared boundary;
+- legacy compatibility code is no longer required and is deleted.
+
+The migration order is foundation → accounting → sales/purchasing/inventory → people → industry → integrations. This keeps financial and master-data contracts stable while higher-level modules are rebuilt around them.
