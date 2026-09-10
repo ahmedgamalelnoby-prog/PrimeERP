@@ -2,7 +2,6 @@ from decimal import Decimal
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
-
 class ProviderCreate(BaseModel):
     tenant_id: int
     code: str = Field(min_length=2, max_length=50)
@@ -12,12 +11,10 @@ class ProviderCreate(BaseModel):
     api_enabled: bool = False
     notes: str | None = None
 
-
 class ProviderRead(ProviderCreate):
     model_config = ConfigDict(from_attributes=True)
     id: int
     active: bool
-
 
 class PaymentProfileCreate(BaseModel):
     provider_id: int
@@ -32,15 +29,18 @@ class PaymentProfileCreate(BaseModel):
     currency_code: str = "EGP"
     notes: str | None = None
 
-
 class PaymentProfileRead(PaymentProfileCreate):
     model_config = ConfigDict(from_attributes=True)
     id: int
     active: bool
 
-
 class ShipmentCreate(BaseModel):
     tenant_id: int
+    company_id: int | None = None
+    branch_id: int | None = None
+    source_module: str | None = None
+    source_entity: str | None = None
+    source_id: int | None = None
     provider_id: int
     service_id: int | None = None
     reference: str = Field(min_length=1, max_length=100)
@@ -58,10 +58,10 @@ class ShipmentCreate(BaseModel):
     country_code: str = "EG"
     notes: str | None = None
 
-
 class ShipmentRead(ShipmentCreate):
     model_config = ConfigDict(from_attributes=True)
     id: int
+    transaction_id: int | None
     external_id: str | None
     tracking_number: str | None
     status: str
@@ -69,9 +69,26 @@ class ShipmentRead(ShipmentCreate):
     delivered_at: datetime | None
     returned_at: datetime | None
 
-
 class ShipmentStatusUpdate(BaseModel):
     status: str = Field(min_length=2, max_length=30)
     description: str | None = None
     event_code: str | None = None
     tracking_number: str | None = None
+
+class ShipmentExecuteRequest(BaseModel):
+    connection_id: int
+    provider_payload: dict | None = None
+
+class ShipmentExecuteResponse(BaseModel):
+    shipment_id: int
+    provider: str
+    status: str
+    tracking_number: str | None
+    external_id: str | None
+    raw: dict
+
+class ShipmentTrackResponse(BaseModel):
+    shipment_id: int
+    provider: str
+    tracking_number: str
+    raw: dict
