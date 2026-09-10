@@ -11,6 +11,8 @@ from app.core.module_engine import (
     ModuleRegistry,
     ModuleRegistryError,
 )
+from app.core.module_engine.discovery import discover_manifests
+from app.core.module_engine.lifecycle import ModuleLifecycle
 
 
 class ModuleEngineTests(unittest.TestCase):
@@ -80,6 +82,14 @@ class ModuleEngineTests(unittest.TestCase):
         with self.assertRaises(ModuleRegistryError):
             registry.disable("sales/core")
 
+    def test_lifecycle_installs_before_enable(self):
+        registry = ModuleRegistry()
+        registry.register(self.manifest("sales/core"))
+        ModuleLifecycle(registry).install_and_enable("sales/core")
+        state = registry.state("sales/core")
+        self.assertTrue(state.installed)
+        self.assertTrue(state.enabled)
+
     def test_permission_declaration_and_event_contract(self):
         registry = ModuleRegistry()
         registry.register(self.manifest("sales/core", permissions=("sales.read",)))
@@ -94,6 +104,11 @@ class ModuleEngineTests(unittest.TestCase):
         bus.subscribe(event.name, received.append)
         bus.publish(event)
         self.assertEqual(received, [event])
+
+    def test_discovery_returns_unique_sorted_manifests(self):
+        manifests = discover_manifests(["app.modules.accounting", "app.modules.sales"])
+        keys = [item.key for item in manifests]
+        self.assertEqual(keys, sorted(set(keys)))
 
 
 if __name__ == "__main__":
