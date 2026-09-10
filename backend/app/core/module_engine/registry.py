@@ -20,20 +20,24 @@ class ModuleState:
 
 
 class ModuleRegistry:
-    """Central registry used by bootstrap/discovery and future SaaS entitlements."""
+    """Central registry used by discovery and future SaaS entitlements."""
 
     def __init__(self) -> None:
         self._modules: Dict[str, ModuleState] = {}
 
     def register(self, module: ModuleManifest) -> None:
+        """Register metadata without requiring dependency order."""
         existing = self._modules.get(module.key)
         if existing and existing.manifest.version != module.version:
             raise ModuleRegistryError(
                 f"Module {module.key!r} is already registered with version "
                 f"{existing.manifest.version}"
             )
-        self._modules[module.key] = ModuleState(module, existing.installed if existing else False, existing.enabled if existing else False)
-        self._validate_dependency_names(module)
+        self._modules[module.key] = ModuleState(
+            module,
+            existing.installed if existing else False,
+            existing.enabled if existing else False,
+        )
 
     def register_many(self, modules: Iterable[ModuleManifest]) -> None:
         for module in modules:
