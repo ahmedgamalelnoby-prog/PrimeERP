@@ -1,6 +1,8 @@
 """PrimeERP modular add-on engine."""
 
+from .architecture import ModuleArchitectureError, validate_catalog_dependencies, validate_manifests
 from .bus import ModuleEventBus, get_module_event_bus
+from .catalog import CatalogEntry, catalog, catalog_keys
 from .context import ModuleContext
 from .contracts import ModuleContractError, ModuleEvent
 from .discovery import discover_manifests, register_discovered
@@ -10,6 +12,8 @@ from .permissions import ModulePermissionService
 from .registry import ModuleRegistry, ModuleRegistryError, ModuleState, get_module_registry
 
 __all__ = [
+    "CatalogEntry",
+    "ModuleArchitectureError",
     "ModuleContext",
     "ModuleContractError",
     "ModuleEntitlement",
@@ -21,8 +25,12 @@ __all__ = [
     "ModuleRegistry",
     "ModuleRegistryError",
     "ModuleState",
+    "catalog",
+    "catalog_keys",
     "discover_manifests",
     "get_module_event_bus",
     "get_module_registry",
     "register_discovered",
+    "validate_catalog_dependencies",
+    "validate_manifests",
 ]
