@@ -1,14 +1,6 @@
-"""Accounting domain manifest.
+"""Legacy compatibility manifest kept during incremental migration.
 
-This domain is being migrated incrementally into independent add-ons.
+The canonical Accounting Core manifest now lives in accounting_core/.
 """
 
-from app.core.module_engine.manifest import manifest
-
-MANIFEST = manifest(
-    technical_name="accounting/accounting_core",
-    display_name="Accounting Core",
-    version="1.0.0",
-    domain="accounting",
-    metadata={"migration_status": "foundation", "legacy_path": "app.modules.accounting"},
-)
+from app.modules.accounting.accounting_core.__manifest__ import MANIFEST
