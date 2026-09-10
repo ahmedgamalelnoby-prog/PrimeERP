@@ -3,9 +3,9 @@ from app.core.module_engine.manifest import manifest
 MANIFEST = manifest(
     technical_name="accounting/withholding_tax",
     display_name="Withholding Tax",
-    version="1.0.0",
+    version="1.0.1",
     domain="accounting",
-    dependencies=("accounting/accounting_core",),
+    dependencies=("accounting/taxes",),
     permissions=("accounting.withholding_tax.read", "accounting.withholding_tax.write"),
     routes=("/accounting/withholding-tax",),
     menus=("Accounting", "Withholding Tax"),
