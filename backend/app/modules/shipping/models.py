@@ -1,9 +1,4 @@
-"""Shipping & Logistics domain models.
-
-The provider configuration is intentionally data-driven: payment/COD/settlement
-rules are stored per tenant and provider so integrations never hard-code a
-single commercial arrangement.
-"""
+"""Shipping & Logistics domain models."""
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -48,10 +43,10 @@ class ShippingPaymentProfile(Base):
     id = Column(Integer, primary_key=True)
     provider_id = Column(Integer, ForeignKey("shipping_providers.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(150), nullable=False)
-    payment_method = Column(String(30), nullable=False)  # prepaid, cash, card, invoice, wallet, mixed
+    payment_method = Column(String(30), nullable=False)
     billing_cycle = Column(String(30), nullable=False, default="per_shipment")
     cod_enabled = Column(Boolean, nullable=False, default=False)
-    cod_fee_type = Column(String(20), nullable=True)  # fixed / percent
+    cod_fee_type = Column(String(20), nullable=True)
     cod_fee_value = Column(Numeric(18, 4), nullable=True)
     settlement_cycle = Column(String(30), nullable=False, default="contractual")
     settlement_percent = Column(Numeric(7, 4), nullable=True)
@@ -81,6 +76,12 @@ class Shipment(Base):
     __tablename__ = "shipments"
     id = Column(Integer, primary_key=True)
     tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="RESTRICT"), nullable=True, index=True)
+    branch_id = Column(Integer, ForeignKey("branches.id", ondelete="RESTRICT"), nullable=True, index=True)
+    transaction_id = Column(Integer, ForeignKey("business_transactions.id", ondelete="SET NULL"), nullable=True, index=True)
+    source_module = Column(String(80), nullable=True)
+    source_entity = Column(String(100), nullable=True)
+    source_id = Column(Integer, nullable=True)
     provider_id = Column(Integer, ForeignKey("shipping_providers.id", ondelete="RESTRICT"), nullable=False, index=True)
     service_id = Column(Integer, ForeignKey("shipping_provider_services.id", ondelete="SET NULL"), nullable=True)
     reference = Column(String(100), nullable=False, index=True)
@@ -103,8 +104,8 @@ class Shipment(Base):
     delivered_at = Column(DateTime(timezone=True), nullable=True)
     returned_at = Column(DateTime(timezone=True), nullable=True)
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, onupdate=func.now())
     provider = relationship("ShippingProvider", back_populates="shipments")
     events = relationship("ShipmentEvent", back_populates="shipment", cascade="all, delete-orphan")
 
@@ -116,7 +117,7 @@ class ShipmentEvent(Base):
     status = Column(String(30), nullable=False)
     event_code = Column(String(80), nullable=True)
     description = Column(Text, nullable=True)
-    event_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    event_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     raw_payload = Column(Text, nullable=True)
     shipment = relationship("Shipment", back_populates="events")
 
@@ -137,5 +138,5 @@ class ShippingSettlement(Base):
     status = Column(String(30), nullable=False, default="draft", index=True)
     paid_at = Column(DateTime(timezone=True), nullable=True)
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     __table_args__ = (UniqueConstraint("tenant_id", "settlement_reference", name="uq_shipping_settlement_reference"),)
