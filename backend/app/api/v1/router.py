@@ -29,6 +29,7 @@ from app.modules.integrations.router import router as integrations_router
 from app.modules.uom.router import router as uom_router
 from app.modules.companies.router import router as companies_router
 from app.modules.branches.router import router as branches_router
+from app.modules.treasury.router import router as treasury_router
 
 
 def build_router() -> APIRouter:
@@ -46,7 +47,7 @@ def build_router() -> APIRouter:
         inventory_stock_moves_router, inventory_transfers_router, inventory_adjustments_router,
         inventory_reservations_router, inventory_costing_router, commerce_router,
         enterprise_router, shipping_router, shipping_settlement_router, shipping_accounting_router,
-        integrations_router, uom_router, companies_router, branches_router,
+        integrations_router, uom_router, companies_router, branches_router, treasury_router,
     ):
         api_router.include_router(r)
     api_router.include_router(integrations_public_router)
