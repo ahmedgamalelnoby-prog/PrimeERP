@@ -7,6 +7,7 @@ from app.modules.identity.api.router import router as identity_router
 from app.modules.inventory.items.router import router as inventory_items_router
 from app.modules.inventory.locations.router import router as inventory_locations_router
 from app.modules.inventory.stock_moves.router import router as inventory_stock_moves_router
+from app.modules.inventory.transfers.router import router as inventory_transfers_router
 from app.modules.inventory.warehouses.router import router as inventory_warehouses_router
 from app.modules.legal.router import router as legal_router
 from app.modules.platform.features.router import router as features_router
@@ -31,6 +32,7 @@ def build_router() -> APIRouter:
     api_router.include_router(inventory_warehouses_router)
     api_router.include_router(inventory_locations_router)
     api_router.include_router(inventory_stock_moves_router)
+    api_router.include_router(inventory_transfers_router)
     api_router.include_router(plans_router)
     api_router.include_router(subscriptions_router)
     api_router.include_router(tenants_router, prefix="/platform")
