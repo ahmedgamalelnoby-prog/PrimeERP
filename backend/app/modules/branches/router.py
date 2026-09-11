@@ -35,7 +35,7 @@ def _branch(db: Session, branch_id: int, user: User) -> Branch:
     return branch
 
 
-@router.get("", response_model=list[BranchResponse], dependencies=[Depends(require_permission("company.access"))])
+@router.get("", response_model=list[BranchResponse], dependencies=[Depends(require_permission("branch.access"))])
 def list_branches(company_id: int | None = Query(default=None, gt=0), active_only: bool = Query(False), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     stmt = select(Branch).where(Branch.tenant_id == _tenant_id(current_user)).order_by(Branch.name, Branch.id)
     if company_id is not None:
@@ -46,12 +46,12 @@ def list_branches(company_id: int | None = Query(default=None, gt=0), active_onl
     return list(db.scalars(stmt).all())
 
 
-@router.get("/{branch_id}", response_model=BranchResponse, dependencies=[Depends(require_permission("company.access"))])
+@router.get("/{branch_id}", response_model=BranchResponse, dependencies=[Depends(require_permission("branch.access"))])
 def get_branch(branch_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return _branch(db, branch_id, current_user)
 
 
-@router.post("", response_model=BranchResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("company.write"))])
+@router.post("", response_model=BranchResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("branch.write"))])
 def create_branch(payload: BranchCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     company = _company(db, payload.company_id, current_user)
     enforce_branch_limit(db, company.tenant_id)
@@ -66,7 +66,7 @@ def create_branch(payload: BranchCreate, db: Session = Depends(get_db), current_
     return branch
 
 
-@router.patch("/{branch_id}", response_model=BranchResponse, dependencies=[Depends(require_permission("company.write"))])
+@router.patch("/{branch_id}", response_model=BranchResponse, dependencies=[Depends(require_permission("branch.write"))])
 def update_branch(branch_id: int, payload: BranchUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     branch = _branch(db, branch_id, current_user)
     for field, value in payload.model_dump(exclude_unset=True).items():
@@ -80,7 +80,7 @@ def update_branch(branch_id: int, payload: BranchUpdate, db: Session = Depends(g
     return branch
 
 
-@router.delete("/{branch_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_permission("company.write"))])
+@router.delete("/{branch_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_permission("branch.write"))])
 def deactivate_branch(branch_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     branch = _branch(db, branch_id, current_user)
     branch.is_active = False
