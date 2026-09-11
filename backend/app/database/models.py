@@ -29,6 +29,8 @@ from app.modules.inventory.stock_moves.location_stock import InventoryLocationSt
 from app.modules.inventory.transfers.models import InventoryTransfer, InventoryTransferLine
 from app.modules.inventory.adjustments.models import InventoryAdjustment
 from app.modules.inventory.reservations.models import InventoryReservation
+from app.modules.purchasing.suppliers.models import Supplier
+from app.modules.purchasing.purchase_orders.models import PurchaseOrder, PurchaseOrderLine
 
 __all__ = [
     "Tenant", "SubscriptionPlan", "Subscription", "SystemModule", "PlanModule", "TenantModule",
@@ -39,4 +41,5 @@ __all__ = [
     "AccountingJournal", "JournalEntry", "JournalEntryLine", "InventoryItem", "InventoryStock",
     "InventoryWarehouse", "InventoryLocation", "InventoryStockMove", "InventoryLocationStock",
     "InventoryTransfer", "InventoryTransferLine", "InventoryAdjustment", "InventoryReservation",
+    "Supplier", "PurchaseOrder", "PurchaseOrderLine",
 ]
