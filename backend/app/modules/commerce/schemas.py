@@ -1,7 +1,7 @@
 from datetime import date
 from decimal import Decimal
 from typing import Literal
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 PartnerType = Literal["customer", "vendor", "both"]
 SaleType = Literal["quotation", "order", "delivery", "invoice", "credit_note"]
@@ -69,9 +69,16 @@ class PaymentCreate(BaseModel):
     document_id: int = Field(gt=0)
     payment_date: date
     amount: Decimal = Field(gt=0)
+    wht_amount: Decimal = Field(default=0, ge=0)
     method: str = Field(min_length=1, max_length=30)
     reference: str | None = None
     notes: str | None = None
+
+    @model_validator(mode="after")
+    def validate_wht(self):
+        if self.wht_amount > self.amount:
+            raise ValueError("WHT amount cannot exceed payment amount")
+        return self
 
 
 class PaymentReverse(BaseModel):
