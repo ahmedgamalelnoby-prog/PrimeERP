@@ -4,22 +4,20 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
 from app.api.router import build_router
 from app.core.config import settings
-from app.core.context import get_request_context
 from app.core.exceptions import register_exception_handlers
 from app.core.middleware import RequestContextMiddleware
 from app.core.module_engine.bootstrap import bootstrap_module_registry
 from app.core.module_engine.registry import ModuleRegistry
 from app.database import models as database_models  # noqa: F401
+from app.database.session import SessionLocal
 
 
 def create_application() -> FastAPI:
     """Build a fresh PrimeERP application with an isolated API router tree."""
-    # Discover and validate add-ons before the application starts serving traffic.
-    # Discovery only registers metadata; module business state remains disabled
-    # until an explicit lifecycle/tenant entitlement operation enables it.
     module_registry: ModuleRegistry = bootstrap_module_registry()
 
     application = FastAPI(
@@ -38,16 +36,12 @@ def create_application() -> FastAPI:
         CORSMiddleware,
         allow_origins=settings.BACKEND_CORS_ORIGINS,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Idempotency-Key"],
         expose_headers=["X-Request-ID"],
     )
 
-    # The application boundary owns exactly one router tree.
-    application.include_router(
-        build_router(),
-        prefix=settings.API_V1_STR,
-    )
+    application.include_router(build_router(), prefix=settings.API_V1_STR)
 
     @application.get("/", tags=["System"])
     async def root() -> JSONResponse:
@@ -55,32 +49,36 @@ def create_application() -> FastAPI:
             content={
                 "success": True,
                 "message": f"Welcome to {settings.APP_NAME} API",
-                "data": {
-                    "version": settings.APP_VERSION,
-                    "status": "online",
-                    "docs": "/docs",
-                    "redoc": "/redoc",
-                },
+                "data": {"version": settings.APP_VERSION, "status": "online", "docs": "/docs", "redoc": "/redoc"},
             }
         )
 
     @application.get("/health", tags=["System"])
     async def health_check() -> JSONResponse:
-        return JSONResponse(
-            content={
-                "success": True,
-                "message": "Service is healthy.",
-                "data": {
-                    "status": "healthy",
-                    "service": settings.APP_NAME,
-                    "version": settings.APP_VERSION,
+        db = SessionLocal()
+        try:
+            db.execute(text("SELECT 1"))
+            return JSONResponse(
+                content={
+                    "success": True,
+                    "message": "Service is healthy.",
+                    "data": {"status": "healthy", "database": "ready", "service": settings.APP_NAME, "version": settings.APP_VERSION},
+                }
+            )
+        except Exception:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "success": False,
+                    "message": "Service is not ready.",
+                    "data": {"status": "unhealthy", "database": "unavailable", "service": settings.APP_NAME, "version": settings.APP_VERSION},
                 },
-            }
-        )
+            )
+        finally:
+            db.close()
 
     @application.get("/modules", tags=["System"])
     async def module_inventory() -> JSONResponse:
-        """Return the platform module inventory without exposing tenant secrets."""
         modules = []
         for manifest in sorted(module_registry.all(), key=lambda item: item.key):
             state = module_registry.state(manifest.key)
@@ -96,30 +94,7 @@ def create_application() -> FastAPI:
                     "enabled": state.enabled,
                 }
             )
-        return JSONResponse(
-            content={
-                "success": True,
-                "data": {"count": len(modules), "modules": modules},
-            }
-        )
-
-    @application.get("/debug/request-context", tags=["System"])
-    async def debug_request_context() -> dict:
-        context = get_request_context()
-        return {
-            "success": True,
-            "data": {
-                "request_id": context.request_id,
-                "ip_address": context.ip_address,
-                "user_agent": context.user_agent,
-                "language": context.language,
-                "timezone": context.timezone,
-                "user_id": context.user_id,
-                "tenant_id": context.tenant_id,
-                "company_id": context.company_id,
-                "branch_id": context.branch_id,
-            },
-        }
+        return JSONResponse(content={"success": True, "data": {"count": len(modules), "modules": modules}})
 
     return application
 
@@ -128,10 +103,4 @@ app = create_application()
 
 
 if __name__ == "__main__":
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=8001,
-        reload=settings.DEBUG,
-        log_level="info",
-    )
+    uvicorn.run("main:app", host="0.0.0.0", port=8001, reload=settings.DEBUG, log_level="info")
