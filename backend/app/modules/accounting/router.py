@@ -15,18 +15,10 @@ from app.modules.identity.models import User
 router = APIRouter(prefix="/accounting", tags=["accounting"])
 
 
-# Tax master is part of the accounting control plane. Until a dedicated
-# accounting.* permission family is migrated, enterprise.access/write provide
-# the same protected control-plane boundary.
 def _company_for_user(db: Session, company_id: int, user: User):
     if user.tenant_id is None:
         raise HTTPException(403, "User is not assigned to a tenant")
-    company = db.scalar(
-        select(Company).where(
-            Company.id == company_id,
-            Company.tenant_id == user.tenant_id,
-        )
-    )
+    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == user.tenant_id))
     if company is None:
         raise HTTPException(403, "Company is outside the current tenant")
     if not company.is_active:
@@ -36,12 +28,7 @@ def _company_for_user(db: Session, company_id: int, user: User):
 
 def _tax_for_company(db: Session, tax_id: int, company_id: int, user: User) -> TaxRate:
     _company_for_user(db, company_id, user)
-    tax = db.scalar(
-        select(TaxRate).where(
-            TaxRate.id == tax_id,
-            TaxRate.company_id == company_id,
-        )
-    )
+    tax = db.scalar(select(TaxRate).where(TaxRate.id == tax_id, TaxRate.company_id == company_id))
     if tax is None:
         raise HTTPException(404, "Tax rate not found")
     return tax
@@ -52,7 +39,6 @@ def _validated_values(payload: dict) -> dict:
     name = str(payload.get("name", "")).strip()
     tax_type = str(payload.get("tax_type", "vat")).strip().lower()
     is_withholding = bool(payload.get("is_withholding", False))
-
     if not code or not name:
         raise HTTPException(422, "code and name are required")
     try:
@@ -67,36 +53,16 @@ def _validated_values(payload: dict) -> dict:
         raise HTTPException(422, "WHT tax types must be marked as withholding")
     if is_withholding and tax_type != "wht":
         raise HTTPException(422, "Withholding taxes must use tax_type=wht")
-    return {
-        "code": code,
-        "name": name,
-        "rate": rate,
-        "tax_type": tax_type,
-        "is_withholding": is_withholding,
-    }
+    return {"code": code, "name": name, "rate": rate, "tax_type": tax_type, "is_withholding": is_withholding}
 
 
-@router.post(
-    "/tax-rates",
-    status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_permission("enterprise.write"))],
-)
-def create_tax(
-    payload: dict,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+@router.post("/tax-rates", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("tax.write"))])
+def create_tax(payload: dict, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     company_id = int(payload.get("company_id", 0))
     _company_for_user(db, company_id, current_user)
     values = _validated_values(payload)
-    if db.scalar(
-        select(TaxRate).where(
-            TaxRate.company_id == company_id,
-            TaxRate.code == values["code"],
-        )
-    ):
+    if db.scalar(select(TaxRate).where(TaxRate.company_id == company_id, TaxRate.code == values["code"])):
         raise HTTPException(409, "Tax code already exists for this company")
-
     obj = TaxRate(company_id=company_id, **values)
     db.add(obj)
     try:
@@ -108,36 +74,14 @@ def create_tax(
     return obj
 
 
-@router.get(
-    "/tax-rates",
-    dependencies=[Depends(require_permission("enterprise.access"))],
-)
-def list_taxes(
-    company_id: int = Query(..., gt=0),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+@router.get("/tax-rates", dependencies=[Depends(require_permission("tax.access"))])
+def list_taxes(company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
-    return list(
-        db.scalars(
-            select(TaxRate)
-            .where(TaxRate.company_id == company_id)
-            .order_by(TaxRate.is_active.desc(), TaxRate.code)
-        ).all()
-    )
+    return list(db.scalars(select(TaxRate).where(TaxRate.company_id == company_id).order_by(TaxRate.is_active.desc(), TaxRate.code)).all())
 
 
-@router.patch(
-    "/tax-rates/{tax_id}",
-    dependencies=[Depends(require_permission("enterprise.write"))],
-)
-def update_tax(
-    tax_id: int,
-    payload: dict,
-    company_id: int = Query(..., gt=0),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+@router.patch("/tax-rates/{tax_id}", dependencies=[Depends(require_permission("tax.write"))])
+def update_tax(tax_id: int, payload: dict, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     tax = _tax_for_company(db, tax_id, company_id, current_user)
     values = _validated_values({
         "code": payload.get("code", tax.code),
@@ -146,13 +90,7 @@ def update_tax(
         "tax_type": payload.get("tax_type", tax.tax_type),
         "is_withholding": payload.get("is_withholding", tax.is_withholding),
     })
-    duplicate = db.scalar(
-        select(TaxRate).where(
-            TaxRate.company_id == company_id,
-            TaxRate.code == values["code"],
-            TaxRate.id != tax.id,
-        )
-    )
+    duplicate = db.scalar(select(TaxRate).where(TaxRate.company_id == company_id, TaxRate.code == values["code"], TaxRate.id != tax.id))
     if duplicate:
         raise HTTPException(409, "Tax code already exists for this company")
     for key, value in values.items():
@@ -168,17 +106,8 @@ def update_tax(
     return tax
 
 
-@router.delete(
-    "/tax-rates/{tax_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_permission("enterprise.write"))],
-)
-def deactivate_tax(
-    tax_id: int,
-    company_id: int = Query(..., gt=0),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+@router.delete("/tax-rates/{tax_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_permission("tax.write"))])
+def deactivate_tax(tax_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     tax = _tax_for_company(db, tax_id, company_id, current_user)
     tax.is_active = False
     db.commit()
