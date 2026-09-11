@@ -1,7 +1,7 @@
 from decimal import Decimal
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 ItemType = Literal["stockable", "consumable", "service", "non_stock"]
@@ -24,6 +24,22 @@ class InventoryItemCreate(BaseModel):
     reorder_level: Decimal = Field(default=0, ge=0)
     description: Optional[str] = None
 
+    @field_validator("sku", "uom", "name_ar")
+    @classmethod
+    def clean_required_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Value cannot be empty")
+        return value
+
+    @field_validator("barcode", "name_en", "description")
+    @classmethod
+    def clean_optional_text(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
 
 class InventoryItemUpdate(BaseModel):
     barcode: Optional[str] = Field(default=None, max_length=80)
@@ -39,6 +55,14 @@ class InventoryItemUpdate(BaseModel):
     reorder_level: Optional[Decimal] = Field(default=None, ge=0)
     is_active: Optional[bool] = None
     description: Optional[str] = None
+
+    @field_validator("name_ar", "uom", "name_en", "barcode", "description")
+    @classmethod
+    def clean_text(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
 
 
 class InventoryItemResponse(BaseModel):
