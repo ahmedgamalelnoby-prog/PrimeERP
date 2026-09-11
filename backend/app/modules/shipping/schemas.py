@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -34,7 +35,7 @@ class ShipmentCreate(BaseModel):
     company_id: int = Field(gt=0)
     carrier_id: int = Field(gt=0)
     method_id: int = Field(gt=0)
-    sales_document_id: int | None = None
+    sales_document_id: int | None = Field(default=None, gt=0)
     tracking_no: str
     cod_amount: Decimal = Field(default=0, ge=0)
     shipping_fee: Decimal = Field(default=0, ge=0)
@@ -48,3 +49,43 @@ class ShipmentResponse(ShipmentCreate):
     model_config = ConfigDict(from_attributes=True)
     id: int
     status: str
+
+
+class SettlementLineCreate(BaseModel):
+    shipment_id: int = Field(gt=0)
+    collected_amount: Decimal = Field(ge=0)
+    carrier_fee: Decimal = Field(default=0, ge=0)
+
+
+class SettlementBatchCreate(BaseModel):
+    company_id: int = Field(gt=0)
+    carrier_id: int = Field(gt=0)
+    reference: str = Field(min_length=1, max_length=100)
+    settlement_date: date
+    lines: list[SettlementLineCreate] = Field(min_length=1)
+    notes: str | None = None
+
+
+class SettlementLineResponse(SettlementLineCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    batch_id: int
+    expected_amount: Decimal
+    net_amount: Decimal
+    variance: Decimal
+    reconciled: bool
+
+
+class SettlementBatchResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    company_id: int
+    carrier_id: int
+    reference: str
+    settlement_date: date
+    gross_amount: Decimal
+    carrier_fees: Decimal
+    net_amount: Decimal
+    status: str
+    notes: str | None
+    lines: list[SettlementLineResponse] = []
