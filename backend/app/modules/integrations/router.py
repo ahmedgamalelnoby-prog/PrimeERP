@@ -29,15 +29,11 @@ def _company_for_user(db: Session, company_id: int, user: User):
 
 
 def _get_salla_connection(db: Session, connection_id: int):
-    connection = db.scalar(
-        select(IntegrationConnection)
-        .join(Company, Company.id == IntegrationConnection.company_id)
-        .where(
-            IntegrationConnection.id == connection_id,
-            IntegrationConnection.provider == "salla",
-            IntegrationConnection.is_active.is_(True),
-        )
-    )
+    connection = db.scalar(select(IntegrationConnection).join(Company, Company.id == IntegrationConnection.company_id).where(
+        IntegrationConnection.id == connection_id,
+        IntegrationConnection.provider == "salla",
+        IntegrationConnection.is_active.is_(True),
+    ))
     if connection is None:
         raise HTTPException(404, "Salla connection not found")
     return connection
@@ -57,13 +53,12 @@ def _verify_salla_signature(connection: IntegrationConnection, raw_body: bytes, 
     if strategy == "token":
         valid = hmac.compare_digest(signature, secret)
     else:
-        raw_candidates = (
+        candidates = (
             hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest(),
             hashlib.sha256(secret.encode("utf-8") + raw_body).hexdigest(),
             hashlib.sha256(raw_body + secret.encode("utf-8")).hexdigest(),
         )
-        valid = any(hmac.compare_digest(signature.lower(), candidate) for candidate in raw_candidates)
-
+        valid = any(hmac.compare_digest(signature.lower(), candidate) for candidate in candidates)
     if not valid:
         raise HTTPException(401, "Invalid Salla webhook signature")
 
@@ -102,7 +97,7 @@ def list_connections(company_id: int = Query(..., gt=0), current_user: User = De
 
 
 @router.post("/salla/{connection_id}/webhook/public", status_code=202)
-def receive_salla_webhook_public(
+async def receive_salla_webhook_public(
     connection_id: int,
     request: Request,
     x_salla_security_strategy: str | None = Header(default=None, alias="X-Salla-Security-Strategy"),
@@ -112,21 +107,21 @@ def receive_salla_webhook_public(
     db: Session = Depends(get_db),
 ):
     connection = _get_salla_connection(db, connection_id)
-    raw_body = request.scope.get("_primeerp_raw_body")
-    if raw_body is None:
-        raw_body = request.state.__dict__.get("raw_body")
-    if raw_body is None:
-        # FastAPI/Starlette exposes the body through await request.body(); this endpoint is async below.
-        raise HTTPException(500, "Webhook body was not loaded")
+    raw_body = await request.body()
     _verify_salla_signature(connection, raw_body, x_salla_security_strategy, x_salla_signature)
     try:
         payload = json.loads(raw_body.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise HTTPException(400, "Invalid webhook JSON") from exc
+
     external_event_id, event_type = _event_identity(payload, x_salla_event, x_salla_event_id)
-    existing = db.scalar(select(IntegrationEvent).where(IntegrationEvent.connection_id == connection_id, IntegrationEvent.external_event_id == external_event_id))
+    existing = db.scalar(select(IntegrationEvent).where(
+        IntegrationEvent.connection_id == connection_id,
+        IntegrationEvent.external_event_id == external_event_id,
+    ))
     if existing:
         return {"accepted": True, "duplicate": True, "event_id": existing.id}
+
     event = IntegrationEvent(
         company_id=connection.company_id,
         connection_id=connection_id,
@@ -148,7 +143,12 @@ def receive_salla_webhook_public(
 
 @router.post("/salla/{connection_id}/webhook", status_code=202)
 def receive_salla_webhook(connection_id: int, payload: WebhookEventCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    connection = db.scalar(select(IntegrationConnection).join(Company, Company.id == IntegrationConnection.company_id).where(IntegrationConnection.id == connection_id, IntegrationConnection.provider == "salla", IntegrationConnection.is_active.is_(True), Company.tenant_id == current_user.tenant_id))
+    connection = db.scalar(select(IntegrationConnection).join(Company, Company.id == IntegrationConnection.company_id).where(
+        IntegrationConnection.id == connection_id,
+        IntegrationConnection.provider == "salla",
+        IntegrationConnection.is_active.is_(True),
+        Company.tenant_id == current_user.tenant_id,
+    ))
     if not connection:
         raise HTTPException(404, "Salla connection not found")
     existing = db.scalar(select(IntegrationEvent).where(IntegrationEvent.connection_id == connection_id, IntegrationEvent.external_event_id == payload.external_event_id))
