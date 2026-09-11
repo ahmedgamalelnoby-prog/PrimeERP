@@ -19,27 +19,9 @@ from app.modules.platform.tenants.router import router as tenants_router
 from app.modules.saas.router import router as saas_router
 from app.modules.transactions.api.router import router as transactions_router
 from app.modules.commerce.router import router as commerce_router
+from app.modules.enterprise.router import router as enterprise_router
 
-def build_router() -> APIRouter:
-    api_router=APIRouter()
-    api_router.include_router(identity_router,prefix='/identity',tags=['identity'])
-    api_router.include_router(features_router)
-    api_router.include_router(saas_router,prefix='/saas',tags=['saas'])
-    api_router.include_router(transactions_router,prefix='/transactions',tags=['transactions'])
-    api_router.include_router(fiscal_years_router,prefix='/accounting/fiscal-years',tags=['accounting-fiscal-years'])
-    api_router.include_router(journal_entries_router)
-    api_router.include_router(financial_reports_router)
-    api_router.include_router(inventory_items_router)
-    api_router.include_router(inventory_warehouses_router)
-    api_router.include_router(inventory_locations_router)
-    api_router.include_router(inventory_stock_moves_router)
-    api_router.include_router(inventory_transfers_router)
-    api_router.include_router(inventory_adjustments_router)
-    api_router.include_router(inventory_reservations_router)
-    api_router.include_router(inventory_costing_router)
-    api_router.include_router(commerce_router)
-    api_router.include_router(plans_router)
-    api_router.include_router(subscriptions_router)
-    api_router.include_router(tenants_router,prefix='/platform')
-    api_router.include_router(legal_router)
-    return api_router
+def build_router()->APIRouter:
+ api_router=APIRouter();api_router.include_router(identity_router,prefix='/identity',tags=['identity']);api_router.include_router(features_router);api_router.include_router(saas_router,prefix='/saas',tags=['saas']);api_router.include_router(transactions_router,prefix='/transactions',tags=['transactions']);api_router.include_router(fiscal_years_router,prefix='/accounting/fiscal-years',tags=['accounting-fiscal-years']);api_router.include_router(journal_entries_router);api_router.include_router(financial_reports_router)
+ for r in (inventory_items_router,inventory_warehouses_router,inventory_locations_router,inventory_stock_moves_router,inventory_transfers_router,inventory_adjustments_router,inventory_reservations_router,inventory_costing_router,commerce_router,enterprise_router):api_router.include_router(r)
+ api_router.include_router(plans_router);api_router.include_router(subscriptions_router);api_router.include_router(tenants_router,prefix='/platform');api_router.include_router(legal_router);return api_router
