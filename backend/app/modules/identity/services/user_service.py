@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.services.base_service import BaseService
@@ -15,7 +14,7 @@ from app.modules.identity.repositories.user_repository import (
 from app.modules.identity.services.password_service import (
     password_service,
 )
-from app.modules.saas.models import Subscription, SubscriptionPlan
+from app.modules.saas.entitlements import enforce_user_limit
 
 
 class UserService(BaseService[UserRepository]):
@@ -55,33 +54,8 @@ class UserService(BaseService[UserRepository]):
         current_user = self.current_user
         if tenant_id is None or getattr(current_user, "is_platform_admin", False):
             return
-
         db = self.require_db()
-        subscription = (
-            db.query(Subscription)
-            .filter(Subscription.tenant_id == tenant_id)
-            .order_by(Subscription.ends_at.desc().nullslast(), Subscription.id.desc())
-            .first()
-        )
-        if subscription is None:
-            raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="No active subscription is configured for this tenant")
-
-        plan = db.get(SubscriptionPlan, subscription.plan_id)
-        if plan is None:
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Subscription plan is not configured")
-
-        limit = subscription.custom_max_users if subscription.custom_max_users is not None else plan.max_users
-        if limit is None or limit < 0:
-            return
-        current_count = db.query(func.count(User.id)).filter(
-            User.tenant_id == tenant_id,
-            User.is_deleted.is_(False),
-        ).scalar() or 0
-        if current_count >= limit:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"User limit reached for the current subscription ({limit} users)",
-            )
+        enforce_user_limit(db, tenant_id)
 
     def create_user(
         self,
