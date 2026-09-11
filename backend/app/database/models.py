@@ -11,6 +11,7 @@ from app.modules.accounting.chart_of_accounts.models import AccountCombination, 
 from app.modules.transactions.models import BusinessTransaction, NumberSequence, TransactionEvent
 from app.modules.accounting.fiscal_years.models import AccountingPeriod, FiscalYear
 from app.modules.accounting.journals.models import AccountingJournal, JournalEntry, JournalEntryLine
+from app.modules.accounting.models import TaxRate
 from app.modules.inventory.items.models import InventoryItem, InventoryStock
 from app.modules.inventory.warehouses.models import InventoryWarehouse
 from app.modules.inventory.locations.models import InventoryLocation
@@ -22,5 +23,6 @@ from app.modules.inventory.reservations.models import InventoryReservation
 from app.modules.commerce.models import BusinessPartner, SalesDocument, SalesLine, PurchaseDocument, PurchaseLine, CommercePayment
 from app.modules.enterprise.models import FixedAsset, Budget, BudgetLine, Employee, PayrollRun, PayrollLine, Project, ProjectContract
 from app.modules.shipping.models import ShippingCarrier, ShippingMethod, Shipment
+from app.modules.integrations.models import IntegrationConnection, IntegrationEvent
 __all__=[
-'Tenant','SubscriptionPlan','Subscription','SystemModule','PlanModule','TenantModule','Plan','Company','Branch','User','Role','Permission','role_permissions','LegalDocument','LegalAcceptance','Floor','RestaurantTable','PreparationStation','OrderType','AccountingDepartment','AccountingCostCenter','NaturalAccount','AccountCombination','AccountingSettings','NumberSequence','BusinessTransaction','TransactionEvent','FiscalYear','AccountingPeriod','AccountingJournal','JournalEntry','JournalEntryLine','InventoryItem','InventoryStock','InventoryWarehouse','InventoryLocation','InventoryStockMove','InventoryLocationStock','InventoryTransfer','InventoryTransferLine','InventoryAdjustment','InventoryReservation','BusinessPartner','SalesDocument','SalesLine','PurchaseDocument','PurchaseLine','CommercePayment','FixedAsset','Budget','BudgetLine','Employee','PayrollRun','PayrollLine','Project','ProjectContract','ShippingCarrier','ShippingMethod','Shipment']
+'Tenant','SubscriptionPlan','Subscription','SystemModule','PlanModule','TenantModule','Plan','Company','Branch','User','Role','Permission','role_permissions','LegalDocument','LegalAcceptance','Floor','RestaurantTable','PreparationStation','OrderType','AccountingDepartment','AccountingCostCenter','NaturalAccount','AccountCombination','AccountingSettings','NumberSequence','BusinessTransaction','TransactionEvent','FiscalYear','AccountingPeriod','AccountingJournal','JournalEntry','JournalEntryLine','TaxRate','InventoryItem','InventoryStock','InventoryWarehouse','InventoryLocation','InventoryStockMove','InventoryLocationStock','InventoryTransfer','InventoryTransferLine','InventoryAdjustment','InventoryReservation','BusinessPartner','SalesDocument','SalesLine','PurchaseDocument','PurchaseLine','CommercePayment','FixedAsset','Budget','BudgetLine','Employee','PayrollRun','PayrollLine','Project','ProjectContract','ShippingCarrier','ShippingMethod','Shipment','IntegrationConnection','IntegrationEvent']
