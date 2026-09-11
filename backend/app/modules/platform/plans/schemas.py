@@ -18,14 +18,14 @@ class PlanBase(BaseModel):
     display_name: Optional[str] = None
     description: Optional[str] = None
 
-    monthly_price: Decimal = Decimal("0.00")
-    yearly_price: Decimal = Decimal("0.00")
+    monthly_price: Decimal = Field(default=Decimal("0.00"), ge=0)
+    yearly_price: Decimal = Field(default=Decimal("0.00"), ge=0)
 
     currency: PlanCurrency = PlanCurrency.EGP
     billing_cycle: BillingCycle = BillingCycle.MONTHLY
 
-    trial_days: int = 14
-    grace_period_days: int = 7
+    trial_days: int = Field(default=14, ge=0)
+    grace_period_days: int = Field(default=7, ge=0)
 
     is_default: bool = False
     is_public: bool = True
@@ -35,7 +35,7 @@ class PlanBase(BaseModel):
     status: PlanStatus = PlanStatus.DRAFT
     plan_type: PlanType = PlanType.STANDARD
 
-    sort_order: int = 0
+    sort_order: int = Field(default=0, ge=0)
 
 
 class PlanCreate(PlanBase):
@@ -49,14 +49,14 @@ class PlanUpdate(BaseModel):
     display_name: Optional[str] = None
     description: Optional[str] = None
 
-    monthly_price: Optional[Decimal] = None
-    yearly_price: Optional[Decimal] = None
+    monthly_price: Optional[Decimal] = Field(default=None, ge=0)
+    yearly_price: Optional[Decimal] = Field(default=None, ge=0)
 
     currency: Optional[PlanCurrency] = None
     billing_cycle: Optional[BillingCycle] = None
 
-    trial_days: Optional[int] = None
-    grace_period_days: Optional[int] = None
+    trial_days: Optional[int] = Field(default=None, ge=0)
+    grace_period_days: Optional[int] = Field(default=None, ge=0)
 
     is_default: Optional[bool] = None
     is_public: Optional[bool] = None
@@ -66,7 +66,7 @@ class PlanUpdate(BaseModel):
     status: Optional[PlanStatus] = None
     plan_type: Optional[PlanType] = None
 
-    sort_order: Optional[int] = None
+    sort_order: Optional[int] = Field(default=None, ge=0)
 
 
 class PlanResponse(PlanBase):
