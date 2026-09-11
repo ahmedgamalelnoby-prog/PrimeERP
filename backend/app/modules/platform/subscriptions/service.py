@@ -20,6 +20,15 @@ class SubscriptionService:
     def _now() -> datetime:
         return datetime.now(timezone.utc)
 
+    @staticmethod
+    def _period_days(billing_cycle: str) -> int:
+        return {
+            "monthly": 30,
+            "quarterly": 90,
+            "semi_annual": 182,
+            "yearly": 365,
+        }.get(billing_cycle, 30)
+
     def _get(self, subscription_id: int, for_update: bool = False) -> Subscription:
         instance = self.repository.get_by_id(self.db, subscription_id, for_update)
         if instance is None:
@@ -40,7 +49,6 @@ class SubscriptionService:
         if plan is not None:
             return plan
 
-        # Compatibility path for tenants created before the canonical plans module.
         legacy = self.db.query(SubscriptionPlan).filter(SubscriptionPlan.id == plan_id).first()
         if legacy is None:
             raise ValueError("Plan not found")
@@ -97,13 +105,15 @@ class SubscriptionService:
 
     def create(self, schema: SubscriptionCreate) -> Subscription:
         plan = self._resolve_plan(schema.plan_id)
+        if plan.status != "active":
+            raise ValueError("Only active plans can be subscribed to")
+
         now = schema.starts_at or self._now()
         trial_end = schema.trial_ends_at
         if trial_end is None and plan.trial_days > 0:
             trial_end = now + timedelta(days=plan.trial_days)
 
-        period_days = 365 if schema.billing_cycle == "yearly" else 30
-        ends_at = schema.ends_at or now + timedelta(days=period_days)
+        ends_at = schema.ends_at or now + timedelta(days=self._period_days(schema.billing_cycle))
         conflict = self.repository.get_conflicting_for_tenant(
             self.db,
             schema.tenant_id,
@@ -114,14 +124,14 @@ class SubscriptionService:
             raise ValueError("Tenant already has an overlapping active subscription")
 
         self._ensure_legacy_subscription_plan(plan)
-        status = "trialing" if trial_end and trial_end > now else "active"
+        subscription_status = "trialing" if trial_end and trial_end > now else "active"
         data = schema.model_dump()
         data.update(
             starts_at=now,
             trial_ends_at=trial_end,
             ends_at=ends_at,
             next_billing_date=ends_at,
-            status=status,
+            status=subscription_status,
             is_auto_renew=schema.auto_renew,
         )
         data.pop("auto_renew", None)
@@ -134,11 +144,10 @@ class SubscriptionService:
     def activate(self, subscription_id: int) -> Subscription:
         instance = self._get(subscription_id, True)
         now = self._now()
-        period_days = 365 if instance.billing_cycle == "yearly" else 30
         instance.status = "active"
         instance.trial_ends_at = None
         instance.starts_at = now
-        instance.ends_at = now + timedelta(days=period_days)
+        instance.ends_at = now + timedelta(days=self._period_days(instance.billing_cycle))
         instance.next_billing_date = instance.ends_at
         instance.cancelled_at = None
         self._sync_tenant_state(instance)
