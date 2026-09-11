@@ -24,6 +24,7 @@ from app.modules.enterprise.router import router as enterprise_router
 from app.modules.shipping.router import router as shipping_router
 from app.modules.shipping.settlement_router import router as shipping_settlement_router
 from app.modules.shipping.accounting_router import router as shipping_accounting_router
+from app.modules.integrations.router import public_router as integrations_public_router
 from app.modules.integrations.router import router as integrations_router
 from app.modules.uom.router import router as uom_router
 from app.modules.companies.router import router as companies_router
@@ -41,25 +42,14 @@ def build_router() -> APIRouter:
     api_router.include_router(financial_reports_router)
     api_router.include_router(accounting_router)
     for r in (
-        inventory_items_router,
-        inventory_warehouses_router,
-        inventory_locations_router,
-        inventory_stock_moves_router,
-        inventory_transfers_router,
-        inventory_adjustments_router,
-        inventory_reservations_router,
-        inventory_costing_router,
-        commerce_router,
-        enterprise_router,
-        shipping_router,
-        shipping_settlement_router,
-        shipping_accounting_router,
-        integrations_router,
-        uom_router,
-        companies_router,
-        branches_router,
+        inventory_items_router, inventory_warehouses_router, inventory_locations_router,
+        inventory_stock_moves_router, inventory_transfers_router, inventory_adjustments_router,
+        inventory_reservations_router, inventory_costing_router, commerce_router,
+        enterprise_router, shipping_router, shipping_settlement_router, shipping_accounting_router,
+        integrations_router, uom_router, companies_router, branches_router,
     ):
         api_router.include_router(r)
+    api_router.include_router(integrations_public_router)
     api_router.include_router(plans_router)
     api_router.include_router(subscriptions_router)
     api_router.include_router(tenants_router, prefix="/platform")
