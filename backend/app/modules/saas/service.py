@@ -16,6 +16,7 @@ from app.core.security import get_password_hash
 from app.modules.identity.models import User
 from app.modules.branches.models import Branch
 from app.modules.companies.models import Company
+from app.modules.roles.models import Role
 from app.modules.saas.models import (
     PlanModule,
     Subscription,
@@ -60,6 +61,13 @@ def get_trial_plan(db: Session) -> SubscriptionPlan:
     return plan
 
 
+def get_tenant_owner_role(db: Session) -> Role:
+    role = db.query(Role).filter(Role.name == "Tenant Owner", Role.is_active.is_(True)).first()
+    if role is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Tenant Owner role is not configured")
+    return role
+
+
 def validate_registration_uniqueness(db: Session, payload: TenantRegistrationRequest) -> None:
     normalized_email = str(payload.email).strip().lower()
     if db.query(User.id).filter(func.lower(User.email) == normalized_email).first():
@@ -89,6 +97,7 @@ def register_trial_tenant(db: Session, payload: TenantRegistrationRequest) -> di
 
     validate_registration_uniqueness(db, payload)
     trial_plan = get_trial_plan(db)
+    owner_role = get_tenant_owner_role(db)
     now = datetime.now(timezone.utc)
     trial_days = trial_plan.trial_days or 14
     trial_ends_at = now + timedelta(days=trial_days)
@@ -127,8 +136,9 @@ def register_trial_tenant(db: Session, payload: TenantRegistrationRequest) -> di
             tenant_id=tenant.id, username=payload.username, email=email,
             full_name=payload.owner_name, phone=payload.phone,
             hashed_password=get_password_hash(str(payload.password)),
-            preferred_language=payload.language, is_active=True, is_superuser=True,
+            preferred_language=payload.language, is_active=True, is_superuser=False,
             is_platform_admin=False, is_deleted=False, must_change_password=False,
+            role_id=owner_role.id,
         )
         db.add(owner_user)
         db.flush()
@@ -166,9 +176,8 @@ def register_trial_tenant(db: Session, payload: TenantRegistrationRequest) -> di
     except IntegrityError as exc:
         db.rollback()
         logger.exception("Database integrity error while creating trial account")
-        original_error = str(exc.orig) if getattr(exc, "orig", None) else str(exc)
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Registration database conflict: {original_error}") from exc
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Registration could not be completed because the account data conflicts with an existing record") from exc
     except Exception as exc:
         db.rollback()
         logger.exception("Unexpected error while creating trial account")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Could not create trial account: {type(exc).__name__}: {str(exc)}") from exc
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not create trial account") from exc
