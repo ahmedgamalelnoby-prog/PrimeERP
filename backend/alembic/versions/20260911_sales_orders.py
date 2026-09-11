@@ -1,4 +1,4 @@
-"""add sales order header
+"""complete sales orders with order lines
 
 Revision ID: 20260911salesorders
 Revises: 20260911customers
@@ -33,16 +33,33 @@ def upgrade() -> None:
         sa.CheckConstraint("status IN ('draft','confirmed','partially_shipped','shipped','cancelled')", name="ck_sales_order_status"),
         sa.CheckConstraint("total_amount >= 0", name="ck_sales_order_total"),
     )
-    for name, column in (
-        ("ix_sales_orders_company_id", "company_id"),
-        ("ix_sales_orders_customer_id", "customer_id"),
-        ("ix_sales_orders_warehouse_id", "warehouse_id"),
-        ("ix_sales_orders_status", "status"),
-    ):
+    for name, column in (("ix_sales_orders_company_id", "company_id"), ("ix_sales_orders_customer_id", "customer_id"), ("ix_sales_orders_warehouse_id", "warehouse_id"), ("ix_sales_orders_status", "status")):
         op.create_index(name, "sales_orders", [column])
+
+    op.create_table(
+        "sales_order_lines",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("order_id", sa.Integer(), nullable=False),
+        sa.Column("item_id", sa.Integer(), nullable=False),
+        sa.Column("quantity", sa.Numeric(18, 4), nullable=False),
+        sa.Column("unit_price", sa.Numeric(18, 4), nullable=False),
+        sa.Column("discount_amount", sa.Numeric(18, 4), nullable=False, server_default="0"),
+        sa.Column("line_total", sa.Numeric(18, 4), nullable=False, server_default="0"),
+        sa.ForeignKeyConstraint(["order_id"], ["sales_orders.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["item_id"], ["inventory_items.id"], ondelete="RESTRICT"),
+        sa.CheckConstraint("quantity > 0", name="ck_sales_order_line_qty"),
+        sa.CheckConstraint("unit_price >= 0", name="ck_sales_order_line_price"),
+        sa.CheckConstraint("discount_amount >= 0", name="ck_sales_order_line_discount"),
+        sa.CheckConstraint("line_total >= 0", name="ck_sales_order_line_total"),
+    )
+    op.create_index("ix_sales_order_lines_order_id", "sales_order_lines", ["order_id"])
+    op.create_index("ix_sales_order_lines_item_id", "sales_order_lines", ["item_id"])
 
 
 def downgrade() -> None:
+    op.drop_index("ix_sales_order_lines_item_id", table_name="sales_order_lines")
+    op.drop_index("ix_sales_order_lines_order_id", table_name="sales_order_lines")
+    op.drop_table("sales_order_lines")
     for name in ("ix_sales_orders_status", "ix_sales_orders_warehouse_id", "ix_sales_orders_customer_id", "ix_sales_orders_company_id"):
         op.drop_index(name, table_name="sales_orders")
     op.drop_table("sales_orders")
