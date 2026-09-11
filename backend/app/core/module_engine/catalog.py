@@ -41,7 +41,7 @@ ACCOUNTING = (
     CatalogEntry("accounting/reports", "accounting", ("accounting/journal_entries",), layer="finance"),
 )
 SALES = (
-    CatalogEntry("sales/sales_core", "sales", ("organization/companies",), layer="business"),
+    CatalogEntry("sales/sales_core", "sales", ("organization/companies", "platform/customers", "inventory/warehouses"), layer="business"),
     CatalogEntry("sales/quotations", "sales", ("sales/sales_core",), layer="business"),
     CatalogEntry("sales/sales_orders", "sales", ("sales/sales_core",), layer="business"),
     CatalogEntry("sales/pricing", "sales", ("sales/sales_core",), layer="business"),
@@ -67,7 +67,7 @@ PURCHASING = (
     CatalogEntry("purchasing/purchase_orders", "purchasing", ("purchasing/suppliers", "inventory/inventory_core", "inventory/warehouses"), layer="business"),
 )
 PLATFORM = (
-    CatalogEntry("platform/customers", "platform", ("core/identity",), layer="platform"),
+    CatalogEntry("platform/customers", "platform", ("core/identity", "organization/companies"), layer="platform"),
     CatalogEntry("platform/plans", "platform", (), layer="platform"),
     CatalogEntry("platform/subscriptions", "platform", ("platform/customers", "platform/plans"), layer="platform"),
     CatalogEntry("platform/billing", "platform", ("platform/subscriptions",), layer="platform"),
