@@ -38,7 +38,7 @@ class CommerceService:
         line_model = SalesLine if is_sale else PurchaseLine
         if db.scalar(select(model).where(model.company_id == payload.company_id, model.number == payload.number)): raise ValueError("Document number already exists")
         if payload.warehouse_id is not None:
-            warehouse = db.scalar(select(InventoryWarehouse).where(InventoryWarehouse.id == payload.warehouse_id, InventoryWarehouse.company_id == payload.company_id, InventoryWarehouse.tenant_id == db.scalar(select(InventoryWarehouse.tenant_id).where(InventoryWarehouse.company_id == payload.company_id).limit(1)), InventoryWarehouse.is_active.is_(True)))
+            warehouse = db.scalar(select(InventoryWarehouse).where(InventoryWarehouse.id == payload.warehouse_id, InventoryWarehouse.company_id == payload.company_id, InventoryWarehouse.is_active.is_(True)))
             if warehouse is None:
                 raise ValueError("Warehouse does not belong to the company or is inactive")
         obj = model(company_id=payload.company_id, partner_id=payload.partner_id, document_type=payload.document_type, number=payload.number, document_date=payload.document_date, warehouse_id=payload.warehouse_id, notes=payload.notes)
