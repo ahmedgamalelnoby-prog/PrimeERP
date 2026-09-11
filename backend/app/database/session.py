@@ -3,13 +3,11 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
 
-# Import the central registry whenever a database session is created.
-# This guarantees that all ORM relationships are registered before any
-# query can trigger mapper configuration, even when SessionLocal is used
-# directly by scripts, tests, or background jobs.
-import app.database.models as _database_models  # noqa: F401,E402
 
-
+# Keep the database session module dependency-free from the ORM model registry.
+# Importing all models here creates a circular dependency when any model (or
+# service imported by a model) needs SessionLocal during application startup.
+# Model registration is owned by the application/Alembic bootstrap instead.
 engine = create_engine(
     settings.DATABASE_URL,
     pool_pre_ping=True,
