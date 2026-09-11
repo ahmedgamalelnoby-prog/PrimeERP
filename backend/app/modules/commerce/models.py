@@ -1,6 +1,5 @@
 from sqlalchemy import Boolean, CheckConstraint, Column, Date, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
 from app.database.base import Base
 
 
@@ -64,7 +63,7 @@ class PurchaseDocument(Base):
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     partner_id = Column(Integer, ForeignKey("commerce_partners.id", ondelete="RESTRICT"), nullable=False, index=True)
     document_type = Column(String(20), nullable=False)
-    number = Column(String(60), nullable=False, index=True)
+    number = Column(String(60), nullable=False)
     document_date = Column(Date, nullable=False)
     status = Column(String(20), nullable=False, default="draft")
     warehouse_id = Column(Integer, ForeignKey("inventory_warehouses.id", ondelete="RESTRICT"), nullable=True)
@@ -104,6 +103,7 @@ class CommercePayment(Base):
     document_id = Column(Integer, nullable=False, index=True)
     payment_date = Column(Date, nullable=False)
     amount = Column(Numeric(18, 4), nullable=False)
+    wht_amount = Column(Numeric(18, 4), nullable=False, default=0)
     method = Column(String(30), nullable=False)
     reference = Column(String(100), nullable=True)
     notes = Column(Text, nullable=True)
@@ -113,5 +113,6 @@ class CommercePayment(Base):
     __table_args__ = (
         CheckConstraint("document_kind IN ('sale','purchase')", name="ck_commerce_payment_kind"),
         CheckConstraint("amount > 0", name="ck_commerce_payment_amount"),
+        CheckConstraint("wht_amount >= 0 AND wht_amount <= amount", name="ck_commerce_payment_wht"),
         CheckConstraint("status IN ('posted','reversed')", name="ck_commerce_payment_status"),
     )
