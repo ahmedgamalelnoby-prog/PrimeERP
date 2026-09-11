@@ -31,7 +31,7 @@ class ShippingShipmentSettlement(Base):
 
     id = Column(Integer, primary_key=True)
     batch_id = Column(Integer, ForeignKey("shipping_settlement_batches.id", ondelete="CASCADE"), nullable=False, index=True)
-    shipment_id = Column(Integer, ForeignKey("shipments.id", ondelete="RESTRICT"), nullable=False, unique=True, index=True)
+    shipment_id = Column(Integer, ForeignKey("shipments.id", ondelete="RESTRICT"), nullable=False, unique=True)
     expected_amount = Column(Numeric(18, 4), server_default="0", nullable=False)
     collected_amount = Column(Numeric(18, 4), server_default="0", nullable=False)
     carrier_fee = Column(Numeric(18, 4), server_default="0", nullable=False)
