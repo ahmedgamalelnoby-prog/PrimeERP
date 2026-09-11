@@ -22,7 +22,6 @@ from app.modules.identity.services.authentication_service import (
     authentication_service,
 )
 
-# إضافة Users Router
 from app.modules.identity.api.users import (
     router as users_router,
 )
@@ -96,6 +95,7 @@ def get_me(
             ._get_enabled_modules(
                 db=db,
                 tenant_id=tenant.id,
+                plan_id=subscription.plan_id,
             )
         )
 
@@ -136,5 +136,4 @@ def get_me(
     }
 
 
-# يجب وضعه بعد إنشاء router
 router.include_router(users_router)
