@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from datetime import datetime, timezone
 
 from fastapi import Depends, HTTPException, status
 from sqlalchemy import func, select
@@ -37,24 +38,15 @@ def tenant_has_module(db: Session, tenant_id: int, module_code: str) -> bool:
     module = db.scalar(select(SystemModule).where(SystemModule.code == module_code, SystemModule.is_active.is_(True)))
     if module is None:
         return False
-    tenant_override = db.scalar(
-        select(TenantModule).where(
-            TenantModule.tenant_id == tenant_id,
-            TenantModule.module_id == module.id,
-        )
-    )
-    if tenant_override is not None:
-        if not tenant_override.is_enabled:
+    override = db.scalar(select(TenantModule).where(TenantModule.tenant_id == tenant_id, TenantModule.module_id == module.id))
+    now = datetime.now(timezone.utc)
+    if override is not None:
+        if not override.is_enabled:
             return False
-        if tenant_override.starts_at is not None and tenant_override.starts_at > subscription.starts_at:
-            # The subscription itself is still active; the module starts only at its configured date.
-            from datetime import datetime, timezone
-            if tenant_override.starts_at > datetime.now(timezone.utc):
-                return False
-        if tenant_override.ends_at is not None:
-            from datetime import datetime, timezone
-            if tenant_override.ends_at <= datetime.now(timezone.utc):
-                return False
+        if override.starts_at is not None and override.starts_at > now:
+            return False
+        if override.ends_at is not None and override.ends_at <= now:
+            return False
         return True
     return db.scalar(
         select(PlanModule.id).where(
@@ -84,19 +76,19 @@ def require_module(module_code: str) -> Callable:
     return dependency
 
 
-def _limit_for(db: Session, tenant_id: int, field: str) -> int | None:
+def _limit_for(db: Session, tenant_id: int, resource: str) -> int | None:
     subscription = _active_subscription(db, tenant_id)
     if subscription is None:
         return None
-    custom = getattr(subscription, f"custom_{field}", None)
+    custom = getattr(subscription, f"custom_max_{resource}", None)
     if custom is not None:
         return custom
     plan = db.get(SubscriptionPlan, subscription.plan_id)
-    return getattr(plan, f"max_{field}", None) if plan else None
+    return getattr(plan, f"max_{resource}", None) if plan else None
 
 
 def enforce_user_limit(db: Session, tenant_id: int) -> None:
-    limit = _limit_for(db, tenant_id, "max_users")
+    limit = _limit_for(db, tenant_id, "users")
     if limit is None:
         return
     current = db.scalar(select(func.count(User.id)).where(User.tenant_id == tenant_id, User.is_deleted.is_(False))) or 0
@@ -105,7 +97,7 @@ def enforce_user_limit(db: Session, tenant_id: int) -> None:
 
 
 def enforce_company_limit(db: Session, tenant_id: int) -> None:
-    limit = _limit_for(db, tenant_id, "max_companies")
+    limit = _limit_for(db, tenant_id, "companies")
     if limit is None:
         return
     current = db.scalar(select(func.count(Company.id)).where(Company.tenant_id == tenant_id, Company.is_active.is_(True))) or 0
@@ -114,7 +106,7 @@ def enforce_company_limit(db: Session, tenant_id: int) -> None:
 
 
 def enforce_branch_limit(db: Session, tenant_id: int) -> None:
-    limit = _limit_for(db, tenant_id, "max_branches")
+    limit = _limit_for(db, tenant_id, "branches")
     if limit is None:
         return
     current = db.scalar(select(func.count(Branch.id)).where(Branch.tenant_id == tenant_id, Branch.is_active.is_(True))) or 0
