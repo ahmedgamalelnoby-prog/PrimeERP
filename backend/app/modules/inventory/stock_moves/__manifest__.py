@@ -3,9 +3,9 @@ from app.core.module_engine.manifest import manifest
 MANIFEST = manifest(
     technical_name="inventory/stock_moves",
     display_name="Stock Moves",
-    version="1.0.0",
+    version="1.0.1",
     domain="inventory",
-    dependencies=("inventory/products", "inventory/locations"),
+    dependencies=("inventory/inventory_core", "inventory/locations"),
     permissions=(
         "inventory.stock_moves.read",
         "inventory.stock_moves.write",
