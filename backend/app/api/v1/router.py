@@ -1,15 +1,16 @@
 from fastapi import APIRouter
 
-from app.modules.identity.api.router import router as identity_router
-from app.modules.saas.router import router as saas_router
-from app.modules.transactions.api.router import router as transactions_router
 from app.modules.accounting.fiscal_years.api.router import router as fiscal_years_router
 from app.modules.accounting.journals.api.journal_entries import router as journal_entries_router
+from app.modules.accounting.reports.router import router as financial_reports_router
+from app.modules.identity.api.router import router as identity_router
+from app.modules.legal.router import router as legal_router
 from app.modules.platform.features.router import router as features_router
 from app.modules.platform.plans.router import router as plans_router
 from app.modules.platform.subscriptions.router import router as subscriptions_router
 from app.modules.platform.tenants.router import router as tenants_router
-from app.modules.legal.router import router as legal_router
+from app.modules.saas.router import router as saas_router
+from app.modules.transactions.api.router import router as transactions_router
 
 
 def build_router() -> APIRouter:
@@ -25,6 +26,7 @@ def build_router() -> APIRouter:
         tags=["accounting-fiscal-years"],
     )
     api_router.include_router(journal_entries_router)
+    api_router.include_router(financial_reports_router)
     api_router.include_router(plans_router)
     api_router.include_router(subscriptions_router)
     api_router.include_router(tenants_router, prefix="/platform")
