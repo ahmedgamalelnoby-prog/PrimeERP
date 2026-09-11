@@ -40,7 +40,7 @@ class CommerceAccountingService:
 
     def _post(self, db: Session, *, company_id: int, user_id: int, entry_date: date, journal_id: int, entry_number: str, description: str, lines: list[dict], source_entity: str, source_id: int):
         settings, tenant_id, period, fiscal_year = self._context(db, company_id, entry_date)
-        existing = db.scalar(select(JournalEntry).where(JournalEntry.tenant_id == tenant_id, JournalEntry.company_id == company_id, JournalEntry.source_module == "commerce", JournalEntry.source_entity == source_entity, JournalEntry.source_id == source_id, JournalEntry.status.in_(["pending", "approved", "posted"])))
+        existing = db.scalar(select(JournalEntry).where(JournalEntry.tenant_id == tenant_id, JournalEntry.company_id == company_id, JournalEntry.source_module == "commerce", JournalEntry.source_entity == source_entity, JournalEntry.source_id == source_id))
         if existing:
             return existing
         journal = db.scalar(select(AccountingJournal).where(AccountingJournal.id == journal_id, AccountingJournal.company_id == company_id, AccountingJournal.tenant_id == tenant_id, AccountingJournal.is_active.is_(True)))
@@ -134,7 +134,7 @@ class CommerceAccountingService:
         lines = [x for x in lines if Decimal(x["debit"]) or Decimal(x["credit"])]
         return self._post(db, company_id=payment.company_id, user_id=user_id, entry_date=payment.payment_date, journal_id=settings.cash_journal_id, entry_number=f"PAY-{payment.id}", description=f"Commerce payment {payment.id}", lines=lines, source_entity="commerce_payment", source_id=payment.id)
 
-    def post_payment_reversal(self, db: Session, payment, document, user_id: int):
+    def post_payment_reversal(self, db: Session, payment, document, user_id: int, reversal_date: date | None = None):
         settings = self._settings(db, payment.company_id)
         control = settings.ar_account_id if payment.document_kind == "sale" else settings.ap_account_id
         gross = Decimal(payment.amount)
@@ -147,7 +147,8 @@ class CommerceAccountingService:
         else:
             lines = [{"account_combination_id": settings.default_payment_account_id, "debit": cash, "credit": 0}, {"account_combination_id": settings.wht_account_id, "debit": wht, "credit": 0}, {"account_combination_id": control, "debit": 0, "credit": gross}]
         lines = [x for x in lines if Decimal(x["debit"]) or Decimal(x["credit"])]
-        return self._post(db, company_id=payment.company_id, user_id=user_id, entry_date=payment.payment_date, journal_id=settings.cash_journal_id, entry_number=f"PAY-REV-{payment.id}", description=f"Reversal of commerce payment {payment.id}", lines=lines, source_entity="commerce_payment_reversal", source_id=payment.id)
+        effective_date = reversal_date or payment.payment_date
+        return self._post(db, company_id=payment.company_id, user_id=user_id, entry_date=effective_date, journal_id=settings.cash_journal_id, entry_number=f"PAY-REV-{payment.id}", description=f"Reversal of commerce payment {payment.id}", lines=lines, source_entity="commerce_payment_reversal", source_id=payment.id)
 
 
 commerce_accounting_service = CommerceAccountingService()
