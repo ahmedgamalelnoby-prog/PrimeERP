@@ -8,6 +8,7 @@ from app.modules.accounting.chart_of_accounts.models import AccountCombination
 from app.modules.accounting.journals.models import AccountingJournal
 from app.modules.branches.models import Branch
 from app.modules.companies.models import Company
+from app.modules.commerce.models import SalesDocument
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.saas.entitlements import require_module
@@ -75,7 +76,7 @@ def carriers(company_id: int = Query(..., gt=0), current_user: User = Depends(ge
 def method(payload: MethodCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if current_user.tenant_id is None:
         raise HTTPException(403, "User is not assigned to a tenant")
-    carrier_obj = db.scalar(select(ShippingCarrier).join(Company, Company.id == ShippingCarrier.company_id).where(ShippingCarrier.id == payload.carrier_id, Company.tenant_id == current_user.tenant_id, ShippingCarrier.is_active.is_(True)))
+    carrier_obj = db.scalar(select(ShippingCarrier).join(Company, Company.id == ShippingCarrier.company_id).where(ShippingCarrier.id == payload.carrier_id, Company.tenant_id == current_user.tenant_id, Company.is_active.is_(True), ShippingCarrier.is_active.is_(True)))
     if carrier_obj is None:
         raise HTTPException(404, "Carrier not found")
     if payload.payment_method not in {"prepaid", "cod", "mixed"}:
@@ -100,10 +101,19 @@ def methods(carrier_id: int = Query(..., gt=0), current_user: User = Depends(get
 
 @router.post("/shipments", response_model=ShipmentResponse, status_code=201, dependencies=[Depends(require_permission("shipping.write"))])
 def shipment(payload: ShipmentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _company_for_user(db, payload.company_id, current_user)
-    method_obj = db.scalar(select(ShippingMethod).join(ShippingCarrier, ShippingCarrier.id == ShippingMethod.carrier_id).where(ShippingMethod.id == payload.method_id, ShippingMethod.carrier_id == payload.carrier_id, ShippingCarrier.company_id == payload.company_id, ShippingCarrier.is_active.is_(True)))
+    company = _company_for_user(db, payload.company_id, current_user)
+    method_obj = db.scalar(select(ShippingMethod).join(ShippingCarrier, ShippingCarrier.id == ShippingMethod.carrier_id).where(ShippingMethod.id == payload.method_id, ShippingMethod.carrier_id == payload.carrier_id, ShippingCarrier.company_id == company.id, ShippingCarrier.is_active.is_(True)))
     if method_obj is None:
         raise HTTPException(400, "Invalid carrier/method for company")
+    if payload.sales_document_id is not None:
+        document = db.scalar(select(SalesDocument).where(SalesDocument.id == payload.sales_document_id, SalesDocument.company_id == company.id))
+        if document is None:
+            raise HTTPException(422, "Sales document does not belong to the selected company")
+        if document.status in {"cancelled", "reversed"}:
+            raise HTTPException(409, "A shipment cannot be created for a cancelled or reversed sales document")
+    duplicate = db.scalar(select(Shipment.id).where(Shipment.company_id == company.id, Shipment.tracking_no == payload.tracking_no))
+    if duplicate is not None:
+        raise HTTPException(409, "Tracking number already exists for this company")
     if payload.cod_amount and method_obj.payment_method == "prepaid":
         raise HTTPException(422, "COD amount is not allowed for prepaid shipping")
     fee = payload.shipping_fee if payload.shipping_fee > 0 else method_obj.base_fee
