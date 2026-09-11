@@ -45,9 +45,12 @@ class ShippingSettlementService:
             settlement_date=payload.settlement_date,
             notes=payload.notes,
         )
+        db.add(batch)
+        db.flush()
+
         gross = Decimal("0")
         fees = Decimal("0")
-
+        fully_reconciled = True
         for line in payload.lines:
             shipment = by_id[line.shipment_id]
             if shipment.status not in {"delivered", "returned"}:
@@ -59,7 +62,10 @@ class ShippingSettlementService:
             fee = Decimal(line.carrier_fee)
             net = max(collected - fee, Decimal("0"))
             variance = collected - expected
-            row = ShippingShipmentSettlement(
+            fully_reconciled = fully_reconciled and variance == 0
+            gross += collected
+            fees += fee
+            db.add(ShippingShipmentSettlement(
                 batch_id=batch.id,
                 shipment_id=shipment.id,
                 expected_amount=expected,
@@ -68,21 +74,12 @@ class ShippingSettlementService:
                 net_amount=net,
                 variance=variance,
                 reconciled=(variance == 0),
-            )
-            batch.gross_amount = gross + collected
-            batch.carrier_fees = fees + fee
-            gross += collected
-            fees += fee
-            db.add(row)
+            ))
 
         batch.gross_amount = gross
         batch.carrier_fees = fees
         batch.net_amount = max(gross - fees, Decimal("0"))
-        batch.status = "reconciled" if all(
-            Decimal(line.collected_amount) == Decimal(by_id[line.shipment_id].cod_amount or 0)
-            for line in payload.lines
-        ) else "open"
-        db.add(batch)
+        batch.status = "reconciled" if fully_reconciled else "open"
         db.flush()
         return batch
 
