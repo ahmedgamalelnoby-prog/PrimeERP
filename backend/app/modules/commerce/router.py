@@ -35,20 +35,16 @@ def _run(fn):
 
 @router.post("/accounting-settings", status_code=201)
 def configure_accounting(payload: CommerceAccountingSettingsCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _company_for_user(db, payload.company_id, current_user)
-    branch = db.scalar(select(Branch).where(Branch.id == payload.default_branch_id, Branch.company_id == payload.company_id, Branch.tenant_id == current_user.tenant_id, Branch.is_active.is_(True)))
-    if branch is None:
-        raise HTTPException(422, "Default branch does not belong to the company")
+    company = _company_for_user(db, payload.company_id, current_user)
+    branch = db.scalar(select(Branch).where(Branch.id == payload.default_branch_id, Branch.company_id == company.id, Branch.tenant_id == company.tenant_id, Branch.is_active.is_(True)))
+    if branch is None: raise HTTPException(422, "Default branch does not belong to the company")
     values = payload.model_dump()
-    obj = db.scalar(select(CommerceAccountingSettings).where(CommerceAccountingSettings.company_id == payload.company_id))
+    obj = db.scalar(select(CommerceAccountingSettings).where(CommerceAccountingSettings.company_id == company.id))
     if obj is None:
-        obj = CommerceAccountingSettings(**values)
-        db.add(obj)
+        obj = CommerceAccountingSettings(**values); db.add(obj)
     else:
-        for key, value in values.items():
-            setattr(obj, key, value)
-    db.commit()
-    db.refresh(obj)
+        for key, value in values.items(): setattr(obj, key, value)
+    db.commit(); db.refresh(obj)
     return {c.name: getattr(obj, c.name) for c in obj.__table__.columns if c.name != "id"}
 
 
@@ -56,22 +52,19 @@ def configure_accounting(payload: CommerceAccountingSettingsCreate, current_user
 def get_accounting_settings(company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
     obj = db.scalar(select(CommerceAccountingSettings).where(CommerceAccountingSettings.company_id == company_id))
-    if obj is None:
-        raise HTTPException(404, "Commerce accounting configuration not found")
+    if obj is None: raise HTTPException(404, "Commerce accounting configuration not found")
     return {c.name: getattr(obj, c.name) for c in obj.__table__.columns if c.name != "id"}
 
 
 @router.post("/partners", response_model=PartnerResponse, status_code=201)
 def create_partner(payload: PartnerCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, payload.company_id, current_user)
-    obj = _run(lambda: commerce_service.create_partner(db, payload))
-    db.commit(); db.refresh(obj); return obj
+    obj = _run(lambda: commerce_service.create_partner(db, payload)); db.commit(); db.refresh(obj); return obj
 
 
 @router.get("/partners", response_model=list[PartnerResponse])
 def list_partners(company_id: int = Query(..., gt=0), partner_type: str | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _company_for_user(db, company_id, current_user)
-    return commerce_service.list_partners(db, company_id, partner_type)
+    _company_for_user(db, company_id, current_user); return commerce_service.list_partners(db, company_id, partner_type)
 
 
 @router.post("/sales/documents", response_model=DocumentResponse, status_code=201)
@@ -103,6 +96,7 @@ def confirm_sale(document_id: int, company_id: int = Query(..., gt=0), current_u
     _company_for_user(db, company_id, current_user)
     obj = _run(lambda: commerce_service.confirm(db, company_id, document_id, "sale"))
     if obj.document_type == "invoice": commerce_accounting_service.post_sales_invoice(db, obj, current_user.id)
+    elif obj.document_type == "credit_note": commerce_accounting_service.post_sales_credit_note(db, obj, current_user.id)
     db.commit(); db.refresh(obj); return obj
 
 
@@ -111,6 +105,7 @@ def confirm_purchase(document_id: int, company_id: int = Query(..., gt=0), curre
     _company_for_user(db, company_id, current_user)
     obj = _run(lambda: commerce_service.confirm(db, company_id, document_id, "purchase"))
     if obj.document_type == "bill": commerce_accounting_service.post_purchase_bill(db, obj, current_user.id)
+    elif obj.document_type == "debit_note": commerce_accounting_service.post_purchase_debit_note(db, obj, current_user.id)
     db.commit(); db.refresh(obj); return obj
 
 
@@ -132,9 +127,8 @@ def receive_purchase(document_id: int, company_id: int = Query(..., gt=0), curre
 def pay_sale(document_id: int, payload: PaymentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if payload.document_id != document_id: raise HTTPException(400, "Document id mismatch")
     _company_for_user(db, payload.company_id, current_user)
-    obj = _run(lambda: commerce_service.pay(db, payload, "sale")); db.flush()
-    payment = db.scalar(select(CommercePayment).where(CommercePayment.company_id == payload.company_id, CommercePayment.id == select(CommercePayment.id).where(CommercePayment.company_id == payload.company_id, CommercePayment.document_id == document_id).order_by(CommercePayment.id.desc()).limit(1).scalar_subquery()))
-    if payment: commerce_accounting_service.post_payment(db, payment, obj, current_user.id)
+    obj, payment = _run(lambda: commerce_service.pay(db, payload, "sale"))
+    commerce_accounting_service.post_payment(db, payment, obj, current_user.id)
     db.commit(); db.refresh(obj); return obj
 
 
@@ -142,9 +136,8 @@ def pay_sale(document_id: int, payload: PaymentCreate, current_user: User = Depe
 def pay_purchase(document_id: int, payload: PaymentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if payload.document_id != document_id: raise HTTPException(400, "Document id mismatch")
     _company_for_user(db, payload.company_id, current_user)
-    obj = _run(lambda: commerce_service.pay(db, payload, "purchase")); db.flush()
-    payment = db.scalar(select(CommercePayment).where(CommercePayment.company_id == payload.company_id, CommercePayment.id == select(CommercePayment.id).where(CommercePayment.company_id == payload.company_id, CommercePayment.document_id == document_id).order_by(CommercePayment.id.desc()).limit(1).scalar_subquery()))
-    if payment: commerce_accounting_service.post_payment(db, payment, obj, current_user.id)
+    obj, payment = _run(lambda: commerce_service.pay(db, payload, "purchase"))
+    commerce_accounting_service.post_payment(db, payment, obj, current_user.id)
     db.commit(); db.refresh(obj); return obj
 
 
@@ -153,6 +146,6 @@ def reverse_payment(payment_id: int, payload: PaymentReverse, current_user: User
     _company_for_user(db, payload.company_id, current_user)
     original = db.scalar(select(CommercePayment).where(CommercePayment.id == payment_id, CommercePayment.company_id == payload.company_id))
     if original is None: raise HTTPException(404, "Payment not found")
-    obj = _run(lambda: commerce_service.reverse_payment(db, payload.company_id, payment_id, payload.reversal_date, payload.notes))
+    obj, original, reversal = _run(lambda: commerce_service.reverse_payment(db, payload.company_id, payment_id, payload.reversal_date, payload.notes))
     commerce_accounting_service.post_payment_reversal(db, original, obj, current_user.id)
     db.commit(); db.refresh(obj); return obj
