@@ -1,16 +1,17 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
-from app.modules.identity.dependencies import get_current_user
-from app.modules.identity.models import User
 from app.modules.accounting.journals.schemas.journal_entry import (
     JournalEntryCreate,
     JournalEntryResponse,
+    JournalResponse,
 )
 from app.modules.accounting.journals.services.journal_service import journal_service
+from app.modules.identity.dependencies import get_current_user
+from app.modules.identity.models import User
 
 
 router = APIRouter(prefix="/accounting/journal-entries", tags=["Accounting - Journal Entries"])
@@ -18,9 +19,20 @@ router = APIRouter(prefix="/accounting/journal-entries", tags=["Accounting - Jou
 
 def _tenant_id(current_user: User) -> int:
     if current_user.tenant_id is None:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is not assigned to a tenant")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User is not assigned to a tenant",
+        )
     return current_user.tenant_id
+
+
+@router.get("/journals", response_model=list[JournalResponse])
+def list_journals(
+    company_id: int = Query(gt=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return journal_service.list_journals(db, _tenant_id(current_user), company_id)
 
 
 @router.get("", response_model=list[JournalEntryResponse])
@@ -29,6 +41,7 @@ def list_entries(
     status_filter: str | None = Query(default=None, alias="status"),
     from_date: date | None = None,
     to_date: date | None = None,
+    journal_id: int | None = Query(default=None, gt=0),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -37,8 +50,9 @@ def list_entries(
         _tenant_id(current_user),
         company_id,
         status=status_filter,
-        from_date=from_date,
-        to_date=to_date,
+        start_date=from_date,
+        end_date=to_date,
+        journal_id=journal_id,
     )
 
 
