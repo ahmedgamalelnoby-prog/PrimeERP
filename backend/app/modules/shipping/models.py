@@ -10,6 +10,8 @@ class ShippingCarrier(Base):
     code = Column(String(40), nullable=False)
     name = Column(String(150), nullable=False)
     api_base_url = Column(String(300))
+    settlement_account_id = Column(Integer, ForeignKey("account_combinations.id", ondelete="RESTRICT"), nullable=True, index=True)
+    fee_account_id = Column(Integer, ForeignKey("account_combinations.id", ondelete="RESTRICT"), nullable=True, index=True)
     is_active = Column(Boolean, server_default="true", nullable=False)
 
 
