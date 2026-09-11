@@ -32,10 +32,6 @@ class JournalEntryCreate(BaseModel):
     source_id: int | None = Field(default=None, gt=0)
 
 
-class JournalEntryAction(BaseModel):
-    user_id: int = Field(gt=0)
-
-
 class JournalEntryLineResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -75,7 +71,7 @@ class JournalEntryResponse(BaseModel):
     source_module: str | None
     source_entity: str | None
     source_id: int | None
-    lines: list[JournalEntryLineResponse] = []
+    lines: list[JournalEntryLineResponse] = Field(default_factory=list)
 
 
 class JournalResponse(BaseModel):
