@@ -3,6 +3,7 @@ from sqlalchemy.orm import relationship
 
 from app.database.base import Base
 from app.modules.platform.customers.models import Customer
+from app.modules.inventory.items.models import InventoryItem
 
 
 class SalesOrder(Base):
@@ -17,13 +18,31 @@ class SalesOrder(Base):
     total_amount = Column(Numeric(18, 4), nullable=False, default=0)
     reference = Column(String(100))
     notes = Column(Text)
-
     customer = relationship(Customer)
-
+    lines = relationship("SalesOrderLine", back_populates="order", cascade="all, delete-orphan", order_by="SalesOrderLine.id")
     __table_args__ = (
         CheckConstraint("status IN ('draft','confirmed','partially_shipped','shipped','cancelled')", name="ck_sales_order_status"),
         CheckConstraint("total_amount >= 0", name="ck_sales_order_total"),
     )
 
 
-__all__ = ["SalesOrder"]
+class SalesOrderLine(Base):
+    __tablename__ = "sales_order_lines"
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("sales_orders.id", ondelete="CASCADE"), nullable=False, index=True)
+    item_id = Column(Integer, ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False, index=True)
+    quantity = Column(Numeric(18, 4), nullable=False)
+    unit_price = Column(Numeric(18, 4), nullable=False)
+    discount_amount = Column(Numeric(18, 4), nullable=False, default=0)
+    line_total = Column(Numeric(18, 4), nullable=False, default=0)
+    order = relationship(SalesOrder, back_populates="lines")
+    item = relationship(InventoryItem)
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_sales_order_line_qty"),
+        CheckConstraint("unit_price >= 0", name="ck_sales_order_line_price"),
+        CheckConstraint("discount_amount >= 0", name="ck_sales_order_line_discount"),
+        CheckConstraint("line_total >= 0", name="ck_sales_order_line_total"),
+    )
+
+
+__all__ = ["SalesOrder", "SalesOrderLine"]
