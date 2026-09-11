@@ -1,13 +1,15 @@
 from datetime import date
 from decimal import Decimal
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CarrierCreate(BaseModel):
     company_id: int = Field(gt=0)
-    code: str
-    name: str
+    code: str = Field(min_length=1, max_length=40)
+    name: str = Field(min_length=1, max_length=150)
     api_base_url: str | None = None
+    settlement_account_id: int | None = Field(default=None, gt=0)
+    fee_account_id: int | None = Field(default=None, gt=0)
 
 
 class CarrierResponse(CarrierCreate):
