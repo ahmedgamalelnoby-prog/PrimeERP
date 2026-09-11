@@ -2,6 +2,7 @@ from fastapi import APIRouter
 from app.modules.accounting.fiscal_years.api.router import router as fiscal_years_router
 from app.modules.accounting.journals.api.journal_entries import router as journal_entries_router
 from app.modules.accounting.reports.router import router as financial_reports_router
+from app.modules.accounting.bank_reconciliation.router import router as bank_reconciliation_router
 from app.modules.identity.api.router import router as identity_router
 from app.modules.inventory.adjustments.router import router as inventory_adjustments_router
 from app.modules.inventory.costing.router import router as inventory_costing_router
@@ -35,6 +36,7 @@ def build_router() -> APIRouter:
     api_router.include_router(fiscal_years_router, prefix="/accounting/fiscal-years", tags=["accounting-fiscal-years"])
     api_router.include_router(journal_entries_router)
     api_router.include_router(financial_reports_router)
+    api_router.include_router(bank_reconciliation_router)
     api_router.include_router(customers_router)
     api_router.include_router(quotations_router)
     api_router.include_router(sales_orders_router)
