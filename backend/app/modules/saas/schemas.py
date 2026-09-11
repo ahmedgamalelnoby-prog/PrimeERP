@@ -33,6 +33,20 @@ USERNAME_PATTERN = re.compile(
 )
 
 
+class SystemModuleResponse(BaseModel):
+    id: int
+    code: str
+    name_ar: str
+    name_en: str
+    description_ar: Optional[str]
+    description_en: Optional[str]
+    is_core: bool
+    is_active: bool
+    display_order: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class TenantRegistrationRequest(BaseModel):
     business_name: str = Field(
         min_length=2,
