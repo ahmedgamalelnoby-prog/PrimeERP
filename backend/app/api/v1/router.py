@@ -20,6 +20,7 @@ from app.modules.platform.subscriptions.router import router as subscriptions_ro
 from app.modules.platform.tenants.router import router as tenants_router
 from app.modules.purchasing.purchase_orders.router import router as purchase_orders_router
 from app.modules.purchasing.suppliers.router import router as suppliers_router
+from app.modules.sales.sales_core.router import router as sales_orders_router
 from app.modules.saas.router import router as saas_router
 from app.modules.transactions.api.router import router as transactions_router
 
@@ -35,6 +36,7 @@ def build_router() -> APIRouter:
     api_router.include_router(journal_entries_router)
     api_router.include_router(financial_reports_router)
     api_router.include_router(customers_router)
+    api_router.include_router(sales_orders_router)
     api_router.include_router(inventory_items_router)
     api_router.include_router(inventory_warehouses_router)
     api_router.include_router(inventory_locations_router)
