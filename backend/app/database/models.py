@@ -5,9 +5,7 @@ Importing this module registers all models in Base.metadata.
 Do not define SQLAlchemy models directly in this file.
 """
 
-from app.modules.saas.models import (
-    PlanModule, Subscription, SubscriptionPlan, SystemModule, Tenant, TenantModule,
-)
+from app.modules.saas.models import (PlanModule, Subscription, SubscriptionPlan, SystemModule, Tenant, TenantModule)
 from app.modules.platform.plans.models import Plan
 from app.modules.platform.customers.models import Customer
 from app.modules.companies.models import Company
@@ -16,9 +14,7 @@ from app.modules.identity.models.user import User
 from app.modules.roles.models import Permission, Role, role_permissions
 from app.modules.legal.models import LegalAcceptance, LegalDocument
 from app.modules.restaurant.models import Floor, OrderType, PreparationStation, RestaurantTable
-from app.modules.accounting.chart_of_accounts.models import (
-    AccountCombination, AccountingCostCenter, AccountingDepartment, AccountingSettings, NaturalAccount,
-)
+from app.modules.accounting.chart_of_accounts.models import (AccountCombination, AccountingCostCenter, AccountingDepartment, AccountingSettings, NaturalAccount)
 from app.modules.transactions.models import BusinessTransaction, NumberSequence, TransactionEvent
 from app.modules.accounting.fiscal_years.models import AccountingPeriod, FiscalYear
 from app.modules.accounting.journals.models import AccountingJournal, JournalEntry, JournalEntryLine
@@ -32,7 +28,7 @@ from app.modules.inventory.adjustments.models import InventoryAdjustment
 from app.modules.inventory.reservations.models import InventoryReservation
 from app.modules.purchasing.suppliers.models import Supplier
 from app.modules.purchasing.purchase_orders.models import PurchaseOrder, PurchaseOrderLine
-from app.modules.sales.sales_core.models import SalesOrder
+from app.modules.sales.sales_core.models import SalesOrder, SalesOrderLine
 
 __all__ = [
     "Tenant", "SubscriptionPlan", "Subscription", "SystemModule", "PlanModule", "TenantModule",
@@ -43,5 +39,5 @@ __all__ = [
     "AccountingJournal", "JournalEntry", "JournalEntryLine", "InventoryItem", "InventoryStock",
     "InventoryWarehouse", "InventoryLocation", "InventoryStockMove", "InventoryLocationStock",
     "InventoryTransfer", "InventoryTransferLine", "InventoryAdjustment", "InventoryReservation",
-    "Supplier", "PurchaseOrder", "PurchaseOrderLine", "SalesOrder",
+    "Supplier", "PurchaseOrder", "PurchaseOrderLine", "SalesOrder", "SalesOrderLine",
 ]
