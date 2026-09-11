@@ -28,12 +28,16 @@ def _company_for_user(db: Session, company_id: int, user: User):
     return company
 
 
-def _validate_payment_account(db: Session, company_id: int, account_id: int | None):
+def _validate_account(db: Session, company_id: int, account_id: int | None, label: str):
     if account_id is None:
         return
     account = db.scalar(select(AccountCombination).where(AccountCombination.id == account_id, AccountCombination.company_id == company_id, AccountCombination.is_active.is_(True)))
     if account is None:
-        raise HTTPException(422, "Shipping payment account does not belong to the company or is inactive")
+        raise HTTPException(422, f"{label} does not belong to the company or is inactive")
+
+
+def _validate_payment_account(db: Session, company_id: int, account_id: int | None):
+    _validate_account(db, company_id, account_id, "Shipping payment account")
 
 
 @router.post("/carriers", response_model=CarrierResponse, status_code=201, dependencies=[Depends(require_permission("shipping.write"))])
@@ -41,6 +45,8 @@ def carrier(payload: CarrierCreate, current_user: User = Depends(get_current_use
     _company_for_user(db, payload.company_id, current_user)
     if db.scalar(select(ShippingCarrier).where(ShippingCarrier.company_id == payload.company_id, ShippingCarrier.code == payload.code)):
         raise HTTPException(409, "Carrier code already exists")
+    _validate_account(db, payload.company_id, payload.settlement_account_id, "Carrier settlement account")
+    _validate_account(db, payload.company_id, payload.fee_account_id, "Carrier fee account")
     obj = ShippingCarrier(**payload.model_dump())
     db.add(obj)
     db.commit()
