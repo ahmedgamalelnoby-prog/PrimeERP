@@ -25,6 +25,8 @@ from app.modules.shipping.router import router as shipping_router
 from app.modules.shipping.settlement_router import router as shipping_settlement_router
 from app.modules.integrations.router import router as integrations_router
 from app.modules.uom.router import router as uom_router
+from app.modules.companies.router import router as companies_router
+from app.modules.branches.router import router as branches_router
 
 
 def build_router() -> APIRouter:
@@ -52,6 +54,8 @@ def build_router() -> APIRouter:
         shipping_settlement_router,
         integrations_router,
         uom_router,
+        companies_router,
+        branches_router,
     ):
         api_router.include_router(r)
     api_router.include_router(plans_router)
