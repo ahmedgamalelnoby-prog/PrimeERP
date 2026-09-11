@@ -94,14 +94,23 @@ def methods(carrier_id: int = Query(..., gt=0), current_user: User = Depends(get
 @router.post("/shipments", response_model=ShipmentResponse, status_code=201, dependencies=[Depends(require_permission("shipping.write"))])
 def shipment(p: ShipmentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, p.company_id, current_user)
-    m = db.scalar(select(ShippingMethod).join(ShippingCarrier, ShippingCarrier.id == m.carrier_id).where(ShippingMethod.id == p.method_id)) if False else db.scalar(select(ShippingMethod).join(ShippingCarrier, ShippingCarrier.id == ShippingMethod.carrier_id).where(ShippingMethod.id == p.method_id, ShippingMethod.carrier_id == p.carrier_id, ShippingCarrier.company_id == p.company_id, ShippingCarrier.is_active.is_(True)))
-    if not m:
+    method = db.scalar(
+        select(ShippingMethod)
+        .join(ShippingCarrier, ShippingCarrier.id == ShippingMethod.carrier_id)
+        .where(
+            ShippingMethod.id == p.method_id,
+            ShippingMethod.carrier_id == p.carrier_id,
+            ShippingCarrier.company_id == p.company_id,
+            ShippingCarrier.is_active.is_(True),
+        )
+    )
+    if method is None:
         raise HTTPException(400, "Invalid carrier/method for company")
-    if p.cod_amount and m.payment_method == "prepaid":
+    if p.cod_amount and method.payment_method == "prepaid":
         raise HTTPException(422, "COD amount is not allowed for prepaid shipping")
-    fee = p.shipping_fee if p.shipping_fee > 0 else m.base_fee
-    if m.payment_method in {"cod", "mixed"} and p.cod_amount:
-        fee += p.cod_amount * m.cod_fee_percent / 100
+    fee = p.shipping_fee if p.shipping_fee > 0 else method.base_fee
+    if method.payment_method in {"cod", "mixed"} and p.cod_amount:
+        fee += p.cod_amount * method.cod_fee_percent / 100
     o = Shipment(**p.model_dump(), shipping_fee=fee)
     db.add(o)
     db.commit()
