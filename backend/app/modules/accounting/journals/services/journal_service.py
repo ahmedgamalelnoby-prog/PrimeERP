@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 
@@ -8,25 +7,35 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.modules.accounting.chart_of_accounts.models import AccountCombination
+from app.modules.accounting.chart_of_accounts.models import (
+    AccountCombination,
+    AccountingCostCenter,
+    AccountingDepartment,
+)
 from app.modules.accounting.fiscal_years.repositories.fiscal_year_repository import fiscal_year_repository
 from app.modules.accounting.journals.models import JournalEntry, JournalEntryLine
 from app.modules.accounting.journals.repositories.journal_repository import journal_repository
 from app.modules.branches.models import Branch
+from app.modules.companies.models import Company
 
 
 class JournalService:
     """Application boundary for journal-entry lifecycle and posting rules."""
 
     def list_journals(self, db: Session, tenant_id: int, company_id: int):
+        self._active_company(db, tenant_id, company_id)
         return journal_repository.list_journals(db, tenant_id, company_id)
 
     def list_entries(self, db: Session, tenant_id: int, company_id: int, **filters):
+        self._active_company(db, tenant_id, company_id)
         return journal_repository.list_entries(db, tenant_id, company_id, **filters)
 
     def get_entry(self, db: Session, tenant_id: int, entry_id: int) -> JournalEntry:
         entry = journal_repository.get_entry(db, entry_id, tenant_id)
         if entry is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Journal entry not found")
+        company = self._active_company(db, tenant_id, entry.company_id)
+        if not company:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Journal entry not found")
         return entry
 
@@ -39,6 +48,7 @@ class JournalService:
         source_entity: str | None = None, source_id: int | None = None,
         commit: bool = True,
     ) -> JournalEntry:
+        self._active_company(db, tenant_id, company_id)
         journal = journal_repository.get_journal(db, journal_id, tenant_id, company_id)
         if journal is None or not journal.is_active:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Accounting journal not found")
@@ -49,6 +59,9 @@ class JournalService:
         if exchange_rate <= 0:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Exchange rate must be positive")
 
+        fiscal_year = fiscal_year_repository.get_by_id(db, fiscal_year_id, tenant_id)
+        if fiscal_year is None or fiscal_year.company_id != company_id:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Fiscal year does not belong to the selected company")
         period = fiscal_year_repository.get_period_by_id(db, period_id, tenant_id)
         if period is None or period.company_id != company_id or period.fiscal_year_id != fiscal_year_id:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Fiscal period does not belong to the selected company and fiscal year")
@@ -86,6 +99,38 @@ class JournalService:
         valid_account_ids = {account.id for account in accounts}
         if valid_account_ids != account_ids:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="One or more journal accounts do not belong to the selected company or are inactive")
+
+        department_ids = {int(payload["department_id"]) for payload in lines if payload.get("department_id") is not None}
+        cost_center_ids = {int(payload["cost_center_id"]) for payload in lines if payload.get("cost_center_id") is not None}
+        if department_ids:
+            departments = db.scalars(
+                select(AccountingDepartment).where(
+                    AccountingDepartment.id.in_(department_ids),
+                    AccountingDepartment.company_id == company_id,
+                    AccountingDepartment.is_active.is_(True),
+                )
+            ).all()
+            if {row.id for row in departments} != department_ids:
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="One or more journal departments do not belong to the selected company or are inactive")
+
+        if cost_center_ids:
+            cost_centers = db.scalars(
+                select(AccountingCostCenter).where(
+                    AccountingCostCenter.id.in_(cost_center_ids),
+                    AccountingCostCenter.company_id == company_id,
+                    AccountingCostCenter.is_active.is_(True),
+                )
+            ).all()
+            if {row.id for row in cost_centers} != cost_center_ids:
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="One or more journal cost centers do not belong to the selected company or are inactive")
+            cost_center_by_id = {row.id: row for row in cost_centers}
+            for number, payload in enumerate(lines, start=1):
+                cc_id = payload.get("cost_center_id")
+                dep_id = payload.get("department_id")
+                if cc_id is not None and dep_id is not None and cost_center_by_id[int(cc_id)].department_id != int(dep_id):
+                    raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Cost center and department mismatch on journal line {number}")
+                if cc_id is not None and cost_center_by_id[int(cc_id)].branch_id is not None and cost_center_by_id[int(cc_id)].branch_id != branch_id:
+                    raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Cost center is assigned to another branch on journal line {number}")
 
         debit = Decimal("0")
         credit = Decimal("0")
@@ -161,7 +206,7 @@ class JournalService:
         if entry.status == "pending" and entry.journal.requires_approval:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Journal approval is required before posting")
         period = fiscal_year_repository.get_period_by_id(db, entry.period_id, tenant_id, for_update=True)
-        if period is None or period.status != "open" or not period.allow_posting:
+        if period is None or period.company_id != entry.company_id or period.fiscal_year_id != entry.fiscal_year_id or period.status != "open" or not period.allow_posting:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Accounting period is not open for posting")
         if not (period.start_date <= entry.entry_date <= period.end_date):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Entry date is outside the posting period")
@@ -184,6 +229,13 @@ class JournalService:
         if commit:
             db.commit(); db.refresh(entry)
         return entry
+
+    @staticmethod
+    def _active_company(db: Session, tenant_id: int, company_id: int) -> Company:
+        company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == tenant_id, Company.is_active.is_(True)))
+        if company is None:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Company is outside the current tenant or inactive")
+        return company
 
     @staticmethod
     def _locked_entry(db: Session, tenant_id: int, entry_id: int) -> JournalEntry:
