@@ -1,20 +1,21 @@
-from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.modules.inventory.items.models import InventoryItem
+from app.modules.inventory.items.repository import inventory_item_repository
 from app.modules.inventory.items.schemas import InventoryItemCreate, InventoryItemUpdate
 
 
 class InventoryItemService:
     def list(self, db: Session, *, company_id: int, active_only: bool = True):
-        stmt = select(InventoryItem).where(InventoryItem.company_id == company_id)
-        if active_only:
-            stmt = stmt.where(InventoryItem.is_active.is_(True))
-        return db.scalars(stmt.order_by(InventoryItem.sku)).all()
+        return inventory_item_repository.list_items(
+            db, company_id=company_id, active_only=active_only
+        )
 
     def get(self, db: Session, *, company_id: int, item_id: int):
-        return db.scalar(select(InventoryItem).where(InventoryItem.company_id == company_id, InventoryItem.id == item_id))
+        return inventory_item_repository.get_item(
+            db, company_id=company_id, item_id=item_id
+        )
 
     def create(self, db: Session, payload: InventoryItemCreate):
         item = InventoryItem(**payload.model_dump())
@@ -27,7 +28,14 @@ class InventoryItemService:
         db.refresh(item)
         return item
 
-    def update(self, db: Session, *, company_id: int, item_id: int, payload: InventoryItemUpdate):
+    def update(
+        self,
+        db: Session,
+        *,
+        company_id: int,
+        item_id: int,
+        payload: InventoryItemUpdate,
+    ):
         item = self.get(db, company_id=company_id, item_id=item_id)
         if item is None:
             raise ValueError("Inventory item not found")
@@ -40,6 +48,11 @@ class InventoryItemService:
             raise ValueError("SKU or barcode already exists for this company") from exc
         db.refresh(item)
         return item
+
+    def stock(self, db: Session, *, company_id: int, item_id: int | None = None):
+        return inventory_item_repository.list_stock(
+            db, company_id=company_id, item_id=item_id
+        )
 
 
 inventory_item_service = InventoryItemService()
