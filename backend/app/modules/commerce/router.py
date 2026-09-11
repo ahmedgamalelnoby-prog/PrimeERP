@@ -3,12 +3,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
-from app.modules.commerce.schemas import PartnerCreate, PartnerResponse, DocumentCreate, DocumentResponse, PaymentCreate, PaymentReverse
-from app.modules.commerce.service import commerce_service
-from app.modules.commerce.accounting_service import commerce_accounting_service
+from app.modules.branches.models import Branch
 from app.modules.commerce.accounting_models import CommerceAccountingSettings
 from app.modules.commerce.accounting_schemas import CommerceAccountingSettingsCreate
-from app.modules.commerce.models import CommercePayment
+from app.modules.commerce.accounting_service import commerce_accounting_service
+from app.modules.commerce.models import BusinessPartner, CommercePayment
+from app.modules.commerce.schemas import PartnerCreate, PartnerResponse, DocumentCreate, DocumentResponse, PaymentCreate, PaymentReverse
+from app.modules.commerce.service import commerce_service
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
@@ -16,7 +17,16 @@ from app.modules.identity.models import User
 router = APIRouter(prefix="/commerce", tags=["Commerce"])
 
 
-def run(fn):
+def _company_for_user(db: Session, company_id: int, user: User):
+    if user.tenant_id is None:
+        raise HTTPException(403, "User is not assigned to a tenant")
+    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == user.tenant_id))
+    if company is None:
+        raise HTTPException(403, "Company is outside the current tenant")
+    return company
+
+
+def _run(fn):
     try:
         return fn()
     except ValueError as exc:
@@ -25,86 +35,124 @@ def run(fn):
 
 @router.post("/accounting-settings", status_code=201)
 def configure_accounting(payload: CommerceAccountingSettingsCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    if current_user.tenant_id is None: raise HTTPException(403, "User is not assigned to a tenant")
-    company = db.scalar(select(Company).where(Company.id == payload.company_id, Company.tenant_id == current_user.tenant_id))
-    if company is None: raise HTTPException(403, "Company is outside the current tenant")
+    _company_for_user(db, payload.company_id, current_user)
+    branch = db.scalar(select(Branch).where(Branch.id == payload.default_branch_id, Branch.company_id == payload.company_id, Branch.tenant_id == current_user.tenant_id, Branch.is_active.is_(True)))
+    if branch is None:
+        raise HTTPException(422, "Default branch does not belong to the company")
     values = payload.model_dump()
     obj = db.scalar(select(CommerceAccountingSettings).where(CommerceAccountingSettings.company_id == payload.company_id))
     if obj is None:
-        obj = CommerceAccountingSettings(**values); db.add(obj)
+        obj = CommerceAccountingSettings(**values)
+        db.add(obj)
     else:
-        for key, value in values.items(): setattr(obj, key, value)
-    db.commit(); db.refresh(obj)
-    return {"id": obj.id, "company_id": obj.company_id, "auto_post": obj.auto_post}
+        for key, value in values.items():
+            setattr(obj, key, value)
+    db.commit()
+    db.refresh(obj)
+    return {c.name: getattr(obj, c.name) for c in obj.__table__.columns if c.name != "id"}
 
 
 @router.get("/accounting-settings")
 def get_accounting_settings(company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    obj = db.scalar(select(CommerceAccountingSettings).join(Company, Company.id == CommerceAccountingSettings.company_id).where(CommerceAccountingSettings.company_id == company_id, Company.tenant_id == current_user.tenant_id))
-    if obj is None: raise HTTPException(404, "Commerce accounting configuration not found")
+    _company_for_user(db, company_id, current_user)
+    obj = db.scalar(select(CommerceAccountingSettings).where(CommerceAccountingSettings.company_id == company_id))
+    if obj is None:
+        raise HTTPException(404, "Commerce accounting configuration not found")
     return {c.name: getattr(obj, c.name) for c in obj.__table__.columns if c.name != "id"}
 
 
 @router.post("/partners", response_model=PartnerResponse, status_code=201)
-def create_partner(payload: PartnerCreate, db: Session = Depends(get_db)):
-    obj = run(lambda: commerce_service.create_partner(db, payload)); db.commit(); db.refresh(obj); return obj
+def create_partner(payload: PartnerCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company_for_user(db, payload.company_id, current_user)
+    obj = _run(lambda: commerce_service.create_partner(db, payload))
+    db.commit(); db.refresh(obj); return obj
+
 
 @router.get("/partners", response_model=list[PartnerResponse])
-def list_partners(company_id: int = Query(..., gt=0), partner_type: str | None = None, db: Session = Depends(get_db)):
+def list_partners(company_id: int = Query(..., gt=0), partner_type: str | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company_for_user(db, company_id, current_user)
     return commerce_service.list_partners(db, company_id, partner_type)
 
+
 @router.post("/sales/documents", response_model=DocumentResponse, status_code=201)
-def create_sale(payload: DocumentCreate, db: Session = Depends(get_db)):
+def create_sale(payload: DocumentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company_for_user(db, payload.company_id, current_user)
     if payload.document_type not in {"quotation", "order", "delivery", "invoice", "credit_note"}: raise HTTPException(400, "Invalid sales document type")
-    obj = run(lambda: commerce_service.create_document(db, payload)); db.commit(); db.refresh(obj); return obj
+    obj = _run(lambda: commerce_service.create_document(db, payload)); db.commit(); db.refresh(obj); return obj
+
 
 @router.post("/purchases/documents", response_model=DocumentResponse, status_code=201)
-def create_purchase(payload: DocumentCreate, db: Session = Depends(get_db)):
+def create_purchase(payload: DocumentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company_for_user(db, payload.company_id, current_user)
     if payload.document_type not in {"requisition", "rfq", "order", "receipt", "bill", "debit_note"}: raise HTTPException(400, "Invalid purchase document type")
-    obj = run(lambda: commerce_service.create_document(db, payload)); db.commit(); db.refresh(obj); return obj
+    obj = _run(lambda: commerce_service.create_document(db, payload)); db.commit(); db.refresh(obj); return obj
+
 
 @router.get("/sales/documents", response_model=list[DocumentResponse])
-def sales(company_id: int = Query(..., gt=0), db: Session = Depends(get_db)): return commerce_service.list_documents(db, company_id, "sale")
+def sales(company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company_for_user(db, company_id, current_user); return commerce_service.list_documents(db, company_id, "sale")
+
 
 @router.get("/purchases/documents", response_model=list[DocumentResponse])
-def purchases(company_id: int = Query(..., gt=0), db: Session = Depends(get_db)): return commerce_service.list_documents(db, company_id, "purchase")
+def purchases(company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company_for_user(db, company_id, current_user); return commerce_service.list_documents(db, company_id, "purchase")
+
 
 @router.post("/sales/{document_id}/confirm", response_model=DocumentResponse)
 def confirm_sale(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    obj = run(lambda: commerce_service.confirm(db, company_id, document_id, "sale"))
+    _company_for_user(db, company_id, current_user)
+    obj = _run(lambda: commerce_service.confirm(db, company_id, document_id, "sale"))
     if obj.document_type == "invoice": commerce_accounting_service.post_sales_invoice(db, obj, current_user.id)
     db.commit(); db.refresh(obj); return obj
 
+
 @router.post("/purchases/{document_id}/confirm", response_model=DocumentResponse)
 def confirm_purchase(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    obj = run(lambda: commerce_service.confirm(db, company_id, document_id, "purchase"))
+    _company_for_user(db, company_id, current_user)
+    obj = _run(lambda: commerce_service.confirm(db, company_id, document_id, "purchase"))
     if obj.document_type == "bill": commerce_accounting_service.post_purchase_bill(db, obj, current_user.id)
     db.commit(); db.refresh(obj); return obj
 
+
 @router.post("/sales/{document_id}/post-inventory", response_model=DocumentResponse)
-def post_sale(document_id: int, company_id: int = Query(..., gt=0), db: Session = Depends(get_db)):
-    obj = run(lambda: commerce_service.post_inventory(db, company_id, document_id, "sale")); db.commit(); db.refresh(obj); return obj
+def post_sale(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company_for_user(db, company_id, current_user)
+    obj = _run(lambda: commerce_service.post_inventory(db, company_id, document_id, "sale"))
+    commerce_accounting_service.post_sales_delivery_cogs(db, obj, current_user.id)
+    db.commit(); db.refresh(obj); return obj
+
 
 @router.post("/purchases/{document_id}/receive", response_model=DocumentResponse)
-def receive_purchase(document_id: int, company_id: int = Query(..., gt=0), db: Session = Depends(get_db)):
-    obj = run(lambda: commerce_service.post_inventory(db, company_id, document_id, "purchase")); db.commit(); db.refresh(obj); return obj
+def receive_purchase(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company_for_user(db, company_id, current_user)
+    obj = _run(lambda: commerce_service.post_inventory(db, company_id, document_id, "purchase")); db.commit(); db.refresh(obj); return obj
+
 
 @router.post("/sales/{document_id}/payments", response_model=DocumentResponse)
 def pay_sale(document_id: int, payload: PaymentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if payload.document_id != document_id: raise HTTPException(400, "Document id mismatch")
-    obj = run(lambda: commerce_service.pay(db, payload, "sale")); db.flush()
-    payment = db.scalar(select(CommercePayment).where(CommercePayment.company_id == payload.company_id, CommercePayment.document_id == document_id, CommercePayment.status == "posted").order_by(CommercePayment.id.desc()).limit(1))
+    _company_for_user(db, payload.company_id, current_user)
+    obj = _run(lambda: commerce_service.pay(db, payload, "sale")); db.flush()
+    payment = db.scalar(select(CommercePayment).where(CommercePayment.company_id == payload.company_id, CommercePayment.id == select(CommercePayment.id).where(CommercePayment.company_id == payload.company_id, CommercePayment.document_id == document_id).order_by(CommercePayment.id.desc()).limit(1).scalar_subquery()))
     if payment: commerce_accounting_service.post_payment(db, payment, obj, current_user.id)
     db.commit(); db.refresh(obj); return obj
+
 
 @router.post("/purchases/{document_id}/payments", response_model=DocumentResponse)
 def pay_purchase(document_id: int, payload: PaymentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if payload.document_id != document_id: raise HTTPException(400, "Document id mismatch")
-    obj = run(lambda: commerce_service.pay(db, payload, "purchase")); db.flush()
-    payment = db.scalar(select(CommercePayment).where(CommercePayment.company_id == payload.company_id, CommercePayment.document_id == document_id, CommercePayment.status == "posted").order_by(CommercePayment.id.desc()).limit(1))
+    _company_for_user(db, payload.company_id, current_user)
+    obj = _run(lambda: commerce_service.pay(db, payload, "purchase")); db.flush()
+    payment = db.scalar(select(CommercePayment).where(CommercePayment.company_id == payload.company_id, CommercePayment.id == select(CommercePayment.id).where(CommercePayment.company_id == payload.company_id, CommercePayment.document_id == document_id).order_by(CommercePayment.id.desc()).limit(1).scalar_subquery()))
     if payment: commerce_accounting_service.post_payment(db, payment, obj, current_user.id)
     db.commit(); db.refresh(obj); return obj
 
+
 @router.post("/payments/{payment_id}/reverse", response_model=DocumentResponse)
-def reverse_payment(payment_id: int, payload: PaymentReverse, db: Session = Depends(get_db)):
-    obj = run(lambda: commerce_service.reverse_payment(db, payload.company_id, payment_id, payload.reversal_date, payload.notes)); db.commit(); db.refresh(obj); return obj
+def reverse_payment(payment_id: int, payload: PaymentReverse, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company_for_user(db, payload.company_id, current_user)
+    original = db.scalar(select(CommercePayment).where(CommercePayment.id == payment_id, CommercePayment.company_id == payload.company_id))
+    if original is None: raise HTTPException(404, "Payment not found")
+    obj = _run(lambda: commerce_service.reverse_payment(db, payload.company_id, payment_id, payload.reversal_date, payload.notes))
+    commerce_accounting_service.post_payment_reversal(db, original, obj, current_user.id)
+    db.commit(); db.refresh(obj); return obj
