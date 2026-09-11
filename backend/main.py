@@ -19,18 +19,19 @@ from app.database.session import SessionLocal
 
 def create_application() -> FastAPI:
     """Build a fresh PrimeERP application with an isolated API router tree."""
-    if not settings.DEBUG:
+    if settings.ENVIRONMENT.strip().lower() == "production":
         validate_production_configuration()
 
     module_registry: ModuleRegistry = bootstrap_module_registry()
+    docs_enabled = settings.ENVIRONMENT.strip().lower() != "production" or settings.DEBUG
 
     application = FastAPI(
         title=settings.APP_NAME,
         version=settings.APP_VERSION,
         description="PrimeERP - نظام إدارة المؤسسات",
-        openapi_url=f"{settings.API_V1_STR}/openapi.json",
-        docs_url="/docs" if settings.DEBUG else None,
-        redoc_url="/redoc" if settings.DEBUG else None,
+        openapi_url=f"{settings.API_V1_STR}/openapi.json" if docs_enabled else None,
+        docs_url="/docs" if docs_enabled else None,
+        redoc_url="/redoc" if docs_enabled else None,
     )
     application.state.module_registry = module_registry
 
@@ -53,7 +54,12 @@ def create_application() -> FastAPI:
             content={
                 "success": True,
                 "message": f"Welcome to {settings.APP_NAME} API",
-                "data": {"version": settings.APP_VERSION, "status": "online", "docs": "/docs", "redoc": "/redoc"},
+                "data": {
+                    "version": settings.APP_VERSION,
+                    "status": "online",
+                    "docs": "/docs" if docs_enabled else None,
+                    "redoc": "/redoc" if docs_enabled else None,
+                },
             }
         )
 
