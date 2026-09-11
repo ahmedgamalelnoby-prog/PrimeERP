@@ -19,6 +19,7 @@ class CommerceAccountingSettings(Base):
     output_vat_account_id = Column(Integer, ForeignKey("account_combinations.id", ondelete="RESTRICT"), nullable=False)
     input_vat_account_id = Column(Integer, ForeignKey("account_combinations.id", ondelete="RESTRICT"), nullable=False)
     wht_account_id = Column(Integer, ForeignKey("account_combinations.id", ondelete="RESTRICT"), nullable=True)
+    default_payment_account_id = Column(Integer, ForeignKey("account_combinations.id", ondelete="RESTRICT"), nullable=False)
     default_branch_id = Column(Integer, ForeignKey("branches.id", ondelete="RESTRICT"), nullable=False)
     auto_post = Column(Boolean, nullable=False, default=True)
 
