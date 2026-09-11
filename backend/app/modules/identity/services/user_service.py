@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from fastapi import HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.services.base_service import BaseService
@@ -13,6 +15,7 @@ from app.modules.identity.repositories.user_repository import (
 from app.modules.identity.services.password_service import (
     password_service,
 )
+from app.modules.saas.models import Subscription, SubscriptionPlan
 
 
 class UserService(BaseService[UserRepository]):
@@ -40,17 +43,45 @@ class UserService(BaseService[UserRepository]):
     ) -> User | None:
         db = self.require_db()
         repository = self.require_repository()
-
-        effective_tenant_id = self._resolve_tenant_id(
-            tenant_id
-        )
-
+        effective_tenant_id = self._resolve_tenant_id(tenant_id)
         return repository.get_by_id(
             db,
             user_id,
             tenant_id=effective_tenant_id,
             include_deleted=include_deleted,
         )
+
+    def _enforce_user_limit(self, tenant_id: int | None) -> None:
+        current_user = self.current_user
+        if tenant_id is None or getattr(current_user, "is_platform_admin", False):
+            return
+
+        db = self.require_db()
+        subscription = (
+            db.query(Subscription)
+            .filter(Subscription.tenant_id == tenant_id)
+            .order_by(Subscription.ends_at.desc().nullslast(), Subscription.id.desc())
+            .first()
+        )
+        if subscription is None:
+            raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="No active subscription is configured for this tenant")
+
+        plan = db.get(SubscriptionPlan, subscription.plan_id)
+        if plan is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Subscription plan is not configured")
+
+        limit = subscription.custom_max_users if subscription.custom_max_users is not None else plan.max_users
+        if limit is None or limit < 0:
+            return
+        current_count = db.query(func.count(User.id)).filter(
+            User.tenant_id == tenant_id,
+            User.is_deleted.is_(False),
+        ).scalar() or 0
+        if current_count >= limit:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"User limit reached for the current subscription ({limit} users)",
+            )
 
     def create_user(
         self,
@@ -68,40 +99,24 @@ class UserService(BaseService[UserRepository]):
     ) -> User:
         db = self.require_db()
         repository = self.require_repository()
-
-        effective_tenant_id = self._resolve_tenant_id(
-            tenant_id
-        )
+        effective_tenant_id = self._resolve_tenant_id(tenant_id)
+        current_user = self.current_user
+        if not getattr(current_user, "is_platform_admin", False):
+            is_superuser = False
+            extra_data["is_platform_admin"] = False
+        self._enforce_user_limit(effective_tenant_id)
 
         normalized_username = username.strip().lower()
         normalized_email = email.strip().lower()
-
-        if repository.get_by_username(
-            db,
-            normalized_username,
-            tenant_id=effective_tenant_id,
-            include_deleted=True,
-        ):
-            raise ValueError(
-                "Username already exists for this tenant."
-            )
-
-        if repository.get_by_email(
-            db,
-            normalized_email,
-            tenant_id=effective_tenant_id,
-            include_deleted=True,
-        ):
-            raise ValueError(
-                "Email already exists for this tenant."
-            )
+        if repository.get_by_username(db, normalized_username, tenant_id=effective_tenant_id, include_deleted=True):
+            raise ValueError("Username already exists for this tenant.")
+        if repository.get_by_email(db, normalized_email, tenant_id=effective_tenant_id, include_deleted=True):
+            raise ValueError("Email already exists for this tenant.")
 
         user_data: dict[str, Any] = {
             "username": normalized_username,
             "email": normalized_email,
-            "hashed_password": password_service.hash_password(
-                password
-            ),
+            "hashed_password": password_service.hash_password(password),
             "full_name": full_name,
             "phone": phone,
             "role_id": role_id,
@@ -110,346 +125,103 @@ class UserService(BaseService[UserRepository]):
             "is_superuser": is_superuser,
             **extra_data,
         }
-
-        # Remove values that were not supplied.
-        user_data = {
-            key: value
-            for key, value in user_data.items()
-            if value is not None
-        }
+        user_data = {key: value for key, value in user_data.items() if value is not None}
 
         with self.uow as uow:
-            user = repository.create(
-                db,
-                data=user_data,
-            )
-
+            user = repository.create(db, data=user_data)
             uow.commit()
-
-        repository.refresh(
-            db,
-            user,
-        )
-
+        repository.refresh(db, user)
         return user
 
-    def update_user(
-        self,
-        user_id: int,
-        *,
-        data: dict[str, Any],
-        tenant_id: int | None = None,
-    ) -> User:
+    def update_user(self, user_id: int, *, data: dict[str, Any], tenant_id: int | None = None) -> User:
         db = self.require_db()
         repository = self.require_repository()
-
-        effective_tenant_id = self._resolve_tenant_id(
-            tenant_id
-        )
-
+        effective_tenant_id = self._resolve_tenant_id(tenant_id)
         with self.uow as uow:
-            user = repository.get_by_id(
-                db,
-                user_id,
-                tenant_id=effective_tenant_id,
-                for_update=True,
-            )
-
+            user = repository.get_by_id(db, user_id, tenant_id=effective_tenant_id, for_update=True)
             if user is None:
-                raise LookupError(
-                    "User was not found."
-                )
-
+                raise LookupError("User was not found.")
             update_data = dict(data)
-
             if "username" in update_data:
-                new_username = (
-                    str(update_data["username"])
-                    .strip()
-                    .lower()
-                )
-
-                existing_user = repository.get_by_username(
-                    db,
-                    new_username,
-                    tenant_id=effective_tenant_id,
-                    include_deleted=True,
-                )
-
-                if (
-                    existing_user is not None
-                    and existing_user.id != user.id
-                ):
-                    raise ValueError(
-                        "Username already exists for this tenant."
-                    )
-
+                new_username = str(update_data["username"]).strip().lower()
+                existing_user = repository.get_by_username(db, new_username, tenant_id=effective_tenant_id, include_deleted=True)
+                if existing_user is not None and existing_user.id != user.id:
+                    raise ValueError("Username already exists for this tenant.")
                 update_data["username"] = new_username
-
             if "email" in update_data:
-                new_email = (
-                    str(update_data["email"])
-                    .strip()
-                    .lower()
-                )
-
-                existing_user = repository.get_by_email(
-                    db,
-                    new_email,
-                    tenant_id=effective_tenant_id,
-                    include_deleted=True,
-                )
-
-                if (
-                    existing_user is not None
-                    and existing_user.id != user.id
-                ):
-                    raise ValueError(
-                        "Email already exists for this tenant."
-                    )
-
+                new_email = str(update_data["email"]).strip().lower()
+                existing_user = repository.get_by_email(db, new_email, tenant_id=effective_tenant_id, include_deleted=True)
+                if existing_user is not None and existing_user.id != user.id:
+                    raise ValueError("Email already exists for this tenant.")
                 update_data["email"] = new_email
-
-            password = update_data.pop(
-                "password",
-                None,
-            )
-
-            if password:
-                update_data["hashed_password"] = (
-                    password_service.hash_password(
-                        str(password)
-                    )
-                )
-
-            protected_fields = {
-                "id",
-                "uuid",
-                "tenant_id",
-                "hashed_password",
-                "created_at",
-                "created_by",
-            }
-
-            update_data = {
-                key: value
-                for key, value in update_data.items()
-                if key not in protected_fields
-            }
-
-            repository.update(
-                db,
-                user,
-                data=update_data,
-            )
-
+            if "password" in update_data:
+                password = update_data.pop("password")
+                if password:
+                    update_data["hashed_password"] = password_service.hash_password(str(password))
+            if not getattr(self.current_user, "is_platform_admin", False):
+                update_data.pop("is_platform_admin", None)
+                update_data.pop("is_superuser", None)
+            protected_fields = {"id", "uuid", "tenant_id", "hashed_password", "created_at", "created_by"}
+            update_data = {key: value for key, value in update_data.items() if key not in protected_fields}
+            repository.update(db, user, data=update_data)
             uow.commit()
-
-        repository.refresh(
-            db,
-            user,
-        )
-
+        repository.refresh(db, user)
         return user
 
-    def set_active_status(
-        self,
-        user_id: int,
-        *,
-        is_active: bool,
-        tenant_id: int | None = None,
-    ) -> User:
-        return self.update_user(
-            user_id,
-            tenant_id=tenant_id,
-            data={
-                "is_active": is_active,
-            },
-        )
+    def set_active_status(self, user_id: int, *, is_active: bool, tenant_id: int | None = None) -> User:
+        return self.update_user(user_id, tenant_id=tenant_id, data={"is_active": is_active})
 
-    def reset_password(
-        self,
-        user_id: int,
-        *,
-        new_password: str,
-        tenant_id: int | None = None,
-        must_change_password: bool = True,
-    ) -> User:
+    def reset_password(self, user_id: int, *, new_password: str, tenant_id: int | None = None, must_change_password: bool = True) -> User:
         db = self.require_db()
         repository = self.require_repository()
-
-        effective_tenant_id = self._resolve_tenant_id(
-            tenant_id
-        )
-
+        effective_tenant_id = self._resolve_tenant_id(tenant_id)
         with self.uow as uow:
-            user = repository.get_by_id(
-                db,
-                user_id,
-                tenant_id=effective_tenant_id,
-                for_update=True,
-            )
-
+            user = repository.get_by_id(db, user_id, tenant_id=effective_tenant_id, for_update=True)
             if user is None:
-                raise LookupError(
-                    "User was not found."
-                )
-
-            repository.update(
-                db,
-                user,
-                data={
-                    "hashed_password": (
-                        password_service.hash_password(
-                            new_password
-                        )
-                    ),
-                    "must_change_password": (
-                        must_change_password
-                    ),
-                },
-            )
-
+                raise LookupError("User was not found.")
+            repository.update(db, user, data={"hashed_password": password_service.hash_password(new_password), "must_change_password": must_change_password})
             uow.commit()
-
-        repository.refresh(
-            db,
-            user,
-        )
-
+        repository.refresh(db, user)
         return user
 
-    def soft_delete_user(
-        self,
-        user_id: int,
-        *,
-        tenant_id: int | None = None,
-        deleted_by: int | None = None,
-    ) -> User:
+    def soft_delete_user(self, user_id: int, *, tenant_id: int | None = None, deleted_by: int | None = None) -> User:
         db = self.require_db()
         repository = self.require_repository()
-
-        effective_tenant_id = self._resolve_tenant_id(
-            tenant_id
-        )
-
+        effective_tenant_id = self._resolve_tenant_id(tenant_id)
         with self.uow as uow:
-            user = repository.get_by_id(
-                db,
-                user_id,
-                tenant_id=effective_tenant_id,
-                for_update=True,
-            )
-
+            user = repository.get_by_id(db, user_id, tenant_id=effective_tenant_id, for_update=True)
             if user is None:
-                raise LookupError(
-                    "User was not found."
-                )
-
-            repository.soft_delete(
-                db,
-                user,
-                deleted_by=deleted_by,
-            )
-
+                raise LookupError("User was not found.")
+            repository.soft_delete(db, user, deleted_by=deleted_by)
             if hasattr(user, "is_active"):
                 user.is_active = False
-
             uow.commit()
-
-        repository.refresh(
-            db,
-            user,
-        )
-
+        repository.refresh(db, user)
         return user
 
-    def list_users(
-        self,
-        *,
-        tenant_id: int | None = None,
-        search: str | None = None,
-        is_active: bool | None = None,
-        skip: int = 0,
-        limit: int = 50,
-    ) -> list[User]:
+    def list_users(self, *, tenant_id: int | None = None, search: str | None = None, is_active: bool | None = None, skip: int = 0, limit: int = 50) -> list[User]:
         db = self.require_db()
         repository = self.require_repository()
+        effective_tenant_id = self._resolve_tenant_id(tenant_id)
+        return repository.list_users(db, tenant_id=effective_tenant_id, search=search, is_active=is_active, skip=max(skip, 0), limit=min(max(limit, 1), 200))
 
-        effective_tenant_id = self._resolve_tenant_id(
-            tenant_id
-        )
-
-        return repository.list_users(
-            db,
-            tenant_id=effective_tenant_id,
-            search=search,
-            is_active=is_active,
-            skip=max(skip, 0),
-            limit=min(max(limit, 1), 200),
-        )
-    
-    def list_users_page(
-        self,
-        *,
-        tenant_id: int | None = None,
-        search: str | None = None,
-        is_active: bool | None = None,
-        page: int = 1,
-        page_size: int = 25,
-    ) -> tuple[list[User], int]:
+    def list_users_page(self, *, tenant_id: int | None = None, search: str | None = None, is_active: bool | None = None, page: int = 1, page_size: int = 25) -> tuple[list[User], int]:
         db = self.require_db()
         repository = self.require_repository()
-
-        effective_tenant_id = self._resolve_tenant_id(
-            tenant_id
-        )
-
+        effective_tenant_id = self._resolve_tenant_id(tenant_id)
         safe_page = max(page, 1)
-        safe_page_size = min(
-            max(page_size, 1),
-            200,
-        )
-
-        skip = (
-            safe_page - 1
-        ) * safe_page_size
-
-        users = repository.list_users(
-            db,
-            tenant_id=effective_tenant_id,
-            search=search,
-            is_active=is_active,
-            skip=skip,
-            limit=safe_page_size,
-        )
-
-        total = repository.count_users(
-            db,
-            tenant_id=effective_tenant_id,
-            search=search,
-            is_active=is_active,
-        )
-
+        safe_page_size = min(max(page_size, 1), 200)
+        skip = (safe_page - 1) * safe_page_size
+        users = repository.list_users(db, tenant_id=effective_tenant_id, search=search, is_active=is_active, skip=skip, limit=safe_page_size)
+        total = repository.count_users(db, tenant_id=effective_tenant_id, search=search, is_active=is_active)
         return users, total
 
-    def _resolve_tenant_id(
-        self,
-        tenant_id: int | None,
-    ) -> int | None:
+    def _resolve_tenant_id(self, tenant_id: int | None) -> int | None:
         if tenant_id is not None:
             return tenant_id
-
         tenant = self.current_tenant
-
         if tenant is None:
             return None
-
         if isinstance(tenant, int):
             return tenant
-
-        return getattr(
-            tenant,
-            "id",
-            None,
-        )
+        return getattr(tenant, "id", None)

@@ -3,125 +3,64 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from fastapi import HTTPException, Request, status
+from fastapi import Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.database.session import get_db
+from app.modules.identity.dependencies.current_user import get_current_user
+from app.modules.identity.models import User
+from app.modules.roles.models import Permission, role_permissions
 
 
-def extract_permission_codes(
-    current_user: Any,
-) -> set[str]:
+def extract_permission_codes(current_user: Any) -> set[str]:
+    """Return permission names/codes already loaded on a user or role."""
     permission_codes: set[str] = set()
-
-    direct_permissions = getattr(
-        current_user,
-        "permissions",
-        None,
-    )
-
-    if direct_permissions:
-        for permission in direct_permissions:
+    for owner in (current_user, getattr(current_user, "role", None)):
+        for permission in getattr(owner, "permissions", None) or []:
             if isinstance(permission, str):
                 permission_codes.add(permission)
                 continue
-
-            code = getattr(
-                permission,
-                "code",
-                None,
-            )
-
-            if code:
-                permission_codes.add(
-                    str(code)
-                )
-
-    role = getattr(
-        current_user,
-        "role",
-        None,
-    )
-
-    role_permissions = getattr(
-        role,
-        "permissions",
-        None,
-    )
-
-    if role_permissions:
-        for permission in role_permissions:
-            if isinstance(permission, str):
-                permission_codes.add(permission)
-                continue
-
-            code = getattr(
-                permission,
-                "code",
-                None,
-            )
-
-            if code:
-                permission_codes.add(
-                    str(code)
-                )
-
+            for attr in ("code", "name"):
+                value = getattr(permission, attr, None)
+                if value:
+                    permission_codes.add(str(value))
     return permission_codes
 
 
-def user_has_permission(
-    current_user: Any,
-    permission_code: str,
-) -> bool:
-    if getattr(
-        current_user,
-        "is_superuser",
-        False,
-    ):
+def user_has_permission(current_user: Any, permission_code: str, db: Session | None = None) -> bool:
+    if getattr(current_user, "is_platform_admin", False) or getattr(current_user, "is_superuser", False):
         return True
 
-    permissions = extract_permission_codes(
-        current_user
+    if permission_code in extract_permission_codes(current_user):
+        return True
+
+    if db is None or not getattr(current_user, "role_id", None):
+        return False
+
+    statement = (
+        select(Permission.id)
+        .join(role_permissions, role_permissions.c.permission_id == Permission.id)
+        .where(
+            role_permissions.c.role_id == current_user.role_id,
+            Permission.is_active.is_(True),
+            Permission.name == permission_code,
+        )
     )
+    return db.scalar(statement) is not None
 
-    return permission_code in permissions
 
-
-def require_permission(
-    permission_code: str,
-) -> Callable[[Request], None]:
-    """
-    Generic request-state permission checker.
-
-    This requires authentication middleware/dependency to set:
-        request.state.current_user
-
-    Do not use it in routers until current_user is placed
-    on request.state by the authentication layer.
-    """
+def require_permission(permission_code: str) -> Callable[..., None]:
+    """FastAPI dependency that enforces a role permission at the API boundary."""
 
     def dependency(
-        request: Request,
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db),
     ) -> None:
-        current_user = getattr(
-            request.state,
-            "current_user",
-            None,
-        )
-
-        if current_user is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication is required.",
-            )
-
-        if not user_has_permission(
-            current_user,
-            permission_code,
-        ):
+        if not user_has_permission(current_user, permission_code, db):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=(
-                    f"Missing required permission: "
-                    f"{permission_code}"
-                ),
+                detail=f"Missing required permission: {permission_code}",
             )
 
     return dependency

@@ -23,353 +23,60 @@ from app.database.base import Base
 class JournalEntry(Base):
     __tablename__ = "journal_entries"
 
-    id = Column(
-        Integer,
-        primary_key=True,
-        index=True,
-    )
+    id = Column(Integer, primary_key=True, index=True)
+    uuid = Column(UUID(as_uuid=True), nullable=False, unique=True, default=uuid.uuid4, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="RESTRICT"), nullable=False, index=True)
+    branch_id = Column(Integer, ForeignKey("branches.id", ondelete="RESTRICT"), nullable=False, index=True)
+    journal_id = Column(Integer, ForeignKey("accounting_journals.id", ondelete="RESTRICT"), nullable=False, index=True)
+    fiscal_year_id = Column(Integer, ForeignKey("fiscal_years.id", ondelete="RESTRICT"), nullable=False, index=True)
+    period_id = Column(Integer, ForeignKey("accounting_periods.id", ondelete="RESTRICT"), nullable=False, index=True)
+    business_transaction_id = Column(Integer, ForeignKey("business_transactions.id", ondelete="RESTRICT"), nullable=True, index=True)
+    reversal_of_id = Column(Integer, ForeignKey("journal_entries.id", ondelete="RESTRICT"), nullable=True, index=True)
+    reversal_entry_id = Column(Integer, ForeignKey("journal_entries.id", ondelete="RESTRICT"), nullable=True, index=True)
+    entry_number = Column(String(100), nullable=False, index=True)
+    entry_date = Column(Date, nullable=False, index=True)
+    posting_date = Column(Date, nullable=True, index=True)
+    reference = Column(String(150), nullable=True, index=True)
+    description = Column(Text, nullable=False)
+    currency_code = Column(String(3), nullable=False, default="EGP")
+    exchange_rate = Column(Numeric(18, 8), nullable=False, default=1)
+    total_debit = Column(Numeric(20, 4), nullable=False, default=0)
+    total_credit = Column(Numeric(20, 4), nullable=False, default=0)
+    status = Column(String(30), nullable=False, default="draft", index=True)
+    source_module = Column(String(80), nullable=True, index=True)
+    source_entity = Column(String(100), nullable=True)
+    source_id = Column(Integer, nullable=True, index=True)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    submitted_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    approved_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    posted_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    cancelled_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    submitted_at = Column(DateTime(timezone=True), nullable=True)
+    approved_at = Column(DateTime(timezone=True), nullable=True)
+    posted_at = Column(DateTime(timezone=True), nullable=True)
+    cancelled_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
-    uuid = Column(
-        UUID(as_uuid=True),
-        nullable=False,
-        unique=True,
-        default=uuid.uuid4,
-        index=True,
-    )
-
-    tenant_id = Column(
-        Integer,
-        ForeignKey(
-            "tenants.id",
-            ondelete="CASCADE",
-        ),
-        nullable=False,
-        index=True,
-    )
-
-    company_id = Column(
-        Integer,
-        ForeignKey(
-            "companies.id",
-            ondelete="RESTRICT",
-        ),
-        nullable=False,
-        index=True,
-    )
-
-    branch_id = Column(
-        Integer,
-        ForeignKey(
-            "branches.id",
-            ondelete="RESTRICT",
-        ),
-        nullable=False,
-        index=True,
-    )
-
-    journal_id = Column(
-        Integer,
-        ForeignKey(
-            "accounting_journals.id",
-            ondelete="RESTRICT",
-        ),
-        nullable=False,
-        index=True,
-    )
-
-    fiscal_year_id = Column(
-        Integer,
-        ForeignKey(
-            "fiscal_years.id",
-            ondelete="RESTRICT",
-        ),
-        nullable=False,
-        index=True,
-    )
-
-    period_id = Column(
-        Integer,
-        ForeignKey(
-            "accounting_periods.id",
-            ondelete="RESTRICT",
-        ),
-        nullable=False,
-        index=True,
-    )
-
-    business_transaction_id = Column(
-        Integer,
-        ForeignKey(
-            "business_transactions.id",
-            ondelete="RESTRICT",
-        ),
-        nullable=True,
-        index=True,
-    )
-
-    reversal_of_id = Column(
-        Integer,
-        ForeignKey(
-            "journal_entries.id",
-            ondelete="RESTRICT",
-        ),
-        nullable=True,
-        index=True,
-    )
-
-    reversal_entry_id = Column(
-        Integer,
-        ForeignKey(
-            "journal_entries.id",
-            ondelete="RESTRICT",
-        ),
-        nullable=True,
-        index=True,
-    )
-
-    entry_number = Column(
-        String(100),
-        nullable=False,
-        index=True,
-    )
-
-    entry_date = Column(
-        Date,
-        nullable=False,
-        index=True,
-    )
-
-    posting_date = Column(
-        Date,
-        nullable=True,
-        index=True,
-    )
-
-    reference = Column(
-        String(150),
-        nullable=True,
-        index=True,
-    )
-
-    description = Column(
-        Text,
-        nullable=False,
-    )
-
-    currency_code = Column(
-        String(3),
-        nullable=False,
-        default="EGP",
-    )
-
-    exchange_rate = Column(
-        Numeric(18, 8),
-        nullable=False,
-        default=1,
-    )
-
-    total_debit = Column(
-        Numeric(20, 4),
-        nullable=False,
-        default=0,
-    )
-
-    total_credit = Column(
-        Numeric(20, 4),
-        nullable=False,
-        default=0,
-    )
-
-    status = Column(
-        String(30),
-        nullable=False,
-        default="draft",
-        index=True,
-    )
-
-    source_module = Column(
-        String(80),
-        nullable=True,
-        index=True,
-    )
-
-    source_entity = Column(
-        String(100),
-        nullable=True,
-    )
-
-    source_id = Column(
-        Integer,
-        nullable=True,
-        index=True,
-    )
-
-    created_by = Column(
-        Integer,
-        ForeignKey(
-            "users.id",
-            ondelete="SET NULL",
-        ),
-        nullable=True,
-        index=True,
-    )
-
-    submitted_by = Column(
-        Integer,
-        ForeignKey(
-            "users.id",
-            ondelete="SET NULL",
-        ),
-        nullable=True,
-    )
-
-    approved_by = Column(
-        Integer,
-        ForeignKey(
-            "users.id",
-            ondelete="SET NULL",
-        ),
-        nullable=True,
-    )
-
-    posted_by = Column(
-        Integer,
-        ForeignKey(
-            "users.id",
-            ondelete="SET NULL",
-        ),
-        nullable=True,
-    )
-
-    cancelled_by = Column(
-        Integer,
-        ForeignKey(
-            "users.id",
-            ondelete="SET NULL",
-        ),
-        nullable=True,
-    )
-
-    created_at = Column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-    )
-
-    submitted_at = Column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-
-    approved_at = Column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-
-    posted_at = Column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-
-    cancelled_at = Column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-
-    updated_at = Column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-        onupdate=func.now(),
-    )
-
-    journal = relationship(
-        "AccountingJournal",
-        back_populates="entries",
-    )
-
-    fiscal_year = relationship(
-        "FiscalYear",
-    )
-
-    period = relationship(
-        "AccountingPeriod",
-    )
-
-    business_transaction = relationship(
-        "BusinessTransaction",
-    )
-
-    lines = relationship(
-        "JournalEntryLine",
-        back_populates="entry",
-        cascade="all, delete-orphan",
-        passive_deletes=True,
-        order_by="JournalEntryLine.line_number",
-    )
-
-    reversal_of = relationship(
-        "JournalEntry",
-        remote_side=[id],
-        foreign_keys=[reversal_of_id],
-        post_update=True,
-    )
-
-    reversal_entry = relationship(
-        "JournalEntry",
-        remote_side=[id],
-        foreign_keys=[reversal_entry_id],
-        post_update=True,
-    )
+    journal = relationship("AccountingJournal", back_populates="entries")
+    fiscal_year = relationship("FiscalYear")
+    period = relationship("AccountingPeriod")
+    business_transaction = relationship("BusinessTransaction")
+    lines = relationship("JournalEntryLine", back_populates="entry", cascade="all, delete-orphan", passive_deletes=True, order_by="JournalEntryLine.line_number")
+    reversal_of = relationship("JournalEntry", remote_side=[id], foreign_keys=[reversal_of_id], post_update=True)
+    reversal_entry = relationship("JournalEntry", remote_side=[id], foreign_keys=[reversal_entry_id], post_update=True)
 
     __table_args__ = (
-        UniqueConstraint(
-            "tenant_id",
-            "entry_number",
-            name="uq_journal_entry_tenant_number",
-        ),
-        CheckConstraint(
-            "total_debit >= 0",
-            name="ck_journal_entry_debit_positive",
-        ),
-        CheckConstraint(
-            "total_credit >= 0",
-            name="ck_journal_entry_credit_positive",
-        ),
-        CheckConstraint(
-            "exchange_rate > 0",
-            name="ck_journal_entry_exchange_rate",
-        ),
-        CheckConstraint(
-            "status IN ("
-            "'draft', "
-            "'pending', "
-            "'approved', "
-            "'posted', "
-            "'cancelled', "
-            "'reversed'"
-            ")",
-            name="ck_journal_entry_status",
-        ),
-        Index(
-            "ix_journal_entry_scope_date",
-            "tenant_id",
-            "company_id",
-            "branch_id",
-            "entry_date",
-        ),
-        Index(
-            "ix_journal_entry_source",
-            "tenant_id",
-            "source_module",
-            "source_entity",
-            "source_id",
-        ),
+        UniqueConstraint("tenant_id", "entry_number", name="uq_journal_entry_tenant_number"),
+        CheckConstraint("total_debit >= 0", name="ck_journal_entry_debit_positive"),
+        CheckConstraint("total_credit >= 0", name="ck_journal_entry_credit_positive"),
+        CheckConstraint("exchange_rate > 0", name="ck_journal_entry_exchange_rate"),
+        CheckConstraint("status IN ('draft', 'pending', 'approved', 'posted', 'cancelled', 'reversed')", name="ck_journal_entry_status"),
+        Index("ix_journal_entry_scope_date", "tenant_id", "company_id", "branch_id", "entry_date"),
+        Index("ix_journal_entry_source", "tenant_id", "source_module", "source_entity", "source_id"),
+        Index("uq_journal_entry_source_idempotency", "tenant_id", "company_id", "source_module", "source_entity", "source_id", unique=True, postgresql_where="source_module IS NOT NULL AND source_entity IS NOT NULL AND source_id IS NOT NULL"),
     )
 
     def __repr__(self) -> str:
-        return (
-            f"<JournalEntry "
-            f"number={self.entry_number!r} "
-            f"status={self.status!r}>"
-        )
+        return f"<JournalEntry number={self.entry_number!r} status={self.status!r}>"
