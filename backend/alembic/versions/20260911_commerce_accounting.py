@@ -27,6 +27,7 @@ def upgrade():
         sa.Column("output_vat_account_id", sa.Integer(), sa.ForeignKey("account_combinations.id", ondelete="RESTRICT"), nullable=False),
         sa.Column("input_vat_account_id", sa.Integer(), sa.ForeignKey("account_combinations.id", ondelete="RESTRICT"), nullable=False),
         sa.Column("wht_account_id", sa.Integer(), sa.ForeignKey("account_combinations.id", ondelete="RESTRICT"), nullable=True),
+        sa.Column("default_payment_account_id", sa.Integer(), sa.ForeignKey("account_combinations.id", ondelete="RESTRICT"), nullable=False),
         sa.Column("default_branch_id", sa.Integer(), sa.ForeignKey("branches.id", ondelete="RESTRICT"), nullable=False),
         sa.Column("auto_post", sa.Boolean(), nullable=False, server_default=sa.true()),
     )
