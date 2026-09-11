@@ -16,6 +16,21 @@ class InventoryStockMoveService:
         return inventory_stock_move_repository.list(db, company_id, item_id)
 
     def create_draft(self, db: Session, payload):
+        source_module = getattr(payload, "source_module", None)
+        source_entity = getattr(payload, "source_entity", None)
+        source_id = getattr(payload, "source_id", None)
+        if source_module or source_entity or source_id:
+            if not all((source_module, source_entity, source_id)):
+                raise ValueError("source_module, source_entity and source_id must be provided together")
+            existing = db.scalar(select(InventoryStockMove).where(
+                InventoryStockMove.company_id == payload.company_id,
+                InventoryStockMove.source_module == source_module,
+                InventoryStockMove.source_entity == source_entity,
+                InventoryStockMove.source_id == str(source_id),
+            ).with_for_update())
+            if existing is not None:
+                return existing
+
         item = db.scalar(select(InventoryItem).where(
             InventoryItem.id == payload.item_id,
             InventoryItem.company_id == payload.company_id,
