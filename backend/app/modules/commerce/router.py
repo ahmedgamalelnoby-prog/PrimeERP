@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.accounting.chart_of_accounts.models import AccountCombination
 from app.modules.accounting.journals.models import AccountingJournal
@@ -9,14 +10,18 @@ from app.modules.branches.models import Branch
 from app.modules.commerce.accounting_models import CommerceAccountingSettings
 from app.modules.commerce.accounting_schemas import CommerceAccountingSettingsCreate
 from app.modules.commerce.accounting_service import commerce_accounting_service
-from app.modules.commerce.models import BusinessPartner, CommercePayment
+from app.modules.commerce.models import CommercePayment
 from app.modules.commerce.schemas import PartnerCreate, PartnerResponse, DocumentCreate, DocumentResponse, PaymentCreate, PaymentReverse
 from app.modules.commerce.service import commerce_service
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 
-router = APIRouter(prefix="/commerce", tags=["Commerce"])
+router = APIRouter(
+    prefix="/commerce",
+    tags=["Commerce"],
+    dependencies=[Depends(require_permission("commerce.access"))],
+)
 
 
 def _company_for_user(db: Session, company_id: int, user: User):
@@ -80,7 +85,7 @@ def _validate_accounting_configuration(db: Session, company: Company, payload: C
             raise HTTPException(422, f"Configured {label} does not belong to this company or is inactive")
 
 
-@router.post("/accounting-settings", status_code=201)
+@router.post("/accounting-settings", status_code=201, dependencies=[Depends(require_permission("commerce.write"))])
 def configure_accounting(payload: CommerceAccountingSettingsCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     company = _company_for_user(db, payload.company_id, current_user)
     branch = db.scalar(select(Branch).where(Branch.id == payload.default_branch_id, Branch.company_id == company.id, Branch.tenant_id == company.tenant_id, Branch.is_active.is_(True)))
@@ -109,7 +114,7 @@ def get_accounting_settings(company_id: int = Query(..., gt=0), current_user: Us
     return {c.name: getattr(obj, c.name) for c in obj.__table__.columns if c.name != "id"}
 
 
-@router.post("/partners", response_model=PartnerResponse, status_code=201)
+@router.post("/partners", response_model=PartnerResponse, status_code=201, dependencies=[Depends(require_permission("commerce.write"))])
 def create_partner(payload: PartnerCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, payload.company_id, current_user)
     obj = _run(lambda: commerce_service.create_partner(db, payload)); db.commit(); db.refresh(obj); return obj
@@ -120,14 +125,14 @@ def list_partners(company_id: int = Query(..., gt=0), partner_type: str | None =
     _company_for_user(db, company_id, current_user); return commerce_service.list_partners(db, company_id, partner_type)
 
 
-@router.post("/sales/documents", response_model=DocumentResponse, status_code=201)
+@router.post("/sales/documents", response_model=DocumentResponse, status_code=201, dependencies=[Depends(require_permission("commerce.write"))])
 def create_sale(payload: DocumentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, payload.company_id, current_user)
     if payload.document_type not in {"quotation", "order", "delivery", "invoice", "credit_note"}: raise HTTPException(400, "Invalid sales document type")
     obj = _run(lambda: commerce_service.create_document(db, payload)); db.commit(); db.refresh(obj); return obj
 
 
-@router.post("/purchases/documents", response_model=DocumentResponse, status_code=201)
+@router.post("/purchases/documents", response_model=DocumentResponse, status_code=201, dependencies=[Depends(require_permission("commerce.write"))])
 def create_purchase(payload: DocumentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, payload.company_id, current_user)
     if payload.document_type not in {"requisition", "rfq", "order", "receipt", "bill", "debit_note"}: raise HTTPException(400, "Invalid purchase document type")
@@ -144,7 +149,7 @@ def purchases(company_id: int = Query(..., gt=0), current_user: User = Depends(g
     _company_for_user(db, company_id, current_user); return commerce_service.list_documents(db, company_id, "purchase")
 
 
-@router.post("/sales/{document_id}/confirm", response_model=DocumentResponse)
+@router.post("/sales/{document_id}/confirm", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def confirm_sale(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
     obj = _run(lambda: commerce_service.confirm(db, company_id, document_id, "sale"))
@@ -153,7 +158,7 @@ def confirm_sale(document_id: int, company_id: int = Query(..., gt=0), current_u
     db.commit(); db.refresh(obj); return obj
 
 
-@router.post("/purchases/{document_id}/confirm", response_model=DocumentResponse)
+@router.post("/purchases/{document_id}/confirm", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def confirm_purchase(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
     obj = _run(lambda: commerce_service.confirm(db, company_id, document_id, "purchase"))
@@ -162,7 +167,7 @@ def confirm_purchase(document_id: int, company_id: int = Query(..., gt=0), curre
     db.commit(); db.refresh(obj); return obj
 
 
-@router.post("/sales/{document_id}/post-inventory", response_model=DocumentResponse)
+@router.post("/sales/{document_id}/post-inventory", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def post_sale(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
     obj = _run(lambda: commerce_service.post_inventory(db, company_id, document_id, "sale"))
@@ -170,13 +175,13 @@ def post_sale(document_id: int, company_id: int = Query(..., gt=0), current_user
     db.commit(); db.refresh(obj); return obj
 
 
-@router.post("/purchases/{document_id}/receive", response_model=DocumentResponse)
+@router.post("/purchases/{document_id}/receive", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def receive_purchase(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
     obj = _run(lambda: commerce_service.post_inventory(db, company_id, document_id, "purchase")); db.commit(); db.refresh(obj); return obj
 
 
-@router.post("/sales/{document_id}/payments", response_model=DocumentResponse)
+@router.post("/sales/{document_id}/payments", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.payment"))])
 def pay_sale(document_id: int, payload: PaymentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if payload.document_id != document_id: raise HTTPException(400, "Document id mismatch")
     _company_for_user(db, payload.company_id, current_user)
@@ -185,7 +190,7 @@ def pay_sale(document_id: int, payload: PaymentCreate, current_user: User = Depe
     db.commit(); db.refresh(obj); return obj
 
 
-@router.post("/purchases/{document_id}/payments", response_model=DocumentResponse)
+@router.post("/purchases/{document_id}/payments", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.payment"))])
 def pay_purchase(document_id: int, payload: PaymentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if payload.document_id != document_id: raise HTTPException(400, "Document id mismatch")
     _company_for_user(db, payload.company_id, current_user)
@@ -194,7 +199,7 @@ def pay_purchase(document_id: int, payload: PaymentCreate, current_user: User = 
     db.commit(); db.refresh(obj); return obj
 
 
-@router.post("/payments/{payment_id}/reverse", response_model=DocumentResponse)
+@router.post("/payments/{payment_id}/reverse", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.reverse"))])
 def reverse_payment(payment_id: int, payload: PaymentReverse, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, payload.company_id, current_user)
     original = db.scalar(select(CommercePayment).where(CommercePayment.id == payment_id, CommercePayment.company_id == payload.company_id))
