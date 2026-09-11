@@ -4,31 +4,30 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.modules.platform.subscriptions.constants import SubscriptionStatus
-
 
 class SubscriptionCreate(BaseModel):
     tenant_id: int = Field(gt=0)
     plan_id: int = Field(gt=0)
     starts_at: Optional[datetime] = None
+    ends_at: Optional[datetime] = None
     trial_ends_at: Optional[datetime] = None
-    current_period_start: Optional[datetime] = None
-    current_period_end: Optional[datetime] = None
-    quantity: int = Field(default=1, ge=1)
-    price: Decimal = Field(default=Decimal("0"), ge=0)
-    currency: str = Field(default="EGP", min_length=3, max_length=10)
-    auto_renew: bool = True
-    external_reference: Optional[str] = Field(default=None, max_length=100)
+    billing_cycle: str = Field(default="monthly", min_length=3, max_length=20)
+    auto_renew: bool = False
+    custom_max_users: Optional[int] = Field(default=None, ge=1)
+    custom_max_companies: Optional[int] = Field(default=None, ge=1)
+    custom_max_branches: Optional[int] = Field(default=None, ge=1)
     notes: Optional[str] = None
 
 
 class SubscriptionUpdate(BaseModel):
     plan_id: Optional[int] = Field(default=None, gt=0)
+    billing_cycle: Optional[str] = Field(default=None, min_length=3, max_length=20)
+    ends_at: Optional[datetime] = None
+    next_billing_date: Optional[datetime] = None
     auto_renew: Optional[bool] = None
-    quantity: Optional[int] = Field(default=None, ge=1)
-    price: Optional[Decimal] = Field(default=None, ge=0)
-    current_period_start: Optional[datetime] = None
-    current_period_end: Optional[datetime] = None
+    custom_max_users: Optional[int] = Field(default=None, ge=1)
+    custom_max_companies: Optional[int] = Field(default=None, ge=1)
+    custom_max_branches: Optional[int] = Field(default=None, ge=1)
     notes: Optional[str] = None
 
 
@@ -38,18 +37,15 @@ class SubscriptionResponse(BaseModel):
     id: int
     tenant_id: int
     plan_id: int
-    status: SubscriptionStatus
+    status: str
+    billing_cycle: str
     starts_at: datetime
+    ends_at: Optional[datetime]
     trial_ends_at: Optional[datetime]
-    current_period_start: Optional[datetime]
-    current_period_end: Optional[datetime]
+    next_billing_date: Optional[datetime]
     cancelled_at: Optional[datetime]
-    cancellation_reason: Optional[str]
     auto_renew: bool
-    quantity: int
-    price: Decimal
-    currency: str
-    external_reference: Optional[str]
+    custom_max_users: Optional[int]
+    custom_max_companies: Optional[int]
+    custom_max_branches: Optional[int]
     notes: Optional[str]
-    created_at: datetime
-    updated_at: datetime
