@@ -31,6 +31,7 @@ class FinancialReportService:
                 AccountCombination.code.label("account_code"),
                 AccountCombination.name_ar.label("account_name"),
                 NaturalAccount.financial_statement.label("financial_statement"),
+                NaturalAccount.account_category.label("account_category"),
                 NaturalAccount.normal_balance.label("normal_balance"),
                 func.coalesce(func.sum(JournalEntryLine.debit), 0).label("debit"),
                 func.coalesce(func.sum(JournalEntryLine.credit), 0).label("credit"),
@@ -48,6 +49,7 @@ class FinancialReportService:
                 AccountCombination.code,
                 AccountCombination.name_ar,
                 NaturalAccount.financial_statement,
+                NaturalAccount.account_category,
                 NaturalAccount.normal_balance,
             )
             .order_by(AccountCombination.code)
@@ -70,6 +72,7 @@ class FinancialReportService:
                     account_code=row.account_code,
                     account_name=row.account_name,
                     financial_statement=row.financial_statement,
+                    account_category=row.account_category,
                     normal_balance=row.normal_balance,
                     debit=debit,
                     credit=credit,
@@ -112,14 +115,14 @@ class FinancialReportService:
 
         for row in trial.rows:
             if row.financial_statement == "profit_and_loss":
-                if row.normal_balance == "credit":
+                if row.account_category in {"revenue", "income"} or row.normal_balance == "credit":
                     revenue += row.balance
                 else:
                     expenses += row.balance
-            elif row.account_name and row.financial_statement == "balance_sheet":
-                if row.normal_balance == "debit":
+            elif row.financial_statement == "balance_sheet":
+                if row.account_category in {"asset", "assets"} or row.normal_balance == "debit":
                     assets += row.balance
-                elif "liabil" in row.account_name.lower():
+                elif row.account_category in {"liability", "liabilities"}:
                     liabilities += row.balance
                 else:
                     equity += row.balance
