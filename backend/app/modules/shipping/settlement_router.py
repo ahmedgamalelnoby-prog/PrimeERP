@@ -12,11 +12,7 @@ from app.modules.shipping.settlement_models import ShippingSettlementBatch, Ship
 from app.modules.shipping.settlement_schemas import SettlementBatchCreate, SettlementBatchResponse, SettlementLineResponse
 from app.modules.shipping.settlement_service import shipping_settlement_service
 
-router = APIRouter(
-    prefix="/shipping/settlements",
-    tags=["Shipping Settlements"],
-    dependencies=[Depends(require_permission("shipping.access")), Depends(require_module("shipping"))],
-)
+router = APIRouter(prefix="/shipping/settlements", tags=["Shipping Settlements"], dependencies=[Depends(require_permission("shipping.access")), Depends(require_module("shipping"))])
 
 
 def _company_for_user(db: Session, company_id: int, user: User):
@@ -31,55 +27,32 @@ def _company_for_user(db: Session, company_id: int, user: User):
 
 
 @router.post("", response_model=SettlementBatchResponse, status_code=201, dependencies=[Depends(require_permission("shipping.write"))])
-def create_settlement(
-    payload: SettlementBatchCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
+def create_settlement(payload: SettlementBatchCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _company_for_user(db, payload.company_id, current_user)
     try:
-        batch = shipping_settlement_service.create_batch(db, payload)
-        db.commit()
-        db.refresh(batch)
+        batch = shipping_settlement_service.create_batch(db, payload, current_user.id)
+        db.commit(); db.refresh(batch)
         return batch
-    except (ValueError, HTTPException) as exc:
+    except HTTPException:
         db.rollback()
-        if isinstance(exc, HTTPException):
-            raise
+        raise
+    except Exception as exc:
+        db.rollback()
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("", response_model=list[SettlementBatchResponse])
-def list_settlements(
-    company_id: int = Query(..., gt=0),
-    carrier_id: int | None = Query(default=None, gt=0),
-    status: str | None = None,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
+def list_settlements(company_id: int = Query(..., gt=0), carrier_id: int | None = Query(default=None, gt=0), status: str | None = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _company_for_user(db, company_id, current_user)
     stmt = select(ShippingSettlementBatch).where(ShippingSettlementBatch.company_id == company_id)
-    if carrier_id:
-        stmt = stmt.where(ShippingSettlementBatch.carrier_id == carrier_id)
-    if status:
-        stmt = stmt.where(ShippingSettlementBatch.status == status)
+    if carrier_id: stmt = stmt.where(ShippingSettlementBatch.carrier_id == carrier_id)
+    if status: stmt = stmt.where(ShippingSettlementBatch.status == status)
     return list(db.scalars(stmt.order_by(ShippingSettlementBatch.id.desc())).all())
 
 
 @router.get("/{batch_id}/lines", response_model=list[SettlementLineResponse])
-def settlement_lines(
-    batch_id: int,
-    company_id: int = Query(..., gt=0),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
+def settlement_lines(batch_id: int, company_id: int = Query(..., gt=0), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _company_for_user(db, company_id, current_user)
-    batch = db.scalar(select(ShippingSettlementBatch).where(
-        ShippingSettlementBatch.id == batch_id,
-        ShippingSettlementBatch.company_id == company_id,
-    ))
-    if batch is None:
-        raise HTTPException(404, "Settlement batch not found")
-    return list(db.scalars(select(ShippingShipmentSettlement).where(
-        ShippingShipmentSettlement.batch_id == batch_id,
-    ).order_by(ShippingShipmentSettlement.id)).all())
+    batch = db.scalar(select(ShippingSettlementBatch).where(ShippingSettlementBatch.id == batch_id, ShippingSettlementBatch.company_id == company_id))
+    if batch is None: raise HTTPException(404, "Settlement batch not found")
+    return list(db.scalars(select(ShippingShipmentSettlement).where(ShippingShipmentSettlement.batch_id == batch_id).order_by(ShippingShipmentSettlement.id)).all())
