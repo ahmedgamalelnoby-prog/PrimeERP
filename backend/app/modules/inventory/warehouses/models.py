@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from app.database.base import Base
@@ -23,5 +23,6 @@ class InventoryWarehouse(Base):
 
     __table_args__ = (
         UniqueConstraint("company_id", "code", name="uq_inventory_warehouse_company_code"),
+        Index("uq_inventory_warehouse_one_central", "company_id", unique=True, postgresql_where=(is_central.is_(True))),
         CheckConstraint("(is_central = true AND branch_id IS NULL) OR (is_central = false AND branch_id IS NOT NULL)", name="ck_inventory_warehouse_scope"),
     )
