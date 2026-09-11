@@ -4,6 +4,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.modules.accounting.fiscal_years.models import AccountingPeriod, FiscalYear
 from app.modules.accounting.journals.models import AccountingJournal
 from app.modules.accounting.journals.services.journal_service import journal_service
 from app.modules.companies.models import Company
@@ -28,6 +29,12 @@ class ShippingSettlementService:
         journal = db.scalar(select(AccountingJournal).where(AccountingJournal.id == carrier.settlement_journal_id, AccountingJournal.company_id == payload.company_id, AccountingJournal.tenant_id == company.tenant_id, AccountingJournal.is_active.is_(True)))
         if journal is None:
             raise HTTPException(409, "Carrier settlement journal is invalid for the company")
+        period = db.scalar(select(AccountingPeriod).where(AccountingPeriod.company_id == payload.company_id, AccountingPeriod.tenant_id == company.tenant_id, AccountingPeriod.start_date <= payload.settlement_date, AccountingPeriod.end_date >= payload.settlement_date, AccountingPeriod.status == "open", AccountingPeriod.allow_posting.is_(True)).order_by(AccountingPeriod.period_number.desc()))
+        if period is None:
+            raise HTTPException(409, "No open posting period exists for the settlement date")
+        fiscal_year = db.scalar(select(FiscalYear).where(FiscalYear.id == period.fiscal_year_id, FiscalYear.company_id == payload.company_id, FiscalYear.tenant_id == company.tenant_id))
+        if fiscal_year is None:
+            raise HTTPException(409, "Fiscal year for the settlement period was not found")
 
         ids = [line.shipment_id for line in payload.lines]
         if len(ids) != len(set(ids)):
@@ -56,11 +63,9 @@ class ShippingSettlementService:
 
         batch.gross_amount = gross; batch.carrier_fees = fees; batch.net_amount = gross - fees; batch.status = "reconciled" if fully_reconciled else "open"
         db.flush()
-
-        journal_service._active_company(db, company.tenant_id, payload.company_id)
         entry = journal_service.create_draft(
             db, tenant_id=company.tenant_id, company_id=payload.company_id, branch_id=carrier.branch_id,
-            journal_id=carrier.settlement_journal_id, fiscal_year_id=0, period_id=0,
+            journal_id=carrier.settlement_journal_id, fiscal_year_id=fiscal_year.id, period_id=period.id,
             entry_number=f"SHIP-SET-{batch.id}", entry_date=payload.settlement_date,
             description=f"Shipping settlement {payload.reference}", user_id=user_id,
             source_module="shipping", source_entity="shipping_settlement", source_id=batch.id,
