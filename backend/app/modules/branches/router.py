@@ -10,6 +10,7 @@ from app.modules.branches.schemas import BranchCreate, BranchResponse, BranchUpd
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
+from app.modules.saas.entitlements import enforce_branch_limit
 
 router = APIRouter(prefix="/branches", tags=["Branches"])
 
@@ -35,12 +36,7 @@ def _branch(db: Session, branch_id: int, user: User) -> Branch:
 
 
 @router.get("", response_model=list[BranchResponse], dependencies=[Depends(require_permission("company.access"))])
-def list_branches(
-    company_id: int | None = Query(default=None, gt=0),
-    active_only: bool = Query(False),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
+def list_branches(company_id: int | None = Query(default=None, gt=0), active_only: bool = Query(False), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     stmt = select(Branch).where(Branch.tenant_id == _tenant_id(current_user)).order_by(Branch.name, Branch.id)
     if company_id is not None:
         _company(db, company_id, current_user)
@@ -58,6 +54,7 @@ def get_branch(branch_id: int, db: Session = Depends(get_db), current_user: User
 @router.post("", response_model=BranchResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("company.write"))])
 def create_branch(payload: BranchCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     company = _company(db, payload.company_id, current_user)
+    enforce_branch_limit(db, company.tenant_id)
     branch = Branch(tenant_id=company.tenant_id, **payload.model_dump())
     db.add(branch)
     try:
