@@ -15,5 +15,5 @@ class TaxRate(Base):
     is_active = Column(Boolean, nullable=False, server_default="true")
 
     __table_args__ = (
-        CheckConstraint("rate >= 0", name="ck_tax_rate_nonnegative"),
+        CheckConstraint("rate >= 0 AND rate <= 100", name="ck_tax_rate_bounds"),
     )
