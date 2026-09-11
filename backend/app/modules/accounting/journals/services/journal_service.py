@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
@@ -46,13 +46,21 @@ class JournalService:
         credit = Decimal("0")
         entry = JournalEntry(tenant_id=tenant_id, company_id=company_id, branch_id=branch_id, journal_id=journal_id, fiscal_year_id=fiscal_year_id, period_id=period_id, entry_number=entry_number.strip(), entry_date=entry_date, description=description.strip(), currency_code=currency_code.upper(), exchange_rate=exchange_rate, reference=reference.strip() if reference else None, source_module=source_module, source_entity=source_entity, source_id=source_id, created_by=user_id, status="draft")
         for number, payload in enumerate(lines, start=1):
-            line_debit = Decimal(str(payload.get("debit", 0)))
-            line_credit = Decimal(str(payload.get("credit", 0)))
+            try:
+                line_debit = Decimal(str(payload.get("debit", 0)))
+                line_credit = Decimal(str(payload.get("credit", 0)))
+                account_id = int(payload["account_combination_id"])
+            except (KeyError, TypeError, ValueError, InvalidOperation):
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid account or amount on journal line {number}")
+            if account_id <= 0:
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid account on journal line {number}")
+            if not line_debit.is_finite() or not line_credit.is_finite():
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Non-finite amount on journal line {number}")
             if line_debit < 0 or line_credit < 0 or (line_debit > 0 and line_credit > 0) or (line_debit == 0 and line_credit == 0):
                 raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid amount on journal line {number}")
             debit += line_debit
             credit += line_credit
-            entry.lines.append(JournalEntryLine(tenant_id=tenant_id, line_number=number, account_combination_id=int(payload["account_combination_id"]), department_id=payload.get("department_id"), cost_center_id=payload.get("cost_center_id"), description=payload.get("description"), reference=payload.get("reference"), debit=line_debit, credit=line_credit, currency_code=currency_code.upper(), exchange_rate=exchange_rate, base_debit=line_debit * exchange_rate, base_credit=line_credit * exchange_rate))
+            entry.lines.append(JournalEntryLine(tenant_id=tenant_id, line_number=number, account_combination_id=account_id, department_id=payload.get("department_id"), cost_center_id=payload.get("cost_center_id"), description=payload.get("description"), reference=payload.get("reference"), debit=line_debit, credit=line_credit, currency_code=currency_code.upper(), exchange_rate=exchange_rate, base_debit=line_debit * exchange_rate, base_credit=line_credit * exchange_rate))
         if debit != credit:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Journal entry must be balanced: total debit must equal total credit")
         entry.total_debit = debit
