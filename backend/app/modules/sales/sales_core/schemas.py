@@ -9,6 +9,13 @@ class SalesOrderLineCreate(BaseModel):
     discount_amount: Decimal = Field(default=Decimal("0"), ge=0)
 
 
+class SalesOrderLineResponse(SalesOrderLineCreate):
+    id: int
+    line_total: Decimal
+    class Config:
+        from_attributes = True
+
+
 class SalesOrderCreate(BaseModel):
     company_id: int = Field(gt=0)
     customer_id: int = Field(gt=0)
@@ -31,7 +38,6 @@ class SalesOrderResponse(BaseModel):
     total_amount: Decimal
     reference: str | None
     notes: str | None
-    lines: list = []
-
+    lines: list[SalesOrderLineResponse]
     class Config:
         from_attributes = True
