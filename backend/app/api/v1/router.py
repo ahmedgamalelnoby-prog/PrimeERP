@@ -17,6 +17,8 @@ from app.modules.platform.features.router import router as features_router
 from app.modules.platform.plans.router import router as plans_router
 from app.modules.platform.subscriptions.router import router as subscriptions_router
 from app.modules.platform.tenants.router import router as tenants_router
+from app.modules.purchasing.purchase_orders.router import router as purchase_orders_router
+from app.modules.purchasing.suppliers.router import router as suppliers_router
 from app.modules.saas.router import router as saas_router
 from app.modules.transactions.api.router import router as transactions_router
 
@@ -39,6 +41,8 @@ def build_router() -> APIRouter:
     api_router.include_router(inventory_adjustments_router)
     api_router.include_router(inventory_reservations_router)
     api_router.include_router(inventory_costing_router)
+    api_router.include_router(suppliers_router)
+    api_router.include_router(purchase_orders_router)
     api_router.include_router(plans_router)
     api_router.include_router(subscriptions_router)
     api_router.include_router(tenants_router, prefix="/platform")
