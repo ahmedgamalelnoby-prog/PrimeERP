@@ -18,11 +18,8 @@ from app.modules.saas.entitlements import require_module
 from .models import IntegrationConnection, IntegrationEvent
 from .schemas import ConnectionCreate, ConnectionResponse, WebhookEventCreate
 
-router = APIRouter(
-    prefix="/integrations",
-    tags=["Integrations"],
-    dependencies=[Depends(require_permission("integrations.access")), Depends(require_module("integrations"))],
-)
+router = APIRouter(prefix="/integrations", tags=["Integrations"], dependencies=[Depends(require_permission("integrations.access")), Depends(require_module("integrations"))])
+public_router = APIRouter(prefix="/integrations", tags=["Integrations Webhooks"])
 
 
 def _company_for_user(db: Session, company_id: int, user: User):
@@ -97,7 +94,7 @@ def list_connections(company_id: int = Query(..., gt=0), current_user: User = De
     return db.scalars(select(IntegrationConnection).where(IntegrationConnection.company_id == company_id).order_by(IntegrationConnection.id.desc())).all()
 
 
-@router.post("/salla/{connection_id}/webhook/public", status_code=202, dependencies=[Depends(require_permission("integrations.post"))])
+@public_router.post("/salla/{connection_id}/webhook/public", status_code=202)
 async def receive_salla_webhook_public(
     connection_id: int,
     request: Request,
