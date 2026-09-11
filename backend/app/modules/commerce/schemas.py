@@ -33,9 +33,6 @@ class DocumentLineCreate(BaseModel):
     quantity: Decimal = Field(gt=0)
     unit_price: Decimal = Field(ge=0)
     discount_percent: Decimal = Field(default=0, ge=0, le=100)
-    # Tax Master is authoritative. A manual percentage is retained only as a
-    # backwards-compatible zero value for exempt/no-tax lines; non-zero manual
-    # rates are rejected by the service when no tax_rate_id is supplied.
     tax_percent: Decimal = Field(default=0, ge=0, le=100)
 
 
@@ -75,6 +72,7 @@ class PaymentCreate(BaseModel):
     wht_amount: Decimal = Field(default=0, ge=0)
     method: str = Field(min_length=1, max_length=30)
     reference: str | None = None
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=100)
     notes: str | None = None
 
     @model_validator(mode="after")

@@ -95,6 +95,12 @@ class CommerceService:
         model = SalesDocument if kind == "sale" else PurchaseDocument
         obj = db.scalar(select(model).where(model.id == payload.document_id, model.company_id == payload.company_id).with_for_update())
         if not obj: raise ValueError("Document not found")
+        if payload.idempotency_key:
+            existing = db.scalar(select(CommercePayment).where(CommercePayment.company_id == payload.company_id, CommercePayment.idempotency_key == payload.idempotency_key).with_for_update())
+            if existing:
+                if existing.document_id != obj.id or existing.document_kind != kind:
+                    raise ValueError("Idempotency key is already used for another document")
+                return obj, existing
         balance = Decimal(obj.total or 0) - Decimal(obj.paid_total or 0)
         if payload.amount > balance: raise ValueError("Payment exceeds outstanding balance")
         payment = CommercePayment(document_kind=kind, **payload.model_dump())

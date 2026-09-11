@@ -106,6 +106,7 @@ class CommercePayment(Base):
     wht_amount = Column(Numeric(18, 4), nullable=False, default=0)
     method = Column(String(30), nullable=False)
     reference = Column(String(100), nullable=True)
+    idempotency_key = Column(String(100), nullable=True, index=True)
     notes = Column(Text, nullable=True)
     status = Column(String(20), nullable=False, default="posted")
     reversed_of_id = Column(Integer, ForeignKey("commerce_payments.id", ondelete="RESTRICT"), nullable=True, index=True)
