@@ -50,6 +50,15 @@ jobs:
         run: python -m alembic upgrade head
         env:
           DATABASE_URL: postgresql+psycopg://primeerp:primeerp@127.0.0.1:5432/primeerp_ci
+      - name: Require a single Alembic head
+        run: |
+          heads="$(python -m alembic heads)"
+          echo "$heads"
+          count="$(printf '%s\n' "$heads" | grep -c '(head)' || true)"
+          if [ "$count" -ne 1 ]; then
+            echo "Expected exactly one Alembic head; found $count."
+            exit 1
+          fi
       - name: Check Alembic configuration
         run: python -m alembic check
         env:
