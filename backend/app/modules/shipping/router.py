@@ -23,6 +23,8 @@ def _company_for_user(db: Session, company_id: int, user: User):
     company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == user.tenant_id))
     if company is None:
         raise HTTPException(403, "Company is outside the current tenant")
+    if not company.is_active:
+        raise HTTPException(409, "Company is inactive")
     return company
 
 
@@ -32,14 +34,6 @@ def _validate_account(db: Session, company_id: int, account_id: int | None, labe
     account = db.scalar(select(AccountCombination).where(AccountCombination.id == account_id, AccountCombination.company_id == company_id, AccountCombination.is_active.is_(True)))
     if account is None:
         raise HTTPException(422, f"{label} does not belong to the company or is inactive")
-
-
-def _validate_payment_account(db: Session, company_id: int, account_id: int | None):
-    _validate_account(db, company_id, account_id, "Shipping payment account")
-
-
-def _validate_carrier_accounting(db: Session, company_id: int, account_id: int | None, label: str):
-    _validate_account(db, company_id, account_id, label)
 
 
 def _validate_journal_and_branch(db: Session, company_id: int, journal_id: int | None, branch_id: int | None, tenant_id: int):
@@ -58,17 +52,16 @@ def carrier(payload: CarrierCreate, current_user: User = Depends(get_current_use
     company = _company_for_user(db, payload.company_id, current_user)
     if db.scalar(select(ShippingCarrier).where(ShippingCarrier.company_id == payload.company_id, ShippingCarrier.code == payload.code)):
         raise HTTPException(409, "Carrier code already exists")
-    _validate_carrier_accounting(db, company.id, payload.settlement_account_id, "Carrier settlement account")
-    _validate_carrier_accounting(db, company.id, payload.fee_account_id, "Carrier fee account")
+    _validate_account(db, company.id, payload.settlement_account_id, "Carrier settlement account")
+    _validate_account(db, company.id, payload.cash_account_id, "Carrier cash account")
+    _validate_account(db, company.id, payload.fee_account_id, "Carrier fee account")
     _validate_journal_and_branch(db, company.id, payload.settlement_journal_id, payload.branch_id, company.tenant_id)
-    if (payload.settlement_account_id is None) != (payload.fee_account_id is None):
-        raise HTTPException(422, "Settlement and fee accounts must be configured together")
+    if not all((payload.settlement_account_id, payload.cash_account_id, payload.fee_account_id)):
+        raise HTTPException(422, "Settlement, cash and fee accounts must be configured together")
     if (payload.settlement_journal_id is None) != (payload.branch_id is None):
         raise HTTPException(422, "Settlement journal and branch must be configured together")
     obj = ShippingCarrier(**payload.model_dump())
-    db.add(obj)
-    db.commit()
-    db.refresh(obj)
+    db.add(obj); db.commit(); db.refresh(obj)
     return obj
 
 
@@ -89,11 +82,9 @@ def method(payload: MethodCreate, current_user: User = Depends(get_current_user)
         raise HTTPException(422, "Invalid shipping payment method")
     if payload.payment_method == "prepaid" and payload.cod_fee_percent:
         raise HTTPException(422, "COD fee is not valid for prepaid-only methods")
-    _validate_payment_account(db, carrier_obj.company_id, payload.payment_account_id)
+    _validate_account(db, carrier_obj.company_id, payload.payment_account_id, "Shipping payment account")
     obj = ShippingMethod(carrier_id=carrier_obj.id, **payload.model_dump(exclude={"carrier_id"}))
-    db.add(obj)
-    db.commit()
-    db.refresh(obj)
+    db.add(obj); db.commit(); db.refresh(obj)
     return obj
 
 
@@ -119,9 +110,7 @@ def shipment(payload: ShipmentCreate, current_user: User = Depends(get_current_u
     if method_obj.payment_method in {"cod", "mixed"} and payload.cod_amount:
         fee += payload.cod_amount * method_obj.cod_fee_percent / 100
     obj = Shipment(**payload.model_dump(), shipping_fee=fee)
-    db.add(obj)
-    db.commit()
-    db.refresh(obj)
+    db.add(obj); db.commit(); db.refresh(obj)
     return obj
 
 
@@ -149,7 +138,5 @@ def status(shipment_id: int, value: str = Query(...), company_id: int = Query(..
         return obj
     if value not in _TRANSITIONS[obj.status]:
         raise HTTPException(409, f"Invalid shipment transition: {obj.status} -> {value}")
-    obj.status = value
-    db.commit()
-    db.refresh(obj)
+    obj.status = value; db.commit(); db.refresh(obj)
     return obj
