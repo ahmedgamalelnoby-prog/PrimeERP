@@ -50,6 +50,9 @@ from app.modules.transactions.models import BusinessTransaction, NumberSequence,
 from app.modules.accounting.fiscal_years.models import AccountingPeriod, FiscalYear
 from app.modules.accounting.journals.models import AccountingJournal, JournalEntry, JournalEntryLine
 
+# Inventory models.
+from app.modules.inventory.items.models import InventoryItem, InventoryStock
+
 __all__ = [
     "Tenant", "SubscriptionPlan", "Subscription", "SystemModule", "PlanModule", "TenantModule",
     "Plan", "Company", "Branch", "User", "Role", "Permission", "role_permissions",
@@ -58,4 +61,5 @@ __all__ = [
     "AccountingDepartment", "AccountingCostCenter", "NaturalAccount", "AccountCombination", "AccountingSettings",
     "NumberSequence", "BusinessTransaction", "TransactionEvent", "FiscalYear", "AccountingPeriod",
     "AccountingJournal", "JournalEntry", "JournalEntryLine",
+    "InventoryItem", "InventoryStock",
 ]
