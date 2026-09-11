@@ -172,5 +172,5 @@ def reverse_payment(payment_id: int, payload: PaymentReverse, current_user: User
     original = db.scalar(select(CommercePayment).where(CommercePayment.id == payment_id, CommercePayment.company_id == payload.company_id))
     if original is None: raise HTTPException(404, "Payment not found")
     obj, original, reversal = _run(lambda: commerce_service.reverse_payment(db, payload.company_id, payment_id, payload.reversal_date, payload.notes))
-    commerce_accounting_service.post_payment_reversal(db, original, obj, current_user.id)
+    commerce_accounting_service.post_payment_reversal(db, original, obj, current_user.id, reversal_date=payload.reversal_date)
     db.commit(); db.refresh(obj); return obj
