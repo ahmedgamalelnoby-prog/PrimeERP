@@ -22,6 +22,7 @@ import WarehousesPage from "@/modules/inventory/pages/WarehousesPage";
 import LocationsPage from "@/modules/inventory/pages/LocationsPage";
 import ReservationsPage from "@/modules/inventory/pages/ReservationsPage";
 import SalesOrdersPage from "@/modules/sales/pages/SalesOrdersPage";
+import QuotationsPage from "@/modules/sales/pages/QuotationsPage";
 
 function ComingSoonPage({ title }: { title: string }) {
   return <div className="flex min-h-[60vh] items-center justify-center" dir="rtl"><div className="w-full max-w-lg rounded-2xl border bg-card p-8 text-center shadow-sm"><h1 className="text-2xl font-bold">{title}</h1><p className="mt-3 text-sm text-muted-foreground">هذه الصفحة لم تُربط بعد بوظائفها النهائية.</p></div></div>;
@@ -54,6 +55,7 @@ export default function AppRouter() {
         <Route path="/inventory/warehouses" element={<WarehousesPage />} />
         <Route path="/inventory/locations" element={<LocationsPage />} />
         <Route path="/inventory/reservations" element={<ReservationsPage />} />
+        <Route path="/sales/quotations" element={<QuotationsPage />} />
         <Route path="/sales/orders" element={<SalesOrdersPage />} />
         <Route path="/companies" element={<ComingSoonPage title="الشركات" />} />
         <Route path="/branches" element={<ComingSoonPage title="الفروع" />} />
