@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -144,7 +144,7 @@ def mark_event_failed(db: Session, event_id: int, error: str) -> IntegrationEven
     else:
         event.status = "retrying"
         delay_seconds = min(300, 2 ** max(0, event.attempts - 1))
-        event.next_attempt_at = datetime.now(timezone.utc).replace(microsecond=0) + __import__("datetime").timedelta(seconds=delay_seconds)
+        event.next_attempt_at = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(seconds=delay_seconds)
     event.last_error = error[:4000]
     db.flush()
     return event
