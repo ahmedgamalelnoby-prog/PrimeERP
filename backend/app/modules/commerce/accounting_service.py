@@ -11,14 +11,15 @@ from app.modules.accounting.journals.services.journal_service import journal_ser
 from app.modules.commerce.accounting_models import CommerceAccountingSettings
 from app.modules.companies.models import Company
 from app.modules.branches.models import Branch
+from app.modules.inventory.stock_moves.models import InventoryStockMove
 
 
 class CommerceAccountingService:
     def _settings(self, db: Session, company_id: int) -> CommerceAccountingSettings:
-        settings = db.scalar(select(CommerceAccountingSettings).where(CommerceAccountingSettings.company_id == company_id))
-        if settings is None:
+        obj = db.scalar(select(CommerceAccountingSettings).where(CommerceAccountingSettings.company_id == company_id))
+        if obj is None:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Commerce accounting configuration is missing for this company")
-        return settings
+        return obj
 
     def _context(self, db: Session, company_id: int, entry_date: date):
         settings = self._settings(db, company_id)
@@ -60,19 +61,40 @@ class CommerceAccountingService:
 
     def post_purchase_bill(self, db: Session, document, user_id: int):
         settings = self._settings(db, document.company_id)
-        lines = [{"account_combination_id": settings.purchase_account_id, "debit": Decimal(document.subtotal), "credit": 0, "description": f"Purchase {document.number}"}]
+        stock_total = Decimal("0")
+        expense_total = Decimal("0")
+        for line in document.lines:
+            line_net = Decimal(line.line_total) - (Decimal(line.line_total) * Decimal(line.tax_percent or 0) / Decimal("100" + str(Decimal(line.tax_percent or 0)))) if False else Decimal(line.quantity) * Decimal(line.unit_price) * (Decimal("100") - Decimal(line.discount_percent or 0)) / Decimal("100")
+            item_type = getattr(line.item, "item_type", "stockable") if getattr(line, "item", None) else "stockable"
+            if item_type in {"stockable", "consumable"}:
+                stock_total += line_net
+            else:
+                expense_total += line_net
+        lines = []
+        if stock_total:
+            lines.append({"account_combination_id": settings.inventory_account_id, "debit": stock_total, "credit": 0, "description": f"Inventory {document.number}"})
+        if expense_total:
+            lines.append({"account_combination_id": settings.purchase_account_id, "debit": expense_total, "credit": 0, "description": f"Purchase expense {document.number}"})
         if Decimal(document.tax_total or 0):
             lines.append({"account_combination_id": settings.input_vat_account_id, "debit": Decimal(document.tax_total), "credit": 0, "description": f"Input VAT {document.number}"})
         lines.append({"account_combination_id": settings.ap_account_id, "debit": 0, "credit": Decimal(document.total), "description": f"AP {document.number}"})
         return self._post(db, company_id=document.company_id, user_id=user_id, entry_date=document.document_date, journal_id=settings.purchase_journal_id, entry_number=f"PB-{document.id}", description=f"Purchase bill {document.number}", lines=lines, source_entity="purchase_bill", source_id=document.id)
 
+    def post_sales_delivery_cogs(self, db: Session, document, user_id: int):
+        settings = self._settings(db, document.company_id)
+        moves = list(db.scalars(select(InventoryStockMove).where(InventoryStockMove.company_id == document.company_id, InventoryStockMove.source_module == "commerce", InventoryStockMove.source_entity == "sales_delivery", InventoryStockMove.source_id.like(f"{document.id}:%"), InventoryStockMove.status == "posted")))
+        total = sum((Decimal(m.quantity) * Decimal(m.unit_cost or 0) for m in moves), Decimal("0"))
+        if total <= 0:
+            return None
+        return self._post(db, company_id=document.company_id, user_id=user_id, entry_date=document.document_date, journal_id=settings.sales_journal_id, entry_number=f"COGS-{document.id}", description=f"COGS for delivery {document.number}", lines=[{"account_combination_id": settings.cogs_account_id, "debit": total, "credit": 0, "description": f"COGS {document.number}"}, {"account_combination_id": settings.inventory_account_id, "debit": 0, "credit": total, "description": f"Inventory issue {document.number}"}], source_entity="sales_cogs", source_id=document.id)
+
     def post_payment(self, db: Session, payment, document, user_id: int):
         settings = self._settings(db, payment.company_id)
         control = settings.ar_account_id if payment.document_kind == "sale" else settings.ap_account_id
         if payment.document_kind == "sale":
-            lines = [{"account_combination_id": settings.default_payment_account_id, "debit": Decimal(payment.amount), "credit": 0, "description": f"Receipt {payment.reference or payment.id}"}, {"account_combination_id": control, "debit": 0, "credit": Decimal(payment.amount), "description": f"AR settlement {document.number}"}]
+            lines = [{"account_combination_id": settings.default_payment_account_id, "debit": Decimal(payment.amount), "credit": 0}, {"account_combination_id": control, "debit": 0, "credit": Decimal(payment.amount)}]
         else:
-            lines = [{"account_combination_id": control, "debit": Decimal(payment.amount), "credit": 0, "description": f"AP settlement {document.number}"}, {"account_combination_id": settings.default_payment_account_id, "debit": 0, "credit": Decimal(payment.amount), "description": f"Payment {payment.reference or payment.id}"}]
+            lines = [{"account_combination_id": control, "debit": Decimal(payment.amount), "credit": 0}, {"account_combination_id": settings.default_payment_account_id, "debit": 0, "credit": Decimal(payment.amount)}]
         return self._post(db, company_id=payment.company_id, user_id=user_id, entry_date=payment.payment_date, journal_id=settings.cash_journal_id, entry_number=f"PAY-{payment.id}", description=f"Commerce payment {payment.id}", lines=lines, source_entity="commerce_payment", source_id=payment.id)
 
     def post_payment_reversal(self, db: Session, payment, document, user_id: int):
