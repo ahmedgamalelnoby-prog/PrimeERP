@@ -36,9 +36,17 @@ def upgrade() -> None:
     )
     for column in ("company_id", "item_id", "location_id", "status"):
         op.create_index(f"ix_inventory_reservations_{column}", "inventory_reservations", [column])
+    op.create_index(
+        "uq_inventory_reservation_active_source",
+        "inventory_reservations",
+        ["company_id", "source_module", "source_entity", "source_id", "item_id", "location_id"],
+        unique=True,
+        postgresql_where=sa.text("status = 'active'"),
+    )
 
 
 def downgrade() -> None:
+    op.drop_index("uq_inventory_reservation_active_source", table_name="inventory_reservations")
     for column in ("status", "location_id", "item_id", "company_id"):
         op.drop_index(f"ix_inventory_reservations_{column}", table_name="inventory_reservations")
     op.drop_table("inventory_reservations")
