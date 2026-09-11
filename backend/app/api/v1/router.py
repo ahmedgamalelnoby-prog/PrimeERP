@@ -5,6 +5,7 @@ from app.modules.accounting.journals.api.journal_entries import router as journa
 from app.modules.accounting.reports.router import router as financial_reports_router
 from app.modules.identity.api.router import router as identity_router
 from app.modules.inventory.adjustments.router import router as inventory_adjustments_router
+from app.modules.inventory.costing.router import router as inventory_costing_router
 from app.modules.inventory.items.router import router as inventory_items_router
 from app.modules.inventory.locations.router import router as inventory_locations_router
 from app.modules.inventory.reservations.router import router as inventory_reservations_router
@@ -37,6 +38,7 @@ def build_router() -> APIRouter:
     api_router.include_router(inventory_transfers_router)
     api_router.include_router(inventory_adjustments_router)
     api_router.include_router(inventory_reservations_router)
+    api_router.include_router(inventory_costing_router)
     api_router.include_router(plans_router)
     api_router.include_router(subscriptions_router)
     api_router.include_router(tenants_router, prefix="/platform")
