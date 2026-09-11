@@ -1,13 +1,13 @@
 """add treasury cheque lifecycle and RBAC permissions
 
 Revision ID: 20260911_treasury
-Revises: 20260911_production_heads_merge
+Revises: 20260911_treasury_heads_merge
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = "20260911_treasury"
-down_revision = "20260911_production_heads_merge"
+down_revision = "20260911_treasury_heads_merge"
 branch_labels = None
 depends_on = None
 
