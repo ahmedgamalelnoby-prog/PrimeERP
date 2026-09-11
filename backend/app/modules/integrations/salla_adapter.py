@@ -155,6 +155,28 @@ def _product(db, connection, settings, line: dict) -> InventoryItem:
     return obj
 
 
+def _apply_existing_order_update(document: SalesDocument, data: dict) -> SalesDocument:
+    raw_status = _text(data.get("status"), _text(data.get("order_status"))).lower().replace("-", "_").replace(" ", "_")
+    status_map = {
+        "cancelled": "cancelled",
+        "canceled": "cancelled",
+        "completed": "fulfilled",
+        "delivered": "fulfilled",
+        "fulfilled": "fulfilled",
+        "partially_fulfilled": "partially_fulfilled",
+        "processing": "confirmed",
+        "confirmed": "confirmed",
+        "pending": "confirmed",
+    }
+    target = status_map.get(raw_status)
+    if target is not None:
+        if document.status not in {"cancelled", "fulfilled"} or target == document.status:
+            document.status = target
+    if data.get("notes"):
+        document.notes = f"{document.notes or ''}\nSalla: {_text(data.get('notes'))}".strip()
+    return document
+
+
 def import_salla_order(db: Session, event: IntegrationEvent) -> SalesDocument:
     connection = db.get(IntegrationConnection, event.connection_id)
     if connection is None or connection.provider.lower() != "salla":
@@ -170,7 +192,7 @@ def import_salla_order(db: Session, event: IntegrationEvent) -> SalesDocument:
     if mapping and mapping.internal_id:
         existing = db.scalar(select(SalesDocument).where(SalesDocument.id == mapping.internal_id, SalesDocument.company_id == connection.company_id).with_for_update())
         if existing:
-            return existing
+            return _apply_existing_order_update(existing, data)
 
     partner = _customer(db, connection, settings, data)
     raw_lines = data.get("items") or data.get("products") or data.get("order_items") or []
@@ -190,7 +212,7 @@ def import_salla_order(db: Session, event: IntegrationEvent) -> SalesDocument:
     existing = db.scalar(select(SalesDocument).where(SalesDocument.company_id == connection.company_id, SalesDocument.number == number).with_for_update())
     if existing:
         _save_mapping(db, connection, "order", external_order_id, existing.id, data)
-        return existing
+        return _apply_existing_order_update(existing, data)
 
     document = SalesDocument(
         company_id=connection.company_id,
