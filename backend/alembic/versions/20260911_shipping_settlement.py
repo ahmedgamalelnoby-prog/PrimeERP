@@ -51,11 +51,9 @@ def upgrade():
         sa.CheckConstraint("carrier_fee >= 0", name="ck_shipping_ship_settle_fee"),
     )
     op.create_index("ix_shipping_shipment_settlements_batch_id", "shipping_shipment_settlements", ["batch_id"])
-    op.create_index("ix_shipping_shipment_settlements_shipment_id", "shipping_shipment_settlements", ["shipment_id"], unique=True)
 
 
 def downgrade():
-    op.drop_index("ix_shipping_shipment_settlements_shipment_id", table_name="shipping_shipment_settlements")
     op.drop_index("ix_shipping_shipment_settlements_batch_id", table_name="shipping_shipment_settlements")
     op.drop_table("shipping_shipment_settlements")
     op.drop_index("ix_shipping_settlement_batches_carrier_id", table_name="shipping_settlement_batches")
