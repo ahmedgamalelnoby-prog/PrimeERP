@@ -17,6 +17,9 @@ import AccountingPage from "@/modules/accounting/pages/AccountingPage";
 import AccountsPage from "@/modules/accounting/chart-of-accounts/AccountsPage";
 import JournalEntriesPage from "@/modules/accounting/journal-entries/JournalEntriesPage";
 import FinancialReportsPage from "@/modules/accounting/reports/FinancialReportsPage";
+import InventoryPage from "@/modules/inventory/pages/InventoryPage";
+import WarehousesPage from "@/modules/inventory/pages/WarehousesPage";
+import LocationsPage from "@/modules/inventory/pages/LocationsPage";
 
 function ComingSoonPage({ title }: { title: string }) {
   return <div className="flex min-h-[60vh] items-center justify-center" dir="rtl"><div className="w-full max-w-lg rounded-2xl border bg-card p-8 text-center shadow-sm"><h1 className="text-2xl font-bold">{title}</h1><p className="mt-3 text-sm text-muted-foreground">هذه الصفحة لم تُربط بعد بوظائفها النهائية.</p></div></div>;
@@ -44,11 +47,13 @@ export default function AppRouter() {
         <Route path="/accounting/chart-of-accounts" element={<AccountsPage />} />
         <Route path="/accounting/journal-entries" element={<JournalEntriesPage />} />
         <Route path="/accounting/reports" element={<FinancialReportsPage />} />
+        <Route path="/inventory" element={<InventoryPage />} />
+        <Route path="/inventory/warehouses" element={<WarehousesPage />} />
+        <Route path="/inventory/locations" element={<LocationsPage />} />
         <Route path="/companies" element={<ComingSoonPage title="الشركات" />} />
         <Route path="/branches" element={<ComingSoonPage title="الفروع" />} />
         <Route path="/customers" element={<ComingSoonPage title="العملاء" />} />
         <Route path="/products" element={<ComingSoonPage title="المنتجات" />} />
-        <Route path="/inventory" element={<ComingSoonPage title="المخزون" />} />
         <Route path="/sales/orders" element={<ComingSoonPage title="طلبات المبيعات" />} />
         <Route path="*" element={<ComingSoonPage title="الصفحة غير موجودة" />} />
       </Route>
