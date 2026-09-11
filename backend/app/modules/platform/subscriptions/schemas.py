@@ -5,7 +5,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
-BillingCycle = Literal["monthly", "yearly"]
+BillingCycle = Literal["monthly", "quarterly", "semi_annual", "yearly"]
 
 
 class SubscriptionCreate(BaseModel):
