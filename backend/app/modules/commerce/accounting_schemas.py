@@ -15,5 +15,6 @@ class CommerceAccountingSettingsCreate(BaseModel):
     output_vat_account_id: int = Field(gt=0)
     input_vat_account_id: int = Field(gt=0)
     wht_account_id: int | None = Field(default=None, gt=0)
+    default_payment_account_id: int = Field(gt=0)
     default_branch_id: int = Field(gt=0)
     auto_post: bool = True
