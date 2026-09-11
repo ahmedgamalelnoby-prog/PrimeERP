@@ -3,6 +3,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
+from app.modules.accounting.chart_of_accounts.models import AccountCombination
+from app.modules.accounting.journals.models import AccountingJournal
 from app.modules.branches.models import Branch
 from app.modules.commerce.accounting_models import CommerceAccountingSettings
 from app.modules.commerce.accounting_schemas import CommerceAccountingSettingsCreate
@@ -33,18 +35,68 @@ def _run(fn):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+def _validate_accounting_configuration(db: Session, company: Company, payload: CommerceAccountingSettingsCreate) -> None:
+    journal_ids = {
+        "sales journal": payload.sales_journal_id,
+        "purchase journal": payload.purchase_journal_id,
+        "cash journal": payload.cash_journal_id,
+    }
+    journals = db.scalars(
+        select(AccountingJournal).where(
+            AccountingJournal.id.in_(journal_ids.values()),
+            AccountingJournal.company_id == company.id,
+            AccountingJournal.tenant_id == company.tenant_id,
+            AccountingJournal.is_active.is_(True),
+        )
+    ).all()
+    journal_by_id = {journal.id: journal for journal in journals}
+    for label, journal_id in journal_ids.items():
+        if journal_id not in journal_by_id:
+            raise HTTPException(422, f"Configured {label} does not belong to this company/tenant or is inactive")
+
+    account_ids = {
+        "AR account": payload.ar_account_id,
+        "AP account": payload.ap_account_id,
+        "sales account": payload.sales_account_id,
+        "purchase account": payload.purchase_account_id,
+        "inventory account": payload.inventory_account_id,
+        "COGS account": payload.cogs_account_id,
+        "output VAT account": payload.output_vat_account_id,
+        "input VAT account": payload.input_vat_account_id,
+        "default payment account": payload.default_payment_account_id,
+    }
+    if payload.wht_account_id is not None:
+        account_ids["WHT account"] = payload.wht_account_id
+    accounts = db.scalars(
+        select(AccountCombination).where(
+            AccountCombination.id.in_(account_ids.values()),
+            AccountCombination.company_id == company.id,
+            AccountCombination.is_active.is_(True),
+        )
+    ).all()
+    account_by_id = {account.id: account for account in accounts}
+    for label, account_id in account_ids.items():
+        if account_id not in account_by_id:
+            raise HTTPException(422, f"Configured {label} does not belong to this company or is inactive")
+
+
 @router.post("/accounting-settings", status_code=201)
 def configure_accounting(payload: CommerceAccountingSettingsCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     company = _company_for_user(db, payload.company_id, current_user)
     branch = db.scalar(select(Branch).where(Branch.id == payload.default_branch_id, Branch.company_id == company.id, Branch.tenant_id == company.tenant_id, Branch.is_active.is_(True)))
-    if branch is None: raise HTTPException(422, "Default branch does not belong to the company")
+    if branch is None:
+        raise HTTPException(422, "Default branch does not belong to the company")
+    _validate_accounting_configuration(db, company, payload)
     values = payload.model_dump()
     obj = db.scalar(select(CommerceAccountingSettings).where(CommerceAccountingSettings.company_id == company.id))
     if obj is None:
-        obj = CommerceAccountingSettings(**values); db.add(obj)
+        obj = CommerceAccountingSettings(**values)
+        db.add(obj)
     else:
-        for key, value in values.items(): setattr(obj, key, value)
-    db.commit(); db.refresh(obj)
+        for key, value in values.items():
+            setattr(obj, key, value)
+    db.commit()
+    db.refresh(obj)
     return {c.name: getattr(obj, c.name) for c in obj.__table__.columns if c.name != "id"}
 
 
@@ -52,7 +104,8 @@ def configure_accounting(payload: CommerceAccountingSettingsCreate, current_user
 def get_accounting_settings(company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
     obj = db.scalar(select(CommerceAccountingSettings).where(CommerceAccountingSettings.company_id == company_id))
-    if obj is None: raise HTTPException(404, "Commerce accounting configuration not found")
+    if obj is None:
+        raise HTTPException(404, "Commerce accounting configuration not found")
     return {c.name: getattr(obj, c.name) for c in obj.__table__.columns if c.name != "id"}
 
 
