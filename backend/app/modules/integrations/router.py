@@ -18,6 +18,8 @@ from app.modules.saas.entitlements import require_module
 from .models import IntegrationConnection, IntegrationEvent
 from .schemas import ConnectionCreate, ConnectionResponse, WebhookEventCreate
 
+MAX_WEBHOOK_BODY_BYTES = 1_048_576
+
 router = APIRouter(prefix="/integrations", tags=["Integrations"], dependencies=[Depends(require_permission("integrations.access")), Depends(require_module("integrations"))])
 public_router = APIRouter(prefix="/integrations", tags=["Integrations Webhooks"])
 
@@ -104,13 +106,24 @@ async def receive_salla_webhook_public(
     x_salla_event_id: str | None = Header(default=None, alias="X-Salla-Event-ID"),
     db: Session = Depends(get_db),
 ):
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > MAX_WEBHOOK_BODY_BYTES:
+                raise HTTPException(413, "Webhook payload is too large")
+        except ValueError:
+            raise HTTPException(400, "Invalid Content-Length header")
     connection = _get_salla_connection(db, connection_id)
     raw_body = await request.body()
+    if len(raw_body) > MAX_WEBHOOK_BODY_BYTES:
+        raise HTTPException(413, "Webhook payload is too large")
     _verify_salla_signature(connection, raw_body, x_salla_security_strategy, x_salla_signature)
     try:
         payload = json.loads(raw_body.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise HTTPException(400, "Invalid webhook JSON") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(422, "Webhook payload must be a JSON object")
     external_event_id, event_type = _event_identity(payload, x_salla_event, x_salla_event_id, raw_body)
     existing = db.scalar(select(IntegrationEvent).where(IntegrationEvent.connection_id == connection_id, IntegrationEvent.external_event_id == external_event_id))
     if existing:
