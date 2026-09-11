@@ -106,7 +106,30 @@ def process_salla_event(db: Session, event: IntegrationEvent) -> SallaExternalMa
         raise ValueError(f"Unsupported Salla event type: {event.event_type}")
 
     version = data.get("updated_at") or data.get("updatedAt") or data.get("version") or data.get("updated_at_timestamp")
-    mapping, stale = upsert_mapping(
+    existing = db.scalar(select(SallaExternalMapping).where(
+        SallaExternalMapping.connection_id == connection.id,
+        SallaExternalMapping.entity_type == entity_type,
+        SallaExternalMapping.external_id == str(external_id),
+    ).with_for_update())
+    if existing is not None and _is_stale(existing.external_version, str(version) if version is not None else None):
+        return existing
+
+    if entity_type == "order":
+        from .salla_adapter import import_salla_order
+        mapping = existing
+        document = import_salla_order(db, event)
+        mapping, _ = upsert_mapping(
+            db,
+            connection=connection,
+            entity_type=entity_type,
+            external_id=str(external_id),
+            internal_id=document.id,
+            external_version=str(version) if version is not None else None,
+            payload=payload,
+        )
+        return mapping
+
+    mapping, _ = upsert_mapping(
         db,
         connection=connection,
         entity_type=entity_type,
@@ -114,14 +137,6 @@ def process_salla_event(db: Session, event: IntegrationEvent) -> SallaExternalMa
         external_version=str(version) if version is not None else None,
         payload=payload,
     )
-    if stale:
-        return mapping
-    if entity_type == "order":
-        from .salla_adapter import import_salla_order
-        document = import_salla_order(db, event)
-        mapping.internal_id = document.id
-        mapping.payload = json.dumps(payload, ensure_ascii=False)
-        db.flush()
     return mapping
 
 
