@@ -1,13 +1,13 @@
 """strengthen commerce lifecycle
 
 Revision ID: 20260911_commerce_controls
-Revises: 20260911_uom
+Revises: 20260911_accounting_ledger
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = "20260911_commerce_controls"
-down_revision = "20260911_uom"
+down_revision = "20260911_accounting_ledger"
 branch_labels = None
 depends_on = None
 
