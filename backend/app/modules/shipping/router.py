@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.accounting.chart_of_accounts.models import AccountCombination
+from app.modules.accounting.journals.models import AccountingJournal
+from app.modules.branches.models import Branch
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
@@ -12,11 +14,7 @@ from app.modules.saas.entitlements import require_module
 from app.modules.shipping.models import ShippingCarrier, ShippingMethod, Shipment
 from app.modules.shipping.schemas import CarrierCreate, CarrierResponse, MethodCreate, MethodResponse, ShipmentCreate, ShipmentResponse
 
-router = APIRouter(
-    prefix="/shipping",
-    tags=["Shipping"],
-    dependencies=[Depends(require_permission("shipping.access")), Depends(require_module("shipping"))],
-)
+router = APIRouter(prefix="/shipping", tags=["Shipping"], dependencies=[Depends(require_permission("shipping.access")), Depends(require_module("shipping"))])
 
 
 def _company_for_user(db: Session, company_id: int, user: User):
@@ -40,13 +38,33 @@ def _validate_payment_account(db: Session, company_id: int, account_id: int | No
     _validate_account(db, company_id, account_id, "Shipping payment account")
 
 
+def _validate_carrier_accounting(db: Session, company_id: int, account_id: int | None, label: str):
+    _validate_account(db, company_id, account_id, label)
+
+
+def _validate_journal_and_branch(db: Session, company_id: int, journal_id: int | None, branch_id: int | None, tenant_id: int):
+    if journal_id is None or branch_id is None:
+        return
+    journal = db.scalar(select(AccountingJournal).where(AccountingJournal.id == journal_id, AccountingJournal.company_id == company_id, AccountingJournal.tenant_id == tenant_id, AccountingJournal.is_active.is_(True)))
+    if journal is None:
+        raise HTTPException(422, "Settlement journal does not belong to the company or is inactive")
+    branch = db.scalar(select(Branch).where(Branch.id == branch_id, Branch.company_id == company_id, Branch.tenant_id == tenant_id, Branch.is_active.is_(True)))
+    if branch is None:
+        raise HTTPException(422, "Settlement branch does not belong to the company or is inactive")
+
+
 @router.post("/carriers", response_model=CarrierResponse, status_code=201, dependencies=[Depends(require_permission("shipping.write"))])
 def carrier(payload: CarrierCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _company_for_user(db, payload.company_id, current_user)
+    company = _company_for_user(db, payload.company_id, current_user)
     if db.scalar(select(ShippingCarrier).where(ShippingCarrier.company_id == payload.company_id, ShippingCarrier.code == payload.code)):
         raise HTTPException(409, "Carrier code already exists")
-    _validate_account(db, payload.company_id, payload.settlement_account_id, "Carrier settlement account")
-    _validate_account(db, payload.company_id, payload.fee_account_id, "Carrier fee account")
+    _validate_carrier_accounting(db, company.id, payload.settlement_account_id, "Carrier settlement account")
+    _validate_carrier_accounting(db, company.id, payload.fee_account_id, "Carrier fee account")
+    _validate_journal_and_branch(db, company.id, payload.settlement_journal_id, payload.branch_id, company.tenant_id)
+    if (payload.settlement_account_id is None) != (payload.fee_account_id is None):
+        raise HTTPException(422, "Settlement and fee accounts must be configured together")
+    if (payload.settlement_journal_id is None) != (payload.branch_id is None):
+        raise HTTPException(422, "Settlement journal and branch must be configured together")
     obj = ShippingCarrier(**payload.model_dump())
     db.add(obj)
     db.commit()
@@ -116,11 +134,7 @@ def shipments(company_id: int = Query(..., gt=0), status: str | None = None, cur
     return list(db.scalars(stmt.order_by(Shipment.id.desc())).all())
 
 
-_TRANSITIONS = {
-    "pending": {"picked_up", "cancelled"}, "picked_up": {"in_transit", "cancelled"},
-    "in_transit": {"out_for_delivery", "returned"}, "out_for_delivery": {"delivered", "returned"},
-    "delivered": {"returned"}, "returned": set(), "cancelled": set(),
-}
+_TRANSITIONS = {"pending": {"picked_up", "cancelled"}, "picked_up": {"in_transit", "cancelled"}, "in_transit": {"out_for_delivery", "returned"}, "out_for_delivery": {"delivered", "returned"}, "delivered": {"returned"}, "returned": set(), "cancelled": set()}
 
 
 @router.post("/shipments/{shipment_id}/status", response_model=ShipmentResponse, dependencies=[Depends(require_permission("shipping.post"))])
