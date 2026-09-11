@@ -28,7 +28,7 @@ def get_central_warehouse(
     company_id: int = Query(gt=0),
     db: Session = Depends(get_db),
 ):
-    return next(iter(warehouse_service.list(db, company_id=company_id, include_central=True)), None)
+    return warehouse_service.get_central(db, company_id=company_id)
 
 
 @router.post("", response_model=WarehouseResponse, status_code=201)
