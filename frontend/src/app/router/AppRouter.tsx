@@ -1,7 +1,5 @@
 ﻿import { Navigate, Route, Routes } from "react-router-dom";
 
-import { Navigate, Route, Routes } from "react-router-dom";
-
 import ProtectedRoute from "./ProtectedRoute";
 import PublicRoute from "./PublicRoute";
 import DashboardLayout from "@/layouts/DashboardLayout";
