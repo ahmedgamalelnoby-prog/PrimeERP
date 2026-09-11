@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.accounting.models import TaxRate
+from app.modules.accounting.tax_engine import calculate_taxes
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
@@ -78,6 +79,29 @@ def create_tax(payload: dict, current_user: User = Depends(get_current_user), db
 def list_taxes(company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
     return list(db.scalars(select(TaxRate).where(TaxRate.company_id == company_id).order_by(TaxRate.is_active.desc(), TaxRate.code)).all())
+
+
+@router.post("/tax-rates/calculate", dependencies=[Depends(require_permission("tax.access"))])
+def calculate_tax(
+    payload: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        company_id = int(payload.get("company_id", 0))
+        amount = Decimal(str(payload.get("amount", "0")))
+        tax_ids = [int(value) for value in payload.get("tax_ids", [])]
+        inclusive = bool(payload.get("inclusive", False))
+    except (TypeError, ValueError, InvalidOperation) as exc:
+        raise HTTPException(422, "company_id, amount and tax_ids must be valid values") from exc
+    _company_for_user(db, company_id, current_user)
+    return calculate_taxes(
+        db,
+        company_id=company_id,
+        amount=amount,
+        tax_ids=tax_ids,
+        inclusive=inclusive,
+    )
 
 
 @router.patch("/tax-rates/{tax_id}", dependencies=[Depends(require_permission("tax.write"))])
