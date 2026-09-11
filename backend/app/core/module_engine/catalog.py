@@ -5,14 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Tuple
 
-
 @dataclass(frozen=True, slots=True)
 class CatalogEntry:
     technical_name: str
     domain: str
     dependencies: Tuple[str, ...] = ()
     layer: str = "business"
-
 
 CORE = (
     CatalogEntry("core/identity", "core", layer="core"),
@@ -21,12 +19,10 @@ CORE = (
     CatalogEntry("core/workflow", "core", ("core/identity",), layer="core"),
     CatalogEntry("core/notifications", "core", ("core/identity",), layer="core"),
 )
-
 ORGANIZATION = (
     CatalogEntry("organization/companies", "organization", ("core/identity",), layer="foundation"),
     CatalogEntry("organization/branches", "organization", ("organization/companies",), layer="foundation"),
 )
-
 ACCOUNTING = (
     CatalogEntry("accounting/accounting_core", "accounting", ("organization/companies",), layer="finance"),
     CatalogEntry("accounting/chart_of_accounts", "accounting", ("accounting/accounting_core",), layer="finance"),
@@ -44,7 +40,6 @@ ACCOUNTING = (
     CatalogEntry("accounting/cost_centers", "accounting", ("accounting/accounting_core",), layer="finance"),
     CatalogEntry("accounting/reports", "accounting", ("accounting/journal_entries",), layer="finance"),
 )
-
 SALES = (
     CatalogEntry("sales/sales_core", "sales", ("organization/companies",), layer="business"),
     CatalogEntry("sales/quotations", "sales", ("sales/sales_core",), layer="business"),
@@ -54,7 +49,6 @@ SALES = (
     CatalogEntry("sales/returns", "sales", ("sales/sales_orders",), layer="business"),
     CatalogEntry("sales/commissions", "sales", ("sales/sales_orders",), layer="business"),
 )
-
 INVENTORY = (
     CatalogEntry("inventory/inventory_core", "inventory", ("organization/companies",), layer="business"),
     CatalogEntry("inventory/warehouses", "inventory", ("inventory/inventory_core",), layer="business"),
@@ -68,7 +62,10 @@ INVENTORY = (
     CatalogEntry("inventory/costing", "inventory", ("inventory/stock_moves",), layer="finance"),
     CatalogEntry("inventory/valuation", "inventory", ("inventory/costing", "accounting/journal_entries"), layer="finance"),
 )
-
+PURCHASING = (
+    CatalogEntry("purchasing/suppliers", "purchasing", ("organization/companies",), layer="business"),
+    CatalogEntry("purchasing/purchase_orders", "purchasing", ("purchasing/suppliers", "inventory/inventory_core", "inventory/warehouses"), layer="business"),
+)
 PLATFORM = (
     CatalogEntry("platform/customers", "platform", ("core/identity",), layer="platform"),
     CatalogEntry("platform/plans", "platform", (), layer="platform"),
@@ -76,21 +73,18 @@ PLATFORM = (
     CatalogEntry("platform/billing", "platform", ("platform/subscriptions",), layer="platform"),
     CatalogEntry("platform/usage", "platform", ("platform/subscriptions",), layer="platform"),
 )
-
 CRM = (
     CatalogEntry("crm/crm_core", "crm", ("organization/companies",), layer="business"),
     CatalogEntry("crm/leads", "crm", ("crm/crm_core",), layer="business"),
     CatalogEntry("crm/opportunities", "crm", ("crm/leads",), layer="business"),
     CatalogEntry("crm/activities", "crm", ("crm/crm_core",), layer="business"),
 )
-
 PEOPLE = (
     CatalogEntry("people/hr_core", "people", ("organization/companies",), layer="people"),
     CatalogEntry("people/employees", "people", ("people/hr_core",), layer="people"),
     CatalogEntry("people/attendance", "people", ("people/employees",), layer="people"),
     CatalogEntry("people/payroll", "people", ("people/employees", "accounting/journal_entries"), layer="people"),
 )
-
 INDUSTRY = (
     CatalogEntry("industry/restaurant_core", "industry", ("inventory/inventory_core", "sales/sales_core"), layer="industry"),
     CatalogEntry("industry/restaurant_pos", "industry", ("industry/restaurant_core",), layer="industry"),
@@ -99,17 +93,13 @@ INDUSTRY = (
     CatalogEntry("industry/retail_core", "industry", ("inventory/inventory_core", "sales/sales_core"), layer="industry"),
     CatalogEntry("industry/manufacturing_core", "industry", ("inventory/inventory_core", "accounting/accounting_core"), layer="industry"),
 )
-
 LOCALIZATION = (
     CatalogEntry("localization/egypt_einvoice", "localization", ("accounting/taxes", "accounting/journal_entries"), layer="localization"),
 )
-
-ALL_CATALOG_ENTRIES = CORE + ORGANIZATION + ACCOUNTING + SALES + INVENTORY + PLATFORM + CRM + PEOPLE + INDUSTRY + LOCALIZATION
-
+ALL_CATALOG_ENTRIES = CORE + ORGANIZATION + ACCOUNTING + SALES + INVENTORY + PURCHASING + PLATFORM + CRM + PEOPLE + INDUSTRY + LOCALIZATION
 
 def catalog() -> Tuple[CatalogEntry, ...]:
     return ALL_CATALOG_ENTRIES
-
 
 def catalog_keys() -> set[str]:
     return {entry.technical_name for entry in ALL_CATALOG_ENTRIES}
