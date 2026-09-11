@@ -23,6 +23,7 @@ from app.modules.accounting.fiscal_years.models import AccountingPeriod, FiscalY
 from app.modules.accounting.journals.models import AccountingJournal, JournalEntry, JournalEntryLine
 from app.modules.inventory.items.models import InventoryItem, InventoryStock
 from app.modules.inventory.warehouses.models import InventoryWarehouse
+from app.modules.inventory.locations.models import InventoryLocation
 
 __all__ = [
     "Tenant", "SubscriptionPlan", "Subscription", "SystemModule", "PlanModule", "TenantModule",
@@ -30,5 +31,6 @@ __all__ = [
     "LegalDocument", "LegalAcceptance", "Floor", "RestaurantTable", "PreparationStation", "OrderType",
     "AccountingDepartment", "AccountingCostCenter", "NaturalAccount", "AccountCombination", "AccountingSettings",
     "NumberSequence", "BusinessTransaction", "TransactionEvent", "FiscalYear", "AccountingPeriod",
-    "AccountingJournal", "JournalEntry", "JournalEntryLine", "InventoryItem", "InventoryStock", "InventoryWarehouse",
+    "AccountingJournal", "JournalEntry", "JournalEntryLine", "InventoryItem", "InventoryStock",
+    "InventoryWarehouse", "InventoryLocation",
 ]
