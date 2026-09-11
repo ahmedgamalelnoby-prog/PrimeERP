@@ -9,6 +9,7 @@ class CarrierCreate(BaseModel):
     name: str = Field(min_length=1, max_length=150)
     api_base_url: str | None = None
     settlement_account_id: int | None = Field(default=None, gt=0)
+    cash_account_id: int | None = Field(default=None, gt=0)
     fee_account_id: int | None = Field(default=None, gt=0)
     settlement_journal_id: int | None = Field(default=None, gt=0)
     branch_id: int | None = Field(default=None, gt=0)
