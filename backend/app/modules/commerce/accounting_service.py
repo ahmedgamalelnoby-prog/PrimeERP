@@ -46,12 +46,12 @@ class CommerceAccountingService:
         journal = db.scalar(select(AccountingJournal).where(AccountingJournal.id == journal_id, AccountingJournal.company_id == company_id, AccountingJournal.tenant_id == tenant_id, AccountingJournal.is_active.is_(True)))
         if journal is None:
             raise HTTPException(409, "Configured accounting journal was not found")
-        entry = journal_service.create_draft(db, tenant_id=tenant_id, company_id=company_id, branch_id=settings.default_branch_id, journal_id=journal_id, fiscal_year_id=fiscal_year.id, period_id=period.id, entry_number=entry_number, entry_date=entry_date, description=description, lines=lines, user_id=user_id, source_module="commerce", source_entity=source_entity, source_id=source_id)
-        journal_service.submit(db, tenant_id=tenant_id, entry_id=entry.id, user_id=user_id)
+        entry = journal_service.create_draft(db, tenant_id=tenant_id, company_id=company_id, branch_id=settings.default_branch_id, journal_id=journal_id, fiscal_year_id=fiscal_year.id, period_id=period.id, entry_number=entry_number, entry_date=entry_date, description=description, lines=lines, user_id=user_id, source_module="commerce", source_entity=source_entity, source_id=source_id, commit=False)
+        journal_service.submit(db, tenant_id=tenant_id, entry_id=entry.id, user_id=user_id, commit=False)
         if journal.requires_approval:
-            journal_service.approve(db, tenant_id=tenant_id, entry_id=entry.id, user_id=user_id)
+            journal_service.approve(db, tenant_id=tenant_id, entry_id=entry.id, user_id=user_id, commit=False)
         if settings.auto_post and journal.auto_post:
-            journal_service.post(db, tenant_id=tenant_id, entry_id=entry.id, user_id=user_id)
+            journal_service.post(db, tenant_id=tenant_id, entry_id=entry.id, user_id=user_id, commit=False)
         return entry
 
     def post_sales_invoice(self, db: Session, document, user_id: int):
