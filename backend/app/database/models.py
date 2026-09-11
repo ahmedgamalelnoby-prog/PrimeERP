@@ -1,7 +1,4 @@
-"""
-Central SQLAlchemy model registry.
-Importing this module registers all models in Base.metadata.
-"""
+"""Central SQLAlchemy model registry."""
 from app.modules.saas.models import PlanModule, Subscription, SubscriptionPlan, SystemModule, Tenant, TenantModule
 from app.modules.platform.plans.models import Plan
 from app.modules.companies.models import Company
@@ -23,10 +20,7 @@ from app.modules.inventory.transfers.models import InventoryTransfer, InventoryT
 from app.modules.inventory.adjustments.models import InventoryAdjustment
 from app.modules.inventory.reservations.models import InventoryReservation
 from app.modules.commerce.models import BusinessPartner, SalesDocument, SalesLine, PurchaseDocument, PurchaseLine, CommercePayment
+from app.modules.enterprise.models import FixedAsset, Budget, BudgetLine, Employee, PayrollRun, PayrollLine, Project, ProjectContract
 
-__all__ = [
-    'Tenant','SubscriptionPlan','Subscription','SystemModule','PlanModule','TenantModule','Plan','Company','Branch','User','Role','Permission','role_permissions',
-    'LegalDocument','LegalAcceptance','Floor','RestaurantTable','PreparationStation','OrderType','AccountingDepartment','AccountingCostCenter','NaturalAccount','AccountCombination','AccountingSettings',
-    'NumberSequence','BusinessTransaction','TransactionEvent','FiscalYear','AccountingPeriod','AccountingJournal','JournalEntry','JournalEntryLine','InventoryItem','InventoryStock','InventoryWarehouse','InventoryLocation','InventoryStockMove','InventoryLocationStock','InventoryTransfer','InventoryTransferLine','InventoryAdjustment','InventoryReservation',
-    'BusinessPartner','SalesDocument','SalesLine','PurchaseDocument','PurchaseLine','CommercePayment',
-]
+__all__=[
+'Tenant','SubscriptionPlan','Subscription','SystemModule','PlanModule','TenantModule','Plan','Company','Branch','User','Role','Permission','role_permissions','LegalDocument','LegalAcceptance','Floor','RestaurantTable','PreparationStation','OrderType','AccountingDepartment','AccountingCostCenter','NaturalAccount','AccountCombination','AccountingSettings','NumberSequence','BusinessTransaction','TransactionEvent','FiscalYear','AccountingPeriod','AccountingJournal','JournalEntry','JournalEntryLine','InventoryItem','InventoryStock','InventoryWarehouse','InventoryLocation','InventoryStockMove','InventoryLocationStock','InventoryTransfer','InventoryTransferLine','InventoryAdjustment','InventoryReservation','BusinessPartner','SalesDocument','SalesLine','PurchaseDocument','PurchaseLine','CommercePayment','FixedAsset','Budget','BudgetLine','Employee','PayrollRun','PayrollLine','Project','ProjectContract']
