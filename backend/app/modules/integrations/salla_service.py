@@ -27,7 +27,7 @@ def _is_stale(existing: str | None, incoming: str | None) -> bool:
     return old is not None and new is not None and new <= old
 
 
-def upsert_mapping(db: Session, *, connection: IntegrationConnection, entity_type: str, external_id: str, internal_id: int | None = None, external_version: str | None = None, payload: dict | None = None) -> SallaExternalMapping:
+def upsert_mapping(db: Session, *, connection: IntegrationConnection, entity_type: str, external_id: str, internal_id: int | None = None, external_version: str | None = None, payload: dict | None = None) -> tuple[SallaExternalMapping, bool]:
     entity_type = entity_type.strip().lower()
     external_id = external_id.strip()
     if entity_type not in SUPPORTED_ENTITY_TYPES:
@@ -52,18 +52,19 @@ def upsert_mapping(db: Session, *, connection: IntegrationConnection, entity_typ
             is_active=True,
         )
         db.add(mapping)
-    else:
-        if _is_stale(mapping.external_version, external_version):
-            return mapping
-        if internal_id is not None:
-            mapping.internal_id = internal_id
-        if external_version is not None:
-            mapping.external_version = external_version
-        if serialized is not None:
-            mapping.payload = serialized
-        mapping.is_active = True
+        db.flush()
+        return mapping, False
+    if _is_stale(mapping.external_version, external_version):
+        return mapping, True
+    if internal_id is not None:
+        mapping.internal_id = internal_id
+    if external_version is not None:
+        mapping.external_version = external_version
+    if serialized is not None:
+        mapping.payload = serialized
+    mapping.is_active = True
     db.flush()
-    return mapping
+    return mapping, False
 
 
 def resolve_mapping(db: Session, *, connection_id: int, entity_type: str, external_id: str) -> SallaExternalMapping | None:
@@ -105,7 +106,7 @@ def process_salla_event(db: Session, event: IntegrationEvent) -> SallaExternalMa
         raise ValueError(f"Unsupported Salla event type: {event.event_type}")
 
     version = data.get("updated_at") or data.get("updatedAt") or data.get("version") or data.get("updated_at_timestamp")
-    mapping = upsert_mapping(
+    mapping, stale = upsert_mapping(
         db,
         connection=connection,
         entity_type=entity_type,
@@ -113,6 +114,8 @@ def process_salla_event(db: Session, event: IntegrationEvent) -> SallaExternalMa
         external_version=str(version) if version is not None else None,
         payload=payload,
     )
+    if stale:
+        return mapping
     if entity_type == "order":
         from .salla_adapter import import_salla_order
         document = import_salla_order(db, event)
