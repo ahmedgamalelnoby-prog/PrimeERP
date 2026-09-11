@@ -1,9 +1,4 @@
-"""Canonical PrimeERP add-on catalog and dependency policy.
-
-The catalog is the architecture source of truth for module boundaries. Individual
-manifests remain authoritative for installed add-ons; this catalog documents the
-intended product composition and is used by architecture validation/tests.
-"""
+"""Canonical PrimeERP add-on catalog and dependency policy."""
 
 from __future__ import annotations
 
@@ -62,14 +57,13 @@ SALES = (
 
 INVENTORY = (
     CatalogEntry("inventory/inventory_core", "inventory", ("organization/companies",), layer="business"),
-    CatalogEntry("inventory/products", "inventory", ("inventory/inventory_core",), layer="business"),
     CatalogEntry("inventory/warehouses", "inventory", ("inventory/inventory_core",), layer="business"),
     CatalogEntry("inventory/locations", "inventory", ("inventory/warehouses",), layer="business"),
-    CatalogEntry("inventory/stock_moves", "inventory", ("inventory/products", "inventory/locations"), layer="business"),
+    CatalogEntry("inventory/stock_moves", "inventory", ("inventory/inventory_core", "inventory/locations"), layer="business"),
     CatalogEntry("inventory/transfers", "inventory", ("inventory/stock_moves",), layer="business"),
     CatalogEntry("inventory/adjustments", "inventory", ("inventory/stock_moves",), layer="business"),
-    CatalogEntry("inventory/lots", "inventory", ("inventory/products",), layer="business"),
-    CatalogEntry("inventory/serial_numbers", "inventory", ("inventory/products",), layer="business"),
+    CatalogEntry("inventory/lots", "inventory", ("inventory/inventory_core",), layer="business"),
+    CatalogEntry("inventory/serial_numbers", "inventory", ("inventory/inventory_core",), layer="business"),
     CatalogEntry("inventory/costing", "inventory", ("inventory/stock_moves",), layer="finance"),
     CatalogEntry("inventory/valuation", "inventory", ("inventory/costing", "accounting/journal_entries"), layer="finance"),
 )
@@ -97,7 +91,7 @@ PEOPLE = (
 )
 
 INDUSTRY = (
-    CatalogEntry("industry/restaurant_core", "industry", ("inventory/products", "sales/sales_core"), layer="industry"),
+    CatalogEntry("industry/restaurant_core", "industry", ("inventory/inventory_core", "sales/sales_core"), layer="industry"),
     CatalogEntry("industry/restaurant_pos", "industry", ("industry/restaurant_core",), layer="industry"),
     CatalogEntry("industry/hospitality_core", "industry", ("accounting/accounting_core", "sales/sales_core"), layer="industry"),
     CatalogEntry("industry/real_estate_core", "industry", ("accounting/accounting_core", "sales/sales_core"), layer="industry"),
