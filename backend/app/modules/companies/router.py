@@ -9,6 +9,7 @@ from app.modules.companies.models import Company
 from app.modules.companies.schemas import CompanyCreate, CompanyResponse, CompanyUpdate
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
+from app.modules.saas.entitlements import enforce_company_limit
 
 router = APIRouter(prefix="/companies", tags=["Companies"])
 
@@ -29,11 +30,7 @@ def _get_company(db: Session, company_id: int, user: User) -> Company:
 
 
 @router.get("", response_model=list[CompanyResponse], dependencies=[Depends(require_permission("company.access"))])
-def list_companies(
-    active_only: bool = Query(False),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
+def list_companies(active_only: bool = Query(False), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     stmt = select(Company).where(Company.tenant_id == _tenant_id(current_user)).order_by(Company.name, Company.id)
     if active_only:
         stmt = stmt.where(Company.is_active.is_(True))
@@ -48,6 +45,7 @@ def get_company(company_id: int, db: Session = Depends(get_db), current_user: Us
 @router.post("", response_model=CompanyResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("company.write"))])
 def create_company(payload: CompanyCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     tenant_id = _tenant_id(current_user)
+    enforce_company_limit(db, tenant_id)
     company = Company(tenant_id=tenant_id, **payload.model_dump())
     db.add(company)
     try:
