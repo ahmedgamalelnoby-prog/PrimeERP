@@ -6,6 +6,7 @@ from app.modules.transactions.api.router import router as transactions_router
 from app.modules.accounting.fiscal_years.api.router import router as fiscal_years_router
 from app.modules.platform.features.router import router as features_router
 from app.modules.platform.plans.router import router as plans_router
+from app.modules.platform.subscriptions.router import router as subscriptions_router
 from app.modules.platform.tenants.router import router as tenants_router
 from app.modules.legal.router import router as legal_router
 
@@ -23,6 +24,7 @@ def build_router() -> APIRouter:
         tags=["accounting-fiscal-years"],
     )
     api_router.include_router(plans_router)
+    api_router.include_router(subscriptions_router)
     api_router.include_router(tenants_router, prefix="/platform")
     api_router.include_router(legal_router)
     return api_router
