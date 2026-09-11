@@ -4,6 +4,7 @@ from app.modules.accounting.fiscal_years.api.router import router as fiscal_year
 from app.modules.accounting.journals.api.journal_entries import router as journal_entries_router
 from app.modules.accounting.reports.router import router as financial_reports_router
 from app.modules.identity.api.router import router as identity_router
+from app.modules.inventory.items.router import router as inventory_items_router
 from app.modules.legal.router import router as legal_router
 from app.modules.platform.features.router import router as features_router
 from app.modules.platform.plans.router import router as plans_router
@@ -27,6 +28,7 @@ def build_router() -> APIRouter:
     )
     api_router.include_router(journal_entries_router)
     api_router.include_router(financial_reports_router)
+    api_router.include_router(inventory_items_router)
     api_router.include_router(plans_router)
     api_router.include_router(subscriptions_router)
     api_router.include_router(tenants_router, prefix="/platform")
