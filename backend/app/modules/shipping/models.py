@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Column, Date, ForeignKey, Integer, Numeric, String, Text
 from app.database.base import Base
 
 
@@ -47,4 +47,32 @@ class Shipment(Base):
     __table_args__ = (
         CheckConstraint("status IN ('pending','picked_up','in_transit','out_for_delivery','delivered','returned','cancelled')", name="ck_shipment_status"),
         CheckConstraint("cod_amount >= 0", name="ck_shipment_cod"),
+        CheckConstraint("shipping_fee >= 0", name="ck_shipment_fee"),
     )
+
+
+class ShippingSettlementBatch(Base):
+    __tablename__ = "shipping_settlement_batches"
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    carrier_id = Column(Integer, ForeignKey("shipping_carriers.id", ondelete="RESTRICT"), nullable=False, index=True)
+    reference = Column(String(100), nullable=False)
+    settlement_date = Column(Date, nullable=False)
+    gross_amount = Column(Numeric(18, 4), server_default="0", nullable=False)
+    carrier_fees = Column(Numeric(18, 4), server_default="0", nullable=False)
+    net_amount = Column(Numeric(18, 4), server_default="0", nullable=False)
+    status = Column(String(20), server_default="open", nullable=False)
+    notes = Column(Text)
+
+
+class ShippingShipmentSettlement(Base):
+    __tablename__ = "shipping_shipment_settlements"
+    id = Column(Integer, primary_key=True)
+    batch_id = Column(Integer, ForeignKey("shipping_settlement_batches.id", ondelete="CASCADE"), nullable=False, index=True)
+    shipment_id = Column(Integer, ForeignKey("shipments.id", ondelete="RESTRICT"), nullable=False, unique=True)
+    expected_amount = Column(Numeric(18, 4), server_default="0", nullable=False)
+    collected_amount = Column(Numeric(18, 4), server_default="0", nullable=False)
+    carrier_fee = Column(Numeric(18, 4), server_default="0", nullable=False)
+    net_amount = Column(Numeric(18, 4), server_default="0", nullable=False)
+    variance = Column(Numeric(18, 4), server_default="0", nullable=False)
+    reconciled = Column(Boolean, server_default="false", nullable=False)
