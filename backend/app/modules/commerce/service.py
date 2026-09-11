@@ -9,6 +9,7 @@ from app.modules.inventory.locations.models import InventoryLocation
 from app.modules.inventory.stock_moves.models import InventoryStockMove
 from app.modules.inventory.stock_moves.schemas import StockMoveCreate
 from app.modules.inventory.stock_moves.service import inventory_stock_move_service
+from app.modules.inventory.warehouses.models import InventoryWarehouse
 
 SALE_TYPES = {"quotation", "order", "delivery", "invoice", "credit_note"}
 PURCHASE_TYPES = {"requisition", "rfq", "order", "receipt", "bill", "debit_note"}
@@ -36,6 +37,10 @@ class CommerceService:
         model = SalesDocument if is_sale else PurchaseDocument
         line_model = SalesLine if is_sale else PurchaseLine
         if db.scalar(select(model).where(model.company_id == payload.company_id, model.number == payload.number)): raise ValueError("Document number already exists")
+        if payload.warehouse_id is not None:
+            warehouse = db.scalar(select(InventoryWarehouse).where(InventoryWarehouse.id == payload.warehouse_id, InventoryWarehouse.company_id == payload.company_id, InventoryWarehouse.tenant_id == db.scalar(select(InventoryWarehouse.tenant_id).where(InventoryWarehouse.company_id == payload.company_id).limit(1)), InventoryWarehouse.is_active.is_(True)))
+            if warehouse is None:
+                raise ValueError("Warehouse does not belong to the company or is inactive")
         obj = model(company_id=payload.company_id, partner_id=payload.partner_id, document_type=payload.document_type, number=payload.number, document_date=payload.document_date, warehouse_id=payload.warehouse_id, notes=payload.notes)
         subtotal = Decimal("0"); tax = Decimal("0"); discount = Decimal("0")
         for p in payload.lines:
@@ -76,6 +81,8 @@ class CommerceService:
             if obj.status in ("fulfilled", "received"): return obj
             raise ValueError("Document must be confirmed before inventory posting")
         if not obj.warehouse_id: raise ValueError("Warehouse is required")
+        warehouse = db.scalar(select(InventoryWarehouse).where(InventoryWarehouse.id == obj.warehouse_id, InventoryWarehouse.company_id == company_id, InventoryWarehouse.is_active.is_(True)))
+        if warehouse is None: raise ValueError("Warehouse does not belong to the company or is inactive")
         locations = list(db.scalars(select(InventoryLocation).where(InventoryLocation.warehouse_id == obj.warehouse_id, InventoryLocation.company_id == company_id, InventoryLocation.is_active.is_(True)).order_by(InventoryLocation.id)).all())
         if not locations: raise ValueError("Warehouse has no active location")
         loc = locations[0]; source_entity = "sales_delivery" if kind == "sale" else "purchase_receipt"
