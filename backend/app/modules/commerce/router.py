@@ -9,6 +9,7 @@ from app.modules.commerce.accounting_service import commerce_accounting_service
 from app.modules.commerce.accounting_models import CommerceAccountingSettings
 from app.modules.commerce.accounting_schemas import CommerceAccountingSettingsCreate
 from app.modules.commerce.models import CommercePayment
+from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 
@@ -24,11 +25,9 @@ def run(fn):
 
 @router.post("/accounting-settings", status_code=201)
 def configure_accounting(payload: CommerceAccountingSettingsCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    if current_user.tenant_id is None:
-        raise HTTPException(403, "User is not assigned to a tenant")
-    company = db.scalar(select(__import__("app.modules.companies.models", fromlist=["Company"]).Company).where(__import__("app.modules.companies.models", fromlist=["Company"]).Company.id == payload.company_id, __import__("app.modules.companies.models", fromlist=["Company"]).Company.tenant_id == current_user.tenant_id))
-    if company is None:
-        raise HTTPException(403, "Company is outside the current tenant")
+    if current_user.tenant_id is None: raise HTTPException(403, "User is not assigned to a tenant")
+    company = db.scalar(select(Company).where(Company.id == payload.company_id, Company.tenant_id == current_user.tenant_id))
+    if company is None: raise HTTPException(403, "Company is outside the current tenant")
     values = payload.model_dump()
     obj = db.scalar(select(CommerceAccountingSettings).where(CommerceAccountingSettings.company_id == payload.company_id))
     if obj is None:
@@ -41,7 +40,7 @@ def configure_accounting(payload: CommerceAccountingSettingsCreate, current_user
 
 @router.get("/accounting-settings")
 def get_accounting_settings(company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    obj = db.scalar(select(CommerceAccountingSettings).where(CommerceAccountingSettings.company_id == company_id))
+    obj = db.scalar(select(CommerceAccountingSettings).join(Company, Company.id == CommerceAccountingSettings.company_id).where(CommerceAccountingSettings.company_id == company_id, Company.tenant_id == current_user.tenant_id))
     if obj is None: raise HTTPException(404, "Commerce accounting configuration not found")
     return {c.name: getattr(obj, c.name) for c in obj.__table__.columns if c.name != "id"}
 
@@ -94,7 +93,7 @@ def receive_purchase(document_id: int, company_id: int = Query(..., gt=0), db: S
 def pay_sale(document_id: int, payload: PaymentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if payload.document_id != document_id: raise HTTPException(400, "Document id mismatch")
     obj = run(lambda: commerce_service.pay(db, payload, "sale")); db.flush()
-    payment = db.scalar(select(CommercePayment).where(CommercePayment.id == db.query(CommercePayment.id).filter(CommercePayment.company_id == payload.company_id, CommercePayment.document_id == document_id).order_by(CommercePayment.id.desc()).limit(1).scalar_subquery()))
+    payment = db.scalar(select(CommercePayment).where(CommercePayment.company_id == payload.company_id, CommercePayment.document_id == document_id, CommercePayment.status == "posted").order_by(CommercePayment.id.desc()).limit(1))
     if payment: commerce_accounting_service.post_payment(db, payment, obj, current_user.id)
     db.commit(); db.refresh(obj); return obj
 
@@ -102,7 +101,7 @@ def pay_sale(document_id: int, payload: PaymentCreate, current_user: User = Depe
 def pay_purchase(document_id: int, payload: PaymentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if payload.document_id != document_id: raise HTTPException(400, "Document id mismatch")
     obj = run(lambda: commerce_service.pay(db, payload, "purchase")); db.flush()
-    payment = db.scalar(select(CommercePayment).where(CommercePayment.id == db.query(CommercePayment.id).filter(CommercePayment.company_id == payload.company_id, CommercePayment.document_id == document_id).order_by(CommercePayment.id.desc()).limit(1).scalar_subquery()))
+    payment = db.scalar(select(CommercePayment).where(CommercePayment.company_id == payload.company_id, CommercePayment.document_id == document_id, CommercePayment.status == "posted").order_by(CommercePayment.id.desc()).limit(1))
     if payment: commerce_accounting_service.post_payment(db, payment, obj, current_user.id)
     db.commit(); db.refresh(obj); return obj
 
