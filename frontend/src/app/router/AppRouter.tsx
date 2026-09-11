@@ -22,6 +22,7 @@ import LocationsPage from "@/modules/inventory/pages/LocationsPage";
 import ReservationsPage from "@/modules/inventory/pages/ReservationsPage";
 import CommercePage from "@/modules/commerce/pages/CommercePage";
 import OperationalPage from "@/modules/commerce/pages/OperationalPage";
+import ShippingPage from "@/modules/shipping/pages/ShippingPage";
 import EnterprisePage from "@/modules/enterprise/pages/EnterprisePage";
 import EnterpriseModulePage from "@/modules/enterprise/pages/EnterpriseModulePage";
 import CompanyManagementPage from "@/modules/companies/pages/CompanyManagementPage";
@@ -61,7 +62,7 @@ export default function AppRouter() {
         <Route path="/sales/quotations" element={<OperationalPage />} />
         <Route path="/sales/orders" element={<OperationalPage />} />
         <Route path="/purchases/orders" element={<OperationalPage />} />
-        <Route path="/shipping" element={<OperationalPage />} />
+        <Route path="/shipping" element={<ShippingPage />} />
         <Route path="/products" element={<InventoryPage />} />
         <Route path="/enterprise" element={<EnterprisePage />} />
         <Route path="/enterprise/assets" element={<EnterpriseModulePage module="assets" />} />
