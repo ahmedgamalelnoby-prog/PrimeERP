@@ -75,5 +75,14 @@ class CommerceAccountingService:
             lines = [{"account_combination_id": control, "debit": Decimal(payment.amount), "credit": 0, "description": f"AP settlement {document.number}"}, {"account_combination_id": settings.default_payment_account_id, "debit": 0, "credit": Decimal(payment.amount), "description": f"Payment {payment.reference or payment.id}"}]
         return self._post(db, company_id=payment.company_id, user_id=user_id, entry_date=payment.payment_date, journal_id=settings.cash_journal_id, entry_number=f"PAY-{payment.id}", description=f"Commerce payment {payment.id}", lines=lines, source_entity="commerce_payment", source_id=payment.id)
 
+    def post_payment_reversal(self, db: Session, payment, document, user_id: int):
+        settings = self._settings(db, payment.company_id)
+        control = settings.ar_account_id if payment.document_kind == "sale" else settings.ap_account_id
+        if payment.document_kind == "sale":
+            lines = [{"account_combination_id": control, "debit": Decimal(payment.amount), "credit": 0}, {"account_combination_id": settings.default_payment_account_id, "debit": 0, "credit": Decimal(payment.amount)}]
+        else:
+            lines = [{"account_combination_id": settings.default_payment_account_id, "debit": Decimal(payment.amount), "credit": 0}, {"account_combination_id": control, "debit": 0, "credit": Decimal(payment.amount)}]
+        return self._post(db, company_id=payment.company_id, user_id=user_id, entry_date=payment.payment_date, journal_id=settings.cash_journal_id, entry_number=f"PAY-REV-{payment.id}", description=f"Reversal of commerce payment {payment.id}", lines=lines, source_entity="commerce_payment_reversal", source_id=payment.id)
+
 
 commerce_accounting_service = CommerceAccountingService()
