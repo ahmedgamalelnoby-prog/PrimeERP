@@ -26,7 +26,7 @@ class JournalService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Journal entry not found")
         return entry
 
-    def create_draft(self, db: Session, *, tenant_id: int, company_id: int, branch_id: int, journal_id: int, fiscal_year_id: int, period_id: int, entry_number: str, entry_date: date, description: str, lines: list[dict], user_id: int | None = None, currency_code: str = "EGP", exchange_rate: Decimal = Decimal("1"), reference: str | None = None, source_module: str | None = None, source_entity: str | None = None, source_id: int | None = None) -> JournalEntry:
+    def create_draft(self, db: Session, *, tenant_id: int, company_id: int, branch_id: int, journal_id: int, fiscal_year_id: int, period_id: int, entry_number: str, entry_date: date, description: str, lines: list[dict], user_id: int | None = None, currency_code: str = "EGP", exchange_rate: Decimal = Decimal("1"), reference: str | None = None, source_module: str | None = None, source_entity: str | None = None, source_id: int | None = None, commit: bool = True) -> JournalEntry:
         journal = journal_repository.get_journal(db, journal_id, tenant_id, company_id)
         if journal is None or not journal.is_active:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Accounting journal not found")
@@ -58,25 +58,33 @@ class JournalService:
         entry.total_debit = debit
         entry.total_credit = credit
         db.add(entry)
-        db.commit()
-        db.refresh(entry)
+        db.flush()
+        if commit:
+            db.commit()
+            db.refresh(entry)
         return entry
 
-    def submit(self, db: Session, *, tenant_id: int, entry_id: int, user_id: int) -> JournalEntry:
+    def submit(self, db: Session, *, tenant_id: int, entry_id: int, user_id: int, commit: bool = True) -> JournalEntry:
         entry = self._locked_entry(db, tenant_id, entry_id)
         if entry.status != "draft":
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only draft entries can be submitted")
         entry.status = "pending"; entry.submitted_by = user_id; entry.submitted_at = datetime.now(timezone.utc)
-        db.commit(); db.refresh(entry); return entry
+        db.flush()
+        if commit:
+            db.commit(); db.refresh(entry)
+        return entry
 
-    def approve(self, db: Session, *, tenant_id: int, entry_id: int, user_id: int) -> JournalEntry:
+    def approve(self, db: Session, *, tenant_id: int, entry_id: int, user_id: int, commit: bool = True) -> JournalEntry:
         entry = self._locked_entry(db, tenant_id, entry_id)
         if entry.status != "pending":
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only pending entries can be approved")
         entry.status = "approved"; entry.approved_by = user_id; entry.approved_at = datetime.now(timezone.utc)
-        db.commit(); db.refresh(entry); return entry
+        db.flush()
+        if commit:
+            db.commit(); db.refresh(entry)
+        return entry
 
-    def post(self, db: Session, *, tenant_id: int, entry_id: int, user_id: int) -> JournalEntry:
+    def post(self, db: Session, *, tenant_id: int, entry_id: int, user_id: int, commit: bool = True) -> JournalEntry:
         entry = self._locked_entry(db, tenant_id, entry_id)
         if entry.status not in {"approved", "pending"}:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only approved or pending entries can be posted")
@@ -90,16 +98,22 @@ class JournalService:
         if entry.total_debit != entry.total_credit:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Cannot post an unbalanced journal entry")
         entry.status = "posted"; entry.posting_date = entry.entry_date; entry.posted_by = user_id; entry.posted_at = datetime.now(timezone.utc)
-        db.commit(); db.refresh(entry); return entry
+        db.flush()
+        if commit:
+            db.commit(); db.refresh(entry)
+        return entry
 
-    def cancel(self, db: Session, *, tenant_id: int, entry_id: int, user_id: int) -> JournalEntry:
+    def cancel(self, db: Session, *, tenant_id: int, entry_id: int, user_id: int, commit: bool = True) -> JournalEntry:
         entry = self._locked_entry(db, tenant_id, entry_id)
         if entry.status == "posted":
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Posted entries cannot be cancelled; use a reversal entry")
         if entry.status in {"cancelled", "reversed"}:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Journal entry is already closed")
         entry.status = "cancelled"; entry.cancelled_by = user_id; entry.cancelled_at = datetime.now(timezone.utc)
-        db.commit(); db.refresh(entry); return entry
+        db.flush()
+        if commit:
+            db.commit(); db.refresh(entry)
+        return entry
 
     @staticmethod
     def _locked_entry(db: Session, tenant_id: int, entry_id: int) -> JournalEntry:
