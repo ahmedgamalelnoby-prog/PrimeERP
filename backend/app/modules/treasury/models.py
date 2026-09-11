@@ -8,7 +8,7 @@ class Cheque(Base):
     id = Column(Integer, primary_key=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     partner_id = Column(Integer, ForeignKey("commerce_partners.id", ondelete="RESTRICT"), nullable=True, index=True)
-    direction = Column(String(10), nullable=False)  # received / issued
+    direction = Column(String(10), nullable=False)
     cheque_number = Column(String(100), nullable=False)
     bank_name = Column(String(150), nullable=True)
     account_number = Column(String(100), nullable=True)
@@ -26,7 +26,7 @@ class Cheque(Base):
     __table_args__ = (
         CheckConstraint("direction IN ('received','issued')", name="ck_treasury_cheque_direction"),
         CheckConstraint("amount > 0", name="ck_treasury_cheque_amount"),
-        CheckConstraint("status IN ('received','deposited','under_collection','collected','returned','resubmitted','issued','cleared','cancelled','reversed')", name="ck_treasury_cheque_status"),
+        CheckConstraint("status IN ('received','deposited','under_collection','collected','returned','resubmitted','issued','cleared','cancelled','reversed','withdrawn')", name="ck_treasury_cheque_status"),
         CheckConstraint("due_date >= cheque_date", name="ck_treasury_cheque_dates"),
     )
 
