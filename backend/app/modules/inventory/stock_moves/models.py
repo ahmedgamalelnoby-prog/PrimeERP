@@ -1,4 +1,4 @@
-from sqlalchemy import CheckConstraint, Column, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import CheckConstraint, Column, ForeignKey, Index, Integer, Numeric, String, Text
 from sqlalchemy.orm import relationship
 
 from app.database.base import Base
@@ -33,6 +33,17 @@ class InventoryStockMove(Base):
         CheckConstraint("status IN ('draft','posted','cancelled','reversed')", name="ck_inventory_stock_move_status"),
         CheckConstraint("source_location_id IS NOT NULL OR destination_location_id IS NOT NULL", name="ck_inventory_stock_move_endpoint"),
         CheckConstraint("source_location_id IS NULL OR destination_location_id IS NULL OR source_location_id <> destination_location_id", name="ck_inventory_stock_move_distinct_endpoints"),
+        Index(
+            "uq_inventory_stock_move_source",
+            "company_id",
+            "source_module",
+            "source_entity",
+            "source_id",
+            unique=True,
+            postgresql_where=(
+                "source_module IS NOT NULL AND source_entity IS NOT NULL AND source_id IS NOT NULL"
+            ),
+        ),
     )
 
 
