@@ -4,7 +4,6 @@ Central SQLAlchemy model registry.
 Importing this module registers all models in Base.metadata.
 Do not define SQLAlchemy models directly in this file.
 """
-
 from app.modules.saas.models import (PlanModule, Subscription, SubscriptionPlan, SystemModule, Tenant, TenantModule)
 from app.modules.platform.plans.models import Plan
 from app.modules.platform.customers.models import Customer
@@ -29,15 +28,11 @@ from app.modules.inventory.reservations.models import InventoryReservation
 from app.modules.purchasing.suppliers.models import Supplier
 from app.modules.purchasing.purchase_orders.models import PurchaseOrder, PurchaseOrderLine
 from app.modules.sales.sales_core.models import SalesOrder, SalesOrderLine
+from app.modules.sales.quotations.models import SalesQuotation, SalesQuotationLine
 
 __all__ = [
-    "Tenant", "SubscriptionPlan", "Subscription", "SystemModule", "PlanModule", "TenantModule",
-    "Plan", "Customer", "Company", "Branch", "User", "Role", "Permission", "role_permissions",
-    "LegalDocument", "LegalAcceptance", "Floor", "RestaurantTable", "PreparationStation", "OrderType",
-    "AccountingDepartment", "AccountingCostCenter", "NaturalAccount", "AccountCombination", "AccountingSettings",
-    "NumberSequence", "BusinessTransaction", "TransactionEvent", "FiscalYear", "AccountingPeriod",
-    "AccountingJournal", "JournalEntry", "JournalEntryLine", "InventoryItem", "InventoryStock",
-    "InventoryWarehouse", "InventoryLocation", "InventoryStockMove", "InventoryLocationStock",
-    "InventoryTransfer", "InventoryTransferLine", "InventoryAdjustment", "InventoryReservation",
-    "Supplier", "PurchaseOrder", "PurchaseOrderLine", "SalesOrder", "SalesOrderLine",
+    "Tenant", "SubscriptionPlan", "Subscription", "SystemModule", "PlanModule", "TenantModule", "Plan", "Customer", "Company", "Branch", "User", "Role", "Permission", "role_permissions",
+    "LegalDocument", "LegalAcceptance", "Floor", "RestaurantTable", "PreparationStation", "OrderType", "AccountingDepartment", "AccountingCostCenter", "NaturalAccount", "AccountCombination", "AccountingSettings",
+    "NumberSequence", "BusinessTransaction", "TransactionEvent", "FiscalYear", "AccountingPeriod", "AccountingJournal", "JournalEntry", "JournalEntryLine", "InventoryItem", "InventoryStock",
+    "InventoryWarehouse", "InventoryLocation", "InventoryStockMove", "InventoryLocationStock", "InventoryTransfer", "InventoryTransferLine", "InventoryAdjustment", "InventoryReservation", "Supplier", "PurchaseOrder", "PurchaseOrderLine", "SalesOrder", "SalesOrderLine", "SalesQuotation", "SalesQuotationLine",
 ]
