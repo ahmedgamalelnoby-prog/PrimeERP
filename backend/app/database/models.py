@@ -25,6 +25,7 @@ from app.modules.inventory.items.models import InventoryItem, InventoryStock
 from app.modules.inventory.warehouses.models import InventoryWarehouse
 from app.modules.inventory.locations.models import InventoryLocation
 from app.modules.inventory.stock_moves.models import InventoryStockMove
+from app.modules.inventory.stock_moves.location_stock import InventoryLocationStock
 
 __all__ = [
     "Tenant", "SubscriptionPlan", "Subscription", "SystemModule", "PlanModule", "TenantModule",
@@ -33,5 +34,5 @@ __all__ = [
     "AccountingDepartment", "AccountingCostCenter", "NaturalAccount", "AccountCombination", "AccountingSettings",
     "NumberSequence", "BusinessTransaction", "TransactionEvent", "FiscalYear", "AccountingPeriod",
     "AccountingJournal", "JournalEntry", "JournalEntryLine", "InventoryItem", "InventoryStock",
-    "InventoryWarehouse", "InventoryLocation", "InventoryStockMove",
+    "InventoryWarehouse", "InventoryLocation", "InventoryStockMove", "InventoryLocationStock",
 ]
