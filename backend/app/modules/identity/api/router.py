@@ -77,7 +77,9 @@ def get_me(
     subscription_status = None
     enabled_modules: list[str] = []
 
-    if tenant:
+    # Platform administrators are platform-scoped and must not be blocked
+    # by tenant subscription state even when a legacy tenant_id is present.
+    if tenant and not current_user.is_platform_admin:
         subscription = (
             authentication_service
             ._get_valid_subscription(
