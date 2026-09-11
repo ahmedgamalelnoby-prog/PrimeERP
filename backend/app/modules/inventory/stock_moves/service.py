@@ -7,6 +7,7 @@ from app.modules.inventory.items.models import InventoryItem, InventoryStock
 from app.modules.inventory.locations.models import InventoryLocation
 from app.modules.inventory.stock_moves.location_stock import InventoryLocationStock
 from app.modules.inventory.stock_moves.models import InventoryCostLayer, InventoryStockMove
+from app.modules.inventory.reservations.models import InventoryReservation
 from app.modules.inventory.stock_moves.repository import inventory_stock_move_repository
 
 
@@ -25,7 +26,6 @@ class InventoryStockMoveService:
         if item.item_type not in {"stockable", "consumable"}:
             raise ValueError("Only stockable or consumable items can have stock movements")
 
-        locations = {}
         for location_id in (payload.source_location_id, payload.destination_location_id):
             if location_id is not None:
                 location = db.scalar(select(InventoryLocation).where(
@@ -35,7 +35,6 @@ class InventoryStockMoveService:
                 ))
                 if location is None:
                     raise ValueError("Location does not belong to the company or is inactive")
-                locations[location_id] = location
 
         if payload.source_location_id is None and payload.destination_location_id is None:
             raise ValueError("At least one stock location is required")
@@ -51,7 +50,7 @@ class InventoryStockMoveService:
         db.flush()
         return move
 
-    def post(self, db: Session, *, company_id: int, move_id: int):
+    def post(self, db: Session, *, company_id: int, move_id: int, reservation_id: int | None = None):
         move = db.scalar(select(InventoryStockMove).where(
             InventoryStockMove.id == move_id,
             InventoryStockMove.company_id == company_id,
@@ -69,6 +68,19 @@ class InventoryStockMoveService:
         if item is None:
             raise ValueError("Item is unavailable for posting")
 
+        reservation = None
+        if reservation_id is not None:
+            reservation = db.scalar(select(InventoryReservation).where(
+                InventoryReservation.id == reservation_id,
+                InventoryReservation.company_id == company_id,
+            ).with_for_update())
+            if reservation is None or reservation.status != "active":
+                raise ValueError("Active reservation not found")
+            if move.source_location_id != reservation.location_id or move.item_id != reservation.item_id:
+                raise ValueError("Reservation does not match the stock move")
+            if Decimal(reservation.quantity) != Decimal(move.quantity):
+                raise ValueError("Reservation quantity must equal the fulfillment quantity")
+
         source_balance = self._location_balance(db, company_id, move.item_id, move.source_location_id, lock=True) if move.source_location_id else None
         destination_balance = self._location_balance(db, company_id, move.item_id, move.destination_location_id, lock=True) if move.destination_location_id else None
         source_warehouse_id = source_balance.location.warehouse_id if source_balance else None
@@ -81,24 +93,20 @@ class InventoryStockMoveService:
         if source_balance:
             on_hand = Decimal(source_balance.quantity_on_hand or 0)
             reserved = Decimal(source_balance.quantity_reserved or 0)
-            available = on_hand - reserved
+            reservation_qty = Decimal(reservation.quantity) if reservation is not None else Decimal("0")
+            available = on_hand - reserved + reservation_qty
             if available < quantity:
-                raise ValueError("Insufficient unreserved stock at source location; reserved stock must be consumed through its reservation")
+                raise ValueError("Insufficient stock at source location")
             warehouse_source = self._warehouse_stock(db, company_id, move.item_id, source_warehouse_id)
-            if Decimal(warehouse_source.quantity_reserved or 0) > Decimal(warehouse_source.quantity_on_hand or 0):
+            warehouse_reserved = Decimal(warehouse_source.quantity_reserved or 0)
+            if warehouse_reserved > Decimal(warehouse_source.quantity_on_hand or 0):
                 raise ValueError("Warehouse reservation balance exceeds stock")
-            warehouse_available = Decimal(warehouse_source.quantity_on_hand or 0) - Decimal(warehouse_source.quantity_reserved or 0)
+            warehouse_available = Decimal(warehouse_source.quantity_on_hand or 0) - warehouse_reserved + reservation_qty
             if warehouse_available < quantity:
-                raise ValueError("Insufficient unreserved warehouse stock")
+                raise ValueError("Insufficient warehouse stock")
 
             if item.costing_method == "fifo":
-                fifo_allocations = self._consume_fifo_layers(
-                    db,
-                    company_id,
-                    move.item_id,
-                    source_warehouse_id,
-                    quantity,
-                )
+                fifo_allocations = self._consume_fifo_layers(db, company_id, move.item_id, source_warehouse_id, quantity)
                 unit_cost = self._weighted_cost(fifo_allocations)
             elif unit_cost == 0:
                 if item.costing_method == "standard":
@@ -107,6 +115,10 @@ class InventoryStockMoveService:
                     unit_cost = Decimal(warehouse_source.average_cost or 0)
             source_balance.quantity_on_hand -= quantity
             warehouse_source.quantity_on_hand -= quantity
+            if reservation is not None:
+                source_balance.quantity_reserved -= reservation_qty
+                warehouse_source.quantity_reserved -= reservation_qty
+                reservation.status = "consumed"
 
         if destination_balance:
             warehouse_destination = self._warehouse_stock(db, company_id, move.item_id, destination_warehouse_id)
@@ -142,11 +154,9 @@ class InventoryStockMoveService:
             InventoryCostLayer.warehouse_id == warehouse_id,
             InventoryCostLayer.quantity_remaining > 0,
         ).order_by(InventoryCostLayer.id).with_for_update()).all()
-
         available = sum((Decimal(layer.quantity_remaining) for layer in layers), Decimal("0"))
         if available < quantity:
             raise ValueError("FIFO cost layers are insufficient for the issue; create an opening/receipt layer before issuing legacy stock")
-
         remaining = quantity
         allocations: list[tuple[Decimal, Decimal]] = []
         for layer in layers:
@@ -156,7 +166,6 @@ class InventoryStockMoveService:
             layer.quantity_remaining -= take
             allocations.append((take, Decimal(layer.unit_cost)))
             remaining -= take
-
         if remaining > 0:
             raise ValueError("FIFO cost layers are insufficient for the issue")
         return allocations
@@ -166,68 +175,35 @@ class InventoryStockMoveService:
         quantity = sum((qty for qty, _ in allocations), Decimal("0"))
         if quantity <= 0:
             return Decimal("0")
-        value = sum((qty * cost for qty, cost in allocations), Decimal("0"))
-        return value / quantity
+        return sum((qty * cost for qty, cost in allocations), Decimal("0")) / quantity
 
     @staticmethod
     def _add_fifo_layers(db: Session, company_id: int, item_id: int, warehouse_id: int, move_id: int, allocations: list[tuple[Decimal, Decimal]]) -> None:
         for quantity, unit_cost in allocations:
-            if quantity <= 0:
-                continue
-            db.add(InventoryCostLayer(
-                company_id=company_id,
-                item_id=item_id,
-                warehouse_id=warehouse_id,
-                receipt_move_id=move_id,
-                quantity_remaining=quantity,
-                unit_cost=unit_cost,
-            ))
+            if quantity > 0:
+                db.add(InventoryCostLayer(company_id=company_id, item_id=item_id, warehouse_id=warehouse_id, receipt_move_id=move_id, quantity_remaining=quantity, unit_cost=unit_cost))
         db.flush()
 
     @staticmethod
     def _location_balance(db: Session, company_id: int, item_id: int, location_id: int, *, lock: bool):
-        stmt = select(InventoryLocationStock).where(
-            InventoryLocationStock.company_id == company_id,
-            InventoryLocationStock.item_id == item_id,
-            InventoryLocationStock.location_id == location_id,
-        )
+        stmt = select(InventoryLocationStock).where(InventoryLocationStock.company_id == company_id, InventoryLocationStock.item_id == item_id, InventoryLocationStock.location_id == location_id)
         if lock:
             stmt = stmt.with_for_update()
         balance = db.scalar(stmt)
         if balance is None:
-            location = db.scalar(select(InventoryLocation).where(
-                InventoryLocation.id == location_id,
-                InventoryLocation.company_id == company_id,
-            ))
+            location = db.scalar(select(InventoryLocation).where(InventoryLocation.id == location_id, InventoryLocation.company_id == company_id))
             if location is None:
                 raise ValueError("Location not found")
-            balance = InventoryLocationStock(
-                company_id=company_id,
-                item_id=item_id,
-                location_id=location_id,
-                quantity_on_hand=0,
-                quantity_reserved=0,
-            )
+            balance = InventoryLocationStock(company_id=company_id, item_id=item_id, location_id=location_id, quantity_on_hand=0, quantity_reserved=0)
             db.add(balance)
             db.flush()
         return balance
 
     @staticmethod
     def _warehouse_stock(db: Session, company_id: int, item_id: int, warehouse_id: int):
-        stock = db.scalar(select(InventoryStock).where(
-            InventoryStock.company_id == company_id,
-            InventoryStock.item_id == item_id,
-            InventoryStock.warehouse_id == warehouse_id,
-        ).with_for_update())
+        stock = db.scalar(select(InventoryStock).where(InventoryStock.company_id == company_id, InventoryStock.item_id == item_id, InventoryStock.warehouse_id == warehouse_id).with_for_update())
         if stock is None:
-            stock = InventoryStock(
-                company_id=company_id,
-                item_id=item_id,
-                warehouse_id=warehouse_id,
-                quantity_on_hand=0,
-                quantity_reserved=0,
-                average_cost=0,
-            )
+            stock = InventoryStock(company_id=company_id, item_id=item_id, warehouse_id=warehouse_id, quantity_on_hand=0, quantity_reserved=0, average_cost=0)
             db.add(stock)
             db.flush()
         return stock
