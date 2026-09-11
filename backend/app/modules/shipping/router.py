@@ -8,32 +8,21 @@ from app.modules.accounting.chart_of_accounts.models import AccountCombination
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
+from app.modules.saas.entitlements import require_module
 from app.modules.shipping.models import ShippingCarrier, ShippingMethod, Shipment
-from app.modules.shipping.schemas import (
-    CarrierCreate,
-    CarrierResponse,
-    MethodCreate,
-    MethodResponse,
-    ShipmentCreate,
-    ShipmentResponse,
-)
+from app.modules.shipping.schemas import CarrierCreate, CarrierResponse, MethodCreate, MethodResponse, ShipmentCreate, ShipmentResponse
 
 router = APIRouter(
     prefix="/shipping",
     tags=["Shipping"],
-    dependencies=[Depends(require_permission("shipping.access"))],
+    dependencies=[Depends(require_permission("shipping.access")), Depends(require_module("shipping"))],
 )
 
 
 def _company_for_user(db: Session, company_id: int, user: User):
     if user.tenant_id is None:
         raise HTTPException(403, "User is not assigned to a tenant")
-    company = db.scalar(
-        select(Company).where(
-            Company.id == company_id,
-            Company.tenant_id == user.tenant_id,
-        )
-    )
+    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == user.tenant_id))
     if company is None:
         raise HTTPException(403, "Company is outside the current tenant")
     return company
@@ -42,35 +31,15 @@ def _company_for_user(db: Session, company_id: int, user: User):
 def _validate_payment_account(db: Session, company_id: int, account_id: int | None):
     if account_id is None:
         return
-    account = db.scalar(
-        select(AccountCombination).where(
-            AccountCombination.id == account_id,
-            AccountCombination.company_id == company_id,
-            AccountCombination.is_active.is_(True),
-        )
-    )
+    account = db.scalar(select(AccountCombination).where(AccountCombination.id == account_id, AccountCombination.company_id == company_id, AccountCombination.is_active.is_(True)))
     if account is None:
         raise HTTPException(422, "Shipping payment account does not belong to the company or is inactive")
 
 
-@router.post(
-    "/carriers",
-    response_model=CarrierResponse,
-    status_code=201,
-    dependencies=[Depends(require_permission("shipping.write"))],
-)
-def carrier(
-    payload: CarrierCreate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+@router.post("/carriers", response_model=CarrierResponse, status_code=201, dependencies=[Depends(require_permission("shipping.write"))])
+def carrier(payload: CarrierCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, payload.company_id, current_user)
-    if db.scalar(
-        select(ShippingCarrier).where(
-            ShippingCarrier.company_id == payload.company_id,
-            ShippingCarrier.code == payload.code,
-        )
-    ):
+    if db.scalar(select(ShippingCarrier).where(ShippingCarrier.company_id == payload.company_id, ShippingCarrier.code == payload.code)):
         raise HTTPException(409, "Carrier code already exists")
     obj = ShippingCarrier(**payload.model_dump())
     db.add(obj)
@@ -80,46 +49,16 @@ def carrier(
 
 
 @router.get("/carriers", response_model=list[CarrierResponse])
-def carriers(
-    company_id: int = Query(..., gt=0),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+def carriers(company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
-    return list(
-        db.scalars(
-            select(ShippingCarrier)
-            .where(
-                ShippingCarrier.company_id == company_id,
-                ShippingCarrier.is_active.is_(True),
-            )
-            .order_by(ShippingCarrier.name)
-        ).all()
-    )
+    return list(db.scalars(select(ShippingCarrier).where(ShippingCarrier.company_id == company_id, ShippingCarrier.is_active.is_(True)).order_by(ShippingCarrier.name)).all())
 
 
-@router.post(
-    "/methods",
-    response_model=MethodResponse,
-    status_code=201,
-    dependencies=[Depends(require_permission("shipping.write"))],
-)
-def method(
-    payload: MethodCreate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+@router.post("/methods", response_model=MethodResponse, status_code=201, dependencies=[Depends(require_permission("shipping.write"))])
+def method(payload: MethodCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if current_user.tenant_id is None:
         raise HTTPException(403, "User is not assigned to a tenant")
-    carrier_obj = db.scalar(
-        select(ShippingCarrier)
-        .join(Company, Company.id == ShippingCarrier.company_id)
-        .where(
-            ShippingCarrier.id == payload.carrier_id,
-            Company.tenant_id == current_user.tenant_id,
-            ShippingCarrier.is_active.is_(True),
-        )
-    )
+    carrier_obj = db.scalar(select(ShippingCarrier).join(Company, Company.id == ShippingCarrier.company_id).where(ShippingCarrier.id == payload.carrier_id, Company.tenant_id == current_user.tenant_id, ShippingCarrier.is_active.is_(True)))
     if carrier_obj is None:
         raise HTTPException(404, "Carrier not found")
     if payload.payment_method not in {"prepaid", "cod", "mixed"}:
@@ -127,10 +66,7 @@ def method(
     if payload.payment_method == "prepaid" and payload.cod_fee_percent:
         raise HTTPException(422, "COD fee is not valid for prepaid-only methods")
     _validate_payment_account(db, carrier_obj.company_id, payload.payment_account_id)
-    obj = ShippingMethod(
-        carrier_id=carrier_obj.id,
-        **payload.model_dump(exclude={"carrier_id"}),
-    )
+    obj = ShippingMethod(carrier_id=carrier_obj.id, **payload.model_dump(exclude={"carrier_id"}))
     db.add(obj)
     db.commit()
     db.refresh(obj)
@@ -138,54 +74,19 @@ def method(
 
 
 @router.get("/methods", response_model=list[MethodResponse])
-def methods(
-    carrier_id: int = Query(..., gt=0),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+def methods(carrier_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if current_user.tenant_id is None:
         raise HTTPException(403, "User is not assigned to a tenant")
-    carrier_obj = db.scalar(
-        select(ShippingCarrier)
-        .join(Company, Company.id == ShippingCarrier.company_id)
-        .where(
-            ShippingCarrier.id == carrier_id,
-            Company.tenant_id == current_user.tenant_id,
-        )
-    )
+    carrier_obj = db.scalar(select(ShippingCarrier).join(Company, Company.id == ShippingCarrier.company_id).where(ShippingCarrier.id == carrier_id, Company.tenant_id == current_user.tenant_id))
     if carrier_obj is None:
         raise HTTPException(404, "Carrier not found")
-    return list(
-        db.scalars(
-            select(ShippingMethod)
-            .where(ShippingMethod.carrier_id == carrier_id)
-            .order_by(ShippingMethod.name)
-        ).all()
-    )
+    return list(db.scalars(select(ShippingMethod).where(ShippingMethod.carrier_id == carrier_id).order_by(ShippingMethod.name)).all())
 
 
-@router.post(
-    "/shipments",
-    response_model=ShipmentResponse,
-    status_code=201,
-    dependencies=[Depends(require_permission("shipping.write"))],
-)
-def shipment(
-    payload: ShipmentCreate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+@router.post("/shipments", response_model=ShipmentResponse, status_code=201, dependencies=[Depends(require_permission("shipping.write"))])
+def shipment(payload: ShipmentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, payload.company_id, current_user)
-    method_obj = db.scalar(
-        select(ShippingMethod)
-        .join(ShippingCarrier, ShippingCarrier.id == ShippingMethod.carrier_id)
-        .where(
-            ShippingMethod.id == payload.method_id,
-            ShippingMethod.carrier_id == payload.carrier_id,
-            ShippingCarrier.company_id == payload.company_id,
-            ShippingCarrier.is_active.is_(True),
-        )
-    )
+    method_obj = db.scalar(select(ShippingMethod).join(ShippingCarrier, ShippingCarrier.id == ShippingMethod.carrier_id).where(ShippingMethod.id == payload.method_id, ShippingMethod.carrier_id == payload.carrier_id, ShippingCarrier.company_id == payload.company_id, ShippingCarrier.is_active.is_(True)))
     if method_obj is None:
         raise HTTPException(400, "Invalid carrier/method for company")
     if payload.cod_amount and method_obj.payment_method == "prepaid":
@@ -201,12 +102,7 @@ def shipment(
 
 
 @router.get("/shipments", response_model=list[ShipmentResponse])
-def shipments(
-    company_id: int = Query(..., gt=0),
-    status: str | None = None,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+def shipments(company_id: int = Query(..., gt=0), status: str | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
     stmt = select(Shipment).where(Shipment.company_id == company_id)
     if status:
@@ -215,37 +111,16 @@ def shipments(
 
 
 _TRANSITIONS = {
-    "pending": {"picked_up", "cancelled"},
-    "picked_up": {"in_transit", "cancelled"},
-    "in_transit": {"out_for_delivery", "returned"},
-    "out_for_delivery": {"delivered", "returned"},
-    "delivered": {"returned"},
-    "returned": set(),
-    "cancelled": set(),
+    "pending": {"picked_up", "cancelled"}, "picked_up": {"in_transit", "cancelled"},
+    "in_transit": {"out_for_delivery", "returned"}, "out_for_delivery": {"delivered", "returned"},
+    "delivered": {"returned"}, "returned": set(), "cancelled": set(),
 }
 
 
-@router.post(
-    "/shipments/{shipment_id}/status",
-    response_model=ShipmentResponse,
-    dependencies=[Depends(require_permission("shipping.post"))],
-)
-def status(
-    shipment_id: int,
-    value: str = Query(...),
-    company_id: int = Query(..., gt=0),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+@router.post("/shipments/{shipment_id}/status", response_model=ShipmentResponse, dependencies=[Depends(require_permission("shipping.post"))])
+def status(shipment_id: int, value: str = Query(...), company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
-    obj = db.scalar(
-        select(Shipment)
-        .where(
-            Shipment.id == shipment_id,
-            Shipment.company_id == company_id,
-        )
-        .with_for_update()
-    )
+    obj = db.scalar(select(Shipment).where(Shipment.id == shipment_id, Shipment.company_id == company_id).with_for_update())
     if obj is None:
         raise HTTPException(404, "Shipment not found")
     if value not in _TRANSITIONS:
