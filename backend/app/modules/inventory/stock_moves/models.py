@@ -1,4 +1,4 @@
-from sqlalchemy import CheckConstraint, Column, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, Column, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import relationship
 
 from app.database.base import Base
@@ -50,7 +50,6 @@ class InventoryCostLayer(Base):
     receipt_move = relationship("InventoryStockMove")
 
     __table_args__ = (
-        UniqueConstraint("receipt_move_id", "warehouse_id", name="uq_inventory_cost_layer_receipt_warehouse"),
         CheckConstraint("quantity_remaining >= 0", name="ck_inventory_cost_layer_quantity"),
         CheckConstraint("unit_cost >= 0", name="ck_inventory_cost_layer_unit_cost"),
     )
