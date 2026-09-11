@@ -13,6 +13,7 @@ from app.modules.inventory.stock_moves.router import router as inventory_stock_m
 from app.modules.inventory.transfers.router import router as inventory_transfers_router
 from app.modules.inventory.warehouses.router import router as inventory_warehouses_router
 from app.modules.legal.router import router as legal_router
+from app.modules.platform.customers.router import router as customers_router
 from app.modules.platform.features.router import router as features_router
 from app.modules.platform.plans.router import router as plans_router
 from app.modules.platform.subscriptions.router import router as subscriptions_router
@@ -33,6 +34,7 @@ def build_router() -> APIRouter:
     api_router.include_router(fiscal_years_router, prefix="/accounting/fiscal-years", tags=["accounting-fiscal-years"])
     api_router.include_router(journal_entries_router)
     api_router.include_router(financial_reports_router)
+    api_router.include_router(customers_router)
     api_router.include_router(inventory_items_router)
     api_router.include_router(inventory_warehouses_router)
     api_router.include_router(inventory_locations_router)
