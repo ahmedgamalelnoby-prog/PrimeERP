@@ -46,12 +46,6 @@ class InventoryStockMoveService:
         if payload.source_location_id and payload.destination_location_id and payload.source_location_id == payload.destination_location_id:
             raise ValueError("Source and destination locations must differ")
 
-        if payload.movement_type == "transfer":
-            source = locations[payload.source_location_id]
-            destination = locations[payload.destination_location_id]
-            if source.warehouse_id == destination.warehouse_id:
-                raise ValueError("Use a direct stock move for an intra-warehouse location transfer")
-
         move = InventoryStockMove(**payload.model_dump(), status="draft")
         db.add(move)
         db.flush()
@@ -104,7 +98,6 @@ class InventoryStockMoveService:
                     move.item_id,
                     source_warehouse_id,
                     quantity,
-                    Decimal(warehouse_source.average_cost or item.standard_cost or item.purchase_price or 0),
                 )
                 unit_cost = self._weighted_cost(fifo_allocations)
             elif unit_cost == 0:
@@ -125,7 +118,10 @@ class InventoryStockMoveService:
             warehouse_destination.quantity_on_hand += quantity
             new_qty = old_qty + quantity
             if new_qty > 0:
-                warehouse_destination.average_cost = ((old_qty * old_cost) + (quantity * unit_cost)) / new_qty
+                if source_balance and source_warehouse_id == destination_warehouse_id:
+                    warehouse_destination.average_cost = old_cost if old_qty > 0 else unit_cost
+                else:
+                    warehouse_destination.average_cost = ((old_qty * old_cost) + (quantity * unit_cost)) / new_qty
 
             if item.costing_method == "fifo":
                 allocations = fifo_allocations or [(quantity, unit_cost)]
@@ -139,7 +135,7 @@ class InventoryStockMoveService:
         db.flush()
         return move
 
-    def _consume_fifo_layers(self, db: Session, company_id: int, item_id: int, warehouse_id: int, quantity: Decimal, fallback_cost: Decimal):
+    def _consume_fifo_layers(self, db: Session, company_id: int, item_id: int, warehouse_id: int, quantity: Decimal):
         layers = db.scalars(select(InventoryCostLayer).where(
             InventoryCostLayer.company_id == company_id,
             InventoryCostLayer.item_id == item_id,
@@ -149,41 +145,7 @@ class InventoryStockMoveService:
 
         available = sum((Decimal(layer.quantity_remaining) for layer in layers), Decimal("0"))
         if available < quantity:
-            missing = quantity - available
-            legacy_move = db.scalar(select(InventoryStockMove).where(
-                InventoryStockMove.company_id == company_id,
-                InventoryStockMove.item_id == item_id,
-                InventoryStockMove.status == "posted",
-            ).order_by(InventoryStockMove.id).with_for_update())
-            if legacy_move is None:
-                raise ValueError("FIFO stock has no cost layers")
-
-            existing = db.scalar(select(InventoryCostLayer).where(
-                InventoryCostLayer.company_id == company_id,
-                InventoryCostLayer.item_id == item_id,
-                InventoryCostLayer.warehouse_id == warehouse_id,
-                InventoryCostLayer.receipt_move_id == legacy_move.id,
-            ).order_by(InventoryCostLayer.id).with_for_update())
-            if existing is None:
-                db.add(InventoryCostLayer(
-                    company_id=company_id,
-                    item_id=item_id,
-                    warehouse_id=warehouse_id,
-                    receipt_move_id=legacy_move.id,
-                    quantity_remaining=missing,
-                    unit_cost=fallback_cost,
-                ))
-                db.flush()
-            else:
-                existing.quantity_remaining += missing
-                db.flush()
-
-            layers = db.scalars(select(InventoryCostLayer).where(
-                InventoryCostLayer.company_id == company_id,
-                InventoryCostLayer.item_id == item_id,
-                InventoryCostLayer.warehouse_id == warehouse_id,
-                InventoryCostLayer.quantity_remaining > 0,
-            ).order_by(InventoryCostLayer.id).with_for_update()).all()
+            raise ValueError("FIFO cost layers are insufficient for the issue; create an opening/receipt layer before issuing legacy stock")
 
         remaining = quantity
         allocations: list[tuple[Decimal, Decimal]] = []
