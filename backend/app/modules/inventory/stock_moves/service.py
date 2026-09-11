@@ -80,20 +80,30 @@ class InventoryStockMoveService:
         source_warehouse_id = source_balance.location.warehouse_id if source_balance else None
         destination_warehouse_id = destination_balance.location.warehouse_id if destination_balance else None
 
+        quantity = Decimal(move.quantity)
         unit_cost = Decimal(move.unit_cost or 0)
         fifo_allocations: list[tuple[Decimal, Decimal]] = []
 
         if source_balance:
-            if Decimal(source_balance.quantity_on_hand or 0) < Decimal(move.quantity):
-                raise ValueError("Insufficient stock at source location")
+            on_hand = Decimal(source_balance.quantity_on_hand or 0)
+            reserved = Decimal(source_balance.quantity_reserved or 0)
+            available = on_hand - reserved
+            if available < quantity:
+                raise ValueError("Insufficient unreserved stock at source location; reserved stock must be consumed through its reservation")
             warehouse_source = self._warehouse_stock(db, company_id, move.item_id, source_warehouse_id)
+            if Decimal(warehouse_source.quantity_reserved or 0) > Decimal(warehouse_source.quantity_on_hand or 0):
+                raise ValueError("Warehouse reservation balance exceeds stock")
+            warehouse_available = Decimal(warehouse_source.quantity_on_hand or 0) - Decimal(warehouse_source.quantity_reserved or 0)
+            if warehouse_available < quantity:
+                raise ValueError("Insufficient unreserved warehouse stock")
+
             if item.costing_method == "fifo":
                 fifo_allocations = self._consume_fifo_layers(
                     db,
                     company_id,
                     move.item_id,
                     source_warehouse_id,
-                    Decimal(move.quantity),
+                    quantity,
                     Decimal(warehouse_source.average_cost or item.standard_cost or item.purchase_price or 0),
                 )
                 unit_cost = self._weighted_cost(fifo_allocations)
@@ -102,8 +112,8 @@ class InventoryStockMoveService:
                     unit_cost = Decimal(item.standard_cost or item.purchase_price or 0)
                 else:
                     unit_cost = Decimal(warehouse_source.average_cost or 0)
-            source_balance.quantity_on_hand -= move.quantity
-            warehouse_source.quantity_on_hand -= move.quantity
+            source_balance.quantity_on_hand -= quantity
+            warehouse_source.quantity_on_hand -= quantity
 
         if destination_balance:
             warehouse_destination = self._warehouse_stock(db, company_id, move.item_id, destination_warehouse_id)
@@ -111,14 +121,14 @@ class InventoryStockMoveService:
             old_cost = Decimal(warehouse_destination.average_cost or 0)
             if unit_cost == 0:
                 unit_cost = old_cost if old_qty > 0 else Decimal(item.standard_cost or item.purchase_price or 0)
-            destination_balance.quantity_on_hand += move.quantity
-            warehouse_destination.quantity_on_hand += move.quantity
-            new_qty = old_qty + Decimal(move.quantity)
+            destination_balance.quantity_on_hand += quantity
+            warehouse_destination.quantity_on_hand += quantity
+            new_qty = old_qty + quantity
             if new_qty > 0:
-                warehouse_destination.average_cost = ((old_qty * old_cost) + (Decimal(move.quantity) * unit_cost)) / new_qty
+                warehouse_destination.average_cost = ((old_qty * old_cost) + (quantity * unit_cost)) / new_qty
 
             if item.costing_method == "fifo":
-                allocations = fifo_allocations or [(Decimal(move.quantity), unit_cost)]
+                allocations = fifo_allocations or [(quantity, unit_cost)]
                 self._add_fifo_layers(db, company_id, move.item_id, destination_warehouse_id, move.id, allocations)
 
         if item.costing_method == "fifo" and source_balance and not fifo_allocations:
