@@ -1,8 +1,11 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+BillingCycle = Literal["monthly", "yearly"]
 
 
 class SubscriptionCreate(BaseModel):
@@ -11,7 +14,7 @@ class SubscriptionCreate(BaseModel):
     starts_at: Optional[datetime] = None
     ends_at: Optional[datetime] = None
     trial_ends_at: Optional[datetime] = None
-    billing_cycle: str = Field(default="monthly", min_length=3, max_length=20)
+    billing_cycle: BillingCycle = "monthly"
     auto_renew: bool = False
     custom_max_users: Optional[int] = Field(default=None, ge=1)
     custom_max_companies: Optional[int] = Field(default=None, ge=1)
@@ -21,7 +24,7 @@ class SubscriptionCreate(BaseModel):
 
 class SubscriptionUpdate(BaseModel):
     plan_id: Optional[int] = Field(default=None, gt=0)
-    billing_cycle: Optional[str] = Field(default=None, min_length=3, max_length=20)
+    billing_cycle: Optional[BillingCycle] = None
     ends_at: Optional[datetime] = None
     next_billing_date: Optional[datetime] = None
     auto_renew: Optional[bool] = None
@@ -44,7 +47,10 @@ class SubscriptionResponse(BaseModel):
     trial_ends_at: Optional[datetime]
     next_billing_date: Optional[datetime]
     cancelled_at: Optional[datetime]
-    auto_renew: bool
+    auto_renew: bool = Field(
+        validation_alias="is_auto_renew",
+        serialization_alias="auto_renew",
+    )
     custom_max_users: Optional[int]
     custom_max_companies: Optional[int]
     custom_max_branches: Optional[int]
