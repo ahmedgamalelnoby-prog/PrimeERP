@@ -7,6 +7,7 @@ from app.database.session import get_db
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
+from app.modules.saas.entitlements import require_module
 from app.modules.shipping.settlement_models import ShippingSettlementBatch, ShippingShipmentSettlement
 from app.modules.shipping.settlement_schemas import SettlementBatchCreate, SettlementBatchResponse, SettlementLineResponse
 from app.modules.shipping.settlement_service import shipping_settlement_service
@@ -14,7 +15,7 @@ from app.modules.shipping.settlement_service import shipping_settlement_service
 router = APIRouter(
     prefix="/shipping/settlements",
     tags=["Shipping Settlements"],
-    dependencies=[Depends(require_permission("shipping.access"))],
+    dependencies=[Depends(require_permission("shipping.access")), Depends(require_module("shipping"))],
 )
 
 
@@ -24,6 +25,8 @@ def _company_for_user(db: Session, company_id: int, user: User):
     company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == user.tenant_id))
     if company is None:
         raise HTTPException(403, "Company is outside the current tenant")
+    if not company.is_active:
+        raise HTTPException(409, "Company is inactive")
     return company
 
 
@@ -39,8 +42,10 @@ def create_settlement(
         db.commit()
         db.refresh(batch)
         return batch
-    except ValueError as exc:
+    except (ValueError, HTTPException) as exc:
         db.rollback()
+        if isinstance(exc, HTTPException):
+            raise
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 

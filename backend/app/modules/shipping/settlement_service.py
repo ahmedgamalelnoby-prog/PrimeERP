@@ -12,7 +12,7 @@ class ShippingSettlementService:
     def create_batch(self, db: Session, payload: SettlementBatchCreate) -> ShippingSettlementBatch:
         existing = db.scalar(select(ShippingSettlementBatch).where(
             ShippingSettlementBatch.company_id == payload.company_id,
-            ShippingSettlementBatch.reference == payload.reference,
+            ShippingSettlementBatch.reference == payload.reference.strip(),
         ))
         if existing:
             raise ValueError("Settlement reference already exists")
@@ -60,7 +60,9 @@ class ShippingSettlementService:
             expected = Decimal(shipment.cod_amount or 0)
             collected = Decimal(line.collected_amount)
             fee = Decimal(line.carrier_fee)
-            net = max(collected - fee, Decimal("0"))
+            if fee > collected:
+                raise ValueError(f"Carrier fee cannot exceed collected amount for shipment {shipment.id}")
+            net = collected - fee
             variance = collected - expected
             fully_reconciled = fully_reconciled and variance == 0
             gross += collected
@@ -78,7 +80,7 @@ class ShippingSettlementService:
 
         batch.gross_amount = gross
         batch.carrier_fees = fees
-        batch.net_amount = max(gross - fees, Decimal("0"))
+        batch.net_amount = gross - fees
         batch.status = "reconciled" if fully_reconciled else "open"
         db.flush()
         return batch
