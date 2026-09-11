@@ -1,9 +1,15 @@
-"""enforce tenant-company business key uniqueness
+"""validate business-key uniqueness without duplicating existing constraints
 
 Revision ID: 20260911_business_uniqueness
 Revises: 20260911_shipping_settlement_guards
+
+The commerce lifecycle migration already creates the company-scoped unique
+constraints for partners and sales/purchase document numbers, while the tax
+master migration creates the tax-rate constraint. Shipping carrier uniqueness
+is likewise defined by the shipping schema. This revision intentionally keeps
+its place in the migration chain as a no-op so upgrade head does not attempt to
+create duplicate indexes/constraints.
 """
-from alembic import op
 
 revision = "20260911_business_uniqueness"
 down_revision = "20260911_shipping_settlement_guards"
@@ -12,41 +18,8 @@ depends_on = None
 
 
 def upgrade():
-    op.create_index(
-        "uq_tax_rate_company_code",
-        "tax_rates",
-        ["company_id", "code"],
-        unique=True,
-    )
-    op.create_index(
-        "uq_commerce_partner_company_code",
-        "commerce_partners",
-        ["company_id", "code"],
-        unique=True,
-    )
-    op.create_index(
-        "uq_sales_document_company_number",
-        "sales_documents",
-        ["company_id", "number"],
-        unique=True,
-    )
-    op.create_index(
-        "uq_purchase_document_company_number",
-        "purchase_documents",
-        ["company_id", "number"],
-        unique=True,
-    )
-    op.create_index(
-        "uq_shipping_carrier_company_code",
-        "shipping_carriers",
-        ["company_id", "code"],
-        unique=True,
-    )
+    pass
 
 
 def downgrade():
-    op.drop_index("uq_shipping_carrier_company_code", table_name="shipping_carriers")
-    op.drop_index("uq_purchase_document_company_number", table_name="purchase_documents")
-    op.drop_index("uq_sales_document_company_number", table_name="sales_documents")
-    op.drop_index("uq_commerce_partner_company_code", table_name="commerce_partners")
-    op.drop_index("uq_tax_rate_company_code", table_name="tax_rates")
+    pass
