@@ -1,4 +1,4 @@
-from sqlalchemy import CheckConstraint, Column, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import CheckConstraint, Column, ForeignKey, Integer, Index, Numeric, String, Text
 from sqlalchemy.orm import relationship
 
 from app.database.base import Base
@@ -25,4 +25,15 @@ class InventoryReservation(Base):
     __table_args__ = (
         CheckConstraint("quantity > 0", name="ck_inventory_reservation_quantity"),
         CheckConstraint("status IN ('active','released','consumed','cancelled')", name="ck_inventory_reservation_status"),
+        Index(
+            "uq_inventory_reservation_active_source",
+            "company_id",
+            "source_module",
+            "source_entity",
+            "source_id",
+            "item_id",
+            "location_id",
+            unique=True,
+            postgresql_where=(status == "active"),
+        ),
     )
