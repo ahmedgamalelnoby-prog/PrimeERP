@@ -1,3 +1,4 @@
-from app.modules.sales.sales_core.models import SalesCustomer
+from .__manifest__ import MANIFEST
+from .models import Customer
 
-__all__ = ["SalesCustomer"]
+__all__ = ["MANIFEST", "Customer"]
