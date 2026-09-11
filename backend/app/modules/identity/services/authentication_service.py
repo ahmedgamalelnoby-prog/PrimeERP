@@ -7,6 +7,7 @@ from fastapi import (
     HTTPException,
     status,
 )
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.modules.identity.repositories.user_repository import (
@@ -22,7 +23,9 @@ from app.modules.identity.services.token_service import (
     token_service,
 )
 from app.modules.saas.models import (
+    PlanModule,
     Subscription,
+    SubscriptionPlan,
     SystemModule,
     Tenant,
     TenantModule,
@@ -81,6 +84,7 @@ class AuthenticationService:
             enabled_modules = self._get_enabled_modules(
                 db=db,
                 tenant_id=tenant.id,
+                plan_id=subscription.plan_id,
             )
 
         user.last_login = datetime.now(timezone.utc)
@@ -292,20 +296,22 @@ class AuthenticationService:
         db: Session,
         tenant_id: int,
     ) -> Subscription:
+        now = datetime.now(timezone.utc)
         subscription = (
             db.query(Subscription)
             .filter(
-                Subscription.tenant_id
-                == tenant_id,
+                Subscription.tenant_id == tenant_id,
                 Subscription.status.in_(
-                    [
-                        "trialing",
-                        "active",
-                    ]
+                    ["trialing", "active", "past_due"]
+                ),
+                or_(
+                    Subscription.ends_at.is_(None),
+                    Subscription.ends_at > now,
                 ),
             )
             .order_by(
-                Subscription.id.desc()
+                Subscription.ends_at.desc().nullslast(),
+                Subscription.id.desc(),
             )
             .first()
         )
@@ -320,53 +326,56 @@ class AuthenticationService:
                 ),
             )
 
-        now = datetime.now(timezone.utc)
-
-        if (
-            subscription.ends_at
-            and subscription.ends_at < now
-        ):
-            raise HTTPException(
-                status_code=(
-                    status.HTTP_403_FORBIDDEN
-                ),
-                detail=(
-                    "Subscription has expired"
-                ),
-            )
-
         return subscription
 
     @staticmethod
     def _get_enabled_modules(
         db: Session,
         tenant_id: int,
+        plan_id: int,
     ) -> list[str]:
-        rows = (
-            db.query(SystemModule.code)
-            .join(
-                TenantModule,
-                TenantModule.module_id
-                == SystemModule.id,
-            )
-            .filter(
-                TenantModule.tenant_id
-                == tenant_id,
-                TenantModule.is_enabled
-                .is_(True),
-                SystemModule.is_active
-                .is_(True),
-            )
-            .order_by(
-                SystemModule.display_order
-                .asc()
-            )
+        active_modules = (
+            db.query(SystemModule)
+            .filter(SystemModule.is_active.is_(True))
             .all()
         )
+        plan_enabled = {
+            row.module_id
+            for row in db.query(PlanModule.module_id)
+            .filter(
+                PlanModule.plan_id == plan_id,
+                PlanModule.is_enabled.is_(True),
+            )
+            .all()
+        }
+        overrides = {
+            row.module_id: row
+            for row in db.query(TenantModule)
+            .filter(TenantModule.tenant_id == tenant_id)
+            .all()
+        }
+        now = datetime.now(timezone.utc)
+        enabled: list[SystemModule] = []
+
+        for module in active_modules:
+            override = overrides.get(module.id)
+            if override is not None:
+                if not override.is_enabled:
+                    continue
+                if override.starts_at is not None and override.starts_at > now:
+                    continue
+                if override.ends_at is not None and override.ends_at <= now:
+                    continue
+                enabled.append(module)
+            elif module.id in plan_enabled:
+                enabled.append(module)
 
         return [
-            row[0]
-            for row in rows
+            module.code
+            for module in sorted(
+                enabled,
+                key=lambda item: (item.display_order, item.id),
+            )
         ]
 
     @staticmethod
