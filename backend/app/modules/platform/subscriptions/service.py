@@ -191,12 +191,21 @@ class SubscriptionService:
     def _expire_if_needed(self, instance: Subscription) -> None:
         now = self._now()
         changed = False
+
         if instance.status == "trialing" and instance.trial_ends_at and instance.trial_ends_at <= now:
             instance.status = "expired"
             changed = True
         elif instance.status == "active" and instance.ends_at and instance.ends_at <= now:
             instance.status = "expired"
             changed = True
+        elif instance.status == "past_due" and instance.ends_at:
+            # A past-due subscription is allowed only for the plan's configured
+            # grace period. It must never become an indefinite access bypass.
+            plan = self.db.query(Plan).filter(Plan.id == instance.plan_id).first()
+            grace_days = max(int(plan.grace_period_days), 0) if plan is not None else 0
+            if instance.ends_at + timedelta(days=grace_days) <= now:
+                instance.status = "expired"
+                changed = True
 
         if changed:
             self._sync_tenant_state(instance)
