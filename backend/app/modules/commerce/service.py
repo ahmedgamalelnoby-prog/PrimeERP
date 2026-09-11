@@ -55,20 +55,18 @@ class CommerceService:
             item = db.scalar(select(InventoryItem).where(InventoryItem.id == p.item_id, InventoryItem.company_id == payload.company_id, InventoryItem.is_active.is_(True)))
             if not item:
                 raise ValueError(f"Item {p.item_id} not found")
-
             tax_percent = Decimal(p.tax_percent)
-            tax_rate_id = p.tax_rate_id
-            if tax_rate_id:
-                tax_rate = db.scalar(select(TaxRate).where(TaxRate.id == tax_rate_id, TaxRate.company_id == payload.company_id, TaxRate.is_active.is_(True)))
+            if p.tax_rate_id:
+                tax_rate = db.scalar(select(TaxRate).where(TaxRate.id == p.tax_rate_id, TaxRate.company_id == payload.company_id, TaxRate.is_active.is_(True)))
                 if not tax_rate:
-                    raise ValueError(f"Tax rate {tax_rate_id} not found")
+                    raise ValueError(f"Tax rate {p.tax_rate_id} not found")
                 tax_percent = Decimal(tax_rate.rate)
 
             gross = p.quantity * p.unit_price
             disc = gross * p.discount_percent / Decimal("100")
             net = gross - disc
             tx = net * tax_percent / Decimal("100")
-            obj.lines.append(line_model(item_id=p.item_id, tax_rate_id=tax_rate_id, description=p.description, quantity=p.quantity, unit_price=p.unit_price, discount_percent=p.discount_percent, tax_percent=tax_percent, line_total=net + tx))
+            obj.lines.append(line_model(item_id=p.item_id, tax_rate_id=p.tax_rate_id, description=p.description, quantity=p.quantity, unit_price=p.unit_price, discount_percent=p.discount_percent, tax_percent=tax_percent, line_total=net + tx))
             subtotal += net
             discount += disc
             tax += tx
@@ -101,7 +99,6 @@ class CommerceService:
         obj = db.scalar(select(model).where(model.id == document_id, model.company_id == company_id).with_for_update())
         if not obj:
             raise ValueError("Document not found")
-
         allowed = {"delivery"} if kind == "sale" else {"receipt"}
         if obj.document_type not in allowed:
             raise ValueError("Only delivery documents and purchase receipts post inventory; invoices/bills are accounting documents")
@@ -116,14 +113,15 @@ class CommerceService:
         if not locations:
             raise ValueError("Warehouse has no active location")
         loc = locations[0]
+        source_entity = "sales_delivery" if kind == "sale" else "purchase_receipt"
 
         for line in obj.lines:
+            source_id = f"{obj.id}:{line.id}"
             existing = db.scalar(select(InventoryStockMove).where(
                 InventoryStockMove.company_id == company_id,
                 InventoryStockMove.source_module == "commerce",
-                InventoryStockMove.source_entity == ("sales_delivery" if kind == "sale" else "purchase_receipt"),
-                InventoryStockMove.source_id == str(obj.id),
-                InventoryStockMove.item_id == line.item_id,
+                InventoryStockMove.source_entity == source_entity,
+                InventoryStockMove.source_id == source_id,
                 InventoryStockMove.status.in_(["draft", "posted"]),
             ))
             if existing:
@@ -135,8 +133,8 @@ class CommerceService:
                 payload = StockMoveCreate(company_id=company_id, item_id=line.item_id, movement_type="receipt", source_location_id=None, destination_location_id=loc.id, quantity=line.quantity, unit_cost=line.unit_price, reference=obj.number, notes="Purchase receipt")
             move = inventory_stock_move_service.create_draft(db, payload)
             move.source_module = "commerce"
-            move.source_entity = "sales_delivery" if kind == "sale" else "purchase_receipt"
-            move.source_id = str(obj.id)
+            move.source_entity = source_entity
+            move.source_id = source_id
             inventory_stock_move_service.post(db, company_id=company_id, move_id=move.id)
 
         obj.status = "fulfilled" if kind == "sale" else "received"
