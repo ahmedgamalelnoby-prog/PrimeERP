@@ -1,5 +1,7 @@
 from sqlalchemy.orm import Session
 
+from app.modules.branches.models import Branch
+from app.modules.companies.models import Company
 from app.modules.inventory.warehouses.models import InventoryWarehouse
 
 
@@ -17,6 +19,13 @@ class WarehouseService:
             else:
                 query = query.filter(InventoryWarehouse.branch_id == branch_id)
         return query.order_by(InventoryWarehouse.is_central.desc(), InventoryWarehouse.code).all()
+
+    def get_central(self, db: Session, *, company_id: int):
+        return db.query(InventoryWarehouse).filter(
+            InventoryWarehouse.company_id == company_id,
+            InventoryWarehouse.is_central.is_(True),
+            InventoryWarehouse.is_active.is_(True),
+        ).first()
 
     def get(self, db: Session, *, company_id: int, warehouse_id: int):
         return db.query(InventoryWarehouse).filter(
@@ -36,15 +45,27 @@ class WarehouseService:
         description: str | None = None,
         is_central: bool = False,
     ):
+        company = db.query(Company).filter(
+            Company.id == company_id,
+            Company.tenant_id == tenant_id,
+            Company.is_active.is_(True),
+        ).first()
+        if company is None:
+            raise ValueError("Company not found for tenant")
         if is_central and branch_id is not None:
             raise ValueError("A central warehouse cannot belong to a branch")
         if not is_central and branch_id is None:
             raise ValueError("A branch warehouse requires a branch")
-        if is_central and db.query(InventoryWarehouse).filter(
-            InventoryWarehouse.company_id == company_id,
-            InventoryWarehouse.is_central.is_(True),
-            InventoryWarehouse.is_active.is_(True),
-        ).first():
+        if branch_id is not None:
+            branch = db.query(Branch).filter(
+                Branch.id == branch_id,
+                Branch.company_id == company_id,
+                Branch.tenant_id == tenant_id,
+                Branch.is_active.is_(True),
+            ).first()
+            if branch is None:
+                raise ValueError("Branch not found for company")
+        if is_central and self.get_central(db, company_id=company_id):
             raise ValueError("Company already has an active central warehouse")
 
         warehouse = InventoryWarehouse(
