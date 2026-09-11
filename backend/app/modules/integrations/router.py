@@ -63,14 +63,22 @@ def _verify_salla_signature(connection: IntegrationConnection, raw_body: bytes, 
         raise HTTPException(401, "Invalid Salla webhook signature")
 
 
-def _event_identity(payload: dict, event_header: str | None, event_id_header: str | None):
+def _event_identity(payload: dict, event_header: str | None, event_id_header: str | None, raw_body: bytes):
+    """Build a stable delivery key without treating business object IDs as delivery IDs.
+
+    Salla may send an explicit event/delivery id. Only those explicit identifiers are
+    preferred. When the envelope has no delivery id, hash the event type plus the exact
+    payload bytes so retries of the same delivery remain idempotent while two different
+    events for the same order/product do not collide.
+    """
     data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
-    external_event_id = event_id_header or payload.get("id") or payload.get("event_id") or data.get("id")
+    external_event_id = event_id_header or payload.get("id") or payload.get("event_id")
     event_type = event_header or payload.get("event") or payload.get("event_type") or payload.get("type")
-    if not external_event_id:
-        raise HTTPException(422, "Salla webhook event id is required")
     if not event_type:
         raise HTTPException(422, "Salla webhook event type is required")
+    if not external_event_id:
+        digest = hashlib.sha256(str(event_type).encode("utf-8") + b"\n" + raw_body).hexdigest()
+        external_event_id = f"sha256:{digest}"
     return str(external_event_id), str(event_type)
 
 
@@ -114,7 +122,7 @@ async def receive_salla_webhook_public(
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise HTTPException(400, "Invalid webhook JSON") from exc
 
-    external_event_id, event_type = _event_identity(payload, x_salla_event, x_salla_event_id)
+    external_event_id, event_type = _event_identity(payload, x_salla_event, x_salla_event_id, raw_body)
     existing = db.scalar(select(IntegrationEvent).where(
         IntegrationEvent.connection_id == connection_id,
         IntegrationEvent.external_event_id == external_event_id,
