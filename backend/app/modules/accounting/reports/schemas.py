@@ -10,6 +10,7 @@ class TrialBalanceRow(BaseModel):
     account_code: str
     account_name: str
     financial_statement: str
+    account_category: str
     normal_balance: str
     debit: Decimal
     credit: Decimal
