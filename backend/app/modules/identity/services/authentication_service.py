@@ -25,7 +25,6 @@ from app.modules.identity.services.token_service import (
 from app.modules.saas.models import (
     PlanModule,
     Subscription,
-    SubscriptionPlan,
     SystemModule,
     Tenant,
     TenantModule,
@@ -44,17 +43,8 @@ class AuthenticationService:
             tenant_slug=payload.tenant_slug,
         )
 
-        if not users:
+        if not users or len(users) > 1:
             self._raise_invalid_credentials()
-
-        if len(users) > 1:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    "Multiple accounts match this login. "
-                    "Please provide tenant_slug."
-                ),
-            )
 
         user = users[0]
 
@@ -116,26 +106,10 @@ class AuthenticationService:
                 "is_superuser": user.is_superuser,
                 "is_platform_admin": user.is_platform_admin,
                 "preferred_language": user.preferred_language,
-                "tenant_slug": (
-                    tenant.slug
-                    if tenant
-                    else None
-                ),
-                "tenant_name": (
-                    tenant.name
-                    if tenant
-                    else None
-                ),
-                "tenant_status": (
-                    tenant.status
-                    if tenant
-                    else None
-                ),
-                "subscription_status": (
-                    subscription.status
-                    if subscription
-                    else None
-                ),
+                "tenant_slug": tenant.slug if tenant else None,
+                "tenant_name": tenant.name if tenant else None,
+                "tenant_status": tenant.status if tenant else None,
+                "subscription_status": subscription.status if subscription else None,
                 "enabled_modules": enabled_modules,
             },
         }
@@ -152,19 +126,14 @@ class AuthenticationService:
 
         if payload is None:
             raise HTTPException(
-                status_code=(
-                    status.HTTP_401_UNAUTHORIZED
-                ),
+                status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid refresh token",
             )
 
         user_id = payload.get("user_id")
-
         if not user_id:
             raise HTTPException(
-                status_code=(
-                    status.HTTP_401_UNAUTHORIZED
-                ),
+                status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid refresh token",
             )
 
@@ -172,13 +141,10 @@ class AuthenticationService:
             db=db,
             user_id=int(user_id),
         )
-
         if user is None:
             raise HTTPException(
-                status_code=(
-                    status.HTTP_401_UNAUTHORIZED
-                ),
-                detail="User not found",
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token",
             )
 
         self._validate_user(user)
@@ -188,27 +154,17 @@ class AuthenticationService:
                 db=db,
                 tenant_id=user.tenant_id,
             )
-
             self._get_valid_subscription(
                 db=db,
                 tenant_id=user.tenant_id,
             )
 
-        access_token, expires_in = (
-            token_service
-            .create_access_token(user)
-        )
-
-        new_refresh_token = (
-            token_service
-            .create_refresh_token(user)
-        )
+        access_token, expires_in = token_service.create_access_token(user)
+        new_refresh_token = token_service.create_refresh_token(user)
 
         return {
             "access_token": access_token,
-            "refresh_token": (
-                new_refresh_token
-            ),
+            "refresh_token": new_refresh_token,
             "token_type": "bearer",
             "expires_in": expires_in,
         }
@@ -217,22 +173,13 @@ class AuthenticationService:
     def _validate_user(user) -> None:
         if user.is_deleted:
             raise HTTPException(
-                status_code=(
-                    status.HTTP_401_UNAUTHORIZED
-                ),
-                detail=(
-                    "User account has been deleted"
-                ),
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid login credentials",
             )
-
         if not user.is_active:
             raise HTTPException(
-                status_code=(
-                    status.HTTP_403_FORBIDDEN
-                ),
-                detail=(
-                    "User account is inactive"
-                ),
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="User account is inactive",
             )
 
     @staticmethod
@@ -241,54 +188,15 @@ class AuthenticationService:
         tenant_id: int | None,
     ) -> Tenant:
         if tenant_id is None:
-            raise HTTPException(
-                status_code=(
-                    status.HTTP_403_FORBIDDEN
-                ),
-                detail=(
-                    "User is not assigned to a tenant"
-                ),
-            )
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is not assigned to a tenant")
 
-        tenant = (
-            db.query(Tenant)
-            .filter(
-                Tenant.id == tenant_id,
-            )
-            .first()
-        )
-
+        tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
         if tenant is None:
-            raise HTTPException(
-                status_code=(
-                    status.HTTP_403_FORBIDDEN
-                ),
-                detail="Tenant not found",
-            )
-
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant not found")
         if not tenant.is_active:
-            raise HTTPException(
-                status_code=(
-                    status.HTTP_403_FORBIDDEN
-                ),
-                detail="Tenant is inactive",
-            )
-
-        if tenant.status in {
-            "suspended",
-            "cancelled",
-            "expired",
-        }:
-            raise HTTPException(
-                status_code=(
-                    status.HTTP_403_FORBIDDEN
-                ),
-                detail=(
-                    f"Tenant status is "
-                    f"{tenant.status}"
-                ),
-            )
-
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant is inactive")
+        if tenant.status in {"suspended", "cancelled", "expired"}:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Tenant status is {tenant.status}")
         return tenant
 
     @staticmethod
@@ -301,31 +209,14 @@ class AuthenticationService:
             db.query(Subscription)
             .filter(
                 Subscription.tenant_id == tenant_id,
-                Subscription.status.in_(
-                    ["trialing", "active", "past_due"]
-                ),
-                or_(
-                    Subscription.ends_at.is_(None),
-                    Subscription.ends_at > now,
-                ),
+                Subscription.status.in_(["trialing", "active", "past_due"]),
+                or_(Subscription.ends_at.is_(None), Subscription.ends_at > now),
             )
-            .order_by(
-                Subscription.ends_at.desc().nullslast(),
-                Subscription.id.desc(),
-            )
+            .order_by(Subscription.ends_at.desc().nullslast(), Subscription.id.desc())
             .first()
         )
-
         if subscription is None:
-            raise HTTPException(
-                status_code=(
-                    status.HTTP_403_FORBIDDEN
-                ),
-                detail=(
-                    "No active subscription"
-                ),
-            )
-
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No active subscription")
         return subscription
 
     @staticmethod
@@ -334,18 +225,11 @@ class AuthenticationService:
         tenant_id: int,
         plan_id: int,
     ) -> list[str]:
-        active_modules = (
-            db.query(SystemModule)
-            .filter(SystemModule.is_active.is_(True))
-            .all()
-        )
+        active_modules = db.query(SystemModule).filter(SystemModule.is_active.is_(True)).all()
         plan_enabled = {
             row.module_id
             for row in db.query(PlanModule.module_id)
-            .filter(
-                PlanModule.plan_id == plan_id,
-                PlanModule.is_enabled.is_(True),
-            )
+            .filter(PlanModule.plan_id == plan_id, PlanModule.is_enabled.is_(True))
             .all()
         }
         overrides = {
@@ -372,27 +256,16 @@ class AuthenticationService:
 
         return [
             module.code
-            for module in sorted(
-                enabled,
-                key=lambda item: (item.display_order, item.id),
-            )
+            for module in sorted(enabled, key=lambda item: (item.display_order, item.id))
         ]
 
     @staticmethod
     def _raise_invalid_credentials() -> None:
         raise HTTPException(
-            status_code=(
-                status.HTTP_401_UNAUTHORIZED
-            ),
-            detail=(
-                "Incorrect login or password"
-            ),
-            headers={
-                "WWW-Authenticate": "Bearer"
-            },
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect login or password",
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
 
-authentication_service = (
-    AuthenticationService()
-)
+authentication_service = AuthenticationService()
