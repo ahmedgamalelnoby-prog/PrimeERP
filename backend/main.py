@@ -12,12 +12,16 @@ from app.core.exceptions import register_exception_handlers
 from app.core.middleware import RequestContextMiddleware
 from app.core.module_engine.bootstrap import bootstrap_module_registry
 from app.core.module_engine.registry import ModuleRegistry
+from app.core.security.production import validate_production_configuration
 from app.database import models as database_models  # noqa: F401
 from app.database.session import SessionLocal
 
 
 def create_application() -> FastAPI:
     """Build a fresh PrimeERP application with an isolated API router tree."""
+    if not settings.DEBUG:
+        validate_production_configuration()
+
     module_registry: ModuleRegistry = bootstrap_module_registry()
 
     application = FastAPI(
@@ -25,8 +29,8 @@ def create_application() -> FastAPI:
         version=settings.APP_VERSION,
         description="PrimeERP - نظام إدارة المؤسسات",
         openapi_url=f"{settings.API_V1_STR}/openapi.json",
-        docs_url="/docs",
-        redoc_url="/redoc",
+        docs_url="/docs" if settings.DEBUG else None,
+        redoc_url="/redoc" if settings.DEBUG else None,
     )
     application.state.module_registry = module_registry
 
