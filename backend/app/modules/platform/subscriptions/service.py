@@ -77,6 +77,16 @@ class SubscriptionService:
         self.db.flush()
         return plan
 
+    def _grace_period_days(self, plan_id: int) -> int:
+        """Resolve grace consistently for canonical and legacy plans."""
+        plan = self.db.query(Plan).filter(Plan.id == plan_id).first()
+        if plan is not None:
+            return max(int(plan.grace_period_days or 0), 0)
+        legacy = self.db.query(SubscriptionPlan).filter(SubscriptionPlan.id == plan_id).first()
+        if legacy is not None:
+            return 7
+        return 0
+
     def _ensure_legacy_subscription_plan(self, plan: Plan) -> None:
         """Keep the legacy FK target synchronized until the physical table is migrated."""
         legacy = self.db.query(SubscriptionPlan).filter(SubscriptionPlan.id == plan.id).first()
@@ -201,8 +211,7 @@ class SubscriptionService:
         elif instance.status == "past_due" and instance.ends_at:
             # A past-due subscription is allowed only for the plan's configured
             # grace period. It must never become an indefinite access bypass.
-            plan = self.db.query(Plan).filter(Plan.id == instance.plan_id).first()
-            grace_days = max(int(plan.grace_period_days), 0) if plan is not None else 0
+            grace_days = self._grace_period_days(instance.plan_id)
             if instance.ends_at + timedelta(days=grace_days) <= now:
                 instance.status = "expired"
                 changed = True
