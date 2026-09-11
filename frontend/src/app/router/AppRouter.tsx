@@ -15,6 +15,7 @@ import LegalManagementPage from "@/modules/legal/pages/LegalManagementPage";
 import PlansPage from "@/modules/platform/plans/PlansPage";
 import AccountingPage from "@/modules/accounting/pages/AccountingPage";
 import AccountsPage from "@/modules/accounting/chart-of-accounts/AccountsPage";
+import JournalEntriesPage from "@/modules/accounting/journal-entries/JournalEntriesPage";
 
 function ComingSoonPage({ title }: { title: string }) {
   return <div className="flex min-h-[60vh] items-center justify-center" dir="rtl"><div className="w-full max-w-lg rounded-2xl border bg-card p-8 text-center shadow-sm"><h1 className="text-2xl font-bold">{title}</h1><p className="mt-3 text-sm text-muted-foreground">هذه الصفحة لم تُربط بعد بوظائفها النهائية.</p></div></div>;
@@ -40,7 +41,7 @@ export default function AppRouter() {
         <Route path="/platform/plans" element={<PlansPage />} />
         <Route path="/accounting" element={<AccountingPage />} />
         <Route path="/accounting/chart-of-accounts" element={<AccountsPage />} />
-        <Route path="/accounting/journal-entries" element={<ComingSoonPage title="القيود اليومية" />} />
+        <Route path="/accounting/journal-entries" element={<JournalEntriesPage />} />
         <Route path="/accounting/reports" element={<ComingSoonPage title="التقارير المالية" />} />
         <Route path="/companies" element={<ComingSoonPage title="الشركات" />} />
         <Route path="/branches" element={<ComingSoonPage title="الفروع" />} />
