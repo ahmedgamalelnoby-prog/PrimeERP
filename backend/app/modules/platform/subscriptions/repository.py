@@ -15,7 +15,7 @@ class SubscriptionRepository:
             db.query(Subscription)
             .filter(
                 Subscription.tenant_id == tenant_id,
-                Subscription.status.in_(["trial", "active", "past_due"]),
+                Subscription.status.in_(["trialing", "active", "past_due"]),
             )
             .order_by(Subscription.id.desc())
             .first()
