@@ -35,6 +35,14 @@ class DocumentLineCreate(BaseModel):
     discount_percent: Decimal = Field(default=0, ge=0, le=100)
     tax_percent: Decimal = Field(default=0, ge=0, le=100)
 
+    @model_validator(mode="after")
+    def validate_tax_source(self):
+        if self.tax_rate_id is not None and self.tax_percent != 0:
+            raise ValueError("Do not send tax_percent when tax_rate_id is provided; Tax Master is authoritative")
+        if self.tax_rate_id is None and self.tax_percent != 0:
+            raise ValueError("Tax Master is required for non-zero tax rates")
+        return self
+
 
 class DocumentCreate(BaseModel):
     company_id: int = Field(gt=0)
