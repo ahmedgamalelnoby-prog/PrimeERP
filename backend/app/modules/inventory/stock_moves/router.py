@@ -23,39 +23,26 @@ def _company_for_user(db: Session, company_id: int, user: User):
 
 
 @router.get("", response_model=list[StockMoveResponse], dependencies=[Depends(require_permission("inventory.access"))])
-def list_stock_moves(
-    company_id: int = Query(..., gt=0),
-    item_id: int | None = Query(default=None, gt=0),
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
+def list_stock_moves(company_id: int = Query(..., gt=0), item_id: int | None = Query(default=None, gt=0), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _company_for_user(db, company_id, user)
     return inventory_stock_move_service.list(db, company_id, item_id)
 
 
 @router.post("", response_model=StockMoveResponse, status_code=201, dependencies=[Depends(require_permission("inventory.write"))])
-def create_stock_move(
-    payload: StockMoveCreate,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
+def create_stock_move(payload: StockMoveCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _company_for_user(db, payload.company_id, user)
     try:
         return inventory_stock_move_service.create_draft(db, payload)
     except ValueError as exc:
+        db.rollback()
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/{move_id}/post", response_model=StockMoveResponse, dependencies=[Depends(require_permission("inventory.post"))])
-def post_stock_move(
-    move_id: int,
-    company_id: int = Query(..., gt=0),
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
+def post_stock_move(move_id: int, company_id: int = Query(..., gt=0), reservation_id: int | None = Query(default=None, gt=0), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _company_for_user(db, company_id, user)
     try:
-        move = inventory_stock_move_service.post(db, company_id=company_id, move_id=move_id)
+        move = inventory_stock_move_service.post(db, company_id=company_id, move_id=move_id, reservation_id=reservation_id)
         db.commit()
         db.refresh(move)
         return move
