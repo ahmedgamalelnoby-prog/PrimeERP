@@ -4,11 +4,14 @@ from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.modules.accounting.chart_of_accounts.models import AccountCombination
 from app.modules.accounting.fiscal_years.repositories.fiscal_year_repository import fiscal_year_repository
 from app.modules.accounting.journals.models import JournalEntry, JournalEntryLine
 from app.modules.accounting.journals.repositories.journal_repository import journal_repository
+from app.modules.branches.models import Branch
 
 
 class JournalService:
@@ -41,6 +44,22 @@ class JournalService:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Fiscal period does not belong to the selected company and fiscal year")
         if not (period.start_date <= entry_date <= period.end_date):
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Entry date is outside the selected accounting period")
+        branch = db.scalar(select(Branch).where(Branch.id == branch_id, Branch.company_id == company_id, Branch.tenant_id == tenant_id, Branch.is_active.is_(True)))
+        if branch is None:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Branch does not belong to the selected company and tenant")
+
+        account_ids: set[int] = set()
+        for number, payload in enumerate(lines, start=1):
+            try:
+                account_id = int(payload["account_combination_id"])
+            except (KeyError, TypeError, ValueError):
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid account on journal line {number}")
+            if account_id <= 0:
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid account on journal line {number}")
+            account_ids.add(account_id)
+        accounts = db.scalars(select(AccountCombination).where(AccountCombination.id.in_(account_ids), AccountCombination.company_id == company_id, AccountCombination.is_active.is_(True))).all()
+        if len(accounts) != len(account_ids):
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="One or more journal accounts do not belong to the selected company or are inactive")
 
         debit = Decimal("0")
         credit = Decimal("0")
@@ -52,8 +71,6 @@ class JournalService:
                 account_id = int(payload["account_combination_id"])
             except (KeyError, TypeError, ValueError, InvalidOperation):
                 raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid account or amount on journal line {number}")
-            if account_id <= 0:
-                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid account on journal line {number}")
             if not line_debit.is_finite() or not line_credit.is_finite():
                 raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Non-finite amount on journal line {number}")
             if line_debit < 0 or line_credit < 0 or (line_debit > 0 and line_credit > 0) or (line_debit == 0 and line_credit == 0):
@@ -74,60 +91,42 @@ class JournalService:
 
     def submit(self, db: Session, *, tenant_id: int, entry_id: int, user_id: int, commit: bool = True) -> JournalEntry:
         entry = self._locked_entry(db, tenant_id, entry_id)
-        if entry.status != "draft":
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only draft entries can be submitted")
-        entry.status = "pending"; entry.submitted_by = user_id; entry.submitted_at = datetime.now(timezone.utc)
-        db.flush()
-        if commit:
-            db.commit(); db.refresh(entry)
+        if entry.status != "draft": raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only draft entries can be submitted")
+        entry.status = "pending"; entry.submitted_by = user_id; entry.submitted_at = datetime.now(timezone.utc); db.flush()
+        if commit: db.commit(); db.refresh(entry)
         return entry
 
     def approve(self, db: Session, *, tenant_id: int, entry_id: int, user_id: int, commit: bool = True) -> JournalEntry:
         entry = self._locked_entry(db, tenant_id, entry_id)
-        if entry.status != "pending":
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only pending entries can be approved")
-        entry.status = "approved"; entry.approved_by = user_id; entry.approved_at = datetime.now(timezone.utc)
-        db.flush()
-        if commit:
-            db.commit(); db.refresh(entry)
+        if entry.status != "pending": raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only pending entries can be approved")
+        entry.status = "approved"; entry.approved_by = user_id; entry.approved_at = datetime.now(timezone.utc); db.flush()
+        if commit: db.commit(); db.refresh(entry)
         return entry
 
     def post(self, db: Session, *, tenant_id: int, entry_id: int, user_id: int, commit: bool = True) -> JournalEntry:
         entry = self._locked_entry(db, tenant_id, entry_id)
-        if entry.status not in {"approved", "pending"}:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only approved or pending entries can be posted")
-        if entry.status == "pending" and entry.journal.requires_approval:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Journal approval is required before posting")
+        if entry.status not in {"approved", "pending"}: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only approved or pending entries can be posted")
+        if entry.status == "pending" and entry.journal.requires_approval: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Journal approval is required before posting")
         period = fiscal_year_repository.get_period_by_id(db, entry.period_id, tenant_id, for_update=True)
-        if period is None or period.status != "open" or not period.allow_posting:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Accounting period is not open for posting")
-        if not (period.start_date <= entry.entry_date <= period.end_date):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Entry date is outside the posting period")
-        if entry.total_debit != entry.total_credit:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Cannot post an unbalanced journal entry")
-        entry.status = "posted"; entry.posting_date = entry.entry_date; entry.posted_by = user_id; entry.posted_at = datetime.now(timezone.utc)
-        db.flush()
-        if commit:
-            db.commit(); db.refresh(entry)
+        if period is None or period.status != "open" or not period.allow_posting: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Accounting period is not open for posting")
+        if not (period.start_date <= entry.entry_date <= period.end_date): raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Entry date is outside the posting period")
+        if entry.total_debit != entry.total_credit: raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Cannot post an unbalanced journal entry")
+        entry.status = "posted"; entry.posting_date = entry.entry_date; entry.posted_by = user_id; entry.posted_at = datetime.now(timezone.utc); db.flush()
+        if commit: db.commit(); db.refresh(entry)
         return entry
 
     def cancel(self, db: Session, *, tenant_id: int, entry_id: int, user_id: int, commit: bool = True) -> JournalEntry:
         entry = self._locked_entry(db, tenant_id, entry_id)
-        if entry.status == "posted":
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Posted entries cannot be cancelled; use a reversal entry")
-        if entry.status in {"cancelled", "reversed"}:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Journal entry is already closed")
-        entry.status = "cancelled"; entry.cancelled_by = user_id; entry.cancelled_at = datetime.now(timezone.utc)
-        db.flush()
-        if commit:
-            db.commit(); db.refresh(entry)
+        if entry.status == "posted": raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Posted entries cannot be cancelled; use a reversal entry")
+        if entry.status in {"cancelled", "reversed"}: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Journal entry is already closed")
+        entry.status = "cancelled"; entry.cancelled_by = user_id; entry.cancelled_at = datetime.now(timezone.utc); db.flush()
+        if commit: db.commit(); db.refresh(entry)
         return entry
 
     @staticmethod
     def _locked_entry(db: Session, tenant_id: int, entry_id: int) -> JournalEntry:
         entry = journal_repository.get_entry(db, entry_id, tenant_id, for_update=True)
-        if entry is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Journal entry not found")
+        if entry is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Journal entry not found")
         return entry
 
 
