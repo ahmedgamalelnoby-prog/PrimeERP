@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.accounting.chart_of_accounts.models import AccountCombination
 from app.modules.shipping.models import ShippingCarrier, ShippingMethod, Shipment
@@ -10,7 +11,11 @@ from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 
-router = APIRouter(prefix="/shipping", tags=["Shipping"])
+router = APIRouter(
+    prefix="/shipping",
+    tags=["Shipping"],
+    dependencies=[Depends(require_permission("shipping.access"))],
+)
 
 
 def _company_for_user(db: Session, company_id: int, user: User):
@@ -34,7 +39,7 @@ def _validate_payment_account(db: Session, company_id: int, account_id: int | No
         raise HTTPException(422, "Shipping payment account does not belong to the company or is inactive")
 
 
-@router.post("/carriers", response_model=CarrierResponse, status_code=201)
+@router.post("/carriers", response_model=CarrierResponse, status_code=201, dependencies=[Depends(require_permission("shipping.write"))])
 def carrier(p: CarrierCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, p.company_id, current_user)
     if db.scalar(select(ShippingCarrier).where(ShippingCarrier.company_id == p.company_id, ShippingCarrier.code == p.code)):
@@ -52,7 +57,7 @@ def carriers(company_id: int = Query(..., gt=0), current_user: User = Depends(ge
     return list(db.scalars(select(ShippingCarrier).where(ShippingCarrier.company_id == company_id, ShippingCarrier.is_active.is_(True)).order_by(ShippingCarrier.name)).all())
 
 
-@router.post("/methods", response_model=MethodResponse, status_code=201)
+@router.post("/methods", response_model=MethodResponse, status_code=201, dependencies=[Depends(require_permission("shipping.write"))])
 def method(p: MethodCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     carrier = db.scalar(select(ShippingCarrier).join(Company, Company.id == ShippingCarrier.company_id).where(ShippingCarrier.id == p.carrier_id, Company.tenant_id == current_user.tenant_id, ShippingCarrier.is_active.is_(True)))
     if carrier is None:
@@ -77,7 +82,7 @@ def methods(carrier_id: int = Query(..., gt=0), current_user: User = Depends(get
     return list(db.scalars(select(ShippingMethod).where(ShippingMethod.carrier_id == carrier_id)).all())
 
 
-@router.post("/shipments", response_model=ShipmentResponse, status_code=201)
+@router.post("/shipments", response_model=ShipmentResponse, status_code=201, dependencies=[Depends(require_permission("shipping.write"))])
 def shipment(p: ShipmentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, p.company_id, current_user)
     m = db.scalar(select(ShippingMethod).join(ShippingCarrier, ShippingCarrier.id == ShippingMethod.carrier_id).where(ShippingMethod.id == p.method_id, ShippingMethod.carrier_id == p.carrier_id, ShippingCarrier.company_id == p.company_id, ShippingCarrier.is_active.is_(True)))
@@ -115,7 +120,7 @@ _TRANSITIONS = {
 }
 
 
-@router.post("/shipments/{shipment_id}/status", response_model=ShipmentResponse)
+@router.post("/shipments/{shipment_id}/status", response_model=ShipmentResponse, dependencies=[Depends(require_permission("shipping.post"))])
 def status(shipment_id: int, value: str = Query(...), company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
     o = db.scalar(select(Shipment).where(Shipment.id == shipment_id, Shipment.company_id == company_id).with_for_update())
