@@ -11,6 +11,7 @@ from app.modules.accounting.journals.services.journal_service import journal_ser
 from app.modules.commerce.accounting_models import CommerceAccountingSettings
 from app.modules.companies.models import Company
 from app.modules.branches.models import Branch
+from app.modules.inventory.items.models import InventoryItem
 from app.modules.inventory.stock_moves.models import InventoryStockMove
 
 
@@ -64,12 +65,12 @@ class CommerceAccountingService:
         stock_total = Decimal("0")
         expense_total = Decimal("0")
         for line in document.lines:
-            line_net = Decimal(line.line_total) - (Decimal(line.line_total) * Decimal(line.tax_percent or 0) / Decimal("100" + str(Decimal(line.tax_percent or 0)))) if False else Decimal(line.quantity) * Decimal(line.unit_price) * (Decimal("100") - Decimal(line.discount_percent or 0)) / Decimal("100")
-            item_type = getattr(line.item, "item_type", "stockable") if getattr(line, "item", None) else "stockable"
-            if item_type in {"stockable", "consumable"}:
-                stock_total += line_net
+            item = db.scalar(select(InventoryItem).where(InventoryItem.id == line.item_id, InventoryItem.company_id == document.company_id))
+            net = Decimal(line.quantity) * Decimal(line.unit_price) * (Decimal("100") - Decimal(line.discount_percent or 0)) / Decimal("100")
+            if item and item.item_type in {"stockable", "consumable"}:
+                stock_total += net
             else:
-                expense_total += line_net
+                expense_total += net
         lines = []
         if stock_total:
             lines.append({"account_combination_id": settings.inventory_account_id, "debit": stock_total, "credit": 0, "description": f"Inventory {document.number}"})
@@ -86,7 +87,7 @@ class CommerceAccountingService:
         total = sum((Decimal(m.quantity) * Decimal(m.unit_cost or 0) for m in moves), Decimal("0"))
         if total <= 0:
             return None
-        return self._post(db, company_id=document.company_id, user_id=user_id, entry_date=document.document_date, journal_id=settings.sales_journal_id, entry_number=f"COGS-{document.id}", description=f"COGS for delivery {document.number}", lines=[{"account_combination_id": settings.cogs_account_id, "debit": total, "credit": 0, "description": f"COGS {document.number}"}, {"account_combination_id": settings.inventory_account_id, "debit": 0, "credit": total, "description": f"Inventory issue {document.number}"}], source_entity="sales_cogs", source_id=document.id)
+        return self._post(db, company_id=document.company_id, user_id=user_id, entry_date=document.document_date, journal_id=settings.sales_journal_id, entry_number=f"COGS-{document.id}", description=f"COGS for delivery {document.number}", lines=[{"account_combination_id": settings.cogs_account_id, "debit": total, "credit": 0}, {"account_combination_id": settings.inventory_account_id, "debit": 0, "credit": total}], source_entity="sales_cogs", source_id=document.id)
 
     def post_payment(self, db: Session, payment, document, user_id: int):
         settings = self._settings(db, payment.company_id)
