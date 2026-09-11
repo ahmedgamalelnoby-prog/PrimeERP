@@ -23,6 +23,7 @@ from app.modules.sales.sales_core.router import router as sales_orders_router
 from app.modules.sales.quotations.router import router as quotations_router
 from app.modules.saas.router import router as saas_router
 from app.modules.transactions.api.router import router as transactions_router
+from app.modules.treasury.router import router as treasury_router
 
 
 def build_router() -> APIRouter:
@@ -50,5 +51,6 @@ def build_router() -> APIRouter:
     api_router.include_router(plans_router)
     api_router.include_router(subscriptions_router)
     api_router.include_router(tenants_router, prefix="/platform")
+    api_router.include_router(treasury_router)
     api_router.include_router(legal_router)
     return api_router
