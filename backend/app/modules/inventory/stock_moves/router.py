@@ -23,3 +23,19 @@ def create_stock_move(payload: StockMoveCreate, db: Session = Depends(get_db)):
         return inventory_stock_move_service.create_draft(db, payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{move_id}/post", response_model=StockMoveResponse)
+def post_stock_move(
+    move_id: int,
+    company_id: int = Query(..., gt=0),
+    db: Session = Depends(get_db),
+):
+    try:
+        move = inventory_stock_move_service.post(db, company_id=company_id, move_id=move_id)
+        db.commit()
+        db.refresh(move)
+        return move
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
