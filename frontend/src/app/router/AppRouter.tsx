@@ -1,5 +1,4 @@
-﻿import { Navigate, Route, Routes } from "react-router-dom";
-
+import { Navigate, Route, Routes } from "react-router-dom";
 import ProtectedRoute from "./ProtectedRoute";
 import PublicRoute from "./PublicRoute";
 import DashboardLayout from "@/layouts/DashboardLayout";
@@ -20,6 +19,7 @@ import FinancialReportsPage from "@/modules/accounting/reports/FinancialReportsP
 import InventoryPage from "@/modules/inventory/pages/InventoryPage";
 import WarehousesPage from "@/modules/inventory/pages/WarehousesPage";
 import LocationsPage from "@/modules/inventory/pages/LocationsPage";
+import ReservationsPage from "@/modules/inventory/pages/ReservationsPage";
 
 function ComingSoonPage({ title }: { title: string }) {
   return <div className="flex min-h-[60vh] items-center justify-center" dir="rtl"><div className="w-full max-w-lg rounded-2xl border bg-card p-8 text-center shadow-sm"><h1 className="text-2xl font-bold">{title}</h1><p className="mt-3 text-sm text-muted-foreground">هذه الصفحة لم تُربط بعد بوظائفها النهائية.</p></div></div>;
@@ -50,6 +50,7 @@ export default function AppRouter() {
         <Route path="/inventory" element={<InventoryPage />} />
         <Route path="/inventory/warehouses" element={<WarehousesPage />} />
         <Route path="/inventory/locations" element={<LocationsPage />} />
+        <Route path="/inventory/reservations" element={<ReservationsPage />} />
         <Route path="/companies" element={<ComingSoonPage title="الشركات" />} />
         <Route path="/branches" element={<ComingSoonPage title="الفروع" />} />
         <Route path="/customers" element={<ComingSoonPage title="العملاء" />} />
