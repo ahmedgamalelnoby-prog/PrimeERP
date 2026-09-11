@@ -1,9 +1,11 @@
 from datetime import date
 from decimal import Decimal
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-PaymentMethod = str
+PaymentMethod = Literal["prepaid", "cod", "mixed"]
 
 
 class CarrierCreate(BaseModel):
@@ -34,18 +36,18 @@ class CarrierResponse(CarrierCreate):
 class MethodCreate(BaseModel):
     carrier_id: int = Field(gt=0)
     name: str = Field(min_length=1, max_length=150)
-    payment_method: str = Field(min_length=1, max_length=20)
+    payment_method: PaymentMethod
     payment_account_id: int | None = Field(default=None, gt=0)
     base_fee: Decimal = Field(default=0, ge=0)
     cod_fee_percent: Decimal = Field(default=0, ge=0, le=100)
     estimated_days: int = Field(default=1, gt=0)
 
-    @field_validator("name", "payment_method", mode="before")
+    @field_validator("name", mode="before")
     @classmethod
-    def clean_required(cls, value: str) -> str:
+    def clean_name(cls, value: str) -> str:
         if not isinstance(value, str) or not value.strip():
             raise ValueError("Value cannot be empty")
-        return value.strip().lower() if value != "name" else value.strip()
+        return value.strip()
 
 
 class MethodResponse(MethodCreate):
@@ -66,14 +68,21 @@ class ShipmentCreate(BaseModel):
     address: str | None = Field(default=None, max_length=1000)
     notes: str | None = Field(default=None, max_length=2000)
 
-    @field_validator("tracking_no", "customer_name", "phone", "address", "notes", mode="before")
+    @field_validator("tracking_no", "customer_name", mode="before")
     @classmethod
-    def clean_text(cls, value):
-        if value is None:
-            return None
+    def clean_required(cls, value: str) -> str:
         if not isinstance(value, str) or not value.strip():
             raise ValueError("Value cannot be empty")
         return value.strip()
+
+    @field_validator("phone", "address", "notes", mode="before")
+    @classmethod
+    def clean_optional(cls, value):
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("Value must be text")
+        return value.strip() or None
 
 
 class ShipmentResponse(ShipmentCreate):
@@ -96,13 +105,19 @@ class SettlementBatchCreate(BaseModel):
     lines: list[SettlementLineCreate] = Field(min_length=1)
     notes: str | None = Field(default=None, max_length=2000)
 
-    @field_validator("reference", "notes", mode="before")
+    @field_validator("reference", mode="before")
     @classmethod
-    def clean_text(cls, value):
+    def clean_reference(cls, value: str) -> str:
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("Reference cannot be empty")
+        return value.strip()
+
+    @field_validator("notes", mode="before")
+    @classmethod
+    def clean_notes(cls, value):
         if value is None:
             return None
-        value = value.strip()
-        return value or None
+        return value.strip() or None
 
 
 class SettlementLineResponse(SettlementLineCreate):
