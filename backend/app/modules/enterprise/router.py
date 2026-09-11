@@ -1,14 +1,11 @@
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter,Depends,HTTPException,Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.database.session import get_db
-from app.modules.enterprise.models import FixedAsset, Budget, BudgetLine, Employee, PayrollRun, PayrollLine, Project, ProjectContract
+from app.modules.enterprise.models import FixedAsset,Budget,BudgetLine,Employee,PayrollRun,PayrollLine,Project,ProjectContract
 from app.modules.enterprise.schemas import AssetCreate,AssetResponse,EmployeeCreate,EmployeeResponse,PayrollRunCreate,PayrollResponse,BudgetCreate,BudgetLineCreate,BudgetResponse,ProjectCreate,ProjectResponse,ContractCreate,ContractResponse
 router=APIRouter(prefix='/enterprise',tags=['Enterprise'])
-def err(fn):
- try:return fn()
- except ValueError as e:raise HTTPException(400,str(e)) from e
 @router.post('/assets',response_model=AssetResponse,status_code=201)
 def asset(p:AssetCreate,db:Session=Depends(get_db)):
  o=FixedAsset(**p.model_dump());db.add(o);db.commit();db.refresh(o);return o
@@ -18,7 +15,7 @@ def assets(company_id:int=Query(...,gt=0),db:Session=Depends(get_db)):return lis
 def depreciate(asset_id:int,company_id:int=Query(...,gt=0),months:int=Query(1,gt=0),db:Session=Depends(get_db)):
  o=db.scalar(select(FixedAsset).where(FixedAsset.id==asset_id,FixedAsset.company_id==company_id).with_for_update())
  if not o:raise HTTPException(404,'Asset not found')
- monthly=max(Decimal('0'),(Decimal(o.cost)-Decimal(o.residual_value))/o.useful_life_months); charge=min(monthly*months,Decimal(o.cost)-Decimal(o.residual_value)-Decimal(o.accumulated_depreciation));o.accumulated_depreciation+=charge;db.commit();db.refresh(o);return o
+ monthly=max(Decimal('0'),(Decimal(o.cost)-Decimal(o.residual_value))/o.useful_life_months);remaining=max(Decimal('0'),Decimal(o.cost)-Decimal(o.residual_value)-Decimal(o.accumulated_depreciation));o.accumulated_depreciation+=min(monthly*months,remaining);db.commit();db.refresh(o);return o
 @router.post('/employees',response_model=EmployeeResponse,status_code=201)
 def employee(p:EmployeeCreate,db:Session=Depends(get_db)):
  o=Employee(**p.model_dump());db.add(o);db.commit();db.refresh(o);return o
@@ -27,10 +24,10 @@ def employees(company_id:int=Query(...,gt=0),db:Session=Depends(get_db)):return 
 @router.post('/payroll/runs',response_model=PayrollResponse,status_code=201)
 def payroll(p:PayrollRunCreate,db:Session=Depends(get_db)):
  if db.scalar(select(PayrollRun).where(PayrollRun.company_id==p.company_id,PayrollRun.period==p.period)):raise HTTPException(400,'Payroll period already exists')
- emps=list(db.scalars(select(Employee).where(Employee.company_id==p.company_id,Employee.is_active.is_(True))).all());r=PayrollRun(company_id=p.company_id,period=p.period);db.add(r);db.flush();
+ emps=list(db.scalars(select(Employee).where(Employee.company_id==p.company_id,Employee.is_active.is_(True))).all());r=PayrollRun(company_id=p.company_id,period=p.period,total_gross=0,total_deductions=0,total_net=0);db.add(r);db.flush();gross_total=ded_total=net_total=Decimal('0')
  for e in emps:
-  gross=Decimal(e.basic_salary or 0)+Decimal(e.allowances or 0);ded=Decimal(e.deductions or 0);db.add(PayrollLine(payroll_run_id=r.id,employee_id=e.id,gross=gross,deductions=ded,net=gross-ded));r.total_gross+=gross;r.total_deductions+=ded;r.total_net+=gross-ded
- r.status='posted';db.commit();db.refresh(r);return r
+  gross=Decimal(e.basic_salary or 0)+Decimal(e.allowances or 0);ded=Decimal(e.deductions or 0);db.add(PayrollLine(payroll_run_id=r.id,employee_id=e.id,gross=gross,deductions=ded,net=gross-ded));gross_total+=gross;ded_total+=ded;net_total+=gross-ded
+ r.total_gross=gross_total;r.total_deductions=ded_total;r.total_net=net_total;r.status='posted';db.commit();db.refresh(r);return r
 @router.post('/budgets',response_model=BudgetResponse,status_code=201)
 def budget(p:BudgetCreate,db:Session=Depends(get_db)):
  o=Budget(**p.model_dump());db.add(o);db.commit();db.refresh(o);return o
