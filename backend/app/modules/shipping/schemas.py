@@ -10,6 +10,8 @@ class CarrierCreate(BaseModel):
     api_base_url: str | None = None
     settlement_account_id: int | None = Field(default=None, gt=0)
     fee_account_id: int | None = Field(default=None, gt=0)
+    settlement_journal_id: int | None = Field(default=None, gt=0)
+    branch_id: int | None = Field(default=None, gt=0)
 
 
 class CarrierResponse(CarrierCreate):
