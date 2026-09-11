@@ -1,13 +1,13 @@
 """create inventory transfer workflow tables
 
 Revision ID: 20260911transfers
-Revises: 20260911stockmoves
+Revises: 20260911locstock
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = "20260911transfers"
-down_revision = "20260911stockmoves"
+down_revision = "20260911locstock"
 branch_labels = None
 depends_on = None
 
