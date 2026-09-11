@@ -1,5 +1,6 @@
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.sql import func
+
 from app.database.base import Base
 
 
@@ -32,6 +33,10 @@ class IntegrationEvent(Base):
     event_type = Column(String(100), nullable=False)
     payload = Column(Text, nullable=False)
     status = Column(String(20), nullable=False, server_default="received")
+    attempts = Column(Integer, nullable=False, server_default="0")
+    next_attempt_at = Column(DateTime(timezone=True), nullable=True)
+    processed_at = Column(DateTime(timezone=True), nullable=True)
+    last_error = Column(Text, nullable=True)
     received_at = Column(DateTime, nullable=False, server_default=func.now())
 
     __table_args__ = (
