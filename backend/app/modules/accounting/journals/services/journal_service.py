@@ -34,9 +34,7 @@ class JournalService:
         entry = journal_repository.get_entry(db, entry_id, tenant_id)
         if entry is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Journal entry not found")
-        company = self._active_company(db, tenant_id, entry.company_id)
-        if not company:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Journal entry not found")
+        self._active_company(db, tenant_id, entry.company_id)
         return entry
 
     def create_draft(
@@ -49,6 +47,40 @@ class JournalService:
         commit: bool = True,
     ) -> JournalEntry:
         self._active_company(db, tenant_id, company_id)
+        entry_number = entry_number.strip()
+        if not entry_number:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Entry number cannot be empty")
+        if not description.strip():
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Journal description cannot be empty")
+
+        duplicate_number = db.scalar(
+            select(JournalEntry.id).where(
+                JournalEntry.tenant_id == tenant_id,
+                JournalEntry.entry_number == entry_number,
+            )
+        )
+        if duplicate_number is not None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Journal entry number already exists")
+
+        source_fields = (source_module, source_entity, source_id)
+        if any(value is not None for value in source_fields) and not all(value is not None for value in source_fields):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="source_module, source_entity and source_id must be supplied together",
+            )
+        if all(value is not None for value in source_fields):
+            duplicate_source = db.scalar(
+                select(JournalEntry.id).where(
+                    JournalEntry.tenant_id == tenant_id,
+                    JournalEntry.company_id == company_id,
+                    JournalEntry.source_module == source_module,
+                    JournalEntry.source_entity == source_entity,
+                    JournalEntry.source_id == source_id,
+                )
+            )
+            if duplicate_source is not None:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A journal entry already exists for this source transaction")
+
         journal = journal_repository.get_journal(db, journal_id, tenant_id, company_id)
         if journal is None or not journal.is_active:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Accounting journal not found")
@@ -100,8 +132,17 @@ class JournalService:
         if valid_account_ids != account_ids:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="One or more journal accounts do not belong to the selected company or are inactive")
 
-        department_ids = {int(payload["department_id"]) for payload in lines if payload.get("department_id") is not None}
-        cost_center_ids = {int(payload["cost_center_id"]) for payload in lines if payload.get("cost_center_id") is not None}
+        department_ids: set[int] = set()
+        cost_center_ids: set[int] = set()
+        for number, payload in enumerate(lines, start=1):
+            try:
+                if payload.get("department_id") is not None:
+                    department_ids.add(int(payload["department_id"]))
+                if payload.get("cost_center_id") is not None:
+                    cost_center_ids.add(int(payload["cost_center_id"]))
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid accounting dimension on journal line {number}")
+
         if department_ids:
             departments = db.scalars(
                 select(AccountingDepartment).where(
@@ -137,7 +178,7 @@ class JournalService:
         entry = JournalEntry(
             tenant_id=tenant_id, company_id=company_id, branch_id=branch_id,
             journal_id=journal_id, fiscal_year_id=fiscal_year_id, period_id=period_id,
-            entry_number=entry_number.strip(), entry_date=entry_date,
+            entry_number=entry_number, entry_date=entry_date,
             description=description.strip(), currency_code=currency_code.upper(),
             exchange_rate=exchange_rate, reference=reference.strip() if reference else None,
             source_module=source_module, source_entity=source_entity, source_id=source_id,
