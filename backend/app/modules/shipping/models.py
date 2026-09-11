@@ -11,6 +11,7 @@ class ShippingCarrier(Base):
     name = Column(String(150), nullable=False)
     api_base_url = Column(String(300))
     settlement_account_id = Column(Integer, ForeignKey("account_combinations.id", ondelete="RESTRICT"), nullable=True, index=True)
+    cash_account_id = Column(Integer, ForeignKey("account_combinations.id", ondelete="RESTRICT"), nullable=True, index=True)
     fee_account_id = Column(Integer, ForeignKey("account_combinations.id", ondelete="RESTRICT"), nullable=True, index=True)
     settlement_journal_id = Column(Integer, ForeignKey("accounting_journals.id", ondelete="RESTRICT"), nullable=True, index=True)
     branch_id = Column(Integer, ForeignKey("branches.id", ondelete="RESTRICT"), nullable=True, index=True)
