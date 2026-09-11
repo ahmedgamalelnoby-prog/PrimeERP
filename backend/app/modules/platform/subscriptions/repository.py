@@ -1,6 +1,11 @@
+from datetime import datetime
+
 from sqlalchemy.orm import Session
 
 from app.modules.platform.subscriptions.models import Subscription
+
+
+ACTIVE_STATUSES = ("trialing", "active", "past_due")
 
 
 class SubscriptionRepository:
@@ -15,11 +20,29 @@ class SubscriptionRepository:
             db.query(Subscription)
             .filter(
                 Subscription.tenant_id == tenant_id,
-                Subscription.status.in_(["trialing", "active", "past_due"]),
+                Subscription.status.in_(ACTIVE_STATUSES),
             )
             .order_by(Subscription.id.desc())
             .first()
         )
+
+    def get_conflicting_for_tenant(
+        self,
+        db: Session,
+        tenant_id: int,
+        starts_at: datetime,
+        ends_at: datetime | None,
+        exclude_id: int | None = None,
+    ):
+        query = db.query(Subscription).filter(
+            Subscription.tenant_id == tenant_id,
+            Subscription.status.in_(ACTIVE_STATUSES),
+            Subscription.starts_at < (ends_at or datetime.max),
+            (Subscription.ends_at.is_(None) | (Subscription.ends_at > starts_at)),
+        )
+        if exclude_id is not None:
+            query = query.filter(Subscription.id != exclude_id)
+        return query.order_by(Subscription.id.desc()).first()
 
     def list_for_tenant(self, db: Session, tenant_id: int):
         return (
