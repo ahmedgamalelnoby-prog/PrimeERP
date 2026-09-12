@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
+from app.core.permissions import require_permission
 from app.core.permissions.checker import user_has_permission
 from app.modules.identity.dependencies import get_current_user, get_current_user_for_billing
 from app.modules.identity.models import User
@@ -127,7 +128,7 @@ def convert_to_paid(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
-@router.post("/{subscription_id}/cancel", response_model=SubscriptionResponse)
+@router.post("/{subscription_id}/cancel", response_model=SubscriptionResponse, dependencies=[Depends(require_permission("subscription.manage"))])
 def cancel_subscription(
     subscription_id: int,
     reason: str = "customer_request",
@@ -144,7 +145,7 @@ def cancel_subscription(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
-@router.put("/{subscription_id}", response_model=SubscriptionResponse)
+@router.put("/{subscription_id}", response_model=SubscriptionResponse, dependencies=[Depends(require_permission("subscription.manage"))])
 def update_subscription(
     subscription_id: int,
     schema: SubscriptionUpdate,
