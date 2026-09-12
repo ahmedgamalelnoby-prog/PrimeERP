@@ -24,14 +24,28 @@ def relative(path: Path) -> str:
 
 
 def function_has_auth(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    decorators = [ast.unparse(d) for d in node.decorator_list]
-    if any(any(marker in decorator for marker in AUTH_MARKERS) for decorator in decorators):
-        return True
+    for decorator in node.decorator_list:
+        rendered = ast.unparse(decorator)
+        if any(marker in rendered for marker in AUTH_MARKERS):
+            return True
     for child in ast.walk(node):
         if isinstance(child, ast.arg) and child.annotation is not None:
             annotation = ast.unparse(child.annotation)
             if "User" in annotation or "CurrentUser" in annotation:
                 return True
+    return False
+
+
+def router_has_auth(tree: ast.AST) -> bool:
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+            continue
+        value = node.value if isinstance(node, ast.AnnAssign) else node.value
+        if not isinstance(value, ast.Call) or not isinstance(value.func, ast.Name) or value.func.id != "APIRouter":
+            continue
+        dependencies = next((keyword.value for keyword in value.keywords if keyword.arg == "dependencies"), None)
+        if dependencies is not None and any(marker in ast.unparse(dependencies) for marker in AUTH_MARKERS):
+            return True
     return False
 
 
@@ -51,7 +65,7 @@ def main() -> int:
             failures.append(f"{rel}: syntax error: {exc}")
             continue
 
-        router_level_auth = any(marker in source for marker in AUTH_MARKERS) and "dependencies=[" in source
+        router_level_auth = router_has_auth(tree)
         for node in ast.walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
