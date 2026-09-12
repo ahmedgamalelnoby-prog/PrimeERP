@@ -123,4 +123,4 @@ class AuthenticationService:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect login or password", headers={"WWW-Authenticate": "Bearer"})
 
 
- authentication_service = AuthenticationService()
+authentication_service = AuthenticationService()
