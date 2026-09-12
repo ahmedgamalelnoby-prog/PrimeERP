@@ -17,5 +17,13 @@ module.exports = {
     'no-unused-vars': 'off',
     '@typescript-eslint/no-unused-vars': 'off',
   },
+  overrides: [
+    {
+      files: ['*.ts', '*.tsx'],
+      rules: {
+        'no-undef': 'off',
+      },
+    },
+  ],
   ignorePatterns: ['dist/', 'node_modules/'],
 };
