@@ -61,7 +61,26 @@ def _get_or_create(db: Session, document_type: str) -> LegalDocument:
     return document
 
 
-def _serialize(document: LegalDocument) -> dict:
+def _get_or_default(db: Session, document_type: str) -> LegalDocument | dict:
+    """Read a legal document without creating or committing database state."""
+    document = db.query(LegalDocument).filter(LegalDocument.document_type == document_type).first()
+    if document:
+        return document
+    default = DEFAULTS[document_type]
+    return {
+        "id": None,
+        "document_type": document_type,
+        **default,
+        "version": 1,
+        "is_published": True,
+        "published_at": None,
+        "updated_at": None,
+    }
+
+
+def _serialize(document: LegalDocument | dict) -> dict:
+    if isinstance(document, dict):
+        return document
     return {
         "id": document.id,
         "document_type": document.document_type,
@@ -84,7 +103,7 @@ def _require_platform_admin(current_user: User) -> User:
 
 @router.get("")
 def list_legal_documents(db: Session = Depends(get_db)):
-    documents = [_get_or_create(db, "terms"), _get_or_create(db, "privacy")]
+    documents = [_get_or_default(db, "terms"), _get_or_default(db, "privacy")]
     return {"success": True, "data": [_serialize(document) for document in documents]}
 
 
@@ -92,13 +111,14 @@ def list_legal_documents(db: Session = Depends(get_db)):
 def legal_acceptance_status(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     result = {}
     for document_type in ("terms", "privacy"):
-        document = _get_or_create(db, document_type)
+        document = _get_or_default(db, document_type)
+        version = document["version"] if isinstance(document, dict) else document.version
         accepted = db.query(LegalAcceptance).filter(
             LegalAcceptance.user_id == current_user.id,
             LegalAcceptance.document_type == document_type,
-            LegalAcceptance.document_version == document.version,
+            LegalAcceptance.document_version == version,
         ).first() is not None
-        result[document_type] = {"version": document.version, "accepted": accepted}
+        result[document_type] = {"version": version, "accepted": accepted}
     return {"success": True, "data": result}
 
 
@@ -122,7 +142,7 @@ def accept_legal_document(payload: LegalAcceptRequest, db: Session = Depends(get
 def get_legal_document(document_type: str, db: Session = Depends(get_db)):
     if document_type not in DEFAULTS:
         raise HTTPException(status_code=404, detail="Legal document not found")
-    return {"success": True, "data": _serialize(_get_or_create(db, document_type))}
+    return {"success": True, "data": _serialize(_get_or_default(db, document_type))}
 
 
 @router.put("/{document_type}")
