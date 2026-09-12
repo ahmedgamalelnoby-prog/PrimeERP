@@ -19,21 +19,27 @@ DEFAULT_NAME = "PrimeERP System Administrator"
 ROLE_NAME = "Super Admin"
 
 
+def _validate_password(password: str) -> str:
+    if not password:
+        raise ValueError("Password cannot be empty.")
+    if len(password) < 12:
+        raise ValueError("Super Admin password must be at least 12 characters.")
+    if len(password.encode("utf-8")) > 72:
+        raise ValueError("Super Admin password must not exceed 72 bytes.")
+    return password
+
+
 def _get_password() -> str:
     value = os.getenv("PRIMEERP_SUPERADMIN_PASSWORD")
-    if value:
-        return value
+    if value is not None:
+        return _validate_password(value)
 
     password = getpass.getpass("Super Admin password: ")
     confirmation = getpass.getpass("Confirm password: ")
 
-    if not password:
-        raise ValueError("Password cannot be empty.")
+    _validate_password(password)
     if password != confirmation:
         raise ValueError("Passwords do not match.")
-    if len(password) < 12:
-        raise ValueError("Super Admin password must be at least 12 characters.")
-
     return password
 
 
@@ -45,6 +51,7 @@ def bootstrap_super_admin(
     full_name: str = DEFAULT_NAME,
     password: str,
 ) -> User:
+    password = _validate_password(password)
     email = email.strip().lower()
     username = username.strip().lower()
 
