@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
-from app.api.router import build_router
+from app.api.v1.router import build_router
 from app.core.config import settings
 from app.core.context import get_request_context
 from app.core.exceptions import register_exception_handlers
@@ -44,8 +44,8 @@ def create_application() -> FastAPI:
         expose_headers=["X-Request-ID"],
     )
 
-    # Identity is part of the canonical v1 router tree. Keep one source of
-    # truth instead of inspecting FastAPI's private _IncludedRouter wrappers.
+    # Register the canonical v1 router directly. This avoids an extra wrapper
+    # router layer so FastAPI always materializes the complete route tree.
     api_router = build_router()
     application.include_router(api_router, prefix=settings.API_V1_STR)
 
