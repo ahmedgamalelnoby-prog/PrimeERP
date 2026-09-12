@@ -30,20 +30,18 @@ def create_uom(payload: UOMCreate, current_user: User = Depends(get_current_user
     code = payload.code.strip().upper()
     name = payload.name.strip()
     category = payload.category.strip().lower()
+    factor = Decimal(payload.factor_to_base)
     if not code or not name or not category:
         raise HTTPException(422, "UOM code, name and category are required")
+    if factor <= 0:
+        raise HTTPException(422, "UOM conversion factor must be positive")
+    if payload.is_base and factor != Decimal("1"):
+        raise HTTPException(422, "A base UOM must have factor_to_base equal to 1")
     if db.scalar(select(UnitOfMeasure).where(UnitOfMeasure.company_id == payload.company_id, UnitOfMeasure.code == code)):
         raise HTTPException(409, "UOM code already exists")
     if payload.is_base and db.scalar(select(UnitOfMeasure).where(UnitOfMeasure.company_id == payload.company_id, UnitOfMeasure.category == category, UnitOfMeasure.is_base.is_(True), UnitOfMeasure.is_active.is_(True))):
         raise HTTPException(409, "An active base UOM already exists for this category")
-    obj = UnitOfMeasure(
-        company_id=payload.company_id,
-        code=code,
-        name=name,
-        category=category,
-        factor_to_base=payload.factor_to_base,
-        is_base=payload.is_base,
-    )
+    obj = UnitOfMeasure(company_id=payload.company_id, code=code, name=name, category=category, factor_to_base=factor, is_base=payload.is_base)
     db.add(obj)
     db.commit()
     db.refresh(obj)
@@ -69,13 +67,12 @@ def convert(
     db: Session = Depends(get_db),
 ):
     _company_for_user(db, company_id, current_user)
-    if from_uom_id == to_uom_id:
-        row = db.scalar(select(UnitOfMeasure).where(UnitOfMeasure.id == from_uom_id, UnitOfMeasure.company_id == company_id, UnitOfMeasure.is_active.is_(True)))
-        if row is None:
-            raise HTTPException(404, "UOM not found")
-        return {"quantity": quantity, "from_uom_id": from_uom_id, "to_uom_id": to_uom_id, "converted_quantity": quantity}
     rows = db.scalars(select(UnitOfMeasure).where(UnitOfMeasure.id.in_([from_uom_id, to_uom_id]), UnitOfMeasure.company_id == company_id, UnitOfMeasure.is_active.is_(True))).all()
     by_id = {x.id: x for x in rows}
+    if from_uom_id == to_uom_id:
+        if from_uom_id not in by_id:
+            raise HTTPException(404, "UOM not found")
+        return {"quantity": quantity, "from_uom_id": from_uom_id, "to_uom_id": to_uom_id, "converted_quantity": quantity}
     if len(by_id) != 2:
         raise HTTPException(404, "UOM not found")
     if by_id[from_uom_id].category != by_id[to_uom_id].category:
