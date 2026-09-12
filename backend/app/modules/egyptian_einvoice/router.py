@@ -27,6 +27,14 @@ def _company_for_user(db: Session, company_id: int, user: User) -> Company:
     return company
 
 
+def _require_eta_notification_secret(authorization: str | None = Header(default=None)) -> None:
+    if not settings.ETA_ENABLED or not settings.ETA_NOTIFICATION_SECRET:
+        raise HTTPException(503, "ETA notification endpoint is not configured")
+    expected = f"ApiKey {settings.ETA_NOTIFICATION_SECRET}"
+    if not authorization or not hmac.compare_digest(authorization, expected):
+        raise HTTPException(401, "Invalid ETA notification authorization")
+
+
 @router.get("/documents", dependencies=[Depends(require_permission(EINVOICE_ACCESS))])
 def list_documents(company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
@@ -84,17 +92,13 @@ def sync_eta_document(document_id: int, company_id: int = Query(..., gt=0), curr
         raise HTTPException(502, str(exc)) from exc
 
 
-@router.put("/notifications/documents", status_code=200)
+@router.put("/notifications/documents", status_code=200, dependencies=[Depends(_require_eta_notification_secret)])
 def receive_eta_document_notification(
     payload: dict,
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
-    if not settings.ETA_ENABLED or not settings.ETA_NOTIFICATION_SECRET:
-        raise HTTPException(503, "ETA notification endpoint is not configured")
-    expected = f"ApiKey {settings.ETA_NOTIFICATION_SECRET}"
-    if not authorization or not hmac.compare_digest(authorization, expected):
-        raise HTTPException(401, "Invalid ETA notification authorization")
+    _require_eta_notification_secret(authorization)
     eta_uuid = payload.get("uuid") or payload.get("documentUUID") or payload.get("documentUuid")
     if not eta_uuid:
         raise HTTPException(422, "ETA notification uuid is required")
