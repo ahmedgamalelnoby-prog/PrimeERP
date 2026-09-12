@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.modules.audit.service import record_audit_event
 from app.modules.identity.models.refresh_token import RefreshToken
 from app.modules.identity.repositories.user_repository import user_repository
 from app.modules.identity.schemas.auth import LoginRequest
@@ -39,6 +40,15 @@ class AuthenticationService:
         user.last_login = datetime.now(timezone.utc)
         access_token, expires_in = token_service.create_access_token(user)
         refresh_token = refresh_token_service.issue(db, user.id)
+        record_audit_event(
+            db,
+            action="login.success",
+            entity_type="user",
+            entity_id=user.id,
+            user_id=user.id,
+            tenant_id=user.tenant_id,
+            metadata={"login": payload.login},
+        )
         db.commit()
         db.refresh(user)
         return {
@@ -71,6 +81,7 @@ class AuthenticationService:
         if user is None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
         self._validate_user(user)
+        tenant = None
         if not user.is_platform_admin:
             tenant = self._get_auth_tenant(db, user.tenant_id)
             subscription = self._get_latest_subscription(db, tenant.id)
@@ -87,6 +98,15 @@ class AuthenticationService:
         ).first()
         if new_record is not None:
             record.replaced_by_id = new_record.id
+        record_audit_event(
+            db,
+            action="token.refresh",
+            entity_type="user",
+            entity_id=user.id,
+            user_id=user.id,
+            tenant_id=user.tenant_id,
+            metadata={"refresh_family_id": record.family_id},
+        )
         db.commit()
         return {"access_token": access_token, "refresh_token": new_refresh_token, "token_type": "bearer", "expires_in": expires_in}
 
