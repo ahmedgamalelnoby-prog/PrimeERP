@@ -1,6 +1,9 @@
 name: PrimeERP CI
 
 on:
+  push:
+    branches: ["**"]
+  pull_request:
   workflow_dispatch:
 
 permissions:
