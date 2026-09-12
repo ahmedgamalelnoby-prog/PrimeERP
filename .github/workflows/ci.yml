@@ -29,21 +29,28 @@ jobs:
           python --version
           $version = python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
           if ($version -ne '3.10') { throw "PrimeERP CI requires Python 3.10 on the self-hosted runner; found $version." }
+      - name: Create isolated CI virtual environment
+        shell: powershell
+        run: python -m venv .ci-venv
       - name: Install dependencies
         shell: powershell
-        run: python -m pip install --upgrade pip; python -m pip install -r requirements.txt; python -m pip install pytest
+        run: |
+          $python = "$PWD\.ci-venv\Scripts\python.exe"
+          & $python -m pip install --upgrade pip
+          & $python -m pip install -r requirements.txt
+          & $python -m pip install pytest
       - name: Compile Python sources
         shell: powershell
-        run: python -m compileall -q app
+        run: .\.ci-venv\Scripts\python.exe -m compileall -q app
       - name: Validate modular architecture
         shell: powershell
-        run: python scripts/check_modular_architecture.py
+        run: .\.ci-venv\Scripts\python.exe scripts/check_modular_architecture.py
       - name: Import application smoke test
         shell: powershell
         env:
           DATABASE_URL: sqlite:///./primeerp_ci_smoke.db
           APP_ENV: test
-        run: python -c "import main; print('Application import OK:', main.app.title)"
+        run: .\.ci-venv\Scripts\python.exe -c "import main; print('Application import OK:', main.app.title)"
       - name: Validate production configuration rejects unsafe defaults
         shell: powershell
         env:
@@ -52,7 +59,7 @@ jobs:
           DATABASE_URL: sqlite:///./unsafe.db
           SECRET_KEY: your-secret-key-change-this-in-production
           CORS_ORIGINS: https://erp.example.com
-        run: python scripts/check_production_config.py
+        run: .\.ci-venv\Scripts\python.exe scripts/check_production_config.py
       - name: Prepare CI database
         shell: powershell
         run: |
@@ -69,11 +76,11 @@ jobs:
         shell: powershell
         env:
           DATABASE_URL: postgresql+psycopg://primeerp:primeerp@127.0.0.1:55432/primeerp_ci
-        run: python -m alembic upgrade head
+        run: .\.ci-venv\Scripts\python.exe -m alembic upgrade head
       - name: Require a single Alembic head
         shell: powershell
         run: |
-          $heads = python -m alembic heads
+          $heads = & .\.ci-venv\Scripts\python.exe -m alembic heads
           $heads
           $count = ($heads | Select-String '\(head\)').Count
           if ($count -ne 1) { throw "Expected exactly one Alembic head; found $count." }
@@ -81,12 +88,12 @@ jobs:
         shell: powershell
         env:
           DATABASE_URL: postgresql+psycopg://primeerp:primeerp@127.0.0.1:55432/primeerp_ci
-        run: python -m alembic check
+        run: .\.ci-venv\Scripts\python.exe -m alembic check
       - name: Run tests
         shell: powershell
         run: |
           $tests = Get-ChildItem -Path tests -Filter 'test_*.py' -File -ErrorAction SilentlyContinue
-          if ($tests) { python -m pytest -q } else { Write-Host 'No backend tests found; compile, architecture and smoke checks passed.' }
+          if ($tests) { .\.ci-venv\Scripts\python.exe -m pytest -q } else { Write-Host 'No backend tests found; compile, architecture and smoke checks passed.' }
       - name: Cleanup CI database
         if: always()
         shell: powershell
