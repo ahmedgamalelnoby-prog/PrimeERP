@@ -15,12 +15,12 @@ from typing import Dict, Optional
 class ModuleEntitlement:
     """Tenant entitlement for a technical module.
 
-    ``tenant_id`` remains the first positional field for compatibility with the
-    original module-engine contract; keyword construction is recommended for new code.
+    The positional contract is ``technical_name, tenant_id``. Keyword
+    construction is recommended for new code to make the two identifiers explicit.
     """
 
-    tenant_id: str
     technical_name: str
+    tenant_id: str
     enabled: bool = True
     expires_at: Optional[datetime] = None
     plan_code: Optional[str] = None
@@ -51,8 +51,8 @@ class ModuleEntitlementStore:
         current = self._items.get((tenant_id, technical_name))
         if current is not None:
             self._items[(tenant_id, technical_name)] = ModuleEntitlement(
-                tenant_id=current.tenant_id,
                 technical_name=current.technical_name,
+                tenant_id=current.tenant_id,
                 enabled=False,
                 expires_at=current.expires_at,
                 plan_code=current.plan_code,
