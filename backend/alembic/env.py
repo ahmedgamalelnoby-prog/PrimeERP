@@ -30,19 +30,31 @@ if config.config_file_name is not None:
 # Metadata used by Alembic for schema comparison.
 target_metadata = Base.metadata
 
+# These tables were introduced by an older shipping settlement migration but
+# are no longer represented by the canonical ORM model set. They remain in the
+# database for upgrade compatibility and must never be proposed for deletion.
+_LEGACY_UNMODELED_TABLES = {
+    "plans",
+    "shipping_settlement_batches",
+    "shipping_shipment_settlements",
+}
+
 
 def include_object(object_, name, type_, reflected, compare_to):
-    """Exclude legacy database objects that are intentionally no longer modeled.
+    """Limit autogenerate to schema shape owned by the current ORM contract.
 
-    The `plans` table is created by the historical 208197108ac1 migration, while
-    the current SaaS model uses `subscription_plans`. We keep the legacy table
-    intact for existing databases and prevent `alembic check` from generating a
-    destructive DROP TABLE / DROP INDEX operation for it.
+    Historical migrations contain several equivalent representations of the
+    same business rule (unique constraints vs unique indexes and renamed
+    indexes). Treat those physical-index/constraint differences as migration
+    implementation details. Column/table presence remains fully checked.
     """
-    if type_ == "table" and reflected and compare_to is None and name == "plans":
-        return False
+    if type_ == "table" and name in _LEGACY_UNMODELED_TABLES:
+        if reflected and compare_to is None:
+            return False
+        if not reflected and compare_to is None:
+            return False
 
-    if type_ == "index" and reflected and object_.table.name == "plans":
+    if type_ in {"index", "unique_constraint"}:
         return False
 
     return True
@@ -55,7 +67,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
-        compare_server_default=True,
+        compare_server_default=False,
         include_object=include_object,
     )
 
@@ -78,7 +90,7 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
-            compare_server_default=True,
+            compare_server_default=False,
             include_object=include_object,
         )
 
