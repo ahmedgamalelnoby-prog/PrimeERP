@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Iterable, Set
 
+from .manifest import ModuleManifest
 from .registry import ModuleRegistry, ModuleRegistryError
 
 
@@ -24,6 +25,11 @@ class ModulePermissionService:
             raise ModuleRegistryError(
                 f"Permission {permission!r} is not declared by module {technical_name}"
             )
+
+    def validate_manifest(self, manifest: ModuleManifest) -> None:
+        """Validate a manifest's permission declarations for legacy callers."""
+        if any(not isinstance(permission, str) or not permission.strip() for permission in manifest.permissions):
+            raise ValueError(f"Module {manifest.key} contains an empty or invalid permission")
 
     @staticmethod
     def normalize(permissions: Iterable[str]) -> Set[str]:
