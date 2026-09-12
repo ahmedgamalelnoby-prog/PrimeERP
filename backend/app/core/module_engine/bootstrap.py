@@ -16,12 +16,7 @@ def bootstrap_module_registry(
     package_names: Sequence[str] | None = None,
     registry: ModuleRegistry | None = None,
 ) -> ModuleRegistry:
-    """Discover and register every available add-on without enabling it.
-
-    Discovery is rooted at ``app.modules`` by default, so adding a new domain
-    package does not require editing application startup code. Explicit package
-    names remain supported for tests and controlled deployments.
-    """
+    """Discover, register, and validate every available add-on."""
     validate_catalog_dependencies()
     packages = tuple(package_names) if package_names is not None else (DEFAULT_MODULE_PACKAGE,)
     for package_name in packages:
@@ -30,4 +25,5 @@ def bootstrap_module_registry(
     validate_manifests(manifests)
     target = registry or get_module_registry()
     target.register_many(manifests)
+    target.validate_graph()
     return target
