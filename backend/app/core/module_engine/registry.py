@@ -42,9 +42,13 @@ class ModuleRegistry:
         )
 
     def register_many(self, modules: Iterable[ModuleManifest]) -> None:
+        """Register modules without eagerly validating the graph.
+
+        Registration is intentionally order-independent. Callers that require a
+        validated graph should invoke :meth:`validate_graph` after registration.
+        """
         for module in modules:
             self.register(module)
-        self.validate_graph()
 
     def get(self, technical_name: str) -> ModuleManifest:
         try:
