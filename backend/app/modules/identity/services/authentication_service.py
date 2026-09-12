@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.modules.identity.models.refresh_token import RefreshToken
 from app.modules.identity.repositories.user_repository import user_repository
 from app.modules.identity.schemas.auth import LoginRequest
 from app.modules.identity.services.password_service import password_service
@@ -58,7 +59,6 @@ class AuthenticationService:
         record = refresh_token_service.consume(db, refresh_token)
         if record is None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token")
-
         user = user_repository.get_by_id(db=db, user_id=record.user_id)
         if user is None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
@@ -70,9 +70,9 @@ class AuthenticationService:
         access_token, expires_in = token_service.create_access_token(user)
         new_refresh_token = refresh_token_service.issue(db, user.id)
         db.flush()
-        new_record = (
-            db.query(type(record)).filter(type(record).token_hash == refresh_token_service._hash(new_refresh_token)).first()
-        )
+        new_record = db.query(RefreshToken).filter(
+            RefreshToken.token_hash == refresh_token_service._hash(new_refresh_token)
+        ).first()
         if new_record is not None:
             record.replaced_by_id = new_record.id
         db.commit()
@@ -98,7 +98,10 @@ class AuthenticationService:
 
     @staticmethod
     def _get_valid_subscription(db: Session, tenant_id: int) -> Subscription:
-        subscription = db.query(Subscription).filter(Subscription.tenant_id == tenant_id, Subscription.status.in_(["trialing", "active", "past_due"])).order_by(Subscription.id.desc()).first()
+        subscription = db.query(Subscription).filter(
+            Subscription.tenant_id == tenant_id,
+            Subscription.status.in_(["trialing", "active", "past_due"]),
+        ).order_by(Subscription.id.desc()).first()
         if subscription is None:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No active subscription")
         now = datetime.now(timezone.utc)
@@ -110,7 +113,9 @@ class AuthenticationService:
 
     @staticmethod
     def _get_enabled_modules(db: Session, tenant_id: int) -> list[str]:
-        rows = db.query(SystemModule.code).join(TenantModule, TenantModule.module_id == SystemModule.id).filter(TenantModule.tenant_id == tenant_id, TenantModule.is_enabled.is_(True), SystemModule.is_active.is_(True)).order_by(SystemModule.display_order.asc()).all()
+        rows = db.query(SystemModule.code).join(TenantModule, TenantModule.module_id == SystemModule.id).filter(
+            TenantModule.tenant_id == tenant_id, TenantModule.is_enabled.is_(True), SystemModule.is_active.is_(True)
+        ).order_by(SystemModule.display_order.asc()).all()
         return [row[0] for row in rows]
 
     @staticmethod
