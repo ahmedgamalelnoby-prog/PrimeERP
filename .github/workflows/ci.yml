@@ -52,9 +52,7 @@ jobs:
           DATABASE_URL: sqlite:///./unsafe.db
           SECRET_KEY: your-secret-key-change-this-in-production
           CORS_ORIGINS: https://erp.example.com
-        run: |
-          python -c "from app.core.config import Settings; Settings(); raise SystemExit('Production safety validation failed to reject unsafe configuration')"
-        continue-on-error: false
+        run: python -c "from app.core.config import Settings; import sys;\ntry: Settings()\nexcept ValueError as exc: print('Expected production rejection:', exc)\nelse: print('Production safety validation failed to reject unsafe configuration'); sys.exit(1)"
       - name: Prepare CI database
         shell: powershell
         run: |
