@@ -4,15 +4,14 @@ from __future__ import annotations
 
 from typing import Iterable, Set
 
-from .manifest import ModuleManifest
 from .registry import ModuleRegistry, ModuleRegistryError
 
 
 class ModulePermissionService:
     """Validates permissions declared by manifests without owning user roles."""
 
-    def __init__(self, registry: ModuleRegistry) -> None:
-        self.registry = registry
+    def __init__(self, registry: ModuleRegistry | None = None) -> None:
+        self.registry = registry or ModuleRegistry()
 
     def permissions_for(self, technical_name: str) -> Set[str]:
         return set(self.registry.get(technical_name).permissions)
