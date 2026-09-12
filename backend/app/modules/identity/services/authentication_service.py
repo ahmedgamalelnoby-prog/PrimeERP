@@ -126,6 +126,8 @@ class AuthenticationService:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant is inactive")
         if tenant.status in {"suspended", "cancelled"}:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Tenant status is {tenant.status}")
+        if not tenant.is_active and tenant.status != "expired":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant is inactive")
         return tenant
 
     @staticmethod
