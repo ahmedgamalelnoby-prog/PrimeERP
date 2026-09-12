@@ -23,15 +23,21 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Validate Python runtime
+      - name: Validate Python 3.10 launcher
         shell: powershell
         run: |
-          python --version
-          $version = python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
-          if ($version -ne '3.10') { throw "PrimeERP CI requires Python 3.10 on the self-hosted runner; found $version." }
+          py -3.10 --version
+          if ($LASTEXITCODE -ne 0) { throw "Python 3.10 is required on the self-hosted runner." }
       - name: Create isolated CI virtual environment
         shell: powershell
-        run: python -m venv .ci-venv
+        run: py -3.10 -m venv .ci-venv
+      - name: Validate isolated Python runtime
+        shell: powershell
+        run: |
+          $python = "$PWD\.ci-venv\Scripts\python.exe"
+          $version = (& $python --version 2>&1).ToString()
+          $version
+          if ($version -notmatch '^Python 3\.10\.') { throw "PrimeERP CI requires Python 3.10; found $version." }
       - name: Install dependencies
         shell: powershell
         run: |
@@ -53,7 +59,7 @@ jobs:
         env:
           DATABASE_URL: sqlite:///./primeerp_ci_smoke.db
           APP_ENV: test
-        run: .\.ci-venv\Scripts\python.exe -c "import main; print('Application import OK:', main.app.title)"
+        run: .\.ci-venv\Scripts\python.exe scripts/smoke_import.py
       - name: Validate production configuration rejects unsafe defaults
         shell: powershell
         env:
@@ -79,11 +85,11 @@ jobs:
         shell: powershell
         env:
           DATABASE_URL: postgresql+psycopg://primeerp:primeerp@127.0.0.1:55432/primeerp_ci
-        run: .\.ci-venv\Scripts\python.exe -m alembic upgrade head
+        run: .\.ci-venv\Scripts\alembic.exe upgrade head
       - name: Require a single Alembic head
         shell: powershell
         run: |
-          $heads = & .\.ci-venv\Scripts\python.exe -m alembic heads
+          $heads = & .\.ci-venv\Scripts\alembic.exe heads
           $heads
           $count = ($heads | Select-String '\(head\)').Count
           if ($count -ne 1) { throw "Expected exactly one Alembic head; found $count." }
@@ -91,7 +97,7 @@ jobs:
         shell: powershell
         env:
           DATABASE_URL: postgresql+psycopg://primeerp:primeerp@127.0.0.1:55432/primeerp_ci
-        run: .\.ci-venv\Scripts\python.exe -m alembic check
+        run: .\.ci-venv\Scripts\alembic.exe check
       - name: Run tests
         shell: powershell
         run: |
@@ -124,7 +130,7 @@ jobs:
         run: npm ci
       - name: Typecheck
         shell: powershell
-        run: npm run typecheck --if-present
+        run: npm run typecheck
       - name: Lint
         shell: powershell
         run: npm run lint
