@@ -6,6 +6,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.services.base_service import BaseService
+from app.modules.audit.service import record_audit_event
 from app.modules.identity.models.user import User
 from app.modules.identity.repositories.user_repository import (
     UserRepository,
@@ -103,6 +104,15 @@ class UserService(BaseService[UserRepository]):
 
         with self.uow as uow:
             user = repository.create(db, data=user_data)
+            record_audit_event(
+                db,
+                action="user.create",
+                entity_type="user",
+                entity_id=user.id,
+                user_id=getattr(current_user, "id", None),
+                tenant_id=effective_tenant_id,
+                metadata={"username": user.username, "role_id": user.role_id, "is_active": user.is_active},
+            )
             uow.commit()
         repository.refresh(db, user)
         return user
@@ -128,7 +138,8 @@ class UserService(BaseService[UserRepository]):
                 if existing_user is not None and existing_user.id != user.id:
                     raise ValueError("Email already exists for this tenant.")
                 update_data["email"] = new_email
-            if "password" in update_data:
+            password_changed = "password" in update_data
+            if password_changed:
                 password = update_data.pop("password")
                 if password:
                     update_data["hashed_password"] = password_service.hash_password(str(password))
@@ -138,6 +149,15 @@ class UserService(BaseService[UserRepository]):
             protected_fields = {"id", "uuid", "tenant_id", "hashed_password", "created_at", "created_by"}
             update_data = {key: value for key, value in update_data.items() if key not in protected_fields}
             repository.update(db, user, data=update_data)
+            record_audit_event(
+                db,
+                action="user.update",
+                entity_type="user",
+                entity_id=user.id,
+                user_id=getattr(self.current_user, "id", None),
+                tenant_id=effective_tenant_id,
+                metadata={"changed_fields": sorted(update_data.keys()), "password_changed": password_changed},
+            )
             uow.commit()
         repository.refresh(db, user)
         return user
@@ -154,6 +174,15 @@ class UserService(BaseService[UserRepository]):
             if user is None:
                 raise LookupError("User was not found.")
             repository.update(db, user, data={"hashed_password": password_service.hash_password(new_password), "must_change_password": must_change_password})
+            record_audit_event(
+                db,
+                action="user.password_reset",
+                entity_type="user",
+                entity_id=user.id,
+                user_id=getattr(self.current_user, "id", None),
+                tenant_id=effective_tenant_id,
+                metadata={"must_change_password": must_change_password},
+            )
             uow.commit()
         repository.refresh(db, user)
         return user
@@ -169,6 +198,15 @@ class UserService(BaseService[UserRepository]):
             repository.soft_delete(db, user, deleted_by=deleted_by)
             if hasattr(user, "is_active"):
                 user.is_active = False
+            record_audit_event(
+                db,
+                action="user.delete",
+                entity_type="user",
+                entity_id=user.id,
+                user_id=deleted_by or getattr(self.current_user, "id", None),
+                tenant_id=effective_tenant_id,
+                metadata={"username": user.username},
+            )
             uow.commit()
         repository.refresh(db, user)
         return user
