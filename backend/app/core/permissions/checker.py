@@ -14,12 +14,14 @@ from app.modules.roles.models import Permission, role_permissions
 
 
 def extract_permission_codes(current_user: Any) -> set[str]:
-    """Return permission names/codes already loaded on a user or role."""
+    """Return only active permission names/codes already loaded on a user or role."""
     permission_codes: set[str] = set()
     for owner in (current_user, getattr(current_user, "role", None)):
         for permission in getattr(owner, "permissions", None) or []:
             if isinstance(permission, str):
                 permission_codes.add(permission)
+                continue
+            if getattr(permission, "is_active", True) is False:
                 continue
             for attr in ("code", "name"):
                 value = getattr(permission, attr, None)
