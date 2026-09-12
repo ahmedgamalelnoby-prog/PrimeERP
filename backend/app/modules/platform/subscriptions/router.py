@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
-from app.modules.identity.dependencies import get_current_user
+from app.modules.identity.dependencies import get_current_user, get_current_user_for_billing
 from app.modules.identity.models import User
 from app.modules.platform.subscriptions.schemas import (
     SubscriptionConvertToPaid,
@@ -37,7 +37,7 @@ def require_platform_admin(current_user: User) -> None:
 @router.get("/tenant/{tenant_id}", response_model=List[SubscriptionResponse])
 def list_subscriptions(
     tenant_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_for_billing),
     svc: SubscriptionService = Depends(service),
 ):
     authorize_tenant(tenant_id, current_user)
@@ -47,7 +47,7 @@ def list_subscriptions(
 @router.get("/tenant/{tenant_id}/active", response_model=SubscriptionResponse)
 def active_subscription(
     tenant_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_for_billing),
     svc: SubscriptionService = Depends(service),
 ):
     authorize_tenant(tenant_id, current_user)
@@ -60,7 +60,7 @@ def active_subscription(
 @router.get("/{subscription_id}", response_model=SubscriptionResponse)
 def get_subscription(
     subscription_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_for_billing),
     svc: SubscriptionService = Depends(service),
 ):
     try:
@@ -101,7 +101,7 @@ def activate_subscription(
 def convert_to_paid(
     subscription_id: int,
     schema: SubscriptionConvertToPaid,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_for_billing),
     svc: SubscriptionService = Depends(service),
 ):
     """Convert a tenant trial/past-due subscription into a paid subscription."""
@@ -117,7 +117,7 @@ def convert_to_paid(
 def cancel_subscription(
     subscription_id: int,
     reason: str = "customer_request",
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_for_billing),
     svc: SubscriptionService = Depends(service),
 ):
     try:
