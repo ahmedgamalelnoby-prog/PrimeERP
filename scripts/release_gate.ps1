@@ -17,6 +17,7 @@ $Venv = Join-Path $RepoRoot '.ci-venv'
 $DbContainer = 'primeerp-release-gate-postgres'
 $Results = [System.Collections.Generic.List[object]]::new()
 $StartedDb = $false
+$GateFailed = $false
 
 function Write-Step([string]$Message) {
     Write-Host "`n=== $Message ===" -ForegroundColor Cyan
@@ -26,7 +27,6 @@ function Invoke-Gate([string]$Name, [scriptblock]$Action, [switch]$Optional) {
     Write-Host "[RUN ] $Name" -ForegroundColor Yellow
     try {
         & $Action
-        if ($LASTEXITCODE -ne 0) { throw "Command exited with code $LASTEXITCODE" }
         $Results.Add([pscustomobject]@{ Check=$Name; Status='PASS'; Detail='' })
         Write-Host "[PASS] $Name" -ForegroundColor Green
         return $true
@@ -41,15 +41,32 @@ function Invoke-Gate([string]$Name, [scriptblock]$Action, [switch]$Optional) {
     }
 }
 
+function Invoke-Native([string]$Executable, [string[]]$Arguments) {
+    & $Executable @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Executable exited with code $LASTEXITCODE"
+    }
+}
+
 function Invoke-Python([string]$WorkingDirectory, [string[]]$Arguments) {
     Push-Location $WorkingDirectory
-    try { & $script:PythonExe @Arguments; if ($LASTEXITCODE -ne 0) { throw "python exited with code $LASTEXITCODE" } }
+    try { Invoke-Native $script:PythonExe $Arguments }
+    finally { Pop-Location }
+}
+
+function Invoke-Alembic([string]$WorkingDirectory, [string[]]$Arguments) {
+    Push-Location $WorkingDirectory
+    try { Invoke-Native $script:AlembicExe $Arguments }
     finally { Pop-Location }
 }
 
 function Invoke-Npm([string]$WorkingDirectory, [string[]]$Arguments) {
     Push-Location $WorkingDirectory
-    try { & npm @Arguments; if ($LASTEXITCODE -ne 0) { throw "npm exited with code $LASTEXITCODE" } }
+    try {
+        $npm = (Get-Command npm.cmd -ErrorAction SilentlyContinue)
+        if ($npm) { Invoke-Native $npm.Source $Arguments }
+        else { Invoke-Native 'npm' $Arguments }
+    }
     finally { Pop-Location }
 }
 
@@ -59,60 +76,67 @@ function Test-Command([string]$CommandName, [string]$DisplayName) {
     }
 }
 
-$GateFailed = $false
+function Test-Python310([string]$PythonPath) {
+    if (-not (Test-Path $PythonPath)) { return $false }
+    $version = (& $PythonPath --version 2>&1).ToString()
+    Write-Host "  $version"
+    return ($version -match '^Python 3\.10\.')
+}
 
 try {
-    if ((Get-Location).Path -ne $RepoRoot) {
-        Write-Host "Repository: $RepoRoot" -ForegroundColor DarkGray
-    }
+    Write-Host "Repository: $RepoRoot" -ForegroundColor DarkGray
 
     Write-Step 'Runtime prerequisites'
     Invoke-Gate 'Git repository' {
         Push-Location $RepoRoot
         try {
-            & git rev-parse --is-inside-work-tree | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw 'Not a Git repository' }
+            Invoke-Native 'git' @('rev-parse','--is-inside-work-tree')
             & git status --short
+            if (Test-Path (Join-Path $RepoRoot '.git\MERGE_HEAD')) {
+                throw 'Repository is in the middle of an unresolved merge. Abort/finish the merge before running the release gate.'
+            }
         } finally { Pop-Location }
     }
 
     Invoke-Gate 'Python 3.10 available' {
-        if (Test-Path (Join-Path $Venv 'Scripts/python.exe')) {
-            $script:PythonExe = Join-Path $Venv 'Scripts/python.exe'
-        } else {
-            Test-Command 'py' 'Python launcher'
-            & py -3.10 -c "import sys; print(sys.version); raise SystemExit(0 if sys.version_info[:2] == (3,10) else 1)"
-            if ($LASTEXITCODE -ne 0) { throw 'Python 3.10 is not installed. Install Python 3.10 or create .ci-venv with Python 3.10.' }
-            $script:PythonExe = 'py'
+        Test-Command 'py' 'Python launcher'
+        Invoke-Native 'py' @('-3.10','--version')
+        $script:PythonExe = Join-Path $Venv 'Scripts\python.exe'
+        if (-not (Test-Python310 $script:PythonExe)) {
+            if (Test-Path $Venv) { Remove-Item $Venv -Recurse -Force }
+            Invoke-Native 'py' @('-3.10','-m','venv',$Venv)
+            $script:PythonExe = Join-Path $Venv 'Scripts\python.exe'
         }
-        & $script:PythonExe --version
+        if (-not (Test-Python310 $script:PythonExe)) {
+            throw 'The CI virtual environment is not using Python 3.10.'
+        }
+        $script:AlembicExe = Join-Path $Venv 'Scripts\alembic.exe'
     }
 
     Invoke-Gate 'Node.js 20+ available' {
         Test-Command 'node' 'Node.js'
-        $major = [int](& node -p "process.versions.node.split('.')[0]")
-        & node --version
-        & npm --version
+        Test-Command 'npm.cmd' 'npm'
+        $version = (& node --version).ToString()
+        $major = [int]$version.TrimStart('v').Split('.')[0]
+        Write-Host "  $version"
+        & npm.cmd --version
         if ($major -lt 20) { throw "Node.js 20+ required; found $major" }
     }
 
     Invoke-Gate 'Docker available' {
-        if ($SkipDocker) { throw 'SKIPPED' }
+        if ($SkipDocker) { throw 'Docker checks skipped by -SkipDocker' }
         Test-Command 'docker' 'Docker'
-        & docker version
-        if ($LASTEXITCODE -ne 0) { throw 'Docker daemon is not available' }
+        Invoke-Native 'docker' @('version')
     } -Optional:$SkipDocker
 
     Write-Step 'Backend'
     if (-not $SkipInstall) {
         Invoke-Gate 'Create CI virtual environment' {
-            if (-not (Test-Path (Join-Path $Venv 'Scripts/python.exe'))) {
-                Test-Command 'py' 'Python launcher'
-                & py -3.10 -m venv $Venv
-                if ($LASTEXITCODE -ne 0) { throw 'Failed to create Python 3.10 virtual environment' }
+            if (-not (Test-Python310 $script:PythonExe)) {
+                if (Test-Path $Venv) { Remove-Item $Venv -Recurse -Force }
+                Invoke-Native 'py' @('-3.10','-m','venv',$Venv)
             }
-            $script:PythonExe = Join-Path $Venv 'Scripts/python.exe'
-            & $script:PythonExe --version
+            if (-not (Test-Python310 $script:PythonExe)) { throw 'Failed to create Python 3.10 virtual environment' }
         }
         Invoke-Gate 'Install backend dependencies' {
             Invoke-Python $Backend @('-m','pip','install','--upgrade','pip')
@@ -126,65 +150,37 @@ try {
     }
 
     Invoke-Gate 'Modular architecture check' {
-        $patterns = @(
-            @{ Pattern='from app.modules.[^\r\n]+ import .*database'; Path='backend/app'; Message='Module imports database internals' },
-            @{ Pattern='from app.modules.[^\r\n]+ import .*models'; Path='backend/app/modules'; Message='Cross-module model import requires review' }
-        )
-        foreach ($rule in $patterns) {
-            $hits = Get-ChildItem (Join-Path $RepoRoot $rule.Path) -Recurse -File -Include *.py |
-                Select-String -Pattern $rule.Pattern -ErrorAction SilentlyContinue
-            if ($hits) {
-                $hits | ForEach-Object { Write-Host "  $($_.Path):$($_.LineNumber): $($_.Line.Trim())" }
-                throw $rule.Message
-            }
-        }
+        Invoke-Python $Backend @('scripts/check_modular_architecture.py')
     }
 
     Invoke-Gate 'API security boundary scan' {
-        $routers = Get-ChildItem (Join-Path $Backend 'app') -Recurse -File -Include *router*.py,*.py
-        $dangerous = $routers | Select-String -Pattern 'Depends\(get_current_user\)|require_permission\(' -ErrorAction SilentlyContinue
-        if (-not $dangerous) { throw 'No authenticated API boundaries found; review scan configuration' }
-        Write-Host "  Authenticated API boundaries detected: $($dangerous.Count)"
+        Invoke-Python $Backend @('scripts/check_api_security.py')
     }
 
     Invoke-Gate 'Application import smoke test' {
         $env:DATABASE_URL = 'sqlite:///./release_gate_smoke.db'
         $env:APP_ENV = 'test'
-        Invoke-Python $Backend @('-c','import main; print("PrimeERP application import: OK")')
+        Invoke-Python $Backend @('scripts/smoke_import.py')
         Remove-Item (Join-Path $Backend 'release_gate_smoke.db') -Force -ErrorAction SilentlyContinue
         Remove-Item (Join-Path $RepoRoot 'release_gate_smoke.db') -Force -ErrorAction SilentlyContinue
     }
 
     Invoke-Gate 'Production configuration safety checks' {
         $env:APP_ENV = 'production'
-        $env:DEBUG = 'true'
+        $env:DEBUG = 'false'
         $env:DATABASE_URL = 'sqlite:///./unsafe.db'
         $env:SECRET_KEY = 'your-secret-key-change-this-in-production'
         $env:CORS_ORIGINS = 'https://erp.example.com'
-        $code = @'
-from app.core.config import Settings
-try:
-    Settings()
-except ValueError:
-    print('Unsafe production configuration rejected: OK')
-    raise SystemExit(0)
-raise SystemExit('Unsafe production configuration was accepted')
-'@
-        Push-Location $Backend
-        try { & $script:PythonExe -c $code; if ($LASTEXITCODE -ne 0) { throw 'Production safety check failed' } }
-        finally { Pop-Location }
-        $env:APP_ENV = 'test'
-        $env:DEBUG = 'false'
+        Invoke-Python $Backend @('scripts/check_production_config.py')
     }
 
     if (-not $SkipDocker) {
         Write-Step 'PostgreSQL + Alembic'
         Invoke-Gate 'Start isolated PostgreSQL' {
             & docker rm -f $DbContainer 2>$null | Out-Null
-            & docker run -d --name $DbContainer -e POSTGRES_USER=primeerp_ci -e POSTGRES_PASSWORD=primeerp_ci -e POSTGRES_DB=primeerp_ci -p "${PostgresPort}:5432" postgres:17 | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw 'Failed to start PostgreSQL container' }
+            Invoke-Native 'docker' @('run','-d','--name',$DbContainer,'-e','POSTGRES_USER=primeerp_ci','-e','POSTGRES_PASSWORD=primeerp_ci','-e','POSTGRES_DB=primeerp_ci','-p',"${PostgresPort}:5432",'postgres:17')
             $script:StartedDb = $true
-            for ($i=0; $i -lt 30; $i++) {
+            for ($i = 0; $i -lt 30; $i++) {
                 & docker exec $DbContainer pg_isready -U primeerp_ci -d primeerp_ci 2>$null | Out-Null
                 if ($LASTEXITCODE -eq 0) { return }
                 Start-Sleep -Seconds 2
@@ -196,18 +192,20 @@ raise SystemExit('Unsafe production configuration was accepted')
         $env:APP_ENV = 'test'
 
         Invoke-Gate 'Alembic upgrade head' {
-            Invoke-Python $Backend @('-m','alembic','upgrade','head')
+            Invoke-Alembic $Backend @('upgrade','head')
         }
         Invoke-Gate 'Require single Alembic head' {
             Push-Location $Backend
             try {
-                $heads = @(& $script:PythonExe -m alembic heads | Where-Object { $_ -match '^[0-9a-zA-Z_\-]+ ' })
-                if ($heads.Count -ne 1) { throw "Expected exactly one Alembic head; found $($heads.Count)" }
+                $heads = @(& $script:AlembicExe heads 2>&1)
+                if ($LASTEXITCODE -ne 0) { throw "alembic heads exited with code $LASTEXITCODE" }
                 $heads | ForEach-Object { Write-Host "  $_" }
+                $count = @($heads | Where-Object { $_ -match '\(head\)' }).Count
+                if ($count -ne 1) { throw "Expected exactly one Alembic head; found $count" }
             } finally { Pop-Location }
         }
         Invoke-Gate 'Alembic check' {
-            Invoke-Python $Backend @('-m','alembic','check')
+            Invoke-Alembic $Backend @('check')
         }
     }
 
@@ -229,11 +227,7 @@ raise SystemExit('Unsafe production configuration was accepted')
         }
     }
     Invoke-Gate 'Frontend typecheck' {
-        Push-Location $Frontend
-        try {
-            $pkg = Get-Content package.json -Raw | ConvertFrom-Json
-            if ($pkg.scripts.typecheck) { Invoke-Npm $Frontend @('run','typecheck') } else { Write-Host '  No typecheck script; skipped.' -ForegroundColor DarkYellow }
-        } finally { Pop-Location }
+        Invoke-Npm $Frontend @('run','typecheck')
     }
     Invoke-Gate 'Frontend lint' {
         Invoke-Npm $Frontend @('run','lint')
@@ -247,18 +241,14 @@ raise SystemExit('Unsafe production configuration was accepted')
         Invoke-Gate 'Docker Compose configuration' {
             $envFile = Join-Path $RepoRoot '.env.docker.example'
             if (-not (Test-Path $envFile)) { throw '.env.docker.example not found' }
-            & docker compose --env-file $envFile config -q
-            if ($LASTEXITCODE -ne 0) { throw 'docker compose config failed' }
+            Invoke-Native 'docker' @('compose','--env-file',$envFile,'config','-q')
         }
         Invoke-Gate 'Backend Docker build' {
-            & docker build --pull -t primeerp-backend:release-gate (Join-Path $RepoRoot 'backend')
-            if ($LASTEXITCODE -ne 0) { throw 'Backend Docker build failed' }
-            & docker run --rm primeerp-backend:release-gate python -m compileall -q app
-            if ($LASTEXITCODE -ne 0) { throw 'Backend Docker source compilation failed' }
+            Invoke-Native 'docker' @('build','--pull','-t','primeerp-backend:release-gate',(Join-Path $RepoRoot 'backend'))
+            Invoke-Native 'docker' @('run','--rm','primeerp-backend:release-gate','python','-m','compileall','-q','app')
         }
         Invoke-Gate 'Frontend Docker build' {
-            & docker build --pull -t primeerp-frontend:release-gate (Join-Path $RepoRoot 'frontend')
-            if ($LASTEXITCODE -ne 0) { throw 'Frontend Docker build failed' }
+            Invoke-Native 'docker' @('build','--pull','-t','primeerp-frontend:release-gate',(Join-Path $RepoRoot 'frontend'))
         }
     }
 }
