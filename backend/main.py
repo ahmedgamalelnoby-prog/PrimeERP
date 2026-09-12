@@ -10,7 +10,7 @@ from app.api.router import build_router
 from app.core.config import settings
 from app.core.context import get_request_context
 from app.core.exceptions import register_exception_handlers
-from app.core.middleware import RequestContextMiddleware
+from app.core.middleware import RequestContextMiddleware, SecurityHeadersMiddleware
 from app.core.module_engine.bootstrap import bootstrap_module_registry
 from app.core.module_engine.registry import ModuleRegistry
 from app.database import models as database_models  # noqa: F401
@@ -32,6 +32,7 @@ def create_application() -> FastAPI:
     application.state.module_registry = module_registry
 
     register_exception_handlers(application)
+    application.add_middleware(SecurityHeadersMiddleware)
     application.add_middleware(RequestContextMiddleware)
     application.add_middleware(
         CORSMiddleware,
@@ -122,8 +123,6 @@ def create_application() -> FastAPI:
             }
         )
 
-    # This endpoint exposes request metadata such as IP address and user-agent.
-    # It is intentionally available only in development/debug mode.
     if settings.DEBUG:
         @application.get("/debug/request-context", tags=["System"])
         async def debug_request_context() -> dict:
