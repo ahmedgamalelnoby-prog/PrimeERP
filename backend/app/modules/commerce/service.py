@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.accounting.models import TaxRate
 from app.modules.accounting.tax_engine import calculate_taxes
-from app.modules.commerce.models import BusinessPartner, CommercePayment, PurchaseDocument, PurchaseLine, SalesDocument, SalesLine
+from app.modules.commerce.models import BusinessPartner, PurchaseDocument, PurchaseLine, SalesDocument, SalesLine
 from app.modules.commerce.payment_workflow import post_payment, reverse_payment
 from app.modules.inventory.items.models import InventoryItem
 from app.modules.inventory.locations.models import InventoryLocation
@@ -97,7 +97,8 @@ class CommerceService:
             if kind == "sale":
                 payload = StockMoveCreate(company_id=company_id, item_id=line.item_id, movement_type="issue", source_location_id=loc.id, destination_location_id=None, quantity=line.quantity, unit_cost=0, reference=obj.number, notes="Sales delivery")
             else:
-                payload = StockMoveCreate(company_id=company_id, item_id=line.item_id, movement_type="receipt", source_location_id=None, destination_location_id=loc.id, quantity=line.quantity, unit_cost=line.unit_price, reference=obj.number, notes="Purchase receipt")
+                net_unit_cost = Decimal(line.unit_price) * (Decimal("100") - Decimal(line.discount_percent or 0)) / Decimal("100")
+                payload = StockMoveCreate(company_id=company_id, item_id=line.item_id, movement_type="receipt", source_location_id=None, destination_location_id=loc.id, quantity=line.quantity, unit_cost=net_unit_cost, reference=obj.number, notes="Purchase receipt")
             move = inventory_stock_move_service.create_draft(db, payload); move.source_module = "commerce"; move.source_entity = source_entity; move.source_id = source_id
             inventory_stock_move_service.post(db, company_id=company_id, move_id=move.id)
         obj.status = "fulfilled" if kind == "sale" else "received"; db.flush(); return obj
