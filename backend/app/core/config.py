@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     ETA_CLIENT_SECRET: str = ""
     ETA_CLIENT_CERTIFICATE_PATH: str = ""
     ETA_CLIENT_CERTIFICATE_PASSWORD: str = ""
+    ETA_NOTIFICATION_SECRET: str = ""
 
     @model_validator(mode="after")
     def validate_runtime_safety(self) -> "Settings":
@@ -71,6 +72,8 @@ class Settings(BaseSettings):
                 raise ValueError("ETA_CLIENT_ID and ETA_CLIENT_SECRET are required when ETA integration is enabled")
             if self.ETA_ENABLED and not self.ETA_API_BASE_URL.startswith("https://"):
                 raise ValueError("ETA_API_BASE_URL must use HTTPS")
+            if self.ETA_ENABLED and not self.ETA_NOTIFICATION_SECRET:
+                raise ValueError("ETA_NOTIFICATION_SECRET is required when ETA integration is enabled")
         return self
 
     @property
