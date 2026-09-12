@@ -41,21 +41,7 @@ def create_stock_move(
 ):
     _company_for_user(db, payload.company_id, user)
     try:
-        return inventory_stock_move_service.create_draft(db, payload)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@router.post("/{move_id}/post", response_model=StockMoveResponse, dependencies=[Depends(require_permission("inventory.post"))])
-def post_stock_move(
-    move_id: int,
-    company_id: int = Query(..., gt=0),
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    _company_for_user(db, company_id, user)
-    try:
-        move = inventory_stock_move_service.post(db, company_id=company_id, move_id=move_id)
+        move = inventory_stock_move_service.create_draft(db, payload)
         db.commit()
         db.refresh(move)
         return move
