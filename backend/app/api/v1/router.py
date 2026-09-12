@@ -31,6 +31,7 @@ from app.modules.companies.router import router as companies_router
 from app.modules.branches.router import router as branches_router
 from app.modules.treasury.router import router as treasury_router
 from app.modules.egyptian_einvoice.router import router as egyptian_einvoice_router
+from app.modules.audit.router import router as audit_router
 
 
 def build_router() -> APIRouter:
@@ -49,7 +50,7 @@ def build_router() -> APIRouter:
         inventory_reservations_router, inventory_costing_router, commerce_router,
         enterprise_router, shipping_router, shipping_settlement_router, shipping_accounting_router,
         integrations_router, uom_router, companies_router, branches_router, treasury_router,
-        egyptian_einvoice_router,
+        egyptian_einvoice_router, audit_router,
     ):
         api_router.include_router(r)
     api_router.include_router(integrations_public_router)
