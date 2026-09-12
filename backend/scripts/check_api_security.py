@@ -15,7 +15,7 @@ AUTH_MARKERS = (
     "get_current_user_for_billing",
     "require_permission",
     "require_platform_admin",
-    "Depends(oauth2_scheme)",
+    "oauth2_scheme",
 )
 
 
@@ -28,11 +28,6 @@ def function_has_auth(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
         rendered = ast.unparse(decorator)
         if any(marker in rendered for marker in AUTH_MARKERS):
             return True
-    for child in ast.walk(node):
-        if isinstance(child, ast.arg) and child.annotation is not None:
-            annotation = ast.unparse(child.annotation)
-            if "User" in annotation or "CurrentUser" in annotation:
-                return True
     return False
 
 
@@ -40,7 +35,7 @@ def router_has_auth(tree: ast.AST) -> bool:
     for node in ast.walk(tree):
         if not isinstance(node, (ast.Assign, ast.AnnAssign)):
             continue
-        value = node.value if isinstance(node, ast.AnnAssign) else node.value
+        value = node.value
         if not isinstance(value, ast.Call) or not isinstance(value.func, ast.Name) or value.func.id != "APIRouter":
             continue
         dependencies = next((keyword.value for keyword in value.keywords if keyword.arg == "dependencies"), None)
@@ -49,13 +44,21 @@ def router_has_auth(tree: ast.AST) -> bool:
     return False
 
 
+def is_explicitly_public_mutation(path: Path, node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    if relative(path) not in PUBLIC_MUTATION_FILES:
+        return False
+    decorators = [ast.unparse(d) for d in node.decorator_list]
+    return any(
+        any(f"router.{method}" in decorator for method in MUTATING)
+        for decorator in decorators
+    )
+
+
 def main() -> int:
     failures: list[str] = []
     for path in ROOT.rglob("*.py"):
         rel = relative(path)
         normalized = path.as_posix()
-        if rel in PUBLIC_MUTATION_FILES:
-            continue
         if path.name not in {"router.py", "routers.py", "public_router.py"} and "/api/" not in normalized:
             continue
         source = path.read_text(encoding="utf-8")
@@ -71,10 +74,15 @@ def main() -> int:
                 continue
             decorators = [ast.unparse(d) for d in node.decorator_list]
             mutation_decorators = [
-                decorator for decorator in decorators
+                decorator
+                for decorator in decorators
                 if any(f"router.{method}" in decorator for method in MUTATING)
             ]
-            if mutation_decorators and not (router_level_auth or function_has_auth(node)):
+            if not mutation_decorators:
+                continue
+            if is_explicitly_public_mutation(path, node):
+                continue
+            if not (router_level_auth or function_has_auth(node)):
                 failures.append(
                     f"{rel}:{node.lineno} {node.name}: mutating API route has no authentication/authorization dependency"
                 )
