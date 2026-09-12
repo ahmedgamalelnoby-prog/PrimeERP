@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
+from app.core.permissions.checker import user_has_permission
 from app.modules.identity.dependencies import get_current_user, get_current_user_for_billing
 from app.modules.identity.models import User
 from app.modules.platform.subscriptions.schemas import (
@@ -32,6 +33,17 @@ def authorize_tenant(tenant_id: int, current_user: User) -> None:
 def require_platform_admin(current_user: User) -> None:
     if not current_user.is_platform_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Platform administrator access required")
+
+
+def require_subscription_management(current_user: User, db: Session) -> None:
+    """Only platform admins or explicitly authorized tenant users may change billing state."""
+    if current_user.is_platform_admin:
+        return
+    if not user_has_permission(current_user, "subscription.manage", db):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Subscription management permission is required.",
+        )
 
 
 @router.get("/tenant/{tenant_id}", response_model=List[SubscriptionResponse])
@@ -103,11 +115,13 @@ def convert_to_paid(
     schema: SubscriptionConvertToPaid,
     current_user: User = Depends(get_current_user_for_billing),
     svc: SubscriptionService = Depends(service),
+    db: Session = Depends(get_db),
 ):
     """Convert a tenant trial/past-due subscription into a paid subscription."""
     try:
         subscription = svc._get(subscription_id)
         authorize_tenant(subscription.tenant_id, current_user)
+        require_subscription_management(current_user, db)
         return svc.convert_to_paid(subscription_id, schema)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -119,10 +133,12 @@ def cancel_subscription(
     reason: str = "customer_request",
     current_user: User = Depends(get_current_user_for_billing),
     svc: SubscriptionService = Depends(service),
+    db: Session = Depends(get_db),
 ):
     try:
         subscription = svc._get(subscription_id)
         authorize_tenant(subscription.tenant_id, current_user)
+        require_subscription_management(current_user, db)
         return svc.cancel(subscription_id, reason)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
