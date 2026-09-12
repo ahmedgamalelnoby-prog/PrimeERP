@@ -15,7 +15,6 @@ from app.core.module_engine.bootstrap import bootstrap_module_registry
 from app.core.module_engine.registry import ModuleRegistry
 from app.database import models as database_models  # noqa: F401
 from app.database.session import SessionLocal
-from app.modules.identity.api.router import router as identity_router
 
 
 def create_application() -> FastAPI:
@@ -45,11 +44,9 @@ def create_application() -> FastAPI:
         expose_headers=["X-Request-ID"],
     )
 
+    # Identity is part of the canonical v1 router tree. Keep one source of
+    # truth instead of inspecting FastAPI's private _IncludedRouter wrappers.
     api_router = build_router()
-    # Keep the authentication boundary present even if a future modular router
-    # catalog omits the identity router. The guard prevents duplicate routes.
-    if not any(route.path == "/identity/login" for route in api_router.routes):
-        api_router.include_router(identity_router, prefix="/identity", tags=["identity"])
     application.include_router(api_router, prefix=settings.API_V1_STR)
 
     @application.get("/", tags=["System"])
