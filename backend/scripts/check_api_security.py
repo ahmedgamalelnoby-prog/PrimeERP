@@ -16,6 +16,7 @@ AUTH_MARKERS = (
     "require_permission",
     "require_platform_admin",
     "oauth2_scheme",
+    "_require_eta_notification_secret",
 )
 
 
@@ -26,6 +27,21 @@ def relative(path: Path) -> str:
 def function_has_auth(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     for decorator in node.decorator_list:
         rendered = ast.unparse(decorator)
+        if any(marker in rendered for marker in AUTH_MARKERS):
+            return True
+
+    # FastAPI dependencies are commonly declared on endpoint parameters rather
+    # than in the route decorator. Inspect those Depends(...) expressions too.
+    for argument in [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]:
+        if argument.annotation is not None and any(
+            marker in ast.unparse(argument.annotation) for marker in AUTH_MARKERS
+        ):
+            return True
+    defaults = [*node.args.defaults, *node.args.kw_defaults]
+    for default in defaults:
+        if default is None:
+            continue
+        rendered = ast.unparse(default)
         if any(marker in rendered for marker in AUTH_MARKERS):
             return True
     return False
