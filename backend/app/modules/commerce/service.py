@@ -93,14 +93,10 @@ class CommerceService:
         obj.status = "fulfilled" if kind == "sale" else "received"; db.flush(); return obj
 
     def pay(self, db, payload, kind):
-        if payload.document_kind if hasattr(payload, "document_kind") else False:
-            document_kind = payload.document_kind
-        else:
-            document_kind = kind
         return post_payment(
             db,
             company_id=payload.company_id,
-            document_kind=document_kind,
+            document_kind=kind,
             document_id=payload.document_id,
             amount=payload.amount,
             payment_date=payload.payment_date,
