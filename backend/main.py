@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from app.api.v1.router import build_router
+from app.modules.identity.api.router import router as identity_router
 from app.core.config import settings
 from app.core.context import get_request_context
 from app.core.exceptions import register_exception_handlers
@@ -47,6 +48,18 @@ def create_application() -> FastAPI:
     # Register the canonical v1 router directly. This avoids an extra wrapper
     # router layer so FastAPI always materializes the complete route tree.
     api_router = build_router()
+
+    # Authentication is a mandatory application boundary. Keep a defensive
+    # registration here so a partially initialized canonical router can never
+    # produce an application without login/refresh/me endpoints.
+    identity_login_registered = any(
+        getattr(route, "path", None) == "/identity/login"
+        and "POST" in getattr(route, "methods", set())
+        for route in api_router.routes
+    )
+    if not identity_login_registered:
+        api_router.include_router(identity_router, prefix="/identity", tags=["identity"])
+
     application.include_router(api_router, prefix=settings.API_V1_STR)
 
     @application.get("/", tags=["System"])
