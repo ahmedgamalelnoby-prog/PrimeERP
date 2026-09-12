@@ -53,7 +53,12 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_runtime_safety(self) -> "Settings":
-        """Fail fast when unsafe development defaults are used in production."""
+        """Normalize supported drivers and fail fast on unsafe production defaults."""
+        # PrimeERP uses Psycopg 3 exclusively. Accept legacy psycopg2 URLs in
+        # developer environments without requiring the retired driver package.
+        if "+psycopg2" in self.DATABASE_URL:
+            self.DATABASE_URL = self.DATABASE_URL.replace("+psycopg2", "+psycopg")
+
         if self.APP_ENV == "production":
             if self.DEBUG:
                 raise ValueError("DEBUG must be false in production")
