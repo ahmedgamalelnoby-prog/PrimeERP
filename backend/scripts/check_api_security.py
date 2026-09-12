@@ -5,9 +5,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1] / "app"
 PUBLIC_MUTATION_FILES = {
-    "modules/identity/api/router.py",          # login, refresh, logout
-    "modules/saas/router.py",                  # public tenant registration
-    "modules/integrations/public_router.py",   # signed external webhooks
+    "modules/identity/api/router.py",
+    "modules/saas/router.py",
+    "modules/integrations/public_router.py",
 }
 MUTATING = {"post", "put", "patch", "delete"}
 AUTH_MARKERS = (
@@ -23,25 +23,26 @@ def relative(path: Path) -> str:
     return path.relative_to(ROOT).as_posix()
 
 
-def has_auth_marker(node: ast.AST, source: str) -> bool:
-    if any(marker in source for marker in AUTH_MARKERS):
+def function_has_auth(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    decorators = [ast.unparse(d) for d in node.decorator_list]
+    if any(any(marker in decorator for marker in AUTH_MARKERS) for decorator in decorators):
         return True
     for child in ast.walk(node):
-        if isinstance(child, ast.FunctionDef):
-            for arg in (*child.args.args, *child.args.kwonlyargs):
-                if arg.annotation is not None and any(name in ast.unparse(arg.annotation) for name in ("User", "CurrentUser")):
-                    return True
+        if isinstance(child, ast.arg) and child.annotation is not None:
+            annotation = ast.unparse(child.annotation)
+            if "User" in annotation or "CurrentUser" in annotation:
+                return True
     return False
 
 
 def main() -> int:
     failures: list[str] = []
     for path in ROOT.rglob("*.py"):
-        if not any(part in {"router.py", "routers.py"} or part.endswith("router.py") for part in [path.name]):
-            if "/api/" not in path.as_posix().replace("\\", "/") and path.name not in {"public_router.py"}:
-                continue
         rel = relative(path)
+        normalized = path.as_posix()
         if rel in PUBLIC_MUTATION_FILES:
+            continue
+        if path.name not in {"router.py", "routers.py", "public_router.py"} and "/api/" not in normalized:
             continue
         source = path.read_text(encoding="utf-8")
         try:
@@ -50,17 +51,19 @@ def main() -> int:
             failures.append(f"{rel}: syntax error: {exc}")
             continue
 
-        has_mutation = False
+        router_level_auth = any(marker in source for marker in AUTH_MARKERS) and "dependencies=[" in source
         for node in ast.walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
             decorators = [ast.unparse(d) for d in node.decorator_list]
-            if any("@router." in d and any(f"router.{method}" in d for method in MUTATING) for d in decorators):
-                has_mutation = True
-                if not has_auth_marker(node, source):
-                    failures.append(f"{rel}:{node.lineno} {node.name}: mutating API route has no authentication/authorization dependency")
-        if has_mutation and "APIRouter" not in source:
-            failures.append(f"{rel}: contains mutation decorators but no APIRouter declaration")
+            mutation_decorators = [
+                decorator for decorator in decorators
+                if any(f"router.{method}" in decorator for method in MUTATING)
+            ]
+            if mutation_decorators and not (router_level_auth or function_has_auth(node)):
+                failures.append(
+                    f"{rel}:{node.lineno} {node.name}: mutating API route has no authentication/authorization dependency"
+                )
 
     if failures:
         print("API security boundary audit failed:")
