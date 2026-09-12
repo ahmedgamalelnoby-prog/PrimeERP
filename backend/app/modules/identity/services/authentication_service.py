@@ -28,8 +28,12 @@ class AuthenticationService:
         subscription = None
         enabled_modules: list[str] = []
         if not user.is_platform_admin:
-            tenant = self._get_valid_tenant(db, user.tenant_id)
-            subscription = self._get_valid_subscription(db, tenant.id)
+            tenant = self._get_auth_tenant(db, user.tenant_id)
+            subscription = self._get_latest_subscription(db, tenant.id)
+            if subscription is not None and self._subscription_is_expired(subscription):
+                subscription.status = "expired"
+                subscription = subscription
+                tenant.status = "expired"
             enabled_modules = self._get_enabled_modules(db, tenant.id)
 
         user.last_login = datetime.now(timezone.utc)
@@ -64,14 +68,17 @@ class AuthenticationService:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
         self._validate_user(user)
         if not user.is_platform_admin:
-            self._get_valid_tenant(db, user.tenant_id)
-            self._get_valid_subscription(db, user.tenant_id)
+            tenant = self._get_auth_tenant(db, user.tenant_id)
+            subscription = self._get_latest_subscription(db, tenant.id)
+            if subscription is not None and self._subscription_is_expired(subscription):
+                subscription.status = "expired"
+                tenant.status = "expired"
 
         access_token, expires_in = token_service.create_access_token(user)
         new_refresh_token = refresh_token_service.issue(db, user.id)
         db.flush()
         new_record = db.query(RefreshToken).filter(
-            RefreshToken.token_hash == refresh_token_service._hash(new_refresh_token)
+            RefreshToken.token_hash == refresh_token_service.hash_token(new_refresh_token)
         ).first()
         if new_record is not None:
             record.replaced_by_id = new_record.id
@@ -86,15 +93,30 @@ class AuthenticationService:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User account is inactive")
 
     @staticmethod
-    def _get_valid_tenant(db: Session, tenant_id: int | None) -> Tenant:
+    def _get_auth_tenant(db: Session, tenant_id: int | None) -> Tenant:
         if tenant_id is None:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is not assigned to a tenant")
         tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
         if tenant is None or not tenant.is_active:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant is inactive")
-        if tenant.status in {"suspended", "cancelled", "expired"}:
+        if tenant.status in {"suspended", "cancelled"}:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Tenant status is {tenant.status}")
         return tenant
+
+    @staticmethod
+    def _get_latest_subscription(db: Session, tenant_id: int) -> Subscription | None:
+        return db.query(Subscription).filter(
+            Subscription.tenant_id == tenant_id,
+        ).order_by(Subscription.id.desc()).first()
+
+    @staticmethod
+    def _subscription_is_expired(subscription: Subscription) -> bool:
+        now = datetime.now(timezone.utc)
+        if subscription.status == "trialing" and subscription.trial_ends_at and subscription.trial_ends_at <= now:
+            return True
+        if subscription.status == "active" and subscription.ends_at and subscription.ends_at <= now:
+            return True
+        return subscription.status == "expired"
 
     @staticmethod
     def _get_valid_subscription(db: Session, tenant_id: int) -> Subscription:
@@ -104,10 +126,7 @@ class AuthenticationService:
         ).order_by(Subscription.id.desc()).first()
         if subscription is None:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No active subscription")
-        now = datetime.now(timezone.utc)
-        if subscription.status == "trialing" and subscription.trial_ends_at and subscription.trial_ends_at <= now:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Trial has expired")
-        if subscription.status == "active" and subscription.ends_at and subscription.ends_at <= now:
+        if AuthenticationService._subscription_is_expired(subscription):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Subscription has expired")
         return subscription
 
