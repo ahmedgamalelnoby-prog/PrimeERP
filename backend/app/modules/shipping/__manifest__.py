@@ -5,5 +5,5 @@ MANIFEST = manifest(
     display_name='Shipping & Logistics',
     version='1.0.0',
     domain='logistics',
-    dependencies=('commerce', 'inventory'),
+    dependencies=('commerce/sales_purchasing', 'inventory/inventory_core'),
 )
