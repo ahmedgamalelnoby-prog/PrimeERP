@@ -1,11 +1,13 @@
-"""make commerce payment idempotency keys unique per company
+"""legacy compatibility migration for commerce payment idempotency
 
 Revision ID: 20260912_commerce_idempotency
 Revises: 20260912_accounting_rbac
-"""
 
-from alembic import op
-import sqlalchemy as sa
+The idempotency column and company-scoped unique index are already established
+by ``20260911_commerce_payment_idempotency``. This revision remains in the
+migration graph for compatibility with databases/branches that reference it,
+but must not create a second copy of the same schema objects.
+"""
 
 revision = "20260912_commerce_idempotency"
 down_revision = "20260912_accounting_rbac"
@@ -14,14 +16,8 @@ depends_on = None
 
 
 def upgrade():
-    op.create_index(
-        "uq_commerce_payments_company_idempotency_key",
-        "commerce_payments",
-        ["company_id", "idempotency_key"],
-        unique=True,
-        postgresql_where=sa.text("idempotency_key IS NOT NULL"),
-    )
+    pass
 
 
 def downgrade():
-    op.drop_index("uq_commerce_payments_company_idempotency_key", table_name="commerce_payments")
+    pass
