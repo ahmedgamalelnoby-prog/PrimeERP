@@ -3,6 +3,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.accounting.reports.schemas import FinancialSummaryResponse, TrialBalanceResponse
 from app.modules.accounting.reports.service import financial_report_service
@@ -10,7 +11,11 @@ from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 
 
-router = APIRouter(prefix="/accounting/reports", tags=["Accounting - Financial Reports"])
+router = APIRouter(
+    prefix="/accounting/reports",
+    tags=["Accounting - Financial Reports"],
+    dependencies=[Depends(require_permission("accounting.access"))],
+)
 
 
 def tenant_id(current_user: User) -> int:
@@ -28,13 +33,7 @@ def trial_balance(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return financial_report_service.trial_balance(
-        db,
-        tenant_id=tenant_id(current_user),
-        company_id=company_id,
-        from_date=from_date,
-        to_date=to_date,
-    )
+    return financial_report_service.trial_balance(db, tenant_id=tenant_id(current_user), company_id=company_id, from_date=from_date, to_date=to_date)
 
 
 @router.get("/summary", response_model=FinancialSummaryResponse)
@@ -45,10 +44,4 @@ def financial_summary(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return financial_report_service.financial_summary(
-        db,
-        tenant_id=tenant_id(current_user),
-        company_id=company_id,
-        from_date=from_date,
-        to_date=to_date,
-    )
+    return financial_report_service.financial_summary(db, tenant_id=tenant_id(current_user), company_id=company_id, from_date=from_date, to_date=to_date)
