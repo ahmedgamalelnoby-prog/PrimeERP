@@ -8,13 +8,16 @@ WORKDIR /app
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl build-essential \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --shell /usr/sbin/nologin appuser
 
 COPY requirements.txt ./requirements.txt
 RUN python -m pip install --upgrade pip \
     && pip install -r requirements.txt
 
 COPY . .
+RUN chown -R appuser:appuser /app
+USER appuser
 
 EXPOSE 8001
 
