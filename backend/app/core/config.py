@@ -41,6 +41,15 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3004"
     )
 
+    ETA_ENABLED: bool = False
+    ETA_IDENTITY_URL: str = "https://id.eta.gov.eg/connect/token"
+    ETA_API_BASE_URL: str = "https://api.invoicing.eta.gov.eg"
+    ETA_API_VERSION: str = "1"
+    ETA_CLIENT_ID: str = ""
+    ETA_CLIENT_SECRET: str = ""
+    ETA_CLIENT_CERTIFICATE_PATH: str = ""
+    ETA_CLIENT_CERTIFICATE_PASSWORD: str = ""
+
     @model_validator(mode="after")
     def validate_runtime_safety(self) -> "Settings":
         """Fail fast when unsafe development defaults are used in production."""
@@ -58,6 +67,10 @@ class Settings(BaseSettings):
                 raise ValueError("Localhost CORS origins are not allowed in production")
             if any(not origin.startswith("https://") for origin in origins):
                 raise ValueError("Production CORS origins must use HTTPS")
+            if self.ETA_ENABLED and (not self.ETA_CLIENT_ID or not self.ETA_CLIENT_SECRET):
+                raise ValueError("ETA_CLIENT_ID and ETA_CLIENT_SECRET are required when ETA integration is enabled")
+            if self.ETA_ENABLED and not self.ETA_API_BASE_URL.startswith("https://"):
+                raise ValueError("ETA_API_BASE_URL must use HTTPS")
         return self
 
     @property
