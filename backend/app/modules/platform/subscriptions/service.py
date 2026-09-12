@@ -5,7 +5,11 @@ from sqlalchemy.orm import Session
 from app.modules.platform.plans.models import Plan
 from app.modules.platform.subscriptions.models import Subscription
 from app.modules.platform.subscriptions.repository import subscription_repository
-from app.modules.platform.subscriptions.schemas import SubscriptionCreate, SubscriptionUpdate
+from app.modules.platform.subscriptions.schemas import (
+    SubscriptionConvertToPaid,
+    SubscriptionCreate,
+    SubscriptionUpdate,
+)
 from app.modules.saas.models import SubscriptionPlan, Tenant
 
 
@@ -124,6 +128,8 @@ class SubscriptionService:
             trial_end = now + timedelta(days=plan.trial_days)
 
         ends_at = schema.ends_at or now + timedelta(days=self._period_days(schema.billing_cycle))
+        if ends_at <= now:
+            raise ValueError("Subscription end date must be after its start date")
         conflict = self.repository.get_conflicting_for_tenant(
             self.db,
             schema.tenant_id,
@@ -165,6 +171,39 @@ class SubscriptionService:
         self.db.refresh(instance)
         return instance
 
+    def convert_to_paid(self, subscription_id: int, schema: SubscriptionConvertToPaid) -> Subscription:
+        """Convert a trial/past-due subscription into a paid active subscription."""
+        instance = self._get(subscription_id, True)
+        if instance.status not in {"trialing", "past_due"}:
+            raise ValueError("Only trialing or past_due subscriptions can be converted to paid")
+
+        now = schema.starts_at or self._now()
+        billing_cycle = schema.billing_cycle or instance.billing_cycle
+        if schema.plan_id is not None:
+            plan = self._resolve_plan(schema.plan_id)
+            if plan.status != "active":
+                raise ValueError("Only active plans can be used for paid conversion")
+            self._ensure_legacy_subscription_plan(plan)
+            instance.plan_id = plan.id
+
+        instance.billing_cycle = billing_cycle
+        instance.status = "active"
+        instance.trial_ends_at = None
+        instance.cancelled_at = None
+        instance.starts_at = now
+        instance.ends_at = schema.ends_at or now + timedelta(days=self._period_days(billing_cycle))
+        if instance.ends_at <= now:
+            raise ValueError("Paid subscription end date must be after its start date")
+        instance.next_billing_date = instance.ends_at
+        if schema.auto_renew is not None:
+            instance.is_auto_renew = schema.auto_renew
+        if schema.notes is not None:
+            instance.notes = schema.notes
+        self._sync_tenant_state(instance)
+        self.db.commit()
+        self.db.refresh(instance)
+        return instance
+
     def cancel(self, subscription_id: int, reason: str = "customer_request") -> Subscription:
         instance = self._get(subscription_id, True)
         instance.status = "cancelled"
@@ -179,8 +218,15 @@ class SubscriptionService:
     def update(self, subscription_id: int, schema: SubscriptionUpdate) -> Subscription:
         instance = self._get(subscription_id, True)
         data = schema.model_dump(exclude_unset=True)
+        if "plan_id" in data:
+            plan = self._resolve_plan(data["plan_id"])
+            if plan.status != "active":
+                raise ValueError("Only active plans can be assigned to a subscription")
+            self._ensure_legacy_subscription_plan(plan)
         if "auto_renew" in data:
             data["is_auto_renew"] = data.pop("auto_renew")
+        if "ends_at" in data and data["ends_at"] is not None and data["ends_at"] <= instance.starts_at:
+            raise ValueError("Subscription end date must be after its start date")
         self.repository.update(self.db, instance, data)
         self._sync_tenant_state(instance)
         self.db.commit()
@@ -209,8 +255,6 @@ class SubscriptionService:
             instance.status = "expired"
             changed = True
         elif instance.status == "past_due" and instance.ends_at:
-            # A past-due subscription is allowed only for the plan's configured
-            # grace period. It must never become an indefinite access bypass.
             grace_days = self._grace_period_days(instance.plan_id)
             if instance.ends_at + timedelta(days=grace_days) <= now:
                 instance.status = "expired"
