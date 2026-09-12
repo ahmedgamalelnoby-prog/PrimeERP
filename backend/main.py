@@ -4,6 +4,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
 from app.api.router import build_router
 from app.core.config import settings
@@ -13,13 +14,11 @@ from app.core.middleware import RequestContextMiddleware
 from app.core.module_engine.bootstrap import bootstrap_module_registry
 from app.core.module_engine.registry import ModuleRegistry
 from app.database import models as database_models  # noqa: F401
+from app.database.session import SessionLocal
 
 
 def create_application() -> FastAPI:
     """Build a fresh PrimeERP application with an isolated API router tree."""
-    # Discover and validate add-ons before the application starts serving traffic.
-    # Discovery only registers metadata; module business state remains disabled
-    # until an explicit lifecycle/tenant entitlement operation enables it.
     module_registry: ModuleRegistry = bootstrap_module_registry()
 
     application = FastAPI(
@@ -43,11 +42,7 @@ def create_application() -> FastAPI:
         expose_headers=["X-Request-ID"],
     )
 
-    # The application boundary owns exactly one router tree.
-    application.include_router(
-        build_router(),
-        prefix=settings.API_V1_STR,
-    )
+    application.include_router(build_router(), prefix=settings.API_V1_STR)
 
     @application.get("/", tags=["System"])
     async def root() -> JSONResponse:
@@ -66,6 +61,7 @@ def create_application() -> FastAPI:
 
     @application.get("/health", tags=["System"])
     async def health_check() -> JSONResponse:
+        """Liveness probe: confirms that the application process is running."""
         return JSONResponse(
             content={
                 "success": True,
@@ -75,6 +71,29 @@ def create_application() -> FastAPI:
                     "service": settings.APP_NAME,
                     "version": settings.APP_VERSION,
                 },
+            }
+        )
+
+    @application.get("/ready", tags=["System"])
+    async def readiness_check() -> JSONResponse:
+        """Readiness probe: confirms that the application can reach its database."""
+        try:
+            with SessionLocal() as db:
+                db.execute(text("SELECT 1"))
+        except Exception:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "success": False,
+                    "message": "Service is not ready.",
+                    "data": {"status": "not_ready"},
+                },
+            )
+        return JSONResponse(
+            content={
+                "success": True,
+                "message": "Service is ready.",
+                "data": {"status": "ready"},
             }
         )
 
