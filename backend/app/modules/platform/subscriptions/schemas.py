@@ -34,6 +34,15 @@ class SubscriptionUpdate(BaseModel):
     notes: Optional[str] = None
 
 
+class SubscriptionConvertToPaid(BaseModel):
+    plan_id: Optional[int] = Field(default=None, gt=0)
+    billing_cycle: Optional[BillingCycle] = None
+    auto_renew: Optional[bool] = None
+    starts_at: Optional[datetime] = None
+    ends_at: Optional[datetime] = None
+    notes: Optional[str] = None
+
+
 class SubscriptionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
