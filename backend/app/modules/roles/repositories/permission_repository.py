@@ -64,19 +64,14 @@ class PermissionRepository(BaseRepository[Permission]):
         if not permission_ids:
             return []
 
-        unique_ids = list(
-            dict.fromkeys(permission_ids)
-        )
-
+        unique_ids = list(dict.fromkeys(permission_ids))
         result = db.execute(
             select(Permission).where(
-                Permission.id.in_(unique_ids)
+                Permission.id.in_(unique_ids),
+                Permission.is_active.is_(True),
             )
         )
-
-        return list(
-            result.scalars().all()
-        )
+        return list(result.scalars().all())
 
 
 permission_repository = PermissionRepository()
