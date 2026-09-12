@@ -9,9 +9,12 @@ on:
 permissions:
   contents: read
 
+env:
+  CI_POSTGRES_PORT: 55432
+
 jobs:
   backend:
-    name: Backend - compile, architecture, tests and migrations
+    name: Backend - compile, architecture, smoke, tests and migrations
     runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 30
     defaults:
@@ -35,11 +38,17 @@ jobs:
       - name: Validate modular architecture
         shell: powershell
         run: python scripts/check_modular_architecture.py
+      - name: Import application smoke test
+        shell: powershell
+        env:
+          DATABASE_URL: sqlite:///./primeerp_ci_smoke.db
+        run: |
+          python -c "import main; print('Application import OK:', main.app.title)"
       - name: Prepare CI database
         shell: powershell
         run: |
           docker rm -f primeerp-ci-postgres 2>$null
-          docker run -d --name primeerp-ci-postgres -e POSTGRES_USER=primeerp -e POSTGRES_PASSWORD=primeerp -e POSTGRES_DB=primeerp_ci -p 5432:5432 postgres:17
+          docker run -d --name primeerp-ci-postgres -e POSTGRES_USER=primeerp -e POSTGRES_PASSWORD=primeerp -e POSTGRES_DB=primeerp_ci -p ${env:CI_POSTGRES_PORT}:5432 postgres:17
           $ready = $false
           for ($i = 0; $i -lt 30; $i++) {
             docker exec primeerp-ci-postgres pg_isready -U primeerp -d primeerp_ci
@@ -50,7 +59,7 @@ jobs:
       - name: Run Alembic migrations
         shell: powershell
         env:
-          DATABASE_URL: postgresql+psycopg://primeerp:primeerp@127.0.0.1:5432/primeerp_ci
+          DATABASE_URL: postgresql+psycopg://primeerp:primeerp@127.0.0.1:55432/primeerp_ci
         run: python -m alembic upgrade head
       - name: Require a single Alembic head
         shell: powershell
@@ -62,13 +71,13 @@ jobs:
       - name: Check Alembic configuration
         shell: powershell
         env:
-          DATABASE_URL: postgresql+psycopg://primeerp:primeerp@127.0.0.1:5432/primeerp_ci
+          DATABASE_URL: postgresql+psycopg://primeerp:primeerp@127.0.0.1:55432/primeerp_ci
         run: python -m alembic check
       - name: Run tests
         shell: powershell
         run: |
           $tests = Get-ChildItem -Path tests -Filter 'test_*.py' -File -ErrorAction SilentlyContinue
-          if ($tests) { python -m pytest -q } else { Write-Host 'No backend tests found; compile and architecture checks passed.' }
+          if ($tests) { python -m pytest -q } else { Write-Host 'No backend tests found; compile, architecture and smoke checks passed.' }
       - name: Cleanup CI database
         if: always()
         shell: powershell
