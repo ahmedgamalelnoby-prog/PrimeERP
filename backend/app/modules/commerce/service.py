@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.accounting.models import TaxRate
 from app.modules.commerce.models import BusinessPartner, CommercePayment, PurchaseDocument, PurchaseLine, SalesDocument, SalesLine
+from app.modules.commerce.payment_workflow import post_payment, reverse_payment
 from app.modules.inventory.items.models import InventoryItem
 from app.modules.inventory.locations.models import InventoryLocation
 from app.modules.inventory.stock_moves.models import InventoryStockMove
@@ -92,34 +93,26 @@ class CommerceService:
         obj.status = "fulfilled" if kind == "sale" else "received"; db.flush(); return obj
 
     def pay(self, db, payload, kind):
-        model = SalesDocument if kind == "sale" else PurchaseDocument
-        obj = db.scalar(select(model).where(model.id == payload.document_id, model.company_id == payload.company_id).with_for_update())
-        if not obj: raise ValueError("Document not found")
-        if payload.idempotency_key:
-            existing = db.scalar(select(CommercePayment).where(CommercePayment.company_id == payload.company_id, CommercePayment.idempotency_key == payload.idempotency_key).with_for_update())
-            if existing:
-                if existing.document_id != obj.id or existing.document_kind != kind:
-                    raise ValueError("Idempotency key is already used for another document")
-                return obj, existing
-        balance = Decimal(obj.total or 0) - Decimal(obj.paid_total or 0)
-        if payload.amount > balance: raise ValueError("Payment exceeds outstanding balance")
-        payment = CommercePayment(document_kind=kind, **payload.model_dump())
-        db.add(payment); obj.paid_total = Decimal(obj.paid_total or 0) + payload.amount; db.flush()
-        return obj, payment
+        if payload.document_kind if hasattr(payload, "document_kind") else False:
+            document_kind = payload.document_kind
+        else:
+            document_kind = kind
+        return post_payment(
+            db,
+            company_id=payload.company_id,
+            document_kind=document_kind,
+            document_id=payload.document_id,
+            amount=payload.amount,
+            payment_date=payload.payment_date,
+            method=payload.method,
+            wht_amount=payload.wht_amount,
+            reference=payload.reference,
+            notes=payload.notes,
+            idempotency_key=payload.idempotency_key,
+        )
 
     def reverse_payment(self, db, company_id: int, payment_id: int, reversal_date, notes=None):
-        payment = db.scalar(select(CommercePayment).where(CommercePayment.id == payment_id, CommercePayment.company_id == company_id).with_for_update())
-        if not payment: raise ValueError("Payment not found")
-        if payment.status == "reversed": raise ValueError("Payment is already reversed")
-        if payment.reversed_of_id: raise ValueError("This payment is a reversal entry and cannot be reversed")
-        model = SalesDocument if payment.document_kind == "sale" else PurchaseDocument
-        document = db.scalar(select(model).where(model.id == payment.document_id, model.company_id == company_id).with_for_update())
-        if not document: raise ValueError("Document not found")
-        if Decimal(document.paid_total or 0) < Decimal(payment.amount): raise ValueError("Document paid total is inconsistent with the payment")
-        payment.status = "reversed"; payment.reversed_at = reversal_date
-        reversal = CommercePayment(company_id=company_id, document_kind=payment.document_kind, document_id=payment.document_id, payment_date=reversal_date, amount=payment.amount, wht_amount=payment.wht_amount, method=payment.method, reference=f"REV-{payment.id}", notes=notes or f"Reversal of payment {payment.id}", status="reversed", reversed_of_id=payment.id, reversed_at=reversal_date)
-        db.add(reversal); document.paid_total = Decimal(document.paid_total or 0) - Decimal(payment.amount); db.flush()
-        return document, payment, reversal
+        return reverse_payment(db, company_id=company_id, payment_id=payment_id, reversal_date=reversal_date, notes=notes)
 
 
 commerce_service = CommerceService()
