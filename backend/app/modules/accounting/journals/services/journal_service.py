@@ -4,11 +4,14 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.modules.accounting.chart_of_accounts.models import AccountCombination, AccountingCostCenter, AccountingDepartment
 from app.modules.accounting.fiscal_years.repositories.fiscal_year_repository import fiscal_year_repository
 from app.modules.accounting.journals.models import JournalEntry, JournalEntryLine
 from app.modules.accounting.journals.repositories.journal_repository import journal_repository
+from app.modules.branches.models import Branch
 
 
 class JournalService:
@@ -36,11 +39,51 @@ class JournalService:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Journal entry requires at least two lines")
         if exchange_rate <= 0:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Exchange rate must be positive")
+
+        branch = db.scalar(select(Branch).where(
+            Branch.id == branch_id,
+            Branch.company_id == company_id,
+            Branch.tenant_id == tenant_id,
+            Branch.is_active.is_(True),
+        ))
+        if branch is None:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Branch does not belong to the selected company and tenant")
+
         period = fiscal_year_repository.get_period_by_id(db, period_id, tenant_id)
         if period is None or period.company_id != company_id or period.fiscal_year_id != fiscal_year_id:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Fiscal period does not belong to the selected company and fiscal year")
         if not (period.start_date <= entry_date <= period.end_date):
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Entry date is outside the selected accounting period")
+
+        account_ids = {int(payload["account_combination_id"]) for payload in lines}
+        accounts = db.scalars(select(AccountCombination).where(
+            AccountCombination.id.in_(account_ids),
+            AccountCombination.company_id == company_id,
+            AccountCombination.is_active.is_(True),
+        )).all()
+        account_by_id = {account.id: account for account in accounts}
+        if len(account_by_id) != len(account_ids):
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Every account combination must belong to the selected company and be active")
+
+        department_ids = {int(payload["department_id"]) for payload in lines if payload.get("department_id") is not None}
+        if department_ids:
+            departments = db.scalars(select(AccountingDepartment).where(
+                AccountingDepartment.id.in_(department_ids),
+                AccountingDepartment.company_id == company_id,
+                AccountingDepartment.is_active.is_(True),
+            )).all()
+            if len(departments) != len(department_ids):
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Every department must belong to the selected company and be active")
+
+        cost_center_ids = {int(payload["cost_center_id"]) for payload in lines if payload.get("cost_center_id") is not None}
+        if cost_center_ids:
+            cost_centers = db.scalars(select(AccountingCostCenter).where(
+                AccountingCostCenter.id.in_(cost_center_ids),
+                AccountingCostCenter.company_id == company_id,
+                AccountingCostCenter.is_active.is_(True),
+            )).all()
+            if len(cost_centers) != len(cost_center_ids):
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Every cost center must belong to the selected company and be active")
 
         debit = Decimal("0")
         credit = Decimal("0")
