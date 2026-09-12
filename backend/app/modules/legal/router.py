@@ -77,11 +77,8 @@ def _serialize(document: LegalDocument) -> dict:
 
 
 def _require_platform_admin(current_user: User) -> User:
-    if not (current_user.is_platform_admin or current_user.is_superuser):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the system administrator can manage legal documents.",
-        )
+    if not current_user.is_platform_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the platform administrator can manage legal documents.")
     return current_user
 
 
@@ -92,10 +89,7 @@ def list_legal_documents(db: Session = Depends(get_db)):
 
 
 @router.get("/acceptance/status")
-def legal_acceptance_status(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
+def legal_acceptance_status(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     result = {}
     for document_type in ("terms", "privacy"):
         document = _get_or_create(db, document_type)
@@ -109,11 +103,7 @@ def legal_acceptance_status(
 
 
 @router.post("/accept")
-def accept_legal_document(
-    payload: LegalAcceptRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
+def accept_legal_document(payload: LegalAcceptRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     document = _get_or_create(db, payload.document_type)
     if payload.version != document.version:
         raise HTTPException(status_code=409, detail="This legal document version is no longer current.")
@@ -123,11 +113,7 @@ def accept_legal_document(
         LegalAcceptance.document_version == payload.version,
     ).first()
     if not existing:
-        db.add(LegalAcceptance(
-            user_id=current_user.id,
-            document_type=payload.document_type,
-            document_version=payload.version,
-        ))
+        db.add(LegalAcceptance(user_id=current_user.id, document_type=payload.document_type, document_version=payload.version))
         db.commit()
     return {"success": True, "data": {"document_type": payload.document_type, "version": payload.version, "accepted": True}}
 
@@ -140,12 +126,7 @@ def get_legal_document(document_type: str, db: Session = Depends(get_db)):
 
 
 @router.put("/{document_type}")
-def update_legal_document(
-    document_type: str,
-    payload: LegalUpdateRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
+def update_legal_document(document_type: str, payload: LegalUpdateRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     if document_type not in DEFAULTS:
         raise HTTPException(status_code=404, detail="Legal document not found")
     _require_platform_admin(current_user)
