@@ -103,23 +103,26 @@ def create_application() -> FastAPI:
             }
         )
 
-    @application.get("/debug/request-context", tags=["System"])
-    async def debug_request_context() -> dict:
-        context = get_request_context()
-        return {
-            "success": True,
-            "data": {
-                "request_id": context.request_id,
-                "ip_address": context.ip_address,
-                "user_agent": context.user_agent,
-                "language": context.language,
-                "timezone": context.timezone,
-                "user_id": context.user_id,
-                "tenant_id": context.tenant_id,
-                "company_id": context.company_id,
-                "branch_id": context.branch_id,
-            },
-        }
+    # This endpoint exposes request metadata such as IP address and user-agent.
+    # It is intentionally available only in development/debug mode.
+    if settings.DEBUG:
+        @application.get("/debug/request-context", tags=["System"])
+        async def debug_request_context() -> dict:
+            context = get_request_context()
+            return {
+                "success": True,
+                "data": {
+                    "request_id": context.request_id,
+                    "ip_address": context.ip_address,
+                    "user_agent": context.user_agent,
+                    "language": context.language,
+                    "timezone": context.timezone,
+                    "user_id": context.user_id,
+                    "tenant_id": context.tenant_id,
+                    "company_id": context.company_id,
+                    "branch_id": context.branch_id,
+                },
+            }
 
     return application
 
