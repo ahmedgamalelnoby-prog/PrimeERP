@@ -26,8 +26,24 @@ def post_payment(db: Session, *, company_id: int, document_kind: str, document_i
     if document is None:
         raise ValueError("Document not found")
     if idempotency_key:
-        existing = db.scalar(select(CommercePayment).where(CommercePayment.company_id == company_id, CommercePayment.idempotency_key == idempotency_key).with_for_update())
+        existing = db.scalar(select(CommercePayment).where(
+            CommercePayment.company_id == company_id,
+            CommercePayment.idempotency_key == idempotency_key,
+        ).with_for_update())
         if existing:
+            same_payload = (
+                existing.document_kind == document_kind
+                and existing.document_id == document_id
+                and Decimal(existing.amount) == Decimal(amount)
+                and Decimal(existing.wht_amount or 0) == Decimal(wht_amount)
+                and existing.payment_date == payment_date
+                and existing.method == method
+                and existing.reference == reference
+            )
+            if not same_payload:
+                raise ValueError("Idempotency key has already been used with a different payment payload")
+            if existing.status != "posted":
+                raise ValueError("The idempotent payment is no longer posted")
             return document, existing
     balance = Decimal(document.total or 0) - Decimal(document.paid_total or 0)
     if amount > balance:
