@@ -18,6 +18,25 @@ services:
     networks:
       - primeerp
 
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: primeerp-migrate
+    restart: "no"
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      DEBUG: ${DEBUG:-false}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-primeerp}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-primeerp}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set}
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - primeerp
+
   backend:
     build:
       context: ./backend
@@ -35,17 +54,27 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
       CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set}
+      ETA_ENABLED: ${ETA_ENABLED:-false}
+      ETA_IDENTITY_URL: ${ETA_IDENTITY_URL:-https://id.eta.gov.eg/connect/token}
+      ETA_API_BASE_URL: ${ETA_API_BASE_URL:-https://api.invoicing.eta.gov.eg}
+      ETA_API_VERSION: ${ETA_API_VERSION:-1}
+      ETA_CLIENT_ID: ${ETA_CLIENT_ID:-}
+      ETA_CLIENT_SECRET: ${ETA_CLIENT_SECRET:-}
+      ETA_CLIENT_CERTIFICATE_PATH: ${ETA_CLIENT_CERTIFICATE_PATH:-}
+      ETA_CLIENT_CERTIFICATE_PASSWORD: ${ETA_CLIENT_CERTIFICATE_PASSWORD:-}
+      ETA_NOTIFICATION_SECRET: ${ETA_NOTIFICATION_SECRET:-}
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]
     depends_on:
-      db:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8001/ready"]
       interval: 15s
       timeout: 5s
       retries: 10
       start_period: 30s
-    ports:
-      - "8001:8001"
+    expose:
+      - "8001"
     networks:
       - primeerp
 
