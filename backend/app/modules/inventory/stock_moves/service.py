@@ -144,6 +144,8 @@ class InventoryStockMoveService:
                 InventoryStockMove.company_id == company_id,
                 InventoryStockMove.item_id == item_id,
                 InventoryStockMove.status == "posted",
+                InventoryStockMove.movement_type.in_(("receipt", "return", "transfer")),
+                InventoryStockMove.destination_location_id.is_not(None),
             ).order_by(InventoryStockMove.id).with_for_update())
             if legacy_move is None:
                 raise ValueError("FIFO stock has no cost layers")
