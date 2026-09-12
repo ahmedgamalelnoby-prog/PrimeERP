@@ -7,6 +7,7 @@ from app.database.session import get_db
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.platform.subscriptions.schemas import (
+    SubscriptionConvertToPaid,
     SubscriptionCreate,
     SubscriptionResponse,
     SubscriptionUpdate,
@@ -93,7 +94,23 @@ def activate_subscription(
     try:
         return svc.activate(subscription_id)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post("/{subscription_id}/convert-to-paid", response_model=SubscriptionResponse)
+def convert_to_paid(
+    subscription_id: int,
+    schema: SubscriptionConvertToPaid,
+    current_user: User = Depends(get_current_user),
+    svc: SubscriptionService = Depends(service),
+):
+    """Convert a tenant trial/past-due subscription into a paid subscription."""
+    try:
+        subscription = svc._get(subscription_id)
+        authorize_tenant(subscription.tenant_id, current_user)
+        return svc.convert_to_paid(subscription_id, schema)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.post("/{subscription_id}/cancel", response_model=SubscriptionResponse)
@@ -122,4 +139,4 @@ def update_subscription(
     try:
         return svc.update(subscription_id, schema)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
