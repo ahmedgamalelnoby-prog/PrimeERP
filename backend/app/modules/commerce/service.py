@@ -3,6 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.modules.accounting.models import TaxRate
+from app.modules.accounting.tax_engine import calculate_taxes
 from app.modules.commerce.models import BusinessPartner, CommercePayment, PurchaseDocument, PurchaseLine, SalesDocument, SalesLine
 from app.modules.commerce.payment_workflow import post_payment, reverse_payment
 from app.modules.inventory.items.models import InventoryItem
@@ -45,14 +46,23 @@ class CommerceService:
             if p.tax_rate_id is None and p.tax_percent != 0:
                 raise ValueError("Tax Master is required for non-zero tax rates")
             tax_percent = Decimal("0")
+            tax_amount = Decimal("0")
             if p.tax_rate_id:
                 tax_rate = db.scalar(select(TaxRate).where(TaxRate.id == p.tax_rate_id, TaxRate.company_id == payload.company_id, TaxRate.is_active.is_(True)))
                 if not tax_rate: raise ValueError(f"Tax rate {p.tax_rate_id} not found")
                 if tax_rate.is_withholding: raise ValueError("Withholding tax must be applied at payment, not as invoice VAT")
                 tax_percent = Decimal(tax_rate.rate)
-            gross = p.quantity * p.unit_price; disc = gross * p.discount_percent / Decimal("100"); net = gross - disc; tx = net * tax_percent / Decimal("100")
-            obj.lines.append(line_model(item_id=p.item_id, tax_rate_id=p.tax_rate_id, description=p.description, quantity=p.quantity, unit_price=p.unit_price, discount_percent=p.discount_percent, tax_percent=tax_percent, line_total=net + tx))
-            subtotal += net; discount += disc; tax += tx
+            gross = p.quantity * p.unit_price
+            disc = gross * p.discount_percent / Decimal("100")
+            net = gross - disc
+            if net < 0:
+                raise ValueError("Line discount cannot exceed the line gross amount")
+            if p.tax_rate_id:
+                tax_result = calculate_taxes(db, company_id=payload.company_id, amount=net, tax_ids=[p.tax_rate_id], inclusive=False)
+                tax_amount = Decimal(tax_result["tax_total"])
+            line_total = net + tax_amount
+            obj.lines.append(line_model(item_id=p.item_id, tax_rate_id=p.tax_rate_id, description=p.description, quantity=p.quantity, unit_price=p.unit_price, discount_percent=p.discount_percent, tax_percent=tax_percent, line_total=line_total))
+            subtotal += net; discount += disc; tax += tax_amount
         obj.subtotal = subtotal; obj.discount_total = discount; obj.tax_total = tax; obj.total = subtotal + tax
         db.add(obj); db.flush(); return obj
 
@@ -93,19 +103,7 @@ class CommerceService:
         obj.status = "fulfilled" if kind == "sale" else "received"; db.flush(); return obj
 
     def pay(self, db, payload, kind):
-        return post_payment(
-            db,
-            company_id=payload.company_id,
-            document_kind=kind,
-            document_id=payload.document_id,
-            amount=payload.amount,
-            payment_date=payload.payment_date,
-            method=payload.method,
-            wht_amount=payload.wht_amount,
-            reference=payload.reference,
-            notes=payload.notes,
-            idempotency_key=payload.idempotency_key,
-        )
+        return post_payment(db, company_id=payload.company_id, document_kind=kind, document_id=payload.document_id, amount=payload.amount, payment_date=payload.payment_date, method=payload.method, wht_amount=payload.wht_amount, reference=payload.reference, notes=payload.notes, idempotency_key=payload.idempotency_key)
 
     def reverse_payment(self, db, company_id: int, payment_id: int, reversal_date, notes=None):
         return reverse_payment(db, company_id=company_id, payment_id=payment_id, reversal_date=reversal_date, notes=notes)
