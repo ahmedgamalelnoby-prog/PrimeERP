@@ -7,7 +7,7 @@ from app.modules.identity.models.refresh_token import RefreshToken
 from app.modules.identity.repositories.user_repository import user_repository
 from app.modules.identity.schemas.auth import LoginRequest
 from app.modules.identity.services.password_service import password_service
-from app.modules.identity.services.refresh_token_service import refresh_token_service
+from app.modules.identity.services.refresh_token_service import RefreshTokenReuseError, refresh_token_service
 from app.modules.identity.services.token_service import token_service
 from app.modules.saas.models import Subscription, SystemModule, Tenant, TenantModule
 
@@ -32,8 +32,8 @@ class AuthenticationService:
             subscription = self._get_latest_subscription(db, tenant.id)
             if subscription is not None and self._subscription_is_expired(subscription):
                 subscription.status = "expired"
-                subscription = subscription
                 tenant.status = "expired"
+                tenant.is_active = False
             enabled_modules = self._get_enabled_modules(db, tenant.id)
 
         user.last_login = datetime.now(timezone.utc)
@@ -60,7 +60,11 @@ class AuthenticationService:
         }
 
     def refresh(self, db: Session, refresh_token: str) -> dict:
-        record = refresh_token_service.consume(db, refresh_token)
+        try:
+            record = refresh_token_service.consume(db, refresh_token)
+        except RefreshTokenReuseError as exc:
+            db.commit()
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token reuse detected; the session family has been revoked") from exc
         if record is None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token")
         user = user_repository.get_by_id(db=db, user_id=record.user_id)
@@ -73,9 +77,10 @@ class AuthenticationService:
             if subscription is not None and self._subscription_is_expired(subscription):
                 subscription.status = "expired"
                 tenant.status = "expired"
+                tenant.is_active = False
 
         access_token, expires_in = token_service.create_access_token(user)
-        new_refresh_token = refresh_token_service.issue(db, user.id)
+        new_refresh_token = refresh_token_service.issue(db, user.id, family_id=record.family_id)
         db.flush()
         new_record = db.query(RefreshToken).filter(
             RefreshToken.token_hash == refresh_token_service.hash_token(new_refresh_token)
@@ -97,7 +102,7 @@ class AuthenticationService:
         if tenant_id is None:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is not assigned to a tenant")
         tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
-        if tenant is None or not tenant.is_active:
+        if tenant is None:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant is inactive")
         if tenant.status in {"suspended", "cancelled"}:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Tenant status is {tenant.status}")
