@@ -42,8 +42,19 @@ jobs:
         shell: powershell
         env:
           DATABASE_URL: sqlite:///./primeerp_ci_smoke.db
+          APP_ENV: test
+        run: python -c "import main; print('Application import OK:', main.app.title)"
+      - name: Validate production configuration rejects unsafe defaults
+        shell: powershell
+        env:
+          APP_ENV: production
+          DEBUG: 'false'
+          DATABASE_URL: sqlite:///./unsafe.db
+          SECRET_KEY: your-secret-key-change-this-in-production
+          CORS_ORIGINS: https://erp.example.com
         run: |
-          python -c "import main; print('Application import OK:', main.app.title)"
+          python -c "from app.core.config import Settings; Settings(); raise SystemExit('Production safety validation failed to reject unsafe configuration')"
+        continue-on-error: false
       - name: Prepare CI database
         shell: powershell
         run: |
