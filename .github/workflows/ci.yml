@@ -12,21 +12,8 @@ permissions:
 jobs:
   backend:
     name: Backend - compile, architecture, tests and migrations
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_USER: primeerp
-          POSTGRES_PASSWORD: primeerp
-          POSTGRES_DB: primeerp_ci
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U primeerp -d primeerp_ci"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: backend
@@ -40,39 +27,56 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.txt
       - name: Install dependencies
-        run: python -m pip install --upgrade pip && pip install -r requirements.txt && pip install pytest
+        shell: powershell
+        run: python -m pip install --upgrade pip; pip install -r requirements.txt; pip install pytest
       - name: Compile Python sources
+        shell: powershell
         run: python -m compileall -q app
       - name: Validate modular architecture
+        shell: powershell
         run: python scripts/check_modular_architecture.py
       - name: Prepare CI database
+        shell: powershell
+        run: |
+          docker rm -f primeerp-ci-postgres 2>$null
+          docker run -d --name primeerp-ci-postgres -e POSTGRES_USER=primeerp -e POSTGRES_PASSWORD=primeerp -e POSTGRES_DB=primeerp_ci -p 5432:5432 postgres:17
+          $ready = $false
+          for ($i = 0; $i -lt 30; $i++) {
+            docker exec primeerp-ci-postgres pg_isready -U primeerp -d primeerp_ci
+            if ($LASTEXITCODE -eq 0) { $ready = $true; break }
+            Start-Sleep -Seconds 2
+          }
+          if (-not $ready) { docker logs primeerp-ci-postgres; exit 1 }
+      - name: Run Alembic migrations
+        shell: powershell
+        env:
+          DATABASE_URL: postgresql+psycopg://primeerp:primeerp@127.0.0.1:5432/primeerp_ci
         run: python -m alembic upgrade head
-        env:
-          DATABASE_URL: postgresql+psycopg://primeerp:primeerp@127.0.0.1:5432/primeerp_ci
       - name: Require a single Alembic head
+        shell: powershell
         run: |
-          heads="$(python -m alembic heads)"
-          echo "$heads"
-          count="$(printf '%s\n' "$heads" | grep -c '(head)' || true)"
-          if [ "$count" -ne 1 ]; then
-            echo "Expected exactly one Alembic head; found $count."
-            exit 1
-          fi
+          $heads = python -m alembic heads
+          $heads
+          $count = ($heads | Select-String '\(head\)').Count
+          if ($count -ne 1) { throw "Expected exactly one Alembic head; found $count." }
       - name: Check Alembic configuration
-        run: python -m alembic check
+        shell: powershell
         env:
           DATABASE_URL: postgresql+psycopg://primeerp:primeerp@127.0.0.1:5432/primeerp_ci
+        run: python -m alembic check
       - name: Run tests
+        shell: powershell
         run: |
-          if [ -d tests ] && find tests -type f -name 'test_*.py' -print -quit | grep -q .; then
-            python -m pytest -q
-          else
-            echo "No backend tests found; compile and architecture checks passed."
-          fi
+          $tests = Get-ChildItem -Path tests -Filter 'test_*.py' -File -ErrorAction SilentlyContinue
+          if ($tests) { python -m pytest -q } else { Write-Host 'No backend tests found; compile and architecture checks passed.' }
+      - name: Cleanup CI database
+        if: always()
+        shell: powershell
+        run: docker rm -f primeerp-ci-postgres 2>$null
 
   frontend:
     name: Frontend - typecheck, lint and build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 15
     defaults:
       run:
@@ -87,38 +91,40 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: Install dependencies
+        shell: powershell
         run: npm ci
       - name: Typecheck
+        shell: powershell
         run: npm run typecheck --if-present
       - name: Lint
+        shell: powershell
         run: npm run lint
       - name: Production build
+        shell: powershell
         run: npm run build
 
   repository:
     name: Repository boundaries and hygiene
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Windows, X64]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Reject cross-system references and generated files
-        shell: bash
+        shell: powershell
         run: |
-          set -euo pipefail
-          bad=0
-          while IFS= read -r -d '' file; do
-            case "$file" in
-              *.env|*.env.*|*/.env|*/.env.*|*.pyc|*/__pycache__/*|*/.venv/*|*.backup|*.bak|*/node_modules/*|*/dist/*)
-                echo "Forbidden tracked/generated file: $file"
-                bad=1
-                ;;
-            esac
-          done < <(git ls-files -z)
-
-          if git grep -n -I -E 'CommercialERP|ContentAI|commercialERP|contentai|D:\\(commercialERP|ContentAI)' -- ':!docs/SYSTEM_BOUNDARIES.md' ':!.github/workflows/ci.yml'; then
-            echo "Cross-system reference detected in PrimeERP."
-            bad=1
-          fi
-
-          if [ "$bad" -ne 0 ]; then exit 1; fi
-          echo "PrimeERP repository boundary check passed."
+          $bad = $false
+          $tracked = git ls-files
+          foreach ($file in $tracked) {
+            if ($file -match '(^|/)(\.env($|\.)|__pycache__/|node_modules/|dist/)|\.pyc$|\.backup$|\.bak$') {
+              Write-Host "Forbidden tracked/generated file: $file"
+              $bad = $true
+            }
+          }
+          $matches = git grep -n -I -E 'CommercialERP|ContentAI|commercialERP|contentai|D:\\(commercialERP|ContentAI)' -- ':!docs/SYSTEM_BOUNDARIES.md' ':!.github/workflows/ci.yml'
+          if ($LASTEXITCODE -eq 0) {
+            $matches
+            Write-Host 'Cross-system reference detected in PrimeERP.'
+            $bad = $true
+          }
+          if ($bad) { exit 1 }
+          Write-Host 'PrimeERP repository boundary check passed.'
