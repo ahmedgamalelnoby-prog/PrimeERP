@@ -42,3 +42,21 @@ class IntegrationEvent(Base):
     __table_args__ = (
         UniqueConstraint("connection_id", "external_event_id", name="uq_integration_event_external_id"),
     )
+
+
+class IntegrationMapping(Base):
+    __tablename__ = "integration_mappings"
+
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    connection_id = Column(Integer, ForeignKey("integration_connections.id", ondelete="CASCADE"), nullable=False, index=True)
+    entity_type = Column(String(40), nullable=False)
+    external_id = Column(String(160), nullable=False)
+    local_id = Column(Integer, nullable=False)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("connection_id", "entity_type", "external_id", name="uq_integration_mapping_external"),
+        UniqueConstraint("connection_id", "entity_type", "local_id", name="uq_integration_mapping_local"),
+    )
