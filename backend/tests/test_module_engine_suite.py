@@ -41,8 +41,9 @@ class ModuleEngineTests(unittest.TestCase):
         registry = ModuleRegistry()
         a = ModuleManifest("test/a", "A", dependencies=("test/b",))
         b = ModuleManifest("test/b", "B", dependencies=("test/a",))
+        registry.register_many([a, b])
         with self.assertRaises(ModuleRegistryError):
-            registry.register_many([a, b])
+            registry.validate_graph()
 
     def test_tenant_entitlement_does_not_globally_enable(self) -> None:
         registry = ModuleRegistry()
