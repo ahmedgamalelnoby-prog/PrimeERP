@@ -17,7 +17,7 @@ class ModuleEvent:
     name: str
     context: ModuleContext
     payload: Mapping[str, Any]
-    source_module: str
+    source_module: str = "legacy"
 
     def __post_init__(self) -> None:
         if not self.name.strip():
