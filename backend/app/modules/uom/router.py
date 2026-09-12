@@ -60,9 +60,9 @@ def list_uom(company_id: int = Query(..., gt=0), category: str | None = None, cu
 @router.get("/convert", dependencies=[Depends(require_permission("uom.access"))])
 def convert(
     company_id: int,
-    quantity: Decimal = Query(..., gt=0),
     from_uom_id: int,
     to_uom_id: int,
+    quantity: Decimal = Query(..., gt=0),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
