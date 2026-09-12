@@ -32,6 +32,7 @@ from app.modules.branches.router import router as branches_router
 from app.modules.treasury.router import router as treasury_router
 from app.modules.egyptian_einvoice.router import router as egyptian_einvoice_router
 from app.modules.audit.router import router as audit_router
+from app.modules.roles.router import router as roles_router
 
 
 def build_router() -> APIRouter:
@@ -57,5 +58,6 @@ def build_router() -> APIRouter:
     api_router.include_router(plans_router)
     api_router.include_router(subscriptions_router)
     api_router.include_router(tenants_router, prefix="/platform")
+    api_router.include_router(roles_router)
     api_router.include_router(legal_router)
     return api_router
