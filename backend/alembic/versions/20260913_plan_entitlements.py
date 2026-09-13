@@ -28,6 +28,19 @@ def upgrade():
     op.create_check_constraint("ck_plan_max_integrations", "plans", "max_integrations IS NULL OR max_integrations >= 0")
     op.create_check_constraint("ck_plan_storage_limit_mb", "plans", "storage_limit_mb IS NULL OR storage_limit_mb >= 1")
 
+    # Preserve the existing plans while making their limits configurable and
+    # repairing Arabic labels that were inserted through a non-UTF-8 client.
+    op.execute(sa.text("""
+        UPDATE plans
+        SET name_ar = CASE code
+            WHEN 'free' THEN 'مجاني'
+            WHEN 'pro' THEN 'احترافي'
+            WHEN 'enterprise' THEN 'مؤسسي'
+            ELSE name_ar
+        END
+        WHERE code IN ('free', 'pro', 'enterprise')
+    """))
+
 
 def downgrade():
     op.drop_constraint("ck_plan_storage_limit_mb", "plans", type_="check")
