@@ -2,6 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.modules.accounting.models import TaxRate
 from app.modules.inventory.items.models import InventoryItem
 from app.modules.inventory.items.repository import inventory_item_repository
 from app.modules.inventory.items.schemas import InventoryItemCreate, InventoryItemUpdate
@@ -46,6 +47,30 @@ class InventoryItemService:
 
         raise ValueError("A valid active UOM is required for the inventory item")
 
+    def _validate_tax_profile(self, db: Session, *, company_id: int, tax_ids: list[int], profile_name: str):
+        if not tax_ids:
+            return []
+        taxes = list(
+            db.scalars(
+                select(TaxRate).where(
+                    TaxRate.company_id == company_id,
+                    TaxRate.id.in_(tax_ids),
+                    TaxRate.is_active.is_(True),
+                )
+            ).all()
+        )
+        found = {tax.id: tax for tax in taxes}
+        missing = [tax_id for tax_id in tax_ids if tax_id not in found]
+        if missing:
+            raise ValueError(f"{profile_name} contains inactive or invalid tax ids: {missing}")
+        return [tax.id for tax in taxes]
+
+    def _validate_tax_profiles(self, db: Session, *, company_id: int, sales_tax_ids: list[int], purchase_tax_ids: list[int]):
+        return (
+            self._validate_tax_profile(db, company_id=company_id, tax_ids=sales_tax_ids, profile_name="Sales tax profile"),
+            self._validate_tax_profile(db, company_id=company_id, tax_ids=purchase_tax_ids, profile_name="Purchase tax profile"),
+        )
+
     def create(self, db: Session, payload: InventoryItemCreate, *, tenant_id: int | None = None):
         if tenant_id is not None:
             enforce_product_limit(db, tenant_id, payload.company_id)
@@ -56,9 +81,17 @@ class InventoryItemService:
             uom_id=payload.uom_id,
             uom_code=payload.uom,
         )
+        sales_tax_ids, purchase_tax_ids = self._validate_tax_profiles(
+            db,
+            company_id=payload.company_id,
+            sales_tax_ids=payload.sales_tax_ids,
+            purchase_tax_ids=payload.purchase_tax_ids,
+        )
         values = payload.model_dump()
         values["uom_id"] = uom.id
         values["uom"] = uom.code
+        values["sales_tax_ids"] = sales_tax_ids
+        values["purchase_tax_ids"] = purchase_tax_ids
         item = InventoryItem(**values)
         db.add(item)
         try:
@@ -91,6 +124,18 @@ class InventoryItemService:
             )
             values["uom_id"] = uom.id
             values["uom"] = uom.code
+
+        sales_tax_ids = values.get("sales_tax_ids", item.sales_tax_ids or [])
+        purchase_tax_ids = values.get("purchase_tax_ids", item.purchase_tax_ids or [])
+        if "sales_tax_ids" in values or "purchase_tax_ids" in values:
+            sales_tax_ids, purchase_tax_ids = self._validate_tax_profiles(
+                db,
+                company_id=company_id,
+                sales_tax_ids=sales_tax_ids,
+                purchase_tax_ids=purchase_tax_ids,
+            )
+            values["sales_tax_ids"] = sales_tax_ids
+            values["purchase_tax_ids"] = purchase_tax_ids
 
         for key, value in values.items():
             setattr(item, key, value)
