@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, CheckConstraint, Column, Date, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Column, Date, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text
 from sqlalchemy.orm import relationship
 from app.database.base import Base
 
@@ -48,6 +48,7 @@ class SalesLine(Base):
     document_id = Column(Integer, ForeignKey("sales_documents.id", ondelete="CASCADE"), nullable=False, index=True)
     item_id = Column(Integer, ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False, index=True)
     tax_rate_id = Column(Integer, ForeignKey("tax_rates.id", ondelete="RESTRICT"), nullable=True, index=True)
+    tax_rate_ids = Column(JSON, nullable=False, default=list)
     description = Column(String(250), nullable=True)
     quantity = Column(Numeric(18, 4), nullable=False)
     unit_price = Column(Numeric(18, 4), nullable=False)
@@ -86,6 +87,7 @@ class PurchaseLine(Base):
     document_id = Column(Integer, ForeignKey("purchase_documents.id", ondelete="CASCADE"), nullable=False, index=True)
     item_id = Column(Integer, ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False, index=True)
     tax_rate_id = Column(Integer, ForeignKey("tax_rates.id", ondelete="RESTRICT"), nullable=True, index=True)
+    tax_rate_ids = Column(JSON, nullable=False, default=list)
     description = Column(String(250), nullable=True)
     quantity = Column(Numeric(18, 4), nullable=False)
     unit_price = Column(Numeric(18, 4), nullable=False)
