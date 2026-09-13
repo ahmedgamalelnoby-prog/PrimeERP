@@ -9,6 +9,7 @@ from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.inventory.items.schemas import InventoryItemCreate, InventoryItemResponse, InventoryItemUpdate
 from app.modules.inventory.items.service import inventory_item_service
+from app.modules.saas.entitlements import require_module
 
 router = APIRouter(prefix="/inventory/items", tags=["Inventory - Items"])
 
@@ -22,7 +23,7 @@ def _company_for_user(db: Session, company_id: int, user: User) -> Company:
     return company
 
 
-@router.get("", response_model=list[InventoryItemResponse], dependencies=[Depends(require_permission("inventory.access"))])
+@router.get("", response_model=list[InventoryItemResponse], dependencies=[Depends(require_permission("inventory.access")), Depends(require_module("inventory"))])
 def list_items(
     company_id: int = Query(..., gt=0),
     active_only: bool = True,
@@ -33,7 +34,7 @@ def list_items(
     return inventory_item_service.list(db, company_id=company_id, active_only=active_only)
 
 
-@router.get("/{item_id}", response_model=InventoryItemResponse, dependencies=[Depends(require_permission("inventory.access"))])
+@router.get("/{item_id}", response_model=InventoryItemResponse, dependencies=[Depends(require_permission("inventory.access")), Depends(require_module("inventory"))])
 def get_item(
     item_id: int,
     company_id: int = Query(..., gt=0),
@@ -47,7 +48,7 @@ def get_item(
     return item
 
 
-@router.get("/{item_id}/stock", dependencies=[Depends(require_permission("inventory.access"))])
+@router.get("/{item_id}/stock", dependencies=[Depends(require_permission("inventory.access")), Depends(require_module("inventory"))])
 def get_item_stock(
     item_id: int,
     company_id: int = Query(..., gt=0),
@@ -61,20 +62,20 @@ def get_item_stock(
     return inventory_item_service.stock(db, company_id=company_id, item_id=item_id)
 
 
-@router.post("", response_model=InventoryItemResponse, status_code=201, dependencies=[Depends(require_permission("inventory.write"))])
+@router.post("", response_model=InventoryItemResponse, status_code=201, dependencies=[Depends(require_permission("inventory.write")), Depends(require_module("inventory"))])
 def create_item(
     payload: InventoryItemCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _company_for_user(db, payload.company_id, current_user)
+    company = _company_for_user(db, payload.company_id, current_user)
     try:
-        return inventory_item_service.create(db, payload)
+        return inventory_item_service.create(db, payload, tenant_id=company.tenant_id)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
-@router.patch("/{item_id}", response_model=InventoryItemResponse, dependencies=[Depends(require_permission("inventory.write"))])
+@router.patch("/{item_id}", response_model=InventoryItemResponse, dependencies=[Depends(require_permission("inventory.write")), Depends(require_module("inventory"))])
 def update_item(
     item_id: int,
     payload: InventoryItemUpdate,
