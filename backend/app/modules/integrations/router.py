@@ -19,6 +19,7 @@ from .salla_models import SallaCustomer, SallaInvoice, SallaOrder, SallaOrderIte
 from .salla_service import normalize_salla_event
 from .salla_sync import full_sync
 from .salla_erp_finalize import finalize_salla_order
+from .salla_shipping_service import sync_salla_shipment
 
 MAX_WEBHOOK_BODY_BYTES = 1_048_576
 router = APIRouter(prefix="/integrations", tags=["Integrations"], dependencies=[Depends(require_permission("integrations.access")), Depends(require_module("integrations"))])
@@ -66,6 +67,13 @@ def _process_event(db: Session, event: IntegrationEvent) -> dict:
             if order_id is not None:
                 order = db.scalar(select(SallaOrder).where(SallaOrder.connection_id == event.connection_id, SallaOrder.external_id == str(order_id)))
                 if order: result["erp"] = finalize_salla_order(db, order)
+        elif event_key.startswith("shipment") or "shipment." in event_key:
+            payload = json.loads(event.payload) if isinstance(event.payload, str) else event.payload
+            data = payload.get("data", payload) if isinstance(payload, dict) else {}
+            shipment_id = data.get("id") or data.get("shipment_id")
+            if shipment_id is not None:
+                shipment = db.scalar(select(SallaShipment).where(SallaShipment.connection_id == event.connection_id, SallaShipment.external_id == str(shipment_id)))
+                if shipment: result["erp_shipping"] = sync_salla_shipment(db, shipment)
         event.status = "processed"; event.processed_at = datetime.now(timezone.utc); event.last_error = None; db.commit(); return result
     except Exception as exc:
         db.rollback(); failed = db.scalar(select(IntegrationEvent).where(IntegrationEvent.id == event.id))
