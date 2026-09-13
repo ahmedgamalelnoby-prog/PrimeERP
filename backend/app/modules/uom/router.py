@@ -11,7 +11,7 @@ from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.saas.entitlements import require_module
 from .models import UnitOfMeasure
-from .schemas import UOMCreate, UOMResponse
+from .schemas import UOMCreate, UOMResponse, UOMUpdate
 
 router = APIRouter(prefix="/uom", tags=["Units of Measure"], dependencies=[Depends(require_module("inventory"))])
 
@@ -42,6 +42,26 @@ def list_uom(company_id: int = Query(..., gt=0), category: str | None = None, cu
     _company_for_user(db, company_id, current_user); q = select(UnitOfMeasure).where(UnitOfMeasure.company_id == company_id, UnitOfMeasure.is_active.is_(True))
     if category: q = q.where(UnitOfMeasure.category == category.strip().lower())
     return list(db.scalars(q.order_by(UnitOfMeasure.category, UnitOfMeasure.code)).all())
+
+
+@router.patch("/{uom_id}", response_model=UOMResponse, dependencies=[Depends(require_permission("uom.write"))])
+def update_uom(uom_id: int, payload: UOMUpdate, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company_for_user(db, company_id, current_user)
+    obj = db.scalar(select(UnitOfMeasure).where(UnitOfMeasure.id == uom_id, UnitOfMeasure.company_id == company_id).with_for_update())
+    if obj is None: raise HTTPException(404, "UOM not found")
+    values = payload.model_dump(exclude_unset=True)
+    if "factor_to_base" in values and values["factor_to_base"] is not None and Decimal(values["factor_to_base"]) <= 0: raise HTTPException(422, "UOM conversion factor must be positive")
+    if values.get("is_base") is True:
+        factor = Decimal(values.get("factor_to_base", obj.factor_to_base))
+        if factor != Decimal("1"): raise HTTPException(422, "A base UOM must have factor_to_base equal to 1")
+        duplicate = db.scalar(select(UnitOfMeasure).where(UnitOfMeasure.company_id == company_id, UnitOfMeasure.category == obj.category, UnitOfMeasure.is_base.is_(True), UnitOfMeasure.is_active.is_(True), UnitOfMeasure.id != obj.id))
+        if duplicate: raise HTTPException(409, "An active base UOM already exists for this category")
+    if values.get("is_active") is True and obj.is_base:
+        values.setdefault("factor_to_base", Decimal("1"))
+    if values.get("is_active") is False and obj.is_base:
+        raise HTTPException(409, "Base UOM cannot be deactivated while marked as base")
+    for key, value in values.items(): setattr(obj, key, value)
+    db.commit(); db.refresh(obj); return obj
 
 
 @router.get("/convert", dependencies=[Depends(require_permission("uom.access"))])
