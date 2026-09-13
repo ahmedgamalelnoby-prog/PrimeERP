@@ -16,7 +16,9 @@ class InventoryItemCreate(BaseModel):
     name_en: Optional[str] = Field(default=None, max_length=200)
     category_id: Optional[int] = Field(default=None, gt=0)
     item_type: ItemType = "stockable"
+    # uom is retained for compatibility; uom_id is the canonical master reference.
     uom: str = Field(default="unit", min_length=1, max_length=30)
+    uom_id: Optional[int] = Field(default=None, gt=0)
     costing_method: CostingMethod = "weighted_average"
     standard_cost: Decimal = Field(default=0, ge=0)
     sales_price: Decimal = Field(default=0, ge=0)
@@ -32,6 +34,7 @@ class InventoryItemUpdate(BaseModel):
     category_id: Optional[int] = Field(default=None, gt=0)
     item_type: Optional[ItemType] = None
     uom: Optional[str] = Field(default=None, min_length=1, max_length=30)
+    uom_id: Optional[int] = Field(default=None, gt=0)
     costing_method: Optional[CostingMethod] = None
     standard_cost: Optional[Decimal] = Field(default=None, ge=0)
     sales_price: Optional[Decimal] = Field(default=None, ge=0)
@@ -53,6 +56,7 @@ class InventoryItemResponse(BaseModel):
     name_en: Optional[str]
     item_type: str
     uom: str
+    uom_id: Optional[int]
     costing_method: str
     standard_cost: Decimal
     sales_price: Decimal
