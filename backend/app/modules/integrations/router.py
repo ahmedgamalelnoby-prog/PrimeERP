@@ -19,6 +19,7 @@ from .models import IntegrationConnection, IntegrationEvent
 from .schemas import ConnectionCreate, ConnectionResponse, WebhookEventCreate
 from .salla_models import SallaCustomer, SallaInvoice, SallaOrder, SallaOrderItem, SallaProduct, SallaProductVariant, SallaShipment
 from .salla_service import normalize_salla_event
+from .salla_sync import full_sync
 
 MAX_WEBHOOK_BODY_BYTES = 1_048_576
 
@@ -124,6 +125,18 @@ def create_connection(payload: ConnectionCreate, current_user: User = Depends(ge
 def list_connections(company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
     return db.scalars(select(IntegrationConnection).where(IntegrationConnection.company_id == company_id).order_by(IntegrationConnection.id.desc())).all()
+
+
+@router.post("/salla/{connection_id}/sync", status_code=202, dependencies=[Depends(require_permission("integrations.write"))])
+def sync_salla(connection_id: int, from_date: str | None = Query(default=None), to_date: str | None = Query(default=None), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    connection = _get_salla_connection(db, connection_id)
+    _company_for_user(db, connection.company_id, current_user)
+    try:
+        result = full_sync(db, connection_id, from_date=from_date, to_date=to_date)
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(502, f"Salla synchronization failed: {exc}") from exc
+    return {"accepted": True, "connection_id": connection_id, "result": result}
 
 
 @public_router.post("/salla/{connection_id}/webhook/public", status_code=202)
