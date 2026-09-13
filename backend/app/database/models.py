@@ -1,10 +1,10 @@
 """Central SQLAlchemy model registry."""
+from app.modules.identity.models.user import User
+from app.modules.identity.models.refresh_token import RefreshToken
 from app.modules.saas.models import PlanModule, Subscription, SubscriptionPlan, SystemModule, Tenant, TenantModule
 from app.modules.platform.plans.models import Plan
 from app.modules.companies.models import Company
 from app.modules.branches.models import Branch
-from app.modules.identity.models.user import User
-from app.modules.identity.models.refresh_token import RefreshToken
 from app.modules.roles.models import Permission, Role, role_permissions
 from app.modules.legal.models import LegalAcceptance, LegalDocument
 from app.modules.audit.models import AuditEvent
