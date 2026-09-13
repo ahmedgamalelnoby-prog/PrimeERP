@@ -15,7 +15,10 @@ class InventoryItem(Base):
     name_ar = Column(String(200), nullable=False)
     name_en = Column(String(200), nullable=True)
     item_type = Column(String(30), nullable=False, default="stockable")
+    # Legacy code kept for backward compatibility with existing integrations.
     uom = Column(String(30), nullable=False, default="unit")
+    # Canonical UOM master reference used by new flows and conversions.
+    uom_id = Column(Integer, ForeignKey("units_of_measure.id", ondelete="RESTRICT"), nullable=True, index=True)
     costing_method = Column(String(20), nullable=False, default="weighted_average")
     standard_cost = Column(Numeric(18, 4), nullable=False, default=0)
     sales_price = Column(Numeric(18, 4), nullable=False, default=0)
@@ -36,6 +39,7 @@ class InventoryItem(Base):
     )
 
     stocks = relationship("InventoryStock", back_populates="item", cascade="all, delete-orphan")
+    uom_master = relationship("UnitOfMeasure", foreign_keys=[uom_id])
 
 
 class InventoryStock(Base):
