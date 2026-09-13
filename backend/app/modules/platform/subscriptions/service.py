@@ -26,12 +26,7 @@ class SubscriptionService:
 
     @staticmethod
     def _period_days(billing_cycle: str) -> int:
-        return {
-            "monthly": 30,
-            "quarterly": 90,
-            "semi_annual": 182,
-            "yearly": 365,
-        }.get(billing_cycle, 30)
+        return {"monthly": 30, "quarterly": 90, "semi_annual": 182, "yearly": 365}.get(billing_cycle, 30)
 
     def _get(self, subscription_id: int, for_update: bool = False) -> Subscription:
         instance = self.repository.get_by_id(self.db, subscription_id, for_update)
@@ -71,6 +66,12 @@ class SubscriptionService:
             billing_cycle="monthly",
             trial_days=legacy.trial_days,
             grace_period_days=7,
+            max_users=legacy.max_users,
+            max_companies=legacy.max_companies,
+            max_branches=legacy.max_branches,
+            max_products=legacy.max_products,
+            max_integrations=legacy.max_integrations,
+            storage_limit_mb=legacy.storage_limit_mb,
             is_public=legacy.is_public,
             is_free=legacy.monthly_price == 0 and legacy.yearly_price == 0,
             status="active" if legacy.is_active else "inactive",
@@ -82,14 +83,11 @@ class SubscriptionService:
         return plan
 
     def _grace_period_days(self, plan_id: int) -> int:
-        """Resolve grace consistently for canonical and legacy plans."""
         plan = self.db.query(Plan).filter(Plan.id == plan_id).first()
         if plan is not None:
             return max(int(plan.grace_period_days or 0), 0)
         legacy = self.db.query(SubscriptionPlan).filter(SubscriptionPlan.id == plan_id).first()
-        if legacy is not None:
-            return 7
-        return 0
+        return 7 if legacy is not None else 0
 
     def _ensure_legacy_subscription_plan(self, plan: Plan) -> None:
         """Keep the legacy FK target synchronized until the physical table is migrated."""
@@ -97,6 +95,22 @@ class SubscriptionService:
         if legacy is not None:
             if legacy.code != plan.code:
                 raise ValueError("Plan identifier is already used by a different legacy plan")
+            legacy.name_ar = plan.name_ar or plan.name
+            legacy.name_en = plan.name
+            legacy.description_en = plan.description
+            legacy.monthly_price = plan.monthly_price
+            legacy.yearly_price = plan.yearly_price
+            legacy.currency_code = plan.currency
+            legacy.trial_days = plan.trial_days
+            legacy.is_public = plan.is_public
+            legacy.is_active = plan.status == "active"
+            legacy.display_order = plan.sort_order
+            legacy.max_users = plan.max_users
+            legacy.max_companies = plan.max_companies
+            legacy.max_branches = plan.max_branches
+            legacy.max_products = plan.max_products
+            legacy.max_integrations = plan.max_integrations
+            legacy.storage_limit_mb = plan.storage_limit_mb
             return
 
         self.db.add(
@@ -113,6 +127,12 @@ class SubscriptionService:
                 is_public=plan.is_public,
                 is_active=plan.status == "active",
                 display_order=plan.sort_order,
+                max_users=plan.max_users,
+                max_companies=plan.max_companies,
+                max_branches=plan.max_branches,
+                max_products=plan.max_products,
+                max_integrations=plan.max_integrations,
+                storage_limit_mb=plan.storage_limit_mb,
             )
         )
         self.db.flush()
@@ -121,35 +141,20 @@ class SubscriptionService:
         plan = self._resolve_plan(schema.plan_id)
         if plan.status != "active":
             raise ValueError("Only active plans can be subscribed to")
-
         now = schema.starts_at or self._now()
         trial_end = schema.trial_ends_at
         if trial_end is None and plan.trial_days > 0:
             trial_end = now + timedelta(days=plan.trial_days)
-
         ends_at = schema.ends_at or now + timedelta(days=self._period_days(schema.billing_cycle))
         if ends_at <= now:
             raise ValueError("Subscription end date must be after its start date")
-        conflict = self.repository.get_conflicting_for_tenant(
-            self.db,
-            schema.tenant_id,
-            starts_at=now,
-            ends_at=ends_at,
-        )
+        conflict = self.repository.get_conflicting_for_tenant(self.db, schema.tenant_id, starts_at=now, ends_at=ends_at)
         if conflict is not None:
             raise ValueError("Tenant already has an overlapping active subscription")
-
         self._ensure_legacy_subscription_plan(plan)
         subscription_status = "trialing" if trial_end and trial_end > now else "active"
         data = schema.model_dump()
-        data.update(
-            starts_at=now,
-            trial_ends_at=trial_end,
-            ends_at=ends_at,
-            next_billing_date=ends_at,
-            status=subscription_status,
-            is_auto_renew=schema.auto_renew,
-        )
+        data.update(starts_at=now, trial_ends_at=trial_end, ends_at=ends_at, next_billing_date=ends_at, status=subscription_status, is_auto_renew=schema.auto_renew)
         data.pop("auto_renew", None)
         instance = self.repository.create(self.db, data)
         self._sync_tenant_state(instance)
@@ -172,11 +177,9 @@ class SubscriptionService:
         return instance
 
     def convert_to_paid(self, subscription_id: int, schema: SubscriptionConvertToPaid) -> Subscription:
-        """Convert a trial/past-due subscription into a paid active subscription."""
         instance = self._get(subscription_id, True)
         if instance.status not in {"trialing", "past_due"}:
             raise ValueError("Only trialing or past_due subscriptions can be converted to paid")
-
         now = schema.starts_at or self._now()
         billing_cycle = schema.billing_cycle or instance.billing_cycle
         if schema.plan_id is not None:
@@ -185,7 +188,6 @@ class SubscriptionService:
                 raise ValueError("Only active plans can be used for paid conversion")
             self._ensure_legacy_subscription_plan(plan)
             instance.plan_id = plan.id
-
         instance.billing_cycle = billing_cycle
         instance.status = "active"
         instance.trial_ends_at = None
@@ -237,7 +239,6 @@ class SubscriptionService:
         tenant = self.db.query(Tenant).filter(Tenant.id == instance.tenant_id).with_for_update().first()
         if tenant is None:
             raise ValueError("Tenant not found")
-
         allowed = instance.status in {"trialing", "active", "past_due"}
         tenant.is_active = allowed
         tenant.is_trial = instance.status == "trialing"
@@ -247,7 +248,6 @@ class SubscriptionService:
     def _expire_if_needed(self, instance: Subscription) -> None:
         now = self._now()
         changed = False
-
         if instance.status == "trialing" and instance.trial_ends_at and instance.trial_ends_at <= now:
             instance.status = "expired"
             changed = True
@@ -259,14 +259,6 @@ class SubscriptionService:
             if instance.ends_at + timedelta(days=grace_days) <= now:
                 instance.status = "expired"
                 changed = True
-
         if changed:
             self._sync_tenant_state(instance)
             self.db.commit()
-
-    def is_tenant_access_allowed(self, tenant_id: int) -> bool:
-        instance = self.get_active_for_tenant(tenant_id)
-        return instance is not None and instance.status in {"trialing", "active", "past_due"}
-
-
-subscription_service = SubscriptionService
