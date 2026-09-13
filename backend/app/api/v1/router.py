@@ -20,7 +20,6 @@ from app.modules.platform.subscriptions.router import router as subscriptions_ro
 from app.modules.platform.tenants.router import router as tenants_router
 from app.modules.saas.router import router as saas_router
 from app.modules.transactions.api.router import router as transactions_router
-from app.modules.collections.router import router as collections_router
 from app.modules.commerce.router import router as commerce_router
 from app.modules.enterprise.router import router as enterprise_router
 from app.modules.shipping.router import router as shipping_router
@@ -44,7 +43,6 @@ def build_router() -> APIRouter:
     api_router.include_router(features_router)
     api_router.include_router(saas_router, prefix="/saas", tags=["saas"])
     api_router.include_router(transactions_router, prefix="/transactions", tags=["transactions"])
-    api_router.include_router(collections_router)
     api_router.include_router(fiscal_years_router, prefix="/accounting/fiscal-years", tags=["accounting-fiscal-years"], dependencies=[Depends(require_module("accounting"))])
     api_router.include_router(journal_entries_router, dependencies=[Depends(require_module("accounting"))])
     api_router.include_router(financial_reports_router, dependencies=[Depends(require_module("accounting"))])
