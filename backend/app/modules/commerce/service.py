@@ -28,6 +28,25 @@ class CommerceService:
         if partner_type: q = q.where(BusinessPartner.partner_type.in_([partner_type, "both"]))
         return list(db.scalars(q.order_by(BusinessPartner.name)).all())
 
+    def _resolve_line_tax_ids(self, db: Session, *, company_id: int, item: InventoryItem, explicit_tax_ids: list[int] | None, is_sale: bool) -> list[int]:
+        tax_ids = list(explicit_tax_ids) if explicit_tax_ids is not None else list((item.sales_tax_ids if is_sale else item.purchase_tax_ids) or [])
+        if not tax_ids:
+            return []
+        taxes = list(
+            db.scalars(
+                select(TaxRate).where(
+                    TaxRate.company_id == company_id,
+                    TaxRate.id.in_(tax_ids),
+                    TaxRate.is_active.is_(True),
+                )
+            ).all()
+        )
+        found = {tax.id for tax in taxes}
+        missing = [tax_id for tax_id in tax_ids if tax_id not in found]
+        if missing:
+            raise ValueError(f"Tax rate(s) not found or inactive: {missing}")
+        return tax_ids
+
     def create_document(self, db: Session, payload):
         is_sale = payload.document_type in SALE_TYPES
         if not is_sale and payload.document_type not in PURCHASE_TYPES: raise ValueError("Unsupported document type")
@@ -43,25 +62,25 @@ class CommerceService:
         for p in payload.lines:
             item = db.scalar(select(InventoryItem).where(InventoryItem.id == p.item_id, InventoryItem.company_id == payload.company_id, InventoryItem.is_active.is_(True)))
             if not item: raise ValueError(f"Item {p.item_id} not found")
-            if p.tax_rate_id is None and p.tax_percent != 0:
+            explicit_tax_ids = getattr(p, "tax_rate_ids", None)
+            tax_ids = self._resolve_line_tax_ids(db, company_id=payload.company_id, item=item, explicit_tax_ids=explicit_tax_ids, is_sale=is_sale)
+            if explicit_tax_ids is None and p.tax_percent != 0:
                 raise ValueError("Tax Master is required for non-zero tax rates")
-            tax_percent = Decimal("0")
-            tax_amount = Decimal("0")
-            if p.tax_rate_id:
-                tax_rate = db.scalar(select(TaxRate).where(TaxRate.id == p.tax_rate_id, TaxRate.company_id == payload.company_id, TaxRate.is_active.is_(True)))
-                if not tax_rate: raise ValueError(f"Tax rate {p.tax_rate_id} not found")
-                if tax_rate.is_withholding: raise ValueError("Withholding tax must be applied at payment, not as invoice VAT")
-                tax_percent = Decimal(tax_rate.rate)
             gross = p.quantity * p.unit_price
             disc = gross * p.discount_percent / Decimal("100")
             net = gross - disc
             if net < 0:
                 raise ValueError("Line discount cannot exceed the line gross amount")
-            if p.tax_rate_id:
-                tax_result = calculate_taxes(db, company_id=payload.company_id, amount=net, tax_ids=[p.tax_rate_id], inclusive=False)
-                tax_amount = Decimal(tax_result["tax_total"])
+            tax_result = calculate_taxes(db, company_id=payload.company_id, amount=net, tax_ids=tax_ids, inclusive=False)
+            tax_amount = Decimal(tax_result["tax_total"])
             line_total = net + tax_amount
-            obj.lines.append(line_model(item_id=p.item_id, tax_rate_id=p.tax_rate_id, description=p.description, quantity=p.quantity, unit_price=p.unit_price, discount_percent=p.discount_percent, tax_percent=tax_percent, line_total=line_total))
+            non_wht_ids = [tax_id for tax_id in tax_ids if not db.scalar(select(TaxRate).where(TaxRate.id == tax_id, TaxRate.company_id == payload.company_id)).is_withholding]
+            primary_tax_id = non_wht_ids[0] if non_wht_ids else (tax_ids[0] if tax_ids else None)
+            primary_tax_percent = Decimal("0")
+            if primary_tax_id is not None:
+                primary_tax = db.scalar(select(TaxRate).where(TaxRate.id == primary_tax_id, TaxRate.company_id == payload.company_id))
+                primary_tax_percent = Decimal(primary_tax.rate)
+            obj.lines.append(line_model(item_id=p.item_id, tax_rate_id=primary_tax_id, tax_rate_ids=tax_ids, description=p.description, quantity=p.quantity, unit_price=p.unit_price, discount_percent=p.discount_percent, tax_percent=primary_tax_percent, line_total=line_total))
             subtotal += net; discount += disc; tax += tax_amount
         obj.subtotal = subtotal; obj.discount_total = discount; obj.tax_total = tax; obj.total = subtotal + tax
         db.add(obj); db.flush(); return obj
