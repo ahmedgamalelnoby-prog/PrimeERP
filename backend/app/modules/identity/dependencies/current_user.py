@@ -9,6 +9,7 @@ from app.modules.identity.models import User
 from app.modules.identity.repositories.user_repository import user_repository
 from app.modules.identity.services.token_service import token_service
 from app.modules.platform.subscriptions.service import subscription_service
+from app.modules.saas.models import Tenant
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/identity/login")
@@ -46,6 +47,14 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     if not user.is_platform_admin:
         if user.tenant_id is None:
             raise HTTPException(status_code=403, detail="User is not assigned to a tenant")
+
+        tenant = db.get(Tenant, user.tenant_id)
+        if tenant is None or not tenant.is_active or tenant.status in {"suspended", "cancelled", "expired"}:
+            raise HTTPException(
+                status_code=402,
+                detail="Tenant is suspended, cancelled, expired, or inactive",
+            )
+
         if not subscription_service(db).is_tenant_access_allowed(user.tenant_id):
             raise HTTPException(status_code=402, detail="Tenant subscription is expired or inactive")
     return user
