@@ -1,6 +1,9 @@
+from datetime import date
 from decimal import Decimal
+from types import SimpleNamespace
 
 from app.modules.accounting.tax_engine import money
+from app.modules.commerce.accounting_service import commerce_accounting_service
 from app.modules.commerce.models import BusinessPartner, SalesDocument, PurchaseDocument, CommercePayment, SalesLine, PurchaseLine
 from app.modules.commerce.schemas import DocumentLineCreate
 from app.modules.enterprise.models import FixedAsset, Budget, Employee, PayrollRun, Project, ProjectContract
@@ -49,6 +52,118 @@ def test_tax_master_is_authoritative_for_explicit_line_tax():
 
 def test_money_rounding_used_by_tax_engine():
     assert money(Decimal('1.005')) == Decimal('1.01')
+
+
+def test_sales_invoice_accounting_is_balanced(monkeypatch):
+    settings = SimpleNamespace(
+        ar_account_id=101,
+        sales_account_id=102,
+        output_vat_account_id=103,
+    )
+    document = SimpleNamespace(
+        id=55,
+        company_id=7,
+        document_date=date(2026, 9, 13),
+        number='INV-55',
+        subtotal=Decimal('1000.00'),
+        tax_total=Decimal('140.00'),
+        total=Decimal('1140.00'),
+    )
+    captured = {}
+
+    monkeypatch.setattr(commerce_accounting_service, '_settings', lambda db, company_id: settings)
+    monkeypatch.setattr(
+        commerce_accounting_service,
+        '_post',
+        lambda db, **kwargs: captured.update(kwargs) or kwargs,
+    )
+
+    result = commerce_accounting_service.post_sales_invoice(None, document, user_id=9)
+
+    assert result['source_entity'] == 'sales_invoice'
+    assert result['source_id'] == 55
+    assert sum(Decimal(line['debit']) for line in result['lines']) == Decimal('1140.00')
+    assert sum(Decimal(line['credit']) for line in result['lines']) == Decimal('1140.00')
+    assert captured['journal_id'] is not None
+
+
+def test_sale_payment_with_wht_posts_gross_control_and_net_cash(monkeypatch):
+    settings = SimpleNamespace(
+        ar_account_id=101,
+        ap_account_id=201,
+        default_payment_account_id=301,
+        wht_account_id=302,
+    )
+    payment = SimpleNamespace(
+        id=77,
+        company_id=7,
+        document_kind='sale',
+        payment_date=date(2026, 9, 13),
+        amount=Decimal('1140.00'),
+        wht_amount=Decimal('11.40'),
+    )
+    captured = {}
+
+    monkeypatch.setattr(commerce_accounting_service, '_settings', lambda db, company_id: settings)
+    monkeypatch.setattr(
+        commerce_accounting_service,
+        '_post',
+        lambda db, **kwargs: captured.update(kwargs) or kwargs,
+    )
+
+    result = commerce_accounting_service.post_payment(None, payment, SimpleNamespace(id=55), user_id=9)
+    lines = result['lines']
+
+    assert sum(Decimal(line['debit']) for line in lines) == Decimal('1140.00')
+    assert sum(Decimal(line['credit']) for line in lines) == Decimal('1140.00')
+    assert next(line for line in lines if line['account_combination_id'] == 301)['debit'] == Decimal('1128.60')
+    assert next(line for line in lines if line['account_combination_id'] == 302)['debit'] == Decimal('11.40')
+    assert next(line for line in lines if line['account_combination_id'] == 101)['credit'] == Decimal('1140.00')
+    assert captured['source_entity'] == 'commerce_payment'
+
+
+def test_sale_payment_reversal_is_exact_accounting_opposite_and_uses_reversal_date(monkeypatch):
+    settings = SimpleNamespace(
+        ar_account_id=101,
+        ap_account_id=201,
+        default_payment_account_id=301,
+        wht_account_id=302,
+    )
+    payment = SimpleNamespace(
+        id=77,
+        company_id=7,
+        document_kind='sale',
+        payment_date=date(2026, 9, 13),
+        amount=Decimal('1140.00'),
+        wht_amount=Decimal('11.40'),
+    )
+    captured = {}
+    reversal_date = date(2026, 9, 20)
+
+    monkeypatch.setattr(commerce_accounting_service, '_settings', lambda db, company_id: settings)
+    monkeypatch.setattr(
+        commerce_accounting_service,
+        '_post',
+        lambda db, **kwargs: captured.update(kwargs) or kwargs,
+    )
+
+    result = commerce_accounting_service.post_payment_reversal(
+        None,
+        payment,
+        SimpleNamespace(id=55),
+        user_id=9,
+        reversal_date=reversal_date,
+    )
+    lines = result['lines']
+
+    assert sum(Decimal(line['debit']) for line in lines) == Decimal('1140.00')
+    assert sum(Decimal(line['credit']) for line in lines) == Decimal('1140.00')
+    assert next(line for line in lines if line['account_combination_id'] == 101)['debit'] == Decimal('1140.00')
+    assert next(line for line in lines if line['account_combination_id'] == 301)['debit'] == Decimal('1128.60')
+    assert next(line for line in lines if line['account_combination_id'] == 302)['credit'] == Decimal('11.40')
+    assert captured['entry_date'] == reversal_date
+    assert captured['source_entity'] == 'commerce_payment_reversal'
+    assert captured['source_id'] == 77
 
 
 def test_straight_line_depreciation_math():
