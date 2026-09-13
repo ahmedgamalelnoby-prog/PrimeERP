@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.modules.inventory.items.models import InventoryItem
 from app.modules.inventory.items.repository import inventory_item_repository
 from app.modules.inventory.items.schemas import InventoryItemCreate, InventoryItemUpdate
+from app.modules.saas.entitlements import enforce_product_limit
 
 
 class InventoryItemService:
@@ -17,7 +18,9 @@ class InventoryItemService:
             db, company_id=company_id, item_id=item_id
         )
 
-    def create(self, db: Session, payload: InventoryItemCreate):
+    def create(self, db: Session, payload: InventoryItemCreate, *, tenant_id: int | None = None):
+        if tenant_id is not None:
+            enforce_product_limit(db, tenant_id, payload.company_id)
         item = InventoryItem(**payload.model_dump())
         db.add(item)
         try:
