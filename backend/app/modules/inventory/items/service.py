@@ -1,3 +1,4 @@
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -5,6 +6,7 @@ from app.modules.inventory.items.models import InventoryItem
 from app.modules.inventory.items.repository import inventory_item_repository
 from app.modules.inventory.items.schemas import InventoryItemCreate, InventoryItemUpdate
 from app.modules.saas.entitlements import enforce_product_limit
+from app.modules.uom.models import UnitOfMeasure
 
 
 class InventoryItemService:
@@ -18,10 +20,46 @@ class InventoryItemService:
             db, company_id=company_id, item_id=item_id
         )
 
+    def _resolve_uom(self, db: Session, *, company_id: int, uom_id: int | None, uom_code: str | None) -> UnitOfMeasure:
+        if uom_id is not None:
+            uom = db.scalar(
+                select(UnitOfMeasure).where(
+                    UnitOfMeasure.id == uom_id,
+                    UnitOfMeasure.company_id == company_id,
+                    UnitOfMeasure.is_active.is_(True),
+                )
+            )
+            if uom is None:
+                raise ValueError("UOM is not active or does not belong to this company")
+            return uom
+
+        if uom_code:
+            uom = db.scalar(
+                select(UnitOfMeasure).where(
+                    UnitOfMeasure.company_id == company_id,
+                    UnitOfMeasure.code == uom_code,
+                    UnitOfMeasure.is_active.is_(True),
+                )
+            )
+            if uom is not None:
+                return uom
+
+        raise ValueError("A valid active UOM is required for the inventory item")
+
     def create(self, db: Session, payload: InventoryItemCreate, *, tenant_id: int | None = None):
         if tenant_id is not None:
             enforce_product_limit(db, tenant_id, payload.company_id)
-        item = InventoryItem(**payload.model_dump())
+
+        uom = self._resolve_uom(
+            db,
+            company_id=payload.company_id,
+            uom_id=payload.uom_id,
+            uom_code=payload.uom,
+        )
+        values = payload.model_dump()
+        values["uom_id"] = uom.id
+        values["uom"] = uom.code
+        item = InventoryItem(**values)
         db.add(item)
         try:
             db.commit()
@@ -42,7 +80,19 @@ class InventoryItemService:
         item = self.get(db, company_id=company_id, item_id=item_id)
         if item is None:
             raise ValueError("Inventory item not found")
-        for key, value in payload.model_dump(exclude_unset=True).items():
+
+        values = payload.model_dump(exclude_unset=True)
+        if "uom_id" in values or "uom" in values:
+            uom = self._resolve_uom(
+                db,
+                company_id=company_id,
+                uom_id=values.get("uom_id"),
+                uom_code=values.get("uom"),
+            )
+            values["uom_id"] = uom.id
+            values["uom"] = uom.code
+
+        for key, value in values.items():
             setattr(item, key, value)
         try:
             db.commit()
