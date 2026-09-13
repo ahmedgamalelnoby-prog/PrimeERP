@@ -6,6 +6,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: primeerp-docker-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -21,37 +25,29 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Verify Docker
         shell: powershell
         run: docker version
-
       - name: Prepare Docker environment
         shell: powershell
         run: Copy-Item .env.docker.example .env.docker -Force
-
       - name: Validate Docker Compose
         shell: powershell
         run: docker compose --env-file .env.docker config -q
-
       - name: Build backend image
         shell: powershell
         run: docker build --pull -t primeerp-backend:ci ./backend
-
       - name: Validate backend image Python sources
         shell: powershell
         run: docker run --rm primeerp-backend:ci python -m compileall -q app
-
       - name: Build frontend image
         shell: powershell
         run: docker build --pull -t primeerp-frontend:ci ./frontend
-
       - name: Start full Docker stack
         shell: powershell
         run: |
           docker compose --env-file .env.docker up -d --build
           if ($LASTEXITCODE -ne 0) { throw "docker compose up failed" }
-
       - name: Wait for database, migration and backend health
         shell: powershell
         run: |
@@ -62,7 +58,6 @@ jobs:
             $migration = docker inspect --format '{{.State.Status}}' primeerp-migrate 2>$null
             $backend = docker inspect --format '{{.State.Health.Status}}' primeerp-backend 2>$null
             Write-Host "db=$db migration=$migration backend=$backend"
-
             if ($migration -eq 'exited') {
               $migrationExit = docker inspect --format '{{.State.ExitCode}}' primeerp-migrate 2>$null
               if ($migrationExit -ne '0') {
@@ -70,12 +65,7 @@ jobs:
                 throw "Database migration failed with exit code $migrationExit"
               }
             }
-
-            if ($backend -eq 'healthy') {
-              $backendHealthy = $true
-              break
-            }
-
+            if ($backend -eq 'healthy') { $backendHealthy = $true; break }
             if ($backend -eq 'unhealthy') {
               docker compose --env-file .env.docker logs --tail=200 backend
               throw "Backend container became unhealthy"
@@ -87,14 +77,12 @@ jobs:
             docker compose --env-file .env.docker logs --tail=200 db migrate backend
             throw "Backend did not become healthy within 8 minutes"
           }
-
       - name: Runtime API smoke test
         shell: powershell
         run: |
           $response = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:8001/ready' -TimeoutSec 15
           if ($response.StatusCode -ne 200) { throw "Backend /ready returned HTTP $($response.StatusCode)" }
           Write-Host $response.Content
-
       - name: Runtime frontend smoke test
         shell: powershell
         run: |
@@ -102,7 +90,6 @@ jobs:
           if ($response.StatusCode -ne 200) { throw "Frontend returned HTTP $($response.StatusCode)" }
           if ([string]::IsNullOrWhiteSpace($response.Content)) { throw "Frontend returned an empty response" }
           Write-Host "Frontend HTTP $($response.StatusCode), response length=$($response.Content.Length)"
-
       - name: Docker runtime diagnostics
         if: always()
         shell: powershell
@@ -110,7 +97,6 @@ jobs:
           docker compose --env-file .env.docker ps
           docker compose --env-file .env.docker logs --tail=100 migrate
           docker compose --env-file .env.docker logs --tail=100 backend
-
       - name: Cleanup Docker stack
         if: always()
         shell: powershell
