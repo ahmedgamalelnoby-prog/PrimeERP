@@ -88,6 +88,7 @@ class PaymentCreate(BaseModel):
     payment_date: date
     amount: Decimal = Field(gt=0)
     wht_amount: Decimal = Field(default=0, ge=0)
+    auto_wht: bool = True
     method: str = Field(min_length=1, max_length=30)
     reference: str | None = None
     idempotency_key: str | None = Field(default=None, min_length=1, max_length=100)
