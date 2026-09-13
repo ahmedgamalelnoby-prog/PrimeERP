@@ -10,7 +10,7 @@ from app.modules.commerce.service import commerce_service
 from app.modules.integrations.models import IntegrationMapping
 from app.modules.integrations.salla_models import SallaOrder
 from app.modules.inventory.items.models import InventoryItem
-from app.modules.integrations.salla_erp_service import execute_salla_order
+from app.modules.integrations.salla_erp_service import execute_salla_order, _system_user_id
 
 
 def _mapping(db: Session, order: SallaOrder, entity_type: str):
@@ -27,13 +27,7 @@ def _set_mapping(db: Session, order: SallaOrder, entity_type: str, local_id: int
     if obj:
         obj.local_id = local_id
         return obj
-    obj = IntegrationMapping(
-        company_id=order.company_id,
-        connection_id=order.connection_id,
-        entity_type=entity_type,
-        external_id=str(order.external_id),
-        local_id=local_id,
-    )
+    obj = IntegrationMapping(company_id=order.company_id, connection_id=order.connection_id, entity_type=entity_type, external_id=str(order.external_id), local_id=local_id)
     db.add(obj)
     db.flush()
     return obj
@@ -42,31 +36,14 @@ def _set_mapping(db: Session, order: SallaOrder, entity_type: str, local_id: int
 def _build_delivery(db: Session, order: SallaOrder, invoice: SalesDocument) -> SalesDocument | None:
     existing_map = _mapping(db, order, "salla_delivery")
     if existing_map:
-        return db.scalar(select(SalesDocument).where(
-            SalesDocument.id == existing_map.local_id,
-            SalesDocument.company_id == order.company_id,
-        ))
+        return db.scalar(select(SalesDocument).where(SalesDocument.id == existing_map.local_id, SalesDocument.company_id == order.company_id))
 
     stock_lines: list[SalesLine] = []
     for source_line in invoice.lines:
-        item = db.scalar(select(InventoryItem).where(
-            InventoryItem.id == source_line.item_id,
-            InventoryItem.company_id == order.company_id,
-            InventoryItem.is_active.is_(True),
-        ))
+        item = db.scalar(select(InventoryItem).where(InventoryItem.id == source_line.item_id, InventoryItem.company_id == order.company_id, InventoryItem.is_active.is_(True)))
         if item is None or str(item.item_type).lower() != "stockable":
             continue
-        stock_lines.append(SalesLine(
-            item_id=item.id,
-            tax_rate_id=None,
-            tax_rate_ids=[],
-            description=source_line.description,
-            quantity=Decimal(source_line.quantity),
-            unit_price=Decimal(source_line.unit_price),
-            discount_percent=Decimal(source_line.discount_percent or 0),
-            tax_percent=Decimal("0"),
-            line_total=Decimal(source_line.line_total or 0),
-        ))
+        stock_lines.append(SalesLine(item_id=item.id, tax_rate_id=None, tax_rate_ids=[], description=source_line.description, quantity=Decimal(source_line.quantity), unit_price=Decimal(source_line.unit_price), discount_percent=Decimal(source_line.discount_percent or 0), tax_percent=Decimal("0"), line_total=Decimal(source_line.line_total or 0)))
 
     if not stock_lines:
         return None
@@ -74,27 +51,12 @@ def _build_delivery(db: Session, order: SallaOrder, invoice: SalesDocument) -> S
         raise ValueError(f"Salla order {order.external_id} cannot be fulfilled: no warehouse is configured")
 
     number = f"SALLA-DEL-{order.reference_id or order.external_id}"[:60]
-    existing = db.scalar(select(SalesDocument).where(
-        SalesDocument.company_id == order.company_id,
-        SalesDocument.number == number,
-    ))
+    existing = db.scalar(select(SalesDocument).where(SalesDocument.company_id == order.company_id, SalesDocument.number == number))
     if existing:
         _set_mapping(db, order, "salla_delivery", existing.id)
         return existing
 
-    delivery = SalesDocument(
-        company_id=order.company_id,
-        partner_id=invoice.partner_id,
-        document_type="delivery",
-        number=number,
-        document_date=invoice.document_date,
-        warehouse_id=invoice.warehouse_id,
-        notes=f"Salla fulfillment for order {order.external_id}",
-        subtotal=Decimal("0"),
-        tax_total=Decimal("0"),
-        discount_total=Decimal("0"),
-        total=Decimal("0"),
-    )
+    delivery = SalesDocument(company_id=order.company_id, partner_id=invoice.partner_id, document_type="delivery", number=number, document_date=invoice.document_date, warehouse_id=invoice.warehouse_id, notes=f"Salla fulfillment for order {order.external_id}", subtotal=Decimal("0"), tax_total=Decimal("0"), discount_total=Decimal("0"), total=Decimal("0"))
     for line in stock_lines:
         delivery.lines.append(line)
         gross = Decimal(line.quantity) * Decimal(line.unit_price)
@@ -109,14 +71,12 @@ def _build_delivery(db: Session, order: SallaOrder, invoice: SalesDocument) -> S
 
 
 def finalize_salla_order(db: Session, order: SallaOrder, user_id: int | None = None) -> dict:
-    result = execute_salla_order(db, order, user_id=user_id)
+    effective_user_id = user_id or _system_user_id(db, order.company_id)
+    result = execute_salla_order(db, order, user_id=effective_user_id)
     document_id = result.get("sales_document_id") or order.erp_entity_id
     if not document_id:
         return result
-    invoice = db.scalar(select(SalesDocument).where(
-        SalesDocument.id == document_id,
-        SalesDocument.company_id == order.company_id,
-    ))
+    invoice = db.scalar(select(SalesDocument).where(SalesDocument.id == document_id, SalesDocument.company_id == order.company_id))
     if invoice is None or invoice.document_type != "invoice":
         return result
 
@@ -126,13 +86,8 @@ def finalize_salla_order(db: Session, order: SallaOrder, user_id: int | None = N
             delivery.status = "confirmed"
             db.flush()
         if delivery.status in ("confirmed", "partially_fulfilled"):
-            commerce_service.post_inventory(
-                db,
-                company_id=order.company_id,
-                document_id=delivery.id,
-                kind="sale",
-            )
-            commerce_accounting_service.post_sales_delivery_cogs(db, delivery, user_id or 0)
+            commerce_service.post_inventory(db, company_id=order.company_id, document_id=delivery.id, kind="sale")
+            commerce_accounting_service.post_sales_delivery_cogs(db, delivery, effective_user_id)
 
     result["delivery_document_id"] = delivery.id if delivery is not None else None
     return result
