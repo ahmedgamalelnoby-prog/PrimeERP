@@ -12,8 +12,9 @@ from app.modules.accounting.tax_engine import calculate_taxes
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
+from app.modules.saas.entitlements import require_module
 
-router = APIRouter(prefix="/accounting", tags=["accounting"])
+router = APIRouter(prefix="/accounting", tags=["accounting"], dependencies=[Depends(require_module("accounting"))])
 
 
 def _company_for_user(db: Session, company_id: int, user: User):
@@ -82,11 +83,7 @@ def list_taxes(company_id: int = Query(..., gt=0), current_user: User = Depends(
 
 
 @router.post("/tax-rates/calculate", dependencies=[Depends(require_permission("tax.access"))])
-def calculate_tax(
-    payload: dict,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+def calculate_tax(payload: dict, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     try:
         company_id = int(payload.get("company_id", 0))
         amount = Decimal(str(payload.get("amount", "0")))
@@ -95,25 +92,13 @@ def calculate_tax(
     except (TypeError, ValueError, InvalidOperation) as exc:
         raise HTTPException(422, "company_id, amount and tax_ids must be valid values") from exc
     _company_for_user(db, company_id, current_user)
-    return calculate_taxes(
-        db,
-        company_id=company_id,
-        amount=amount,
-        tax_ids=tax_ids,
-        inclusive=inclusive,
-    )
+    return calculate_taxes(db, company_id=company_id, amount=amount, tax_ids=tax_ids, inclusive=inclusive)
 
 
 @router.patch("/tax-rates/{tax_id}", dependencies=[Depends(require_permission("tax.write"))])
 def update_tax(tax_id: int, payload: dict, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     tax = _tax_for_company(db, tax_id, company_id, current_user)
-    values = _validated_values({
-        "code": payload.get("code", tax.code),
-        "name": payload.get("name", tax.name),
-        "rate": payload.get("rate", tax.rate),
-        "tax_type": payload.get("tax_type", tax.tax_type),
-        "is_withholding": payload.get("is_withholding", tax.is_withholding),
-    })
+    values = _validated_values({"code": payload.get("code", tax.code), "name": payload.get("name", tax.name), "rate": payload.get("rate", tax.rate), "tax_type": payload.get("tax_type", tax.tax_type), "is_withholding": payload.get("is_withholding", tax.is_withholding)})
     duplicate = db.scalar(select(TaxRate).where(TaxRate.company_id == company_id, TaxRate.code == values["code"], TaxRate.id != tax.id))
     if duplicate:
         raise HTTPException(409, "Tax code already exists for this company")
@@ -122,11 +107,9 @@ def update_tax(tax_id: int, payload: dict, company_id: int = Query(..., gt=0), c
     if "is_active" in payload:
         tax.is_active = bool(payload["is_active"])
     try:
-        db.commit()
-        db.refresh(tax)
+        db.commit(); db.refresh(tax)
     except IntegrityError as exc:
-        db.rollback()
-        raise HTTPException(409, "Tax code already exists for this company") from exc
+        db.rollback(); raise HTTPException(409, "Tax code already exists for this company") from exc
     return tax
 
 
