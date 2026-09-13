@@ -47,6 +47,47 @@ class CommerceService:
             raise ValueError(f"Tax rate(s) not found or inactive: {missing}")
         return tax_ids
 
+    def _document_wht_total(self, db: Session, *, document, company_id: int) -> Decimal:
+        """Calculate the withholding profile attached to document lines on the same net base used by Tax Engine."""
+        total = Decimal("0")
+        for line in document.lines:
+            tax_ids = list(getattr(line, "tax_rate_ids", None) or [])
+            if not tax_ids and getattr(line, "tax_rate_id", None):
+                tax_ids = [line.tax_rate_id]
+            if not tax_ids:
+                continue
+            taxes = list(db.scalars(select(TaxRate).where(TaxRate.company_id == company_id, TaxRate.id.in_(tax_ids), TaxRate.is_active.is_(True))).all())
+            wht_rates = [Decimal(tax.rate) for tax in taxes if tax.is_withholding]
+            if not wht_rates:
+                continue
+            gross = Decimal(line.quantity) * Decimal(line.unit_price)
+            discount = gross * Decimal(line.discount_percent or 0) / Decimal("100")
+            net = gross - discount
+            for rate in wht_rates:
+                total += net * rate / Decimal("100")
+        return total.quantize(Decimal("0.01"))
+
+    def _auto_payment_wht(self, db: Session, *, document, company_id: int, amount: Decimal, document_kind: str) -> Decimal:
+        document_wht = self._document_wht_total(db, document=document, company_id=company_id)
+        if document_wht <= 0:
+            return Decimal("0")
+        paid_wht = Decimal("0")
+        payments = db.scalars(select(__import__("app.modules.commerce.models", fromlist=["CommercePayment"]).CommercePayment).where(
+            __import__("app.modules.commerce.models", fromlist=["CommercePayment"]).CommercePayment.company_id == company_id,
+            __import__("app.modules.commerce.models", fromlist=["CommercePayment"]).CommercePayment.document_kind == document_kind,
+            __import__("app.modules.commerce.models", fromlist=["CommercePayment"]).CommercePayment.document_id == document.id,
+            __import__("app.modules.commerce.models", fromlist=["CommercePayment"]).CommercePayment.status == "posted",
+        )).all()
+        for payment in payments:
+            paid_wht += Decimal(payment.wht_amount or 0)
+        remaining_wht = max(document_wht - paid_wht, Decimal("0"))
+        if remaining_wht <= 0:
+            return Decimal("0")
+        outstanding = Decimal(document.total or 0) - Decimal(document.paid_total or 0)
+        if outstanding <= 0:
+            return Decimal("0")
+        return min(remaining_wht, (remaining_wht * amount / outstanding).quantize(Decimal("0.01")))
+
     def create_document(self, db: Session, payload):
         is_sale = payload.document_type in SALE_TYPES
         if not is_sale and payload.document_type not in PURCHASE_TYPES: raise ValueError("Unsupported document type")
@@ -123,7 +164,14 @@ class CommerceService:
         obj.status = "fulfilled" if kind == "sale" else "received"; db.flush(); return obj
 
     def pay(self, db, payload, kind):
-        return post_payment(db, company_id=payload.company_id, document_kind=kind, document_id=payload.document_id, amount=payload.amount, payment_date=payload.payment_date, method=payload.method, wht_amount=payload.wht_amount, reference=payload.reference, notes=payload.notes, idempotency_key=payload.idempotency_key)
+        model = SalesDocument if kind == "sale" else PurchaseDocument
+        document = db.scalar(select(model).where(model.id == payload.document_id, model.company_id == payload.company_id))
+        if document is None:
+            raise ValueError("Document not found")
+        wht_amount = Decimal(payload.wht_amount or 0)
+        if wht_amount == 0 and getattr(payload, "auto_wht", True):
+            wht_amount = self._auto_payment_wht(db, document=document, company_id=payload.company_id, amount=Decimal(payload.amount), document_kind=kind)
+        return post_payment(db, company_id=payload.company_id, document_kind=kind, document_id=payload.document_id, amount=payload.amount, payment_date=payload.payment_date, method=payload.method, wht_amount=wht_amount, reference=payload.reference, notes=payload.notes, idempotency_key=payload.idempotency_key)
 
     def reverse_payment(self, db, company_id: int, payment_id: int, reversal_date, notes=None):
         return reverse_payment(db, company_id=company_id, payment_id=payment_id, reversal_date=reversal_date, notes=notes)
