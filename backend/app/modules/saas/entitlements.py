@@ -10,6 +10,7 @@ from app.modules.branches.models import Branch
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
+from app.modules.inventory.items.models import InventoryItem
 from app.modules.saas.models import PlanModule, Subscription, SubscriptionPlan, SystemModule, TenantModule
 
 
@@ -112,3 +113,16 @@ def enforce_branch_limit(db: Session, tenant_id: int) -> None:
     current = db.scalar(select(func.count(Branch.id)).where(Branch.tenant_id == tenant_id, Branch.is_active.is_(True))) or 0
     if current >= limit:
         raise HTTPException(status_code=409, detail=f"Branch limit reached ({limit})")
+
+
+def enforce_product_limit(db: Session, tenant_id: int, company_id: int) -> None:
+    limit = _limit_for(db, tenant_id, "products")
+    if limit is None:
+        return
+    current = db.scalar(
+        select(func.count(InventoryItem.id))
+        .join(Company, Company.id == InventoryItem.company_id)
+        .where(Company.tenant_id == tenant_id, InventoryItem.company_id == company_id, InventoryItem.is_active.is_(True))
+    ) or 0
+    if current >= limit:
+        raise HTTPException(status_code=409, detail=f"Product limit reached ({limit})")
