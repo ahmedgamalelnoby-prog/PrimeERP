@@ -28,7 +28,9 @@ class PartnerResponse(PartnerCreate):
 
 class DocumentLineCreate(BaseModel):
     item_id: int = Field(gt=0)
+    # Legacy single-tax field remains supported. tax_rate_ids is authoritative when supplied.
     tax_rate_id: int | None = Field(default=None, gt=0)
+    tax_rate_ids: list[int] | None = None
     description: str | None = None
     quantity: Decimal = Field(gt=0)
     unit_price: Decimal = Field(ge=0)
@@ -37,9 +39,17 @@ class DocumentLineCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_tax_source(self):
-        if self.tax_rate_id is not None and self.tax_percent != 0:
-            raise ValueError("Do not send tax_percent when tax_rate_id is provided; Tax Master is authoritative")
-        if self.tax_rate_id is None and self.tax_percent != 0:
+        if self.tax_rate_ids is not None and len(self.tax_rate_ids) != len(set(self.tax_rate_ids)):
+            raise ValueError("Duplicate tax ids are not allowed")
+        if self.tax_rate_ids is not None and any(tax_id <= 0 for tax_id in self.tax_rate_ids):
+            raise ValueError("Tax ids must be positive")
+        if self.tax_rate_id is not None and self.tax_rate_ids is not None and self.tax_rate_id not in self.tax_rate_ids:
+            raise ValueError("tax_rate_id must be included in tax_rate_ids when both are supplied")
+        if self.tax_rate_id is not None and self.tax_rate_ids is None:
+            self.tax_rate_ids = [self.tax_rate_id]
+        if self.tax_rate_ids is not None and self.tax_percent != 0:
+            raise ValueError("Do not send tax_percent when tax_rate_ids are provided; Tax Master is authoritative")
+        if self.tax_rate_ids is None and self.tax_percent != 0:
             raise ValueError("Tax Master is required for non-zero tax rates")
         return self
 
