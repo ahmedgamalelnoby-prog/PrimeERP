@@ -27,6 +27,14 @@ def _id(value: Any) -> str | None:
     return str(value) if value is not None else None
 
 
+def _code(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        value = value.get("slug") or value.get("code") or value.get("key") or value.get("name") or value.get("value") or value.get("id")
+    return str(value) if value is not None else None
+
+
 def _decimal(value: Any) -> Decimal | None:
     if value is None or value == "":
         return None
@@ -110,7 +118,7 @@ def _normalize_product(db: Session, company_id: int, connection_id: int, data: d
         return None
     obj = _upsert(db, SallaProduct, connection_id, external_id, {
         "company_id": company_id, "sku": data.get("sku"), "mpn": data.get("mpn"), "gtin": data.get("gtin"),
-        "product_type": data.get("type"), "name": data.get("name"), "status": data.get("status"),
+        "product_type": data.get("type"), "name": data.get("name"), "status": _code(data.get("status")),
         "price": _decimal(data.get("price")), "taxed_price": _decimal(data.get("taxed_price")), "pre_tax_price": _decimal(data.get("pre_tax_price")),
         "tax": _decimal(data.get("tax")), "sale_price": _decimal(data.get("sale_price")), "cost_price": _decimal(data.get("cost_price")),
         "quantity": _decimal(data.get("quantity")), "weight": _decimal(data.get("weight")), "weight_type": data.get("weight_type"),
@@ -146,8 +154,8 @@ def _normalize_order(db: Session, company_id: int, connection_id: int, data: dic
     customer = _dict(data.get("customer"))
     obj = _upsert(db, SallaOrder, connection_id, external_id, {
         "company_id": company_id, "reference_id": str(data.get("reference_id")) if data.get("reference_id") is not None else None,
-        "status": _id(data.get("status")) or data.get("status"), "payment_status": _id(data.get("payment_status")) or data.get("payment_status"),
-        "fulfillment_status": _id(data.get("fulfillment_status")) or data.get("fulfillment_status"), "order_type": _id(data.get("type")) or data.get("type"),
+        "status": _code(data.get("status")), "payment_status": _code(data.get("payment_status")),
+        "fulfillment_status": _code(data.get("fulfillment_status")), "order_type": _code(data.get("type")),
         "currency": data.get("currency"), "exchange_rate": _decimal(data.get("exchange_rate") or data.get("scope_exchange_rate")),
         "subtotal": _decimal(data.get("subtotal")), "discount": _decimal(data.get("discount")), "shipping": _decimal(data.get("shipping")),
         "tax": _decimal(data.get("tax")), "total": _decimal(data.get("total")), "cod_amount": _decimal(data.get("cash_on_delivery") or data.get("cod_amount")),
@@ -187,8 +195,8 @@ def _normalize_shipment(db: Session, company_id: int, connection_id: int, data: 
         "company_id": company_id, "order_id": order.id if order else None, "order_external_id": order_id,
         "order_reference_id": data.get("order_reference_id"), "shipment_type": data.get("type"), "courier_id": _id(courier), "courier_name": courier.get("name"),
         "external_company_name": data.get("external_company_name"), "shipping_number": data.get("shipping_number"), "tracking_number": data.get("tracking_number"),
-        "tracking_link": data.get("tracking_link"), "label": data.get("label"), "payment_method": data.get("payment_method"), "source": data.get("source"),
-        "status": _id(data.get("status")) or data.get("status"), "total": _decimal(data.get("total")), "cash_on_delivery": _decimal(data.get("cash_on_delivery")),
+        "tracking_link": data.get("tracking_link"), "label": data.get("label"), "payment_method": _code(data.get("payment_method")), "source": data.get("source"),
+        "status": _code(data.get("status")), "total": _decimal(data.get("total")), "cash_on_delivery": _decimal(data.get("cash_on_delivery")),
         "total_weight": _decimal(data.get("total_weight")), "international": data.get("international"), "trackable": data.get("trackable"),
         "packages": _list(data.get("packages")), "ship_from": _dict(data.get("ship_from")), "ship_to": _dict(data.get("ship_to")), "meta": _dict(data.get("meta")),
         "billing_account": _dict(data.get("billing_account")), "created_at_salla": _dt(data.get("created_at")), "raw_payload": data,
@@ -203,7 +211,7 @@ def _normalize_invoice(db: Session, company_id: int, connection_id: int, data: d
     order = db.scalar(select(SallaOrder).where(SallaOrder.connection_id == connection_id, SallaOrder.external_id == order_id)) if order_id else None
     return _upsert(db, SallaInvoice, connection_id, external_id, {
         "company_id": company_id, "order_id": order.id if order else None, "invoice_number": data.get("invoice_number"),
-        "status": _id(data.get("status")) or data.get("status"), "subtotal": _decimal(data.get("subtotal")), "discount": _decimal(data.get("discount")),
+        "status": _code(data.get("status")), "subtotal": _decimal(data.get("subtotal")), "discount": _decimal(data.get("discount")),
         "tax": _decimal(data.get("tax")), "shipping": _decimal(data.get("shipping")), "total": _decimal(data.get("total")), "currency": data.get("currency"),
         "issue_date": _date(data.get("issue_date")), "due_date": _date(data.get("due_date")), "urls": _dict(data.get("urls")), "raw_payload": data,
     })
