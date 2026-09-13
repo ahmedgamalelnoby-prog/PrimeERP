@@ -29,7 +29,7 @@ def test_reconcile_repairs_stale_tenant_state_for_active_subscription():
         trial_ends_at="stale",
     )
     service, db = _service_with_tenant(tenant)
-    subscription = SimpleNamespace(status="active", trial_ends_at=None)
+    subscription = SimpleNamespace(tenant_id=1, status="active", trial_ends_at=None)
 
     service._reconcile_tenant_state_if_needed(subscription)
 
@@ -45,7 +45,7 @@ def test_reconcile_does_not_write_when_tenant_state_matches_subscription():
         trial_ends_at=None,
     )
     service, db = _service_with_tenant(tenant)
-    subscription = SimpleNamespace(status="active", trial_ends_at=None)
+    subscription = SimpleNamespace(tenant_id=1, status="active", trial_ends_at=None)
 
     service._reconcile_tenant_state_if_needed(subscription)
 
