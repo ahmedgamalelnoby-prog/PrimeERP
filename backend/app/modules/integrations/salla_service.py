@@ -39,7 +39,7 @@ def _decimal(value: Any) -> Decimal | None:
     if value is None or value == "":
         return None
     if isinstance(value, dict):
-        value = value.get("amount") or value.get("value")
+        value = value.get("amount") if value.get("amount") is not None else value.get("value")
     try:
         return Decimal(str(value))
     except Exception:
@@ -83,7 +83,7 @@ def _event_key(event_type: str) -> str:
         return "product"
     if value.startswith("customer"):
         return "customer"
-    if value.startswith("shipment"):
+    if value.startswith("shipment") or ".shipment." in value:
         return "shipment"
     return "unknown"
 
@@ -188,12 +188,12 @@ def _normalize_shipment(db: Session, company_id: int, connection_id: int, data: 
     external_id = _id(data.get("id") or data.get("shipment_id"))
     if not external_id:
         return None
-    order_id = _id(data.get("order_id"))
+    order_id = _id(data.get("order_id") or _dict(data.get("order")).get("id"))
     order = db.scalar(select(SallaOrder).where(SallaOrder.connection_id == connection_id, SallaOrder.external_id == order_id)) if order_id else None
     courier = _dict(data.get("courier"))
     return _upsert(db, SallaShipment, connection_id, external_id, {
         "company_id": company_id, "order_id": order.id if order else None, "order_external_id": order_id,
-        "order_reference_id": data.get("order_reference_id"), "shipment_type": data.get("type"), "courier_id": _id(courier), "courier_name": courier.get("name"),
+        "order_reference_id": data.get("order_reference_id") or _dict(data.get("order")).get("reference_id"), "shipment_type": data.get("type"), "courier_id": _id(courier), "courier_name": courier.get("name"),
         "external_company_name": data.get("external_company_name"), "shipping_number": data.get("shipping_number"), "tracking_number": data.get("tracking_number"),
         "tracking_link": data.get("tracking_link"), "label": data.get("label"), "payment_method": _code(data.get("payment_method")), "source": data.get("source"),
         "status": _code(data.get("status")), "total": _decimal(data.get("total")), "cash_on_delivery": _decimal(data.get("cash_on_delivery")),
@@ -207,7 +207,7 @@ def _normalize_invoice(db: Session, company_id: int, connection_id: int, data: d
     external_id = _id(data.get("id") or data.get("invoice_id"))
     if not external_id:
         return None
-    order_id = _id(data.get("order_id"))
+    order_id = _id(data.get("order_id") or _dict(data.get("order")).get("id"))
     order = db.scalar(select(SallaOrder).where(SallaOrder.connection_id == connection_id, SallaOrder.external_id == order_id)) if order_id else None
     return _upsert(db, SallaInvoice, connection_id, external_id, {
         "company_id": company_id, "order_id": order.id if order else None, "invoice_number": data.get("invoice_number"),
