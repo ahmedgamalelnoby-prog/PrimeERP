@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.accounting.models import TaxRate
 from app.modules.accounting.tax_engine import calculate_taxes
-from app.modules.commerce.models import BusinessPartner, PurchaseDocument, PurchaseLine, SalesDocument, SalesLine
+from app.modules.commerce.models import BusinessPartner, CommercePayment, PurchaseDocument, PurchaseLine, SalesDocument, SalesLine
 from app.modules.commerce.payment_workflow import post_payment, reverse_payment
 from app.modules.inventory.items.models import InventoryItem
 from app.modules.inventory.locations.models import InventoryLocation
@@ -32,15 +32,7 @@ class CommerceService:
         tax_ids = list(explicit_tax_ids) if explicit_tax_ids is not None else list((item.sales_tax_ids if is_sale else item.purchase_tax_ids) or [])
         if not tax_ids:
             return []
-        taxes = list(
-            db.scalars(
-                select(TaxRate).where(
-                    TaxRate.company_id == company_id,
-                    TaxRate.id.in_(tax_ids),
-                    TaxRate.is_active.is_(True),
-                )
-            ).all()
-        )
+        taxes = list(db.scalars(select(TaxRate).where(TaxRate.company_id == company_id, TaxRate.id.in_(tax_ids), TaxRate.is_active.is_(True))).all())
         found = {tax.id for tax in taxes}
         missing = [tax_id for tax_id in tax_ids if tax_id not in found]
         if missing:
@@ -48,7 +40,7 @@ class CommerceService:
         return tax_ids
 
     def _document_wht_total(self, db: Session, *, document, company_id: int) -> Decimal:
-        """Calculate the withholding profile attached to document lines on the same net base used by Tax Engine."""
+        """Calculate withholding from document tax profiles using each line's net taxable base."""
         total = Decimal("0")
         for line in document.lines:
             tax_ids = list(getattr(line, "tax_rate_ids", None) or [])
@@ -72,11 +64,11 @@ class CommerceService:
         if document_wht <= 0:
             return Decimal("0")
         paid_wht = Decimal("0")
-        payments = db.scalars(select(__import__("app.modules.commerce.models", fromlist=["CommercePayment"]).CommercePayment).where(
-            __import__("app.modules.commerce.models", fromlist=["CommercePayment"]).CommercePayment.company_id == company_id,
-            __import__("app.modules.commerce.models", fromlist=["CommercePayment"]).CommercePayment.document_kind == document_kind,
-            __import__("app.modules.commerce.models", fromlist=["CommercePayment"]).CommercePayment.document_id == document.id,
-            __import__("app.modules.commerce.models", fromlist=["CommercePayment"]).CommercePayment.status == "posted",
+        payments = db.scalars(select(CommercePayment).where(
+            CommercePayment.company_id == company_id,
+            CommercePayment.document_kind == document_kind,
+            CommercePayment.document_id == document.id,
+            CommercePayment.status == "posted",
         )).all()
         for payment in payments:
             paid_wht += Decimal(payment.wht_amount or 0)
