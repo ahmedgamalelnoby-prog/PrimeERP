@@ -43,7 +43,7 @@ class TaxService:
             raise TaxValidationError("Tax amount/rate must be numeric") from exc
 
     @classmethod
-    def calculate(cls, amount: Decimal | int | float | str, rate: Decimal | int | float | str) -> TaxResult:
+    def calculate(cls, amount, rate) -> TaxResult:
         base = cls._decimal(amount)
         percentage = cls._decimal(rate)
         if base < 0:
@@ -54,7 +54,7 @@ class TaxService:
         return TaxResult(base, tax, base + tax)
 
     @classmethod
-    def reverse_tax(cls, total: Decimal | int | float | str, rate: Decimal | int | float | str) -> TaxResult:
+    def reverse_tax(cls, total, rate) -> TaxResult:
         gross = cls._decimal(total)
         percentage = cls._decimal(rate)
         if gross < 0:
@@ -62,31 +62,17 @@ class TaxService:
         if percentage < 0 or percentage >= 100:
             raise TaxValidationError("Reverse-tax rate must be between 0 and 100")
         base = (gross / (Decimal("1") + percentage / Decimal("100"))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        tax = gross - base
-        return TaxResult(base, tax, gross)
+        return TaxResult(base, gross - base, gross)
 
     @classmethod
-    def calculate_multi(
-        cls,
-        amount: Decimal | int | float | str,
-        taxes: Iterable[TaxLine | tuple[str, Decimal | int | float | str]],
-    ) -> MultiTaxResult:
-        """Calculate multiple additive taxes (VAT + other taxes) on one base.
-
-        Each tax is calculated from the original taxable amount, avoiding accidental
-        compounding. Withholding taxes remain a separate payable-side calculation.
-        """
+    def calculate_multi(cls, amount, taxes: Iterable[TaxLine | tuple[str, Decimal | int | float | str]]) -> MultiTaxResult:
         base = cls._decimal(amount)
         if base < 0:
             raise TaxValidationError("Taxable amount cannot be negative")
-
         lines: list[TaxResult] = []
         seen: set[str] = set()
         for item in taxes:
-            if isinstance(item, TaxLine):
-                code, rate = item.code, item.rate
-            else:
-                code, rate = item
+            code, rate = (item.code, item.rate) if isinstance(item, TaxLine) else item
             code = str(code).strip().lower()
             if not code:
                 raise TaxValidationError("Tax code is required")
@@ -94,16 +80,44 @@ class TaxService:
                 raise TaxValidationError(f"Duplicate tax code: {code}")
             seen.add(code)
             lines.append(cls.calculate(base, rate))
+        total_tax = sum((line.tax_amount for line in lines), Decimal("0.00")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        return MultiTaxResult(base, tuple(lines), total_tax, base + total_tax)
 
-        total_tax = sum((line.tax_amount for line in lines), Decimal("0.00")).quantize(
-            Decimal("0.01"), rounding=ROUND_HALF_UP
-        )
-        return MultiTaxResult(
-            taxable_amount=base,
-            tax_lines=tuple(lines),
-            tax_amount=total_tax,
-            total_amount=base + total_tax,
-        )
+    @classmethod
+    def calculate_inclusive(cls, gross_amount, taxes: Iterable[TaxLine | tuple[str, Decimal | int | float | str]]) -> MultiTaxResult:
+        gross = cls._decimal(gross_amount)
+        if gross < 0:
+            raise TaxValidationError("Gross amount cannot be negative")
+        normalized = list(taxes)
+        total_rate = Decimal("0")
+        seen: set[str] = set()
+        for item in normalized:
+            code, rate = (item.code, item.rate) if isinstance(item, TaxLine) else item
+            code = str(code).strip().lower()
+            if not code or code in seen:
+                raise TaxValidationError("Tax code is required and must be unique")
+            seen.add(code)
+            percentage = cls._decimal(rate)
+            if percentage < 0 or percentage > 100:
+                raise TaxValidationError("Tax rate must be between 0 and 100")
+            total_rate += percentage
+        if total_rate == 0:
+            return cls.calculate_multi(gross, normalized)
+        base = (gross / (Decimal("1") + total_rate / Decimal("100"))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        result = cls.calculate_multi(base, normalized)
+        return MultiTaxResult(base, result.tax_lines, gross - base, gross)
+
+    @classmethod
+    def calculate_withholding(cls, amount, rate) -> TaxResult:
+        """Calculate WHT as a deduction from payable, not an addition to gross."""
+        base = cls._decimal(amount)
+        percentage = cls._decimal(rate)
+        if base < 0:
+            raise TaxValidationError("Withholding base cannot be negative")
+        if percentage < 0 or percentage > 100:
+            raise TaxValidationError("Withholding rate must be between 0 and 100")
+        withheld = (base * percentage / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        return TaxResult(base, withheld, base - withheld)
 
 
 tax_service = TaxService()
