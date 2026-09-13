@@ -26,16 +26,6 @@ _STATUS_MAP = {
     "canceled": "cancelled",
 }
 
-_TRANSITIONS = {
-    "pending": {"picked_up", "cancelled"},
-    "picked_up": {"in_transit", "cancelled"},
-    "in_transit": {"out_for_delivery", "returned"},
-    "out_for_delivery": {"delivered", "returned"},
-    "delivered": {"returned"},
-    "returned": set(),
-    "cancelled": set(),
-}
-
 
 def _mapping(db: Session, shipment: SallaShipment) -> IntegrationMapping | None:
     return db.scalar(select(IntegrationMapping).where(IntegrationMapping.company_id == shipment.company_id, IntegrationMapping.connection_id == shipment.connection_id, IntegrationMapping.entity_type == "salla_shipment", IntegrationMapping.external_id == str(shipment.external_id)))
@@ -69,16 +59,12 @@ def _advance_status(current: str, target: str) -> str:
         return current
     if target == "pending":
         return current
-    if target == "cancelled" and current in {"pending", "picked_up"}:
-        return "cancelled"
+    # Salla terminal events are authoritative. They may arrive before all
+    # intermediate webhooks, so do not lose a returned/cancelled event.
     if target == "returned":
-        if current == "delivered":
-            return "returned"
-        if current == "out_for_delivery":
-            return "returned"
-        if current == "in_transit":
-            return "returned"
-        return current
+        return "returned" if current not in {"returned", "cancelled"} else current
+    if target == "cancelled":
+        return "cancelled" if current not in {"returned", "cancelled", "delivered"} else current
     path = {
         "pending": ["picked_up", "in_transit", "out_for_delivery", "delivered"],
         "picked_up": ["in_transit", "out_for_delivery", "delivered"],
