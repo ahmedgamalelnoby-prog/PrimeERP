@@ -6,6 +6,7 @@ from app.modules.accounting.tax_engine import money
 from app.modules.commerce.accounting_service import commerce_accounting_service
 from app.modules.commerce.models import BusinessPartner, SalesDocument, PurchaseDocument, CommercePayment, SalesLine, PurchaseLine
 from app.modules.commerce.schemas import DocumentLineCreate
+from app.modules.commerce.service import CommerceService
 from app.modules.enterprise.models import FixedAsset, Budget, Employee, PayrollRun, Project, ProjectContract
 from app.modules.inventory.items.models import InventoryItem
 from app.modules.shipping.models import ShippingCarrier, ShippingMethod, Shipment
@@ -164,6 +165,48 @@ def test_sale_payment_reversal_is_exact_accounting_opposite_and_uses_reversal_da
     assert captured['entry_date'] == reversal_date
     assert captured['source_entity'] == 'commerce_payment_reversal'
     assert captured['source_id'] == 77
+
+
+def test_payment_auto_wht_uses_product_tax_profile_result(monkeypatch):
+    service = CommerceService()
+    document = SimpleNamespace(id=55)
+    captured = {}
+
+    monkeypatch.setattr(service, '_auto_payment_wht', lambda **kwargs: Decimal('11.40'))
+    monkeypatch.setattr(
+        'app.modules.commerce.service.post_payment',
+        lambda **kwargs: captured.update(kwargs) or kwargs,
+    )
+
+    payload = SimpleNamespace(
+        company_id=7,
+        document_id=55,
+        payment_date=date(2026, 9, 13),
+        amount=Decimal('1140.00'),
+        wht_amount=Decimal('0'),
+        auto_wht=True,
+        method='bank_transfer',
+        reference=None,
+        notes=None,
+        idempotency_key=None,
+    )
+    monkeypatch.setattr(
+        'app.modules.commerce.service.select',
+        lambda *args, **kwargs: None,
+    )
+
+    class FakeDB:
+        def scalar(self, _query):
+            return document
+
+    service.pay(FakeDB(), payload, 'sale')
+    assert captured['wht_amount'] == Decimal('11.40')
+
+
+def test_payment_auto_wht_can_be_disabled():
+    payload = SimpleNamespace(wht_amount=Decimal('0'), auto_wht=False)
+    assert payload.wht_amount == Decimal('0')
+    assert payload.auto_wht is False
 
 
 def test_straight_line_depreciation_math():
