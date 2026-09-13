@@ -9,6 +9,7 @@ from app.modules.commerce.accounting_service import commerce_accounting_service
 from app.modules.commerce.models import SalesDocument
 from app.modules.integrations.models import IntegrationMapping
 from app.modules.integrations.salla_models import SallaOrder
+from app.modules.inventory.locations.models import InventoryLocation
 from app.modules.inventory.stock_moves.models import InventoryStockMove
 from app.modules.inventory.stock_moves.schemas import StockMoveCreate
 from app.modules.inventory.stock_moves.service import inventory_stock_move_service
@@ -35,12 +36,7 @@ def _delivery(db: Session, order: SallaOrder) -> SalesDocument | None:
 
 
 def restore_salla_inventory(db: Session, order: SallaOrder, user_id: int) -> dict:
-    """Return fulfilled Salla stock to the delivery warehouse exactly once.
-
-    The original sales issue move supplies the FIFO/weighted unit cost. Return
-    moves are receipt moves because the customer is outside the ERP location
-    network. A stable source id makes webhook retries idempotent.
-    """
+    """Restore fulfilled Salla stock exactly once and reverse its COGS."""
     delivery = _delivery(db, order)
     if delivery is None or not delivery.warehouse_id:
         return {"status": "no_delivery", "return_moves": 0, "cogs_reversed": False}
@@ -57,16 +53,15 @@ def restore_salla_inventory(db: Session, order: SallaOrder, user_id: int) -> dic
     if not source_moves:
         return {"status": "delivery_not_posted", "return_moves": 0, "cogs_reversed": False}
 
-    locations = db.scalars(
-        select(__import__("app.modules.inventory.locations.models", fromlist=["InventoryLocation"]).InventoryLocation).where(
-            __import__("app.modules.inventory.locations.models", fromlist=["InventoryLocation"]).InventoryLocation.warehouse_id == delivery.warehouse_id,
-            __import__("app.modules.inventory.locations.models", fromlist=["InventoryLocation"]).InventoryLocation.company_id == order.company_id,
-            __import__("app.modules.inventory.locations.models", fromlist=["InventoryLocation"]).InventoryLocation.is_active.is_(True),
-        ).order_by(__import__("app.modules.inventory.locations.models", fromlist=["InventoryLocation"]).InventoryLocation.id)
-    ).all()
-    if not locations:
+    destination = db.scalar(
+        select(InventoryLocation).where(
+            InventoryLocation.warehouse_id == delivery.warehouse_id,
+            InventoryLocation.company_id == order.company_id,
+            InventoryLocation.is_active.is_(True),
+        ).order_by(InventoryLocation.id)
+    )
+    if destination is None:
         raise ValueError(f"Salla return {order.external_id} cannot restore stock: warehouse has no active location")
-    destination = locations[0]
 
     total_cost = Decimal("0")
     returned = 0
@@ -85,6 +80,7 @@ def restore_salla_inventory(db: Session, order: SallaOrder, user_id: int) -> dic
             total_cost += Decimal(existing.quantity) * Decimal(existing.unit_cost or 0)
             returned += 1
             continue
+
         payload = StockMoveCreate(
             company_id=order.company_id,
             item_id=move.item_id,
@@ -106,17 +102,18 @@ def restore_salla_inventory(db: Session, order: SallaOrder, user_id: int) -> dic
 
     accounting = False
     if total_cost > 0:
+        settings = commerce_accounting_service._settings(db, order.company_id)
         commerce_accounting_service._post(
             db,
             company_id=order.company_id,
             user_id=user_id,
             entry_date=delivery.document_date,
-            journal_id=commerce_accounting_service._settings(db, order.company_id).sales_journal_id,
+            journal_id=settings.sales_journal_id,
             entry_number=f"RET-COGS-{delivery.id}",
             description=f"COGS reversal for Salla return {order.external_id}",
             lines=[
-                {"account_combination_id": commerce_accounting_service._settings(db, order.company_id).inventory_account_id, "debit": total_cost, "credit": 0},
-                {"account_combination_id": commerce_accounting_service._settings(db, order.company_id).cogs_account_id, "debit": 0, "credit": total_cost},
+                {"account_combination_id": settings.inventory_account_id, "debit": total_cost, "credit": 0},
+                {"account_combination_id": settings.cogs_account_id, "debit": 0, "credit": total_cost},
             ],
             source_entity="salla_return_cogs",
             source_id=delivery.id,
