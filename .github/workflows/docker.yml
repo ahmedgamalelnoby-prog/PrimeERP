@@ -9,9 +9,12 @@ on:
 permissions:
   contents: read
 
+env:
+  COMPOSE_PROJECT_NAME: primeerp-ci
+
 jobs:
   docker:
-    name: Docker Build & Validation
+    name: Docker Build, Migration & Runtime Validation
     runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 30
 
@@ -42,3 +45,75 @@ jobs:
       - name: Build frontend image
         shell: powershell
         run: docker build --pull -t primeerp-frontend:ci ./frontend
+
+      - name: Start full Docker stack
+        shell: powershell
+        run: |
+          docker compose --env-file .env.docker up -d --build
+          if ($LASTEXITCODE -ne 0) { throw "docker compose up failed" }
+
+      - name: Wait for database, migration and backend health
+        shell: powershell
+        run: |
+          $deadline = (Get-Date).AddMinutes(8)
+          $backendHealthy = $false
+          while ((Get-Date) -lt $deadline) {
+            $db = docker inspect --format '{{.State.Health.Status}}' primeerp-db 2>$null
+            $migration = docker inspect --format '{{.State.Status}}' primeerp-migrate 2>$null
+            $backend = docker inspect --format '{{.State.Health.Status}}' primeerp-backend 2>$null
+            Write-Host "db=$db migration=$migration backend=$backend"
+
+            if ($migration -eq 'exited') {
+              $migrationExit = docker inspect --format '{{.State.ExitCode}}' primeerp-migrate 2>$null
+              if ($migrationExit -ne '0') {
+                docker compose --env-file .env.docker logs migrate
+                throw "Database migration failed with exit code $migrationExit"
+              }
+            }
+
+            if ($backend -eq 'healthy') {
+              $backendHealthy = $true
+              break
+            }
+
+            if ($backend -eq 'unhealthy') {
+              docker compose --env-file .env.docker logs --tail=200 backend
+              throw "Backend container became unhealthy"
+            }
+            Start-Sleep -Seconds 10
+          }
+          if (-not $backendHealthy) {
+            docker compose --env-file .env.docker ps
+            docker compose --env-file .env.docker logs --tail=200 db migrate backend
+            throw "Backend did not become healthy within 8 minutes"
+          }
+
+      - name: Runtime API smoke test
+        shell: powershell
+        run: |
+          $response = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:8001/ready' -TimeoutSec 15
+          if ($response.StatusCode -ne 200) { throw "Backend /ready returned HTTP $($response.StatusCode)" }
+          Write-Host $response.Content
+
+      - name: Runtime frontend smoke test
+        shell: powershell
+        run: |
+          $response = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:3000/' -TimeoutSec 15
+          if ($response.StatusCode -ne 200) { throw "Frontend returned HTTP $($response.StatusCode)" }
+          if ([string]::IsNullOrWhiteSpace($response.Content)) { throw "Frontend returned an empty response" }
+          Write-Host "Frontend HTTP $($response.StatusCode), response length=$($response.Content.Length)"
+
+      - name: Docker runtime diagnostics
+        if: always()
+        shell: powershell
+        run: |
+          docker compose --env-file .env.docker ps
+          docker compose --env-file .env.docker logs --tail=100 migrate
+          docker compose --env-file .env.docker logs --tail=100 backend
+
+      - name: Cleanup Docker stack
+        if: always()
+        shell: powershell
+        run: |
+          docker compose --env-file .env.docker down -v --remove-orphans
+          docker image rm primeerp-backend:ci primeerp-frontend:ci 2>$null
