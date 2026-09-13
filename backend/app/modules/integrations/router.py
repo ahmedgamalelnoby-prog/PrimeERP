@@ -18,7 +18,6 @@ from .schemas import ConnectionCreate, ConnectionResponse, WebhookEventCreate
 from .salla_models import SallaCustomer, SallaInvoice, SallaOrder, SallaOrderItem, SallaProduct, SallaProductVariant, SallaShipment
 from .salla_service import normalize_salla_event
 from .salla_sync import full_sync
-from .salla_erp_service import execute_pending_salla_orders
 from .salla_erp_finalize import finalize_salla_order
 
 MAX_WEBHOOK_BODY_BYTES = 1_048_576
@@ -53,8 +52,7 @@ def _event_identity(payload: dict, event_header: str | None, event_id_header: st
     external_event_id = event_id_header or payload.get("id") or payload.get("event_id")
     event_type = event_header or payload.get("event") or payload.get("event_type") or payload.get("type")
     if not event_type: raise HTTPException(422, "Salla webhook event type is required")
-    if not external_event_id:
-        external_event_id = f"sha256:{hashlib.sha256(str(event_type).encode() + b'\n' + raw_body).hexdigest()}"
+    if not external_event_id: external_event_id = f"sha256:{hashlib.sha256(str(event_type).encode() + b'\n' + raw_body).hexdigest()}"
     return str(external_event_id), str(event_type)
 
 def _process_event(db: Session, event: IntegrationEvent) -> dict:
