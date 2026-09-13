@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from app.modules.accounting.fiscal_years.api.router import router as fiscal_years_router
 from app.modules.accounting.journals.api.journal_entries import router as journal_entries_router
 from app.modules.accounting.reports.router import router as financial_reports_router
@@ -34,6 +34,7 @@ from app.modules.treasury.router import router as treasury_router
 from app.modules.egyptian_einvoice.router import router as egyptian_einvoice_router
 from app.modules.audit.router import router as audit_router
 from app.modules.roles.router import router as roles_router
+from app.modules.saas.entitlements import require_module
 
 
 def build_router() -> APIRouter:
@@ -42,19 +43,28 @@ def build_router() -> APIRouter:
     api_router.include_router(features_router)
     api_router.include_router(saas_router, prefix="/saas", tags=["saas"])
     api_router.include_router(transactions_router, prefix="/transactions", tags=["transactions"])
-    api_router.include_router(fiscal_years_router, prefix="/accounting/fiscal-years", tags=["accounting-fiscal-years"])
-    api_router.include_router(journal_entries_router)
-    api_router.include_router(financial_reports_router)
-    api_router.include_router(accounting_router)
+    api_router.include_router(fiscal_years_router, prefix="/accounting/fiscal-years", tags=["accounting-fiscal-years"], dependencies=[Depends(require_module("accounting"))])
+    api_router.include_router(journal_entries_router, dependencies=[Depends(require_module("accounting"))])
+    api_router.include_router(financial_reports_router, dependencies=[Depends(require_module("accounting"))])
+    api_router.include_router(accounting_router, dependencies=[Depends(require_module("accounting"))])
     for r in (
         inventory_items_router, inventory_warehouses_router, inventory_locations_router,
         inventory_stock_moves_router, inventory_transfers_router, inventory_adjustments_router,
-        inventory_reservations_router, inventory_costing_router, commerce_router,
-        enterprise_router, shipping_router, shipping_settlement_router, shipping_accounting_router,
-        integrations_router, uom_router, companies_router, branches_router, treasury_router,
-        egyptian_einvoice_router, audit_router,
+        inventory_reservations_router, inventory_costing_router,
     ):
-        api_router.include_router(r)
+        api_router.include_router(r, dependencies=[Depends(require_module("inventory"))])
+    api_router.include_router(commerce_router, dependencies=[Depends(require_module("sales"))])
+    api_router.include_router(enterprise_router, dependencies=[Depends(require_module("enterprise"))])
+    api_router.include_router(shipping_router)
+    api_router.include_router(shipping_settlement_router)
+    api_router.include_router(shipping_accounting_router)
+    api_router.include_router(integrations_router)
+    api_router.include_router(uom_router)
+    api_router.include_router(companies_router)
+    api_router.include_router(branches_router)
+    api_router.include_router(treasury_router)
+    api_router.include_router(egyptian_einvoice_router, dependencies=[Depends(require_module("einvoice"))])
+    api_router.include_router(audit_router)
     api_router.include_router(integrations_public_router)
     api_router.include_router(plans_router)
     api_router.include_router(subscriptions_router)
