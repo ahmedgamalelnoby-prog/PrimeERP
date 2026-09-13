@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Integer, JSON, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from app.database.base import Base
@@ -19,6 +19,9 @@ class InventoryItem(Base):
     uom = Column(String(30), nullable=False, default="unit")
     # Canonical UOM master reference used by new flows and conversions.
     uom_id = Column(Integer, ForeignKey("units_of_measure.id", ondelete="RESTRICT"), nullable=True, index=True)
+    # Product-level tax defaults. IDs are validated against the same company's Tax Master.
+    sales_tax_ids = Column(JSON, nullable=False, default=list)
+    purchase_tax_ids = Column(JSON, nullable=False, default=list)
     costing_method = Column(String(20), nullable=False, default="weighted_average")
     standard_cost = Column(Numeric(18, 4), nullable=False, default=0)
     sales_price = Column(Numeric(18, 4), nullable=False, default=0)
