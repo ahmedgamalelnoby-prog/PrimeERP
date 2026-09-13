@@ -41,6 +41,7 @@ class SubscriptionService:
         instance = self.repository.get_active_for_tenant(self.db, tenant_id)
         if instance is not None:
             self._expire_if_needed(instance)
+            self._reconcile_tenant_state_if_needed(instance)
         return instance
 
     def is_tenant_access_allowed(self, tenant_id: int) -> bool:
@@ -249,6 +250,24 @@ class SubscriptionService:
         tenant.is_trial = instance.status == "trialing"
         tenant.status = "trial" if instance.status == "trialing" else ("active" if allowed else "expired")
         tenant.trial_ends_at = instance.trial_ends_at if instance.status == "trialing" else None
+
+    def _reconcile_tenant_state_if_needed(self, instance: Subscription) -> None:
+        """Repair stale tenant lifecycle flags without writing on every read."""
+        tenant = self.db.query(Tenant).filter(Tenant.id == instance.tenant_id).first()
+        if tenant is None:
+            raise ValueError("Tenant not found")
+        allowed = instance.status in {"trialing", "active", "past_due"}
+        expected_status = "trial" if instance.status == "trialing" else ("active" if allowed else "expired")
+        expected_trial_end = instance.trial_ends_at if instance.status == "trialing" else None
+        stale = (
+            tenant.is_active != allowed
+            or tenant.is_trial != (instance.status == "trialing")
+            or tenant.status != expected_status
+            or tenant.trial_ends_at != expected_trial_end
+        )
+        if stale:
+            self._sync_tenant_state(instance)
+            self.db.commit()
 
     def _expire_if_needed(self, instance: Subscription) -> None:
         now = self._now()
