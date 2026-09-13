@@ -12,6 +12,7 @@ from app.modules.integrations.salla_models import SallaOrder
 from app.modules.inventory.items.models import InventoryItem
 from app.modules.integrations.salla_erp_service import execute_salla_order, _system_user_id, reverse_salla_order
 from app.modules.integrations.salla_return_service import restore_salla_inventory
+from app.modules.integrations.salla_shipping_service import sync_salla_shipments_for_order
 
 
 _CANCELLED_STATES = {"cancelled", "canceled", "refunded", "refund", "fully_refunded", "returned"}
@@ -79,18 +80,23 @@ def finalize_salla_order(db: Session, order: SallaOrder, user_id: int | None = N
             result = reverse_salla_order(db, order, user_id=effective_user_id)
             if result.get("status") == "reversed":
                 result["inventory_return"] = restore_salla_inventory(db, order, effective_user_id)
+            result["shipping"] = sync_salla_shipments_for_order(db, order)
             return result
         order.erp_status = "cancelled"
         order.erp_error = None
         db.flush()
-        return {"status": "cancelled_before_erp_execution"}
+        result = {"status": "cancelled_before_erp_execution"}
+        result["shipping"] = sync_salla_shipments_for_order(db, order)
+        return result
 
     result = execute_salla_order(db, order, user_id=effective_user_id)
     document_id = result.get("sales_document_id") or order.erp_entity_id
     if not document_id:
+        result["shipping"] = sync_salla_shipments_for_order(db, order)
         return result
     invoice = db.scalar(select(SalesDocument).where(SalesDocument.id == document_id, SalesDocument.company_id == order.company_id))
     if invoice is None or invoice.document_type != "invoice":
+        result["shipping"] = sync_salla_shipments_for_order(db, order)
         return result
     delivery = _build_delivery(db, order, invoice)
     if delivery is not None:
@@ -101,4 +107,5 @@ def finalize_salla_order(db: Session, order: SallaOrder, user_id: int | None = N
             commerce_service.post_inventory(db, company_id=order.company_id, document_id=delivery.id, kind="sale")
             commerce_accounting_service.post_sales_delivery_cogs(db, delivery, effective_user_id)
     result["delivery_document_id"] = delivery.id if delivery is not None else None
+    result["shipping"] = sync_salla_shipments_for_order(db, order)
     return result
