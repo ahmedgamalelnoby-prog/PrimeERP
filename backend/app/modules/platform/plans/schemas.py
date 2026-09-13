@@ -1,3 +1,4 @@
+from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 
@@ -76,11 +77,11 @@ class PlanResponse(PlanBase):
     uuid: str
     version: int
 
-    effective_from: Optional[str] = None
-    effective_to: Optional[str] = None
+    effective_from: Optional[datetime] = None
+    effective_to: Optional[datetime] = None
 
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 
 class PlanListResponse(BaseModel):
