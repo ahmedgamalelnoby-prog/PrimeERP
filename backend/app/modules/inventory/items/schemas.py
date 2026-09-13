@@ -1,7 +1,7 @@
 from decimal import Decimal
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 ItemType = Literal["stockable", "consumable", "service", "non_stock"]
@@ -19,12 +19,23 @@ class InventoryItemCreate(BaseModel):
     # uom is retained for compatibility; uom_id is the canonical master reference.
     uom: str = Field(default="unit", min_length=1, max_length=30)
     uom_id: Optional[int] = Field(default=None, gt=0)
+    sales_tax_ids: list[int] = Field(default_factory=list)
+    purchase_tax_ids: list[int] = Field(default_factory=list)
     costing_method: CostingMethod = "weighted_average"
     standard_cost: Decimal = Field(default=0, ge=0)
     sales_price: Decimal = Field(default=0, ge=0)
     purchase_price: Decimal = Field(default=0, ge=0)
     reorder_level: Decimal = Field(default=0, ge=0)
     description: Optional[str] = None
+
+    @field_validator("sales_tax_ids", "purchase_tax_ids")
+    @classmethod
+    def validate_tax_ids(cls, value):
+        if len(value) != len(set(value)):
+            raise ValueError("Duplicate tax ids are not allowed")
+        if any(tax_id <= 0 for tax_id in value):
+            raise ValueError("Tax ids must be positive")
+        return value
 
 
 class InventoryItemUpdate(BaseModel):
@@ -35,6 +46,8 @@ class InventoryItemUpdate(BaseModel):
     item_type: Optional[ItemType] = None
     uom: Optional[str] = Field(default=None, min_length=1, max_length=30)
     uom_id: Optional[int] = Field(default=None, gt=0)
+    sales_tax_ids: Optional[list[int]] = None
+    purchase_tax_ids: Optional[list[int]] = None
     costing_method: Optional[CostingMethod] = None
     standard_cost: Optional[Decimal] = Field(default=None, ge=0)
     sales_price: Optional[Decimal] = Field(default=None, ge=0)
@@ -42,6 +55,15 @@ class InventoryItemUpdate(BaseModel):
     reorder_level: Optional[Decimal] = Field(default=None, ge=0)
     is_active: Optional[bool] = None
     description: Optional[str] = None
+
+    @field_validator("sales_tax_ids", "purchase_tax_ids")
+    @classmethod
+    def validate_tax_ids(cls, value):
+        if value is not None and len(value) != len(set(value)):
+            raise ValueError("Duplicate tax ids are not allowed")
+        if value is not None and any(tax_id <= 0 for tax_id in value):
+            raise ValueError("Tax ids must be positive")
+        return value
 
 
 class InventoryItemResponse(BaseModel):
@@ -57,6 +79,8 @@ class InventoryItemResponse(BaseModel):
     item_type: str
     uom: str
     uom_id: Optional[int]
+    sales_tax_ids: list[int]
+    purchase_tax_ids: list[int]
     costing_method: str
     standard_cost: Decimal
     sales_price: Decimal
