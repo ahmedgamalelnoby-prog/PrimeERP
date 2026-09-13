@@ -11,6 +11,7 @@ from app.modules.integrations.models import IntegrationMapping
 from app.modules.integrations.salla_models import SallaOrder
 from app.modules.inventory.items.models import InventoryItem
 from app.modules.integrations.salla_erp_service import execute_salla_order, _system_user_id, reverse_salla_order
+from app.modules.integrations.salla_return_service import restore_salla_inventory
 
 
 _CANCELLED_STATES = {"cancelled", "canceled", "refunded", "refund", "fully_refunded", "returned"}
@@ -75,7 +76,10 @@ def finalize_salla_order(db: Session, order: SallaOrder, user_id: int | None = N
     payment_state = str(order.payment_status or "").strip().lower().replace(" ", "_")
     if state in _CANCELLED_STATES or payment_state in {"refunded", "fully_refunded"}:
         if order.erp_status in {"processed", "reversed"} and order.erp_entity_id:
-            return reverse_salla_order(db, order, user_id=effective_user_id)
+            result = reverse_salla_order(db, order, user_id=effective_user_id)
+            if result.get("status") == "reversed":
+                result["inventory_return"] = restore_salla_inventory(db, order, effective_user_id)
+            return result
         order.erp_status = "cancelled"
         order.erp_error = None
         db.flush()
