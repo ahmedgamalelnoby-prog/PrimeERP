@@ -43,6 +43,11 @@ class SubscriptionService:
             self._expire_if_needed(instance)
         return instance
 
+    def is_tenant_access_allowed(self, tenant_id: int) -> bool:
+        """Return whether the tenant currently has an allowed subscription state."""
+        subscription = self.get_active_for_tenant(tenant_id)
+        return subscription is not None and subscription.status in {"trialing", "active", "past_due"}
+
     def _resolve_plan(self, plan_id: int) -> Plan:
         plan = self.db.query(Plan).filter(Plan.id == plan_id).first()
         if plan is not None:
@@ -262,3 +267,8 @@ class SubscriptionService:
         if changed:
             self._sync_tenant_state(instance)
             self.db.commit()
+
+
+def subscription_service(db: Session) -> SubscriptionService:
+    """Return a request-scoped subscription service bound to the current DB session."""
+    return SubscriptionService(db)
