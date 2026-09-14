@@ -49,23 +49,29 @@ jobs:
           }
           if (-not $sourceDir) { throw 'Docker CLI was not found in an installed/system location.' }
 
+          $dockerRoot = Split-Path $sourceDir -Parent
           $stageDir = Join-Path $env:RUNNER_TEMP 'primeerp-docker-cli'
           if (Test-Path -LiteralPath $stageDir) { Remove-Item -LiteralPath $stageDir -Recurse -Force }
           New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
           Copy-Item -LiteralPath (Join-Path $sourceDir 'docker.exe') -Destination $stageDir -Force
-          $composePlugin = Join-Path $sourceDir 'docker-compose.exe'
-          if (Test-Path -LiteralPath $composePlugin) {
-            Copy-Item -LiteralPath $composePlugin -Destination $stageDir -Force
-          }
-          $cliPlugins = Join-Path $sourceDir 'cli-plugins'
-          if (Test-Path -LiteralPath $cliPlugins) {
-            Copy-Item -LiteralPath $cliPlugins -Destination $stageDir -Recurse -Force
-          }
-          Get-ChildItem -LiteralPath $stageDir -Recurse | Select-Object FullName,Length | Format-Table -AutoSize | Out-String | Write-Output
-          Get-ChildItem -LiteralPath $stageDir -Recurse -File | Unblock-File -ErrorAction SilentlyContinue
 
-          # Use a CMD shim because this runner is installed as a Windows service and
-          # PowerShell native-command execution is the failing boundary on this host.
+          $pluginCandidates = @(
+            (Join-Path $sourceDir 'docker-compose.exe'),
+            (Join-Path $dockerRoot 'cli-plugins\docker-compose.exe'),
+            (Join-Path $dockerRoot 'bin\docker-compose.exe')
+          )
+          $composePlugin = $pluginCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          if ($composePlugin) {
+            New-Item -ItemType Directory -Force -Path (Join-Path $stageDir 'cli-plugins') | Out-Null
+            Copy-Item -LiteralPath $composePlugin -Destination (Join-Path $stageDir 'cli-plugins\docker-compose.exe') -Force
+          }
+
+          Get-ChildItem -LiteralPath $stageDir -Recurse -File | Unblock-File -ErrorAction SilentlyContinue
+          Get-ChildItem -LiteralPath $stageDir -Recurse | Select-Object FullName,Length | Format-Table -AutoSize | Out-String | Write-Output
+
+          # This runner is installed as a Windows service. Stage the executable into
+          # the runner temp area and invoke it through CMD to avoid the failing
+          # PowerShell native-command boundary seen with the installed user-local CLI.
           $wrapper = Join-Path $stageDir 'docker.cmd'
           Set-Content -LiteralPath $wrapper -Encoding ASCII -Value "@echo off`r`n\"%~dp0docker.exe\" %*`r`n"
           Add-Content $env:GITHUB_PATH $stageDir
