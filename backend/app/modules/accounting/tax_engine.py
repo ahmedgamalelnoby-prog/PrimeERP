@@ -89,13 +89,17 @@ def calculate_taxes(
             "withholding": True,
         })
 
+    withholding_total = money(withholding_total)
+    if withholding_total > gross:
+        raise HTTPException(422, "Total withholding tax cannot exceed the gross taxable amount")
+
     payable = money(gross - withholding_total)
     return {
         "input_amount": money(Decimal(amount)),
         "taxable_base": money(base),
         "tax_total": money(additive_total),
         "gross_total": gross,
-        "withholding_total": money(withholding_total),
+        "withholding_total": withholding_total,
         "payable_total": payable,
         "inclusive": inclusive,
         "taxes": tax_details,
