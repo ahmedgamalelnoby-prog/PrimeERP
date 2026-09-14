@@ -28,27 +28,43 @@ jobs:
         working-directory: backend
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Configure Docker CLI
         working-directory: .
+        shell: pwsh
         run: |
-          set "DOCKER_EXE="
-          if exist "C:\Users\Admin\AppData\Local\Programs\DockerDesktop\resources\bin\docker.exe" set "DOCKER_EXE=C:\Users\Admin\AppData\Local\Programs\DockerDesktop\resources\bin\docker.exe"
-          if not defined DOCKER_EXE for /F "delims=" %%D in ('where docker 2^>NUL') do if not defined DOCKER_EXE set "DOCKER_EXE=%%D"
-          if not defined DOCKER_EXE if exist "C:\Program Files\Docker\Docker\resources\bin\docker.exe" set "DOCKER_EXE=C:\Program Files\Docker\Docker\resources\bin\docker.exe"
-          if not defined DOCKER_EXE (
-            echo Docker CLI not found on the self-hosted runner.
-            exit /b 1
-          )
-          for %%D in ("%DOCKER_EXE%") do set "DOCKER_BIN=%%~dpD"
-          echo Docker CLI: %DOCKER_EXE%
-          echo %DOCKER_BIN%>>%GITHUB_PATH%
-          set "PATH=%DOCKER_BIN%;%PATH%"
-          set "DOCKER_HOST=npipe:////./pipe/dockerDesktopLinuxEngine"
-          "%DOCKER_EXE%" version
-          if errorlevel 1 exit /b 1
-          "%DOCKER_EXE%" compose version
-          if errorlevel 1 exit /b 1
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP 'primeerp-docker-cli'
+          $bin = Join-Path $root 'bin'
+          $config = Join-Path $root 'config'
+          $plugins = Join-Path $config 'cli-plugins'
+          New-Item -ItemType Directory -Force -Path $bin, $plugins | Out-Null
+          $dockerExe = @(
+            'C:\Users\Admin\AppData\Local\Programs\DockerDesktop\resources\bin\docker.exe',
+            'C:\Program Files\Docker\Docker\resources\bin\docker.exe'
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $dockerExe) {
+            $dockerZip = Join-Path $root 'docker-29.8.0.zip'
+            if (-not (Test-Path (Join-Path $bin 'docker.exe'))) {
+              Invoke-WebRequest -UseBasicParsing -Uri 'https://download.docker.com/win/static/stable/x86_64/docker-29.8.0.zip' -OutFile $dockerZip
+              Expand-Archive -Path $dockerZip -DestinationPath $root -Force
+              $candidate = Get-ChildItem -Path $root -Filter docker.exe -Recurse | Select-Object -First 1
+              if (-not $candidate) { throw 'Docker CLI archive did not contain docker.exe.' }
+              Copy-Item $candidate.FullName (Join-Path $bin 'docker.exe') -Force
+            }
+            $dockerExe = Join-Path $bin 'docker.exe'
+          }
+          $composeExe = Join-Path $plugins 'docker-compose.exe'
+          if (-not (Test-Path $composeExe)) {
+            Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/docker/compose/releases/download/v5.5.1/docker-compose-windows-x86_64.exe' -OutFile $composeExe
+          }
+          $dockerDir = Split-Path $dockerExe -Parent
+          if ($dockerDir -ne $bin) { Copy-Item $dockerExe (Join-Path $bin 'docker.exe') -Force; $dockerExe = Join-Path $bin 'docker.exe' }
+          $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "DOCKER_CONFIG=$config" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "DOCKER_HOST=npipe:////./pipe/dockerDesktopLinuxEngine" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          & $dockerExe version
+          & $dockerExe compose version
       - name: Validate runtime
         run: |
           python --version
@@ -131,7 +147,7 @@ jobs:
         working-directory: frontend
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Validate Node.js runtime
         run: |
           node --version
@@ -153,7 +169,7 @@ jobs:
     runs-on: [self-hosted, PrimeERP]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Reject cross-system references and generated files
         shell: cmd
         run: |
