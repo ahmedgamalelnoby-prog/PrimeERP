@@ -1,0 +1,17 @@
+# PrimeERP AI & automated reporting
+# Never commit real secrets.
+AI_MODEL=gpt-5.6-luna
+OPENAI_API_KEY=
+
+# Email delivery
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USERNAME=
+SMTP_PASSWORD=
+SMTP_FROM=
+SMTP_STARTTLS=true
+
+# WhatsApp Business Cloud API
+WHATSAPP_ACCESS_TOKEN=
+WHATSAPP_PHONE_NUMBER_ID=
+WHATSAPP_GRAPH_VERSION=v23.0
