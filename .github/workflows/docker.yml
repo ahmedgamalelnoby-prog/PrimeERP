@@ -32,13 +32,37 @@ jobs:
         uses: actions/checkout@v4
       - name: Verify Docker
         run: |
-          if (-not (Test-Path "$env:DOCKER_CLI_PATH\docker.exe")) {
-            throw "Docker CLI not found at $env:DOCKER_CLI_PATH\docker.exe"
+          $candidates = @(
+            "$env:DOCKER_CLI_PATH\docker.exe",
+            "$env:ProgramFiles\Docker\Docker\resources\bin\docker.exe",
+            "$env:ProgramW6432\Docker\Docker\resources\bin\docker.exe",
+            "C:\ProgramData\DockerDesktop\version-bin\docker.exe",
+            "C:\ProgramData\DockerDesktop\resources\bin\docker.exe"
+          ) | Select-Object -Unique
+          $dockerExe = $null
+          foreach ($candidate in $candidates) {
+            try {
+              if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                $dockerExe = $candidate
+                break
+              }
+            } catch {
+              Write-Host "Docker candidate inaccessible: $candidate"
+            }
           }
-          $env:Path = "$env:DOCKER_CLI_PATH;$env:Path"
-          & "$env:DOCKER_CLI_PATH\docker.exe" version
+          if (-not $dockerExe) {
+            try {
+              $dockerExe = (Get-Command docker.exe -ErrorAction Stop).Source
+            } catch {
+              throw "Docker CLI is not accessible to the GitHub Actions service account. Checked service-accessible Docker locations and PATH."
+            }
+          }
+          $dockerDir = Split-Path -Parent $dockerExe
+          $env:Path = "$dockerDir;$env:Path"
+          "DOCKER_CLI_RESOLVED=$dockerDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $dockerDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          & $dockerExe version
           if ($LASTEXITCODE -ne 0) { throw "Docker CLI is installed but Docker Desktop/engine is unavailable" }
-          "$env:DOCKER_CLI_PATH" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - name: Prepare Docker environment
         run: Copy-Item .env.docker.example .env.docker -Force
       - name: Validate Docker Compose
@@ -95,13 +119,11 @@ jobs:
       - name: Docker runtime diagnostics
         if: always()
         run: |
-          $env:Path = "$env:DOCKER_CLI_PATH;$env:Path"
           docker compose --env-file .env.docker ps
           docker compose --env-file .env.docker logs --tail=100 migrate
           docker compose --env-file .env.docker logs --tail=100 backend
       - name: Cleanup Docker stack
         if: always()
         run: |
-          $env:Path = "$env:DOCKER_CLI_PATH;$env:Path"
           docker compose --env-file .env.docker down -v --remove-orphans
           docker image rm primeerp-backend:ci primeerp-frontend:ci 2>$null
