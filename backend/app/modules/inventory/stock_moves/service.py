@@ -19,24 +19,18 @@ class InventoryStockMoveService:
 
     @staticmethod
     def _validate_variant(db: Session, *, company_id: int, item: InventoryItem, variant_id: int | None):
+        active_variants = db.scalar(select(ProductVariant.id).where(ProductVariant.company_id == company_id, ProductVariant.product_id == item.id, ProductVariant.active.is_(True)).limit(1))
         if variant_id is None:
+            if active_variants is not None:
+                raise ValueError("This item has active variants; stock movements must identify the variant")
             return None
-        variant = db.scalar(select(ProductVariant).where(
-            ProductVariant.id == variant_id,
-            ProductVariant.company_id == company_id,
-            ProductVariant.product_id == item.id,
-            ProductVariant.active.is_(True),
-        ))
+        variant = db.scalar(select(ProductVariant).where(ProductVariant.id == variant_id, ProductVariant.company_id == company_id, ProductVariant.product_id == item.id, ProductVariant.active.is_(True)))
         if variant is None:
             raise ValueError("Variant does not belong to the item/company or is inactive")
         return variant
 
     def create_draft(self, db: Session, payload):
-        item = db.scalar(select(InventoryItem).where(
-            InventoryItem.id == payload.item_id,
-            InventoryItem.company_id == payload.company_id,
-            InventoryItem.is_active.is_(True),
-        ))
+        item = db.scalar(select(InventoryItem).where(InventoryItem.id == payload.item_id, InventoryItem.company_id == payload.company_id, InventoryItem.is_active.is_(True)))
         if item is None:
             raise ValueError("Item does not belong to the company or is inactive")
         if item.item_type not in {"stockable", "consumable"}:
@@ -46,15 +40,10 @@ class InventoryStockMoveService:
         locations = {}
         for location_id in (payload.source_location_id, payload.destination_location_id):
             if location_id is not None:
-                location = db.scalar(select(InventoryLocation).where(
-                    InventoryLocation.id == location_id,
-                    InventoryLocation.company_id == payload.company_id,
-                    InventoryLocation.is_active.is_(True),
-                ))
+                location = db.scalar(select(InventoryLocation).where(InventoryLocation.id == location_id, InventoryLocation.company_id == payload.company_id, InventoryLocation.is_active.is_(True)))
                 if location is None:
                     raise ValueError("Location does not belong to the company or is inactive")
                 locations[location_id] = location
-
         if payload.source_location_id is None and payload.destination_location_id is None:
             raise ValueError("At least one stock location is required")
         if payload.movement_type in {"issue", "transfer", "return"} and payload.source_location_id is None:
@@ -63,33 +52,23 @@ class InventoryStockMoveService:
             raise ValueError("Destination location is required for this movement")
         if payload.source_location_id and payload.destination_location_id and payload.source_location_id == payload.destination_location_id:
             raise ValueError("Source and destination locations must differ")
-
         if payload.movement_type == "transfer":
             source = locations[payload.source_location_id]
             destination = locations[payload.destination_location_id]
             if source.warehouse_id == destination.warehouse_id:
                 raise ValueError("Use a direct stock move for an intra-warehouse location transfer")
-
         move = InventoryStockMove(**payload.model_dump(), status="draft")
         db.add(move)
         db.flush()
         return move
 
     def post(self, db: Session, *, company_id: int, move_id: int):
-        move = db.scalar(select(InventoryStockMove).where(
-            InventoryStockMove.id == move_id,
-            InventoryStockMove.company_id == company_id,
-        ).with_for_update())
+        move = db.scalar(select(InventoryStockMove).where(InventoryStockMove.id == move_id, InventoryStockMove.company_id == company_id).with_for_update())
         if move is None:
             raise ValueError("Stock move not found")
         if move.status != "draft":
             raise ValueError("Only draft stock moves can be posted")
-
-        item = db.scalar(select(InventoryItem).where(
-            InventoryItem.id == move.item_id,
-            InventoryItem.company_id == company_id,
-            InventoryItem.is_active.is_(True),
-        ))
+        item = db.scalar(select(InventoryItem).where(InventoryItem.id == move.item_id, InventoryItem.company_id == company_id, InventoryItem.is_active.is_(True)))
         if item is None:
             raise ValueError("Item is unavailable for posting")
         self._validate_variant(db, company_id=company_id, item=item, variant_id=move.variant_id)
@@ -98,63 +77,52 @@ class InventoryStockMoveService:
         destination_balance = self._location_balance(db, company_id, move.item_id, move.variant_id, move.destination_location_id, lock=True) if move.destination_location_id else None
         source_warehouse_id = source_balance.location.warehouse_id if source_balance else None
         destination_warehouse_id = destination_balance.location.warehouse_id if destination_balance else None
-
         unit_cost = Decimal(move.unit_cost or 0)
         fifo_allocations: list[tuple[Decimal, Decimal]] = []
 
         if source_balance:
+            quantity = Decimal(move.quantity)
             on_hand = Decimal(source_balance.quantity_on_hand or 0)
             reserved = Decimal(source_balance.quantity_reserved or 0)
-            if move.movement_type in {"issue", "transfer", "adjustment"} and on_hand - reserved < Decimal(move.quantity):
+            if move.movement_type in {"issue", "transfer", "adjustment"} and on_hand - reserved < quantity:
                 raise ValueError("Insufficient available stock after excluding reserved quantity")
-            if on_hand < Decimal(move.quantity):
+            if on_hand < quantity:
                 raise ValueError("Insufficient stock at source location")
             warehouse_source = self._warehouse_stock(db, company_id, move.item_id, move.variant_id, source_warehouse_id)
-            if move.movement_type in {"issue", "transfer", "adjustment"} and Decimal(warehouse_source.quantity_on_hand or 0) - Decimal(warehouse_source.quantity_reserved or 0) < Decimal(move.quantity):
+            if move.movement_type in {"issue", "transfer", "adjustment"} and Decimal(warehouse_source.quantity_on_hand or 0) - Decimal(warehouse_source.quantity_reserved or 0) < quantity:
                 raise ValueError("Insufficient available warehouse stock after excluding reserved quantity")
-            if on_hand < Decimal(move.quantity):
-                raise ValueError("Insufficient stock at source location")
             if item.costing_method == "fifo":
-                fifo_allocations = self._consume_fifo_layers(db, company_id, move.item_id, move.variant_id, source_warehouse_id, Decimal(move.quantity))
+                fifo_allocations = self._consume_fifo_layers(db, company_id, move.item_id, move.variant_id, source_warehouse_id, quantity)
                 unit_cost = self._weighted_cost(fifo_allocations)
             elif unit_cost == 0:
-                if item.costing_method == "standard":
-                    unit_cost = Decimal(item.standard_cost or item.purchase_price or 0)
-                else:
-                    unit_cost = Decimal(warehouse_source.average_cost or 0)
-            source_balance.quantity_on_hand -= move.quantity
-            warehouse_source.quantity_on_hand -= move.quantity
+                unit_cost = Decimal(item.standard_cost or item.purchase_price or 0) if item.costing_method == "standard" else Decimal(warehouse_source.average_cost or 0)
+            source_balance.quantity_on_hand -= quantity
+            warehouse_source.quantity_on_hand -= quantity
 
         if destination_balance:
+            quantity = Decimal(move.quantity)
             warehouse_destination = self._warehouse_stock(db, company_id, move.item_id, move.variant_id, destination_warehouse_id)
             old_qty = Decimal(warehouse_destination.quantity_on_hand or 0)
             old_cost = Decimal(warehouse_destination.average_cost or 0)
             if unit_cost == 0:
                 unit_cost = old_cost if old_qty > 0 else Decimal(item.standard_cost or item.purchase_price or 0)
-            destination_balance.quantity_on_hand += move.quantity
-            warehouse_destination.quantity_on_hand += move.quantity
-            new_qty = old_qty + Decimal(move.quantity)
+            destination_balance.quantity_on_hand += quantity
+            warehouse_destination.quantity_on_hand += quantity
+            new_qty = old_qty + quantity
             if new_qty > 0:
-                warehouse_destination.average_cost = ((old_qty * old_cost) + (Decimal(move.quantity) * unit_cost)) / new_qty
+                warehouse_destination.average_cost = ((old_qty * old_cost) + (quantity * unit_cost)) / new_qty
             if item.costing_method == "fifo":
-                allocations = fifo_allocations or [(Decimal(move.quantity), unit_cost)]
-                self._add_fifo_layers(db, company_id, move.item_id, move.variant_id, destination_warehouse_id, move.id, allocations)
+                self._add_fifo_layers(db, company_id, move.item_id, move.variant_id, destination_warehouse_id, move.id, fifo_allocations or [(quantity, unit_cost)])
 
         if item.costing_method == "fifo" and source_balance and not fifo_allocations:
             raise ValueError("FIFO valuation could not determine a cost layer")
-
         move.unit_cost = unit_cost
         move.status = "posted"
         db.flush()
         return move
 
     def _consume_fifo_layers(self, db: Session, company_id: int, item_id: int, variant_id: int | None, warehouse_id: int, quantity: Decimal):
-        stmt = select(InventoryCostLayer).where(
-            InventoryCostLayer.company_id == company_id,
-            InventoryCostLayer.item_id == item_id,
-            InventoryCostLayer.warehouse_id == warehouse_id,
-            InventoryCostLayer.quantity_remaining > 0,
-        )
+        stmt = select(InventoryCostLayer).where(InventoryCostLayer.company_id == company_id, InventoryCostLayer.item_id == item_id, InventoryCostLayer.warehouse_id == warehouse_id, InventoryCostLayer.quantity_remaining > 0)
         stmt = stmt.where(InventoryCostLayer.variant_id == variant_id) if variant_id is not None else stmt.where(InventoryCostLayer.variant_id.is_(None))
         layers = db.scalars(stmt.order_by(InventoryCostLayer.id).with_for_update()).all()
         available = sum((Decimal(layer.quantity_remaining) for layer in layers), Decimal("0"))
@@ -176,33 +144,18 @@ class InventoryStockMoveService:
     @staticmethod
     def _weighted_cost(allocations: list[tuple[Decimal, Decimal]]) -> Decimal:
         quantity = sum((qty for qty, _ in allocations), Decimal("0"))
-        if quantity <= 0:
-            return Decimal("0")
-        return sum((qty * cost for qty, cost in allocations), Decimal("0")) / quantity
+        return Decimal("0") if quantity <= 0 else sum((qty * cost for qty, cost in allocations), Decimal("0")) / quantity
 
     @staticmethod
     def _add_fifo_layers(db: Session, company_id: int, item_id: int, variant_id: int | None, warehouse_id: int, move_id: int, allocations: list[tuple[Decimal, Decimal]]) -> None:
         for quantity, unit_cost in allocations:
-            if quantity <= 0:
-                continue
-            db.add(InventoryCostLayer(
-                company_id=company_id,
-                item_id=item_id,
-                variant_id=variant_id,
-                warehouse_id=warehouse_id,
-                receipt_move_id=move_id,
-                quantity_remaining=quantity,
-                unit_cost=unit_cost,
-            ))
+            if quantity > 0:
+                db.add(InventoryCostLayer(company_id=company_id, item_id=item_id, variant_id=variant_id, warehouse_id=warehouse_id, receipt_move_id=move_id, quantity_remaining=quantity, unit_cost=unit_cost))
         db.flush()
 
     @staticmethod
     def _location_balance(db: Session, company_id: int, item_id: int, variant_id: int | None, location_id: int, *, lock: bool):
-        stmt = select(InventoryLocationStock).where(
-            InventoryLocationStock.company_id == company_id,
-            InventoryLocationStock.item_id == item_id,
-            InventoryLocationStock.location_id == location_id,
-        )
+        stmt = select(InventoryLocationStock).where(InventoryLocationStock.company_id == company_id, InventoryLocationStock.item_id == item_id, InventoryLocationStock.location_id == location_id)
         stmt = stmt.where(InventoryLocationStock.variant_id == variant_id) if variant_id is not None else stmt.where(InventoryLocationStock.variant_id.is_(None))
         if lock:
             stmt = stmt.with_for_update()
@@ -218,11 +171,7 @@ class InventoryStockMoveService:
 
     @staticmethod
     def _warehouse_stock(db: Session, company_id: int, item_id: int, variant_id: int | None, warehouse_id: int):
-        stmt = select(InventoryStock).where(
-            InventoryStock.company_id == company_id,
-            InventoryStock.item_id == item_id,
-            InventoryStock.warehouse_id == warehouse_id,
-        )
+        stmt = select(InventoryStock).where(InventoryStock.company_id == company_id, InventoryStock.item_id == item_id, InventoryStock.warehouse_id == warehouse_id)
         stmt = stmt.where(InventoryStock.variant_id == variant_id) if variant_id is not None else stmt.where(InventoryStock.variant_id.is_(None))
         stock = db.scalar(stmt.with_for_update())
         if stock is None:
