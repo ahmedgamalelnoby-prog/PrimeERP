@@ -44,16 +44,11 @@ class CatalogService:
     def create_category(self, db: Session, payload):
         self._company(db, payload.company_id)
         if payload.parent_id:
+            if payload.parent_id == 0:
+                raise ValueError("Parent category is invalid")
             parent = db.scalar(select(ProductCategory).where(ProductCategory.id == payload.parent_id, ProductCategory.company_id == payload.company_id, ProductCategory.is_active.is_(True)))
             if parent is None:
                 raise ValueError("Parent category is invalid")
-            if parent.id == payload.parent_id:
-                current_id = parent.id
-                while current_id is not None:
-                    if current_id == payload.parent_id and current_id != parent.id:
-                        raise ValueError("Category hierarchy contains a cycle")
-                    ancestor = db.scalar(select(ProductCategory.parent_id).where(ProductCategory.id == current_id, ProductCategory.company_id == payload.company_id))
-                    current_id = ancestor
         category = ProductCategory(**payload.model_dump())
         db.add(category)
         try:
@@ -189,8 +184,26 @@ class CatalogService:
         self._company(db, company_id)
         return list(db.scalars(select(Recipe).options(selectinload(Recipe.lines)).where(Recipe.company_id == company_id, Recipe.is_active.is_(True)).order_by(Recipe.product_id)).all())
 
-    def ingredient_unit_cost(self, db: Session, company_id: int, product_id: int) -> Decimal:
+    def _active_recipe_for_product(self, db: Session, company_id: int, product_id: int):
+        return db.scalar(select(Recipe).options(selectinload(Recipe.lines)).where(Recipe.company_id == company_id, Recipe.product_id == product_id, Recipe.is_active.is_(True)).order_by(Recipe.version.desc()))
+
+    def ingredient_unit_cost(self, db: Session, company_id: int, product_id: int, _visited: set[int] | None = None) -> Decimal:
         product = self._product(db, company_id, product_id)
+        visited = set(_visited or ())
+        if product_id in visited:
+            raise ValueError("Recipe cycle detected while calculating product cost")
+        visited.add(product_id)
+
+        # A product with an active recipe is a manufactured/menu product. Its
+        # effective cost is calculated from its current ingredient tree.
+        active_recipe = self._active_recipe_for_product(db, company_id, product_id)
+        if active_recipe is not None:
+            return self._recipe_cost_recursive(db, company_id, active_recipe, visited)
+
+        costing_method = (product.costing_method or "weighted_average").lower()
+        if costing_method == "standard":
+            return _money(Decimal(product.standard_cost or 0))
+
         average = db.scalar(select(func.avg(InventoryStock.average_cost)).where(InventoryStock.company_id == company_id, InventoryStock.item_id == product_id))
         if average is not None and Decimal(average) > 0:
             return _money(Decimal(average))
@@ -199,12 +212,16 @@ class CatalogService:
             return _money(Decimal(latest_recorded))
         return _money(Decimal(product.standard_cost or product.purchase_price or 0))
 
-    def recipe_cost(self, db: Session, company_id: int, recipe_id: int) -> Decimal:
-        recipe = self.get_recipe(db, company_id, recipe_id)
+    def _recipe_cost_recursive(self, db: Session, company_id: int, recipe: Recipe, visited: set[int]) -> Decimal:
         total = Decimal("0")
         for line in recipe.lines:
-            total += Decimal(line.quantity) * (Decimal("1") + Decimal(line.waste_percentage or 0) / 100) * self.ingredient_unit_cost(db, company_id, line.ingredient_product_id)
+            ingredient_cost = self.ingredient_unit_cost(db, company_id, line.ingredient_product_id, visited)
+            total += Decimal(line.quantity) * (Decimal("1") + Decimal(line.waste_percentage or 0) / 100) * ingredient_cost
         return _money((total * (Decimal("1") + Decimal(recipe.waste_percentage or 0) / 100)) / Decimal(recipe.yield_quantity))
+
+    def recipe_cost(self, db: Session, company_id: int, recipe_id: int) -> Decimal:
+        recipe = self.get_recipe(db, company_id, recipe_id)
+        return self._recipe_cost_recursive(db, company_id, recipe, {recipe.product_id})
 
     def create_menu(self, db: Session, payload):
         self._company(db, payload.company_id)
@@ -248,7 +265,7 @@ class CatalogService:
     def pricing_analysis(self, db: Session, company_id: int, product_id: int, target_margin: Decimal = Decimal("30"), price_list_id: int | None = None):
         product = self._product(db, company_id, product_id)
         current_cost = self.ingredient_unit_cost(db, company_id, product_id)
-        recipe = db.scalar(select(Recipe).where(Recipe.company_id == company_id, Recipe.product_id == product_id, Recipe.is_active.is_(True)).order_by(Recipe.version.desc()))
+        recipe = self._active_recipe_for_product(db, company_id, product_id)
         recipe_cost = self.recipe_cost(db, company_id, recipe.id) if recipe else None
         if recipe_cost is not None:
             current_cost = recipe_cost
@@ -274,6 +291,23 @@ class CatalogService:
         prices = list(db.scalars(prices_query.order_by(ProductPrice.valid_from.desc()).limit(50)).all())
         costs = list(db.scalars(select(ProductCostHistory).where(ProductCostHistory.company_id == company_id, ProductCostHistory.product_id == product_id).order_by(ProductCostHistory.effective_at.desc()).limit(50)).all())
         return {"product_id": product.id, "product_name": product.name_en or product.name_ar, "price_list_id": selected_price_list_id, "current_cost": current_cost, "sale_price": sale_price, "gross_margin": margin, "gross_margin_percentage": margin_pct, "recommended_price_at_margin": recommended, "recipe_cost": recipe_cost, "price_history": [{"id": p.id, "sale_price": p.sale_price, "valid_from": p.valid_from, "valid_to": p.valid_to, "min_quantity": p.min_quantity, "source": p.source} for p in prices], "cost_history": [{"id": c.id, "cost": c.cost, "cost_type": c.cost_type, "effective_at": c.effective_at, "source": c.source} for c in costs]}
+
+    def pricing_impact(self, db: Session, company_id: int, target_margin: Decimal = Decimal("30"), price_list_id: int | None = None, below_margin: Decimal | None = None):
+        self._company(db, company_id)
+        threshold = target_margin if below_margin is None else below_margin
+        menus = list(db.scalars(select(Menu).options(selectinload(Menu.items)).where(Menu.company_id == company_id, Menu.is_active.is_(True))).all())
+        seen: set[int] = set()
+        impacted = []
+        for menu in menus:
+            for item in menu.items:
+                if not item.is_available or item.product_id in seen:
+                    continue
+                seen.add(item.product_id)
+                analysis = self.pricing_analysis(db, company_id, item.product_id, target_margin, price_list_id or item.price_list_id)
+                if analysis["gross_margin_percentage"] < threshold:
+                    impacted.append({"menu_id": menu.id, "menu_code": menu.code, "product_id": analysis["product_id"], "product_name": analysis["product_name"], "price_list_id": analysis["price_list_id"], "current_cost": analysis["current_cost"], "sale_price": analysis["sale_price"], "gross_margin_percentage": analysis["gross_margin_percentage"], "recommended_price_at_margin": analysis["recommended_price_at_margin"]})
+        impacted.sort(key=lambda row: (row["gross_margin_percentage"], row["product_id"]))
+        return {"target_margin": target_margin, "below_margin": threshold, "price_list_id": price_list_id, "count": len(impacted), "items": impacted}
 
 
 catalog_service = CatalogService()
