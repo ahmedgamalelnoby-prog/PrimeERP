@@ -1,7 +1,14 @@
 name: PrimeERP Docker Validation
 
 on:
+  push:
+    branches: ["**"]
+  pull_request:
   workflow_dispatch:
+
+concurrency:
+  group: primeerp-docker-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -44,14 +51,15 @@ jobs:
       - name: Start full Docker stack
         run: docker compose --env-file .env.docker up -d --build
 
-      - name: Wait for database, migration and backend health
+      - name: Wait for database, migration and application health
         run: |
           set -euo pipefail
           for _ in $(seq 1 48); do
             db=$(docker inspect --format '{{.State.Health.Status}}' primeerp-db 2>/dev/null || true)
             migration=$(docker inspect --format '{{.State.Status}}' primeerp-migrate 2>/dev/null || true)
             backend=$(docker inspect --format '{{.State.Health.Status}}' primeerp-backend 2>/dev/null || true)
-            echo "db=$db migration=$migration backend=$backend"
+            frontend=$(docker inspect --format '{{.State.Health.Status}}' primeerp-frontend 2>/dev/null || true)
+            echo "db=$db migration=$migration backend=$backend frontend=$frontend"
             if [[ "$migration" == "exited" ]]; then
               code=$(docker inspect --format '{{.State.ExitCode}}' primeerp-migrate)
               if [[ "$code" != "0" ]]; then
@@ -59,18 +67,18 @@ jobs:
                 exit 1
               fi
             fi
-            if [[ "$backend" == "unhealthy" ]]; then
-              docker compose --env-file .env.docker logs --tail=200 backend
+            if [[ "$backend" == "unhealthy" || "$frontend" == "unhealthy" ]]; then
+              docker compose --env-file .env.docker logs --tail=200 backend frontend
               exit 1
             fi
-            if [[ "$backend" == "healthy" && "$migration" == "exited" ]]; then
+            if [[ "$backend" == "healthy" && "$frontend" == "healthy" && "$migration" == "exited" ]]; then
               code=$(docker inspect --format '{{.State.ExitCode}}' primeerp-migrate)
               [[ "$code" == "0" ]] && exit 0
             fi
             sleep 5
           done
           docker compose --env-file .env.docker ps
-          docker compose --env-file .env.docker logs --tail=200 db migrate backend
+          docker compose --env-file .env.docker logs --tail=200 db migrate backend frontend
           exit 1
 
       - name: Runtime API readiness smoke test
@@ -82,12 +90,22 @@ jobs:
       - name: Runtime frontend smoke test
         run: curl -fsS http://127.0.0.1:3000/ >/dev/null
 
+      - name: Runtime frontend API proxy smoke test
+        run: |
+          status=$(curl -s -o /tmp/api-response.txt -w '%{http_code}' http://127.0.0.1:3000/api/v1/identity/me)
+          test "$status" = "401"
+          grep -Eq 'detail|Not authenticated' /tmp/api-response.txt
+
+      - name: Migration idempotency check
+        run: docker compose --env-file .env.docker run --rm migrate
+
       - name: Docker runtime diagnostics
         if: always()
         run: |
           docker compose --env-file .env.docker ps
           docker compose --env-file .env.docker logs --tail=100 migrate
           docker compose --env-file .env.docker logs --tail=100 backend
+          docker compose --env-file .env.docker logs --tail=100 frontend
 
       - name: Cleanup Docker stack
         if: always()
