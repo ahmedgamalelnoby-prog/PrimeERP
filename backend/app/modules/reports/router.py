@@ -6,10 +6,18 @@ from email.message import EmailMessage
 from typing import Any
 
 import requests
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.context import get_effective_tenant_id
+from app.database.session import get_db
+from app.modules.companies.models import Company
+from app.modules.identity.dependencies import get_current_user
+from app.modules.identity.models import User
+from app.modules.reports.models import ReportDefinition, ReportDelivery
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -21,16 +29,38 @@ class ReportPayload(BaseModel):
 
 
 class DeliveryRequest(BaseModel):
+    company_id: int = Field(gt=0)
     channel: str = Field(pattern="^(email|whatsapp)$")
     destination: str = Field(min_length=3, max_length=320)
     title: str = Field(min_length=1, max_length=255)
     body: str = Field(min_length=1)
 
 
+class ScheduleRequest(BaseModel):
+    company_id: int = Field(gt=0)
+    code: str = Field(min_length=1, max_length=100)
+    name: str = Field(min_length=1, max_length=255)
+    report_type: str = Field(default="custom", max_length=50)
+    channel: str = Field(pattern="^(email|whatsapp)$")
+    destination: str = Field(min_length=3, max_length=320)
+    schedule: str = Field(min_length=1, max_length=120)
+    format: str = Field(default="json", pattern="^(json|text)$")
+    parameters: dict[str, Any] = {}
+    filters: dict[str, Any] = {}
+
+
 class AIAnalysisRequest(BaseModel):
     domain: str = Field(default="general", min_length=1, max_length=80)
     metrics: dict[str, Any]
     question: str | None = Field(default=None, max_length=2000)
+
+
+def _company_for_user(db: Session, company_id: int, user: User) -> Company:
+    tenant_id = get_effective_tenant_id(user)
+    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == tenant_id, Company.is_active.is_(True)))
+    if company is None:
+        raise HTTPException(403, "Company is outside the current tenant or inactive")
+    return company
 
 
 def _send_email(destination: str, title: str, body: str) -> None:
@@ -53,12 +83,7 @@ def _send_whatsapp(destination: str, body: str) -> str:
     if not settings.WHATSAPP_ENABLED or not settings.WHATSAPP_ACCESS_TOKEN or not settings.WHATSAPP_PHONE_NUMBER_ID:
         raise HTTPException(status_code=503, detail="WhatsApp delivery is not configured")
     url = f"{settings.WHATSAPP_API_BASE_URL.rstrip('/')}/{settings.WHATSAPP_PHONE_NUMBER_ID}/messages"
-    response = requests.post(
-        url,
-        headers={"Authorization": f"Bearer {settings.WHATSAPP_ACCESS_TOKEN}", "Content-Type": "application/json"},
-        json={"messaging_product": "whatsapp", "to": destination, "type": "text", "text": {"body": body}},
-        timeout=30,
-    )
+    response = requests.post(url, headers={"Authorization": f"Bearer {settings.WHATSAPP_ACCESS_TOKEN}", "Content-Type": "application/json"}, json={"messaging_product": "whatsapp", "to": destination, "type": "text", "text": {"body": body}}, timeout=30)
     if response.status_code not in {200, 201}:
         raise HTTPException(status_code=502, detail=f"WhatsApp provider rejected delivery: HTTP {response.status_code}")
     payload = response.json()
@@ -85,43 +110,55 @@ def _deterministic_analysis(metrics: dict[str, Any]) -> dict[str, Any]:
 def _ai_analysis(request: AIAnalysisRequest) -> dict[str, Any]:
     fallback = _deterministic_analysis(request.metrics)
     if not settings.OPENAI_API_KEY:
-        return {**fallback, "engine": "prime_rules_v1", "ai_provider": "not_configured"}
-    prompt = (
-        "You are PrimeERP's financial/operational analyst. Analyze the supplied ERP metrics. "
-        "Do not invent missing values. Return strict JSON with keys: executive_summary, risks, "
-        "recommendations, questions_for_controller. Domain=" + request.domain + "\nMetrics=" +
-        json.dumps(request.metrics, ensure_ascii=False, default=str) +
-        ("\nQuestion=" + request.question if request.question else "")
-    )
+        return {**fallback, "ai_provider": "not_configured"}
+    prompt = "You are PrimeERP's financial and operational analyst. Analyze the supplied ERP metrics. Do not invent missing values. Return strict JSON with keys executive_summary, risks, recommendations, questions_for_controller. Domain=" + request.domain + "\nMetrics=" + json.dumps(request.metrics, ensure_ascii=False, default=str) + ("\nQuestion=" + request.question if request.question else "")
     try:
-        response = requests.post(
-            f"{settings.OPENAI_BASE_URL.rstrip('/')}/chat/completions",
-            headers={"Authorization": f"Bearer {settings.OPENAI_API_KEY}", "Content-Type": "application/json"},
-            json={"model": settings.AI_MODEL, "messages": [{"role": "user", "content": prompt}], "temperature": 0.1, "response_format": {"type": "json_object"}},
-            timeout=60,
-        )
+        response = requests.post(f"{settings.OPENAI_BASE_URL.rstrip('/')}/chat/completions", headers={"Authorization": f"Bearer {settings.OPENAI_API_KEY}", "Content-Type": "application/json"}, json={"model": settings.AI_MODEL, "messages": [{"role": "user", "content": prompt}], "temperature": 0.1, "response_format": {"type": "json_object"}}, timeout=60)
         response.raise_for_status()
-        body = response.json()
-        content = body["choices"][0]["message"]["content"]
+        content = response.json()["choices"][0]["message"]["content"]
         return {"engine": "llm", "ai_provider": "openai_compatible", "analysis": json.loads(content), "rule_checks": fallback}
     except (requests.RequestException, KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
         return {**fallback, "ai_provider": "fallback_after_provider_error", "provider_error": str(exc)[:500]}
 
 
 @router.post("/preview")
-def preview_report(payload: ReportPayload) -> dict[str, Any]:
+def preview_report(payload: ReportPayload, current_user: User = Depends(get_current_user)) -> dict[str, Any]:
     body = "\n".join(f"{key}: {value}" for key, value in payload.data.items()) if payload.format == "text" else json.dumps(payload.data, ensure_ascii=False, indent=2, default=str)
     return {"title": payload.title, "format": payload.format, "body": body}
 
 
 @router.post("/deliver")
-def deliver_report(request: DeliveryRequest) -> dict[str, Any]:
+def deliver_report(request: DeliveryRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict[str, Any]:
+    _company_for_user(db, request.company_id, current_user)
     if request.channel == "email":
         _send_email(request.destination, request.title, request.body)
         return {"status": "sent", "channel": "email"}
     return {"status": "sent", "channel": "whatsapp", "provider_reference": _send_whatsapp(request.destination, request.body)}
 
 
+@router.post("/schedules", status_code=201)
+def create_schedule(request: ScheduleRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict[str, Any]:
+    _company_for_user(db, request.company_id, current_user)
+    definition = db.scalar(select(ReportDefinition).where(ReportDefinition.company_id == request.company_id, ReportDefinition.code == request.code))
+    if definition is None:
+        definition = ReportDefinition(company_id=request.company_id, code=request.code, name=request.name, report_type=request.report_type, parameters_json=json.dumps(request.parameters, ensure_ascii=False))
+        db.add(definition)
+        db.flush()
+    elif not definition.is_active:
+        raise HTTPException(409, "Report definition is inactive")
+    delivery = ReportDelivery(company_id=request.company_id, report_definition_id=definition.id, channel=request.channel, destination=request.destination, schedule=request.schedule, format=request.format, filters_json=json.dumps(request.filters, ensure_ascii=False))
+    db.add(delivery)
+    db.commit()
+    db.refresh(delivery)
+    return {"id": delivery.id, "report_definition_id": definition.id, "status": "scheduled"}
+
+
+@router.get("/schedules")
+def list_schedules(company_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company_for_user(db, company_id, current_user)
+    return list(db.scalars(select(ReportDelivery).where(ReportDelivery.company_id == company_id).order_by(ReportDelivery.id.desc()).limit(500)).all())
+
+
 @router.post("/ai/analyze")
-def analyze_report(request: AIAnalysisRequest) -> dict[str, Any]:
+def analyze_report(request: AIAnalysisRequest, current_user: User = Depends(get_current_user)) -> dict[str, Any]:
     return _ai_analysis(request)
