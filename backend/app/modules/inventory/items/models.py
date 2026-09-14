@@ -49,15 +49,17 @@ class InventoryStock(Base):
     id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     item_id = Column(Integer, ForeignKey("inventory_items.id", ondelete="CASCADE"), nullable=False, index=True)
+    variant_id = Column(Integer, ForeignKey("product_variants.id", ondelete="RESTRICT"), nullable=True, index=True)
     warehouse_id = Column(Integer, ForeignKey("inventory_warehouses.id", ondelete="RESTRICT"), nullable=False, index=True)
     quantity_on_hand = Column(Numeric(18, 4), nullable=False, default=0)
     quantity_reserved = Column(Numeric(18, 4), nullable=False, default=0)
     average_cost = Column(Numeric(18, 4), nullable=False, default=0)
     item = relationship("InventoryItem", back_populates="stocks")
+    variant = relationship("ProductVariant")
     warehouse = relationship("InventoryWarehouse", back_populates="stocks")
     __table_args__ = (
-        UniqueConstraint("company_id", "item_id", "warehouse_id", name="uq_inventory_stock_location"),
         CheckConstraint("quantity_on_hand >= 0", name="ck_inventory_stock_on_hand"),
         CheckConstraint("quantity_reserved >= 0", name="ck_inventory_stock_reserved"),
         CheckConstraint("average_cost >= 0", name="ck_inventory_stock_average_cost"),
+        CheckConstraint("variant_id IS NOT NULL OR item_id IS NOT NULL", name="ck_inventory_stock_item_key"),
     )
