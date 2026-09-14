@@ -19,7 +19,7 @@ env:
 jobs:
   docker:
     name: Docker Build, Migration & Runtime Validation
-    runs-on: [self-hosted, Windows, X64]
+    runs-on: [self-hosted, PrimeERP]
     timeout-minutes: 30
 
     steps:
