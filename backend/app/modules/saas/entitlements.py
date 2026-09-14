@@ -34,11 +34,11 @@ def _active_subscription(db: Session, tenant_id: int) -> Subscription | None:
 
 
 def tenant_has_module(db: Session, tenant_id: int, module_code: str) -> bool:
-    if module_code in CORE_MODULES:
-        return True
     subscription = _active_subscription(db, tenant_id)
     if subscription is None:
         return False
+    if module_code in CORE_MODULES:
+        return True
     module = db.scalar(select(SystemModule).where(SystemModule.code == module_code, SystemModule.is_active.is_(True)))
     if module is None:
         return False
@@ -80,7 +80,10 @@ def require_module(module_code: str) -> Callable:
 def _limit_for(db: Session, tenant_id: int, resource: str) -> int | None:
     subscription = _active_subscription(db, tenant_id)
     if subscription is None:
-        return None
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="An active subscription is required for this operation",
+        )
     custom = getattr(subscription, f"custom_max_{resource}", None)
     if custom is not None:
         return custom
