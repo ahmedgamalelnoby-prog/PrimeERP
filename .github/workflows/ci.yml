@@ -30,22 +30,48 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Detect Python 3.10 runtime without PowerShell
+      - name: Detect or bootstrap Python 3.10 runtime without PowerShell
         run: |
           set "PYTHON_EXE="
           if exist "C:\Users\Admin\AppData\Local\Programs\Python\Python310\python.exe" set "PYTHON_EXE=C:\Users\Admin\AppData\Local\Programs\Python\Python310\python.exe"
           if not defined PYTHON_EXE if exist "C:\Program Files\Python310\python.exe" set "PYTHON_EXE=C:\Program Files\Python310\python.exe"
+          if not defined PYTHON_EXE if exist "C:\Program Files (x86)\Python310\python.exe" set "PYTHON_EXE=C:\Program Files (x86)\Python310\python.exe"
           if not defined PYTHON_EXE if exist "C:\Python310\python.exe" set "PYTHON_EXE=C:\Python310\python.exe"
-          if not defined PYTHON_EXE if exist "%SystemRoot%\py.exe" set "PYTHON_EXE=%SystemRoot%\py.exe"
+          if not defined PYTHON_EXE if exist "C:\Users\runneradmin\AppData\Local\Programs\Python\Python310\python.exe" set "PYTHON_EXE=C:\Users\runneradmin\AppData\Local\Programs\Python\Python310\python.exe"
+          if not defined PYTHON_EXE if exist "C:\Users\Administrator\AppData\Local\Programs\Python\Python310\python.exe" set "PYTHON_EXE=C:\Users\Administrator\AppData\Local\Programs\Python\Python310\python.exe"
           if not defined PYTHON_EXE (
             for /f "tokens=2,*" %%A in ('reg query "HKLM\SOFTWARE\Python\PythonCore\3.10\InstallPath" /ve 2^>nul ^| findstr /I "REG_SZ"') do if exist "%%Bpython.exe" set "PYTHON_EXE=%%Bpython.exe"
           )
           if not defined PYTHON_EXE (
-            for /f "tokens=2,*" %%A in ('reg query "HKCU\SOFTWARE\Python\PythonCore\3.10\InstallPath" /ve 2^>nul ^| findstr /I "REG_SZ"') do if exist "%%Bpython.exe" set "PYTHON_EXE=%%Bpython.exe"
+            for /f "tokens=2,*" %%A in ('reg query "HKLM\SOFTWARE\WOW6432Node\Python\PythonCore\3.10\InstallPath" /ve 2^>nul ^| findstr /I "REG_SZ"') do if exist "%%Bpython.exe" set "PYTHON_EXE=%%Bpython.exe"
           )
           if not defined PYTHON_EXE (
-            echo Python 3.10 runtime was not found on the self-hosted runner.
-            echo Checked standard installation paths and Windows Python registry entries.
+            for /f "tokens=2,*" %%A in ('reg query "HKCU\SOFTWARE\Python\PythonCore\3.10\InstallPath" /ve 2^>nul ^| findstr /I "REG_SZ"') do if exist "%%Bpython.exe" set "PYTHON_EXE=%%Bpython.exe"
+          )
+          if not defined PYTHON_EXE if exist "%SystemRoot%\py.exe" (
+            "%SystemRoot%\py.exe" -3.10 --version >nul 2>&1
+            if not errorlevel 1 set "PYTHON_EXE=%SystemRoot%\py.exe"
+          )
+
+          if not defined PYTHON_EXE (
+            echo Python 3.10 was not installed for the self-hosted runner account.
+            echo Bootstrapping the official CPython 3.10.11 NuGet build intended for CI environments.
+            if exist ".ci-python" rmdir /S /Q ".ci-python"
+            if not exist ".ci-nuget.exe" curl.exe -fL --retry 3 --retry-delay 2 -o ".ci-nuget.exe" "https://dist.nuget.org/win-x86-commandline/latest/nuget.exe"
+            if not exist ".ci-nuget.exe" (
+              echo Failed to download NuGet CLI.
+              exit /b 1
+            )
+            ".ci-nuget.exe" install python -Version 3.10.11 -ExcludeVersion -OutputDirectory ".ci-python" -NonInteractive -DirectDownload
+            if errorlevel 1 (
+              echo Failed to bootstrap Python 3.10.11 from NuGet.
+              exit /b 1
+            )
+            set "PYTHON_EXE=%CD%\.ci-python\python\tools\python.exe"
+          )
+
+          if not exist "%PYTHON_EXE%" (
+            echo Selected Python runtime does not exist: %PYTHON_EXE%
             exit /b 1
           )
           echo Using Python runtime: %PYTHON_EXE%
@@ -55,6 +81,10 @@ jobs:
           ) else (
             "%PYTHON_EXE%" --version
             "%PYTHON_EXE%" -m venv .ci-venv
+          )
+          if errorlevel 1 (
+            echo Failed to create the isolated Python 3.10 virtual environment.
+            exit /b 1
           )
           .ci-venv\Scripts\python.exe --version
 
