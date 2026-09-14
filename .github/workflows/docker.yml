@@ -16,95 +16,76 @@ permissions:
 env:
   COMPOSE_PROJECT_NAME: primeerp-ci
 
-defaults:
-  run:
-    shell: bash
-
 jobs:
   docker:
     name: Docker Build, Migration & Runtime Validation
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Verify Docker
         run: |
-          docker --version
+          docker version
           docker compose version
-          docker info >/dev/null
-
       - name: Prepare Docker environment
         run: cp .env.docker.example .env.docker
-
       - name: Validate Docker Compose
         run: docker compose --env-file .env.docker config -q
-
       - name: Build backend image
         run: docker build --pull -t primeerp-backend:ci ./backend
-
       - name: Validate backend image Python sources
         run: docker run --rm primeerp-backend:ci python -m compileall -q app
-
       - name: Build frontend image
         run: docker build --pull -t primeerp-frontend:ci ./frontend
-
       - name: Start full Docker stack
         run: docker compose --env-file .env.docker up -d --build
-
       - name: Wait for database, migration and backend health
         run: |
-          deadline=$((SECONDS+480))
+          deadline=$((SECONDS + 480))
           backend_healthy=false
           while [ $SECONDS -lt $deadline ]; do
             db=$(docker inspect --format '{{.State.Health.Status}}' primeerp-db 2>/dev/null || true)
             migration=$(docker inspect --format '{{.State.Status}}' primeerp-migrate 2>/dev/null || true)
             backend=$(docker inspect --format '{{.State.Health.Status}}' primeerp-backend 2>/dev/null || true)
             echo "db=$db migration=$migration backend=$backend"
-            if [ "$migration" = "exited" ]; then
+            if [ "$migration" = exited ]; then
               migration_exit=$(docker inspect --format '{{.State.ExitCode}}' primeerp-migrate 2>/dev/null || echo 1)
-              if [ "$migration_exit" != "0" ]; then
+              if [ "$migration_exit" != 0 ]; then
                 docker compose --env-file .env.docker logs migrate
-                echo "Database migration failed with exit code $migration_exit"
                 exit 1
               fi
             fi
-            if [ "$backend" = "healthy" ]; then backend_healthy=true; break; fi
-            if [ "$backend" = "unhealthy" ]; then
+            if [ "$backend" = healthy ]; then backend_healthy=true; break; fi
+            if [ "$backend" = unhealthy ]; then
               docker compose --env-file .env.docker logs --tail=200 backend
-              echo 'Backend container became unhealthy'
               exit 1
             fi
             sleep 10
           done
-          if [ "$backend_healthy" != "true" ]; then
+          if [ "$backend_healthy" != true ]; then
             docker compose --env-file .env.docker ps
             docker compose --env-file .env.docker logs --tail=200 db migrate backend
             echo 'Backend did not become healthy within 8 minutes'
             exit 1
           fi
-
       - name: Runtime API smoke test
         run: |
           docker exec primeerp-backend python -c "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8001/ready', timeout=15); print(r.status); print(r.read().decode())"
-
       - name: Runtime frontend smoke test
         run: |
-          status=$(curl -sS -o /tmp/primeerp-frontend.html -w '%{http_code}' --max-time 15 http://127.0.0.1:3000/)
-          test "$status" = "200"
-          test -s /tmp/primeerp-frontend.html
-          echo "Frontend HTTP $status, response bytes=$(wc -c < /tmp/primeerp-frontend.html)"
-
+          response=$(curl -fsS -o /tmp/primeerp-index.html -w '%{http_code}' http://127.0.0.1:3000/)
+          test "$response" = 200
+          test -s /tmp/primeerp-index.html
+          echo "Frontend HTTP $response, response length=$(wc -c < /tmp/primeerp-index.html)"
       - name: Docker runtime diagnostics
         if: always()
         run: |
           docker compose --env-file .env.docker ps || true
           docker compose --env-file .env.docker logs --tail=100 migrate || true
           docker compose --env-file .env.docker logs --tail=100 backend || true
-
       - name: Cleanup Docker stack
         if: always()
         run: |
           docker compose --env-file .env.docker down -v --remove-orphans || true
-          docker image rm primeerp-backend:ci primeerp-frontend:ci >/dev/null 2>&1 || true
+          docker image rm primeerp-backend:ci primeerp-frontend:ci 2>/dev/null || true
