@@ -1,15 +1,15 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
+from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.accounting.journals.schemas.journal_entry import JournalEntryCreate, JournalEntryResponse, JournalResponse
 from app.modules.accounting.journals.services.journal_service import journal_service
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
-
 
 router = APIRouter(
     prefix="/accounting/journal-entries",
@@ -19,9 +19,7 @@ router = APIRouter(
 
 
 def _tenant_id(current_user: User) -> int:
-    if current_user.tenant_id is None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is not assigned to a tenant")
-    return current_user.tenant_id
+    return get_effective_tenant_id(current_user)
 
 
 @router.get("/journals", response_model=list[JournalResponse])
