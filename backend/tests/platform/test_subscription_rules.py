@@ -25,8 +25,10 @@ def test_reconcile_repairs_stale_tenant_state_for_active_subscription():
     tenant = SimpleNamespace(
         is_active=False,
         is_trial=True,
-        status="suspended",
+        status="active",
         trial_ends_at="stale",
+        suspended_at=None,
+        suspension_reason=None,
     )
     service, db = _service_with_tenant(tenant)
     subscription = SimpleNamespace(tenant_id=1, status="active", trial_ends_at=None)
@@ -37,12 +39,32 @@ def test_reconcile_repairs_stale_tenant_state_for_active_subscription():
     db.commit.assert_called_once()
 
 
+def test_reconcile_preserves_explicit_tenant_suspension():
+    tenant = SimpleNamespace(
+        is_active=False,
+        is_trial=False,
+        status="suspended",
+        trial_ends_at=None,
+        suspended_at="2026-09-13T10:00:00",
+        suspension_reason="Administrative suspension",
+    )
+    service, db = _service_with_tenant(tenant)
+    subscription = SimpleNamespace(tenant_id=1, status="active", trial_ends_at=None)
+
+    service._reconcile_tenant_state_if_needed(subscription)
+
+    service._sync_tenant_state.assert_not_called()
+    db.commit.assert_not_called()
+
+
 def test_reconcile_does_not_write_when_tenant_state_matches_subscription():
     tenant = SimpleNamespace(
         is_active=True,
         is_trial=False,
         status="active",
         trial_ends_at=None,
+        suspended_at=None,
+        suspension_reason=None,
     )
     service, db = _service_with_tenant(tenant)
     subscription = SimpleNamespace(tenant_id=1, status="active", trial_ends_at=None)
