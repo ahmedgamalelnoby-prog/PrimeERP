@@ -18,6 +18,7 @@ from app.modules.integrations.salla_models import SallaCustomer, SallaOrder, Sal
 from app.modules.inventory.items.models import InventoryItem
 from app.modules.inventory.warehouses.models import InventoryWarehouse
 from app.modules.uom.models import UnitOfMeasure
+from app.modules.catalog.models import ProductVariant
 
 
 class SallaERPExecutionError(ValueError):
@@ -29,14 +30,12 @@ def _d(value) -> Decimal:
 
 
 def _mapping(db, company_id, connection_id, entity_type, external_id):
-    return db.scalar(
-        select(IntegrationMapping).where(
-            IntegrationMapping.company_id == company_id,
-            IntegrationMapping.connection_id == connection_id,
-            IntegrationMapping.entity_type == entity_type,
-            IntegrationMapping.external_id == str(external_id),
-        )
-    )
+    return db.scalar(select(IntegrationMapping).where(
+        IntegrationMapping.company_id == company_id,
+        IntegrationMapping.connection_id == connection_id,
+        IntegrationMapping.entity_type == entity_type,
+        IntegrationMapping.external_id == str(external_id),
+    ))
 
 
 def _set_mapping(db, company_id, connection_id, entity_type, external_id, local_id):
@@ -44,47 +43,29 @@ def _set_mapping(db, company_id, connection_id, entity_type, external_id, local_
     if obj:
         obj.local_id = local_id
         return obj
-    obj = IntegrationMapping(
-        company_id=company_id,
-        connection_id=connection_id,
-        entity_type=entity_type,
-        external_id=str(external_id),
-        local_id=local_id,
-    )
-    db.add(obj)
-    db.flush()
-    return obj
+    obj = IntegrationMapping(company_id=company_id, connection_id=connection_id,
+                             entity_type=entity_type, external_id=str(external_id), local_id=local_id)
+    db.add(obj); db.flush(); return obj
 
 
 def _system_user_id(db, company_id):
     company = db.scalar(select(Company).where(Company.id == company_id))
     if not company or company.tenant_id is None:
         raise SallaERPExecutionError("Company tenant context is missing")
-    user = db.scalar(
-        select(User)
-        .where(User.tenant_id == company.tenant_id, User.is_active.is_(True))
-        .order_by(User.id)
-    )
+    user = db.scalar(select(User).where(User.tenant_id == company.tenant_id, User.is_active.is_(True)).order_by(User.id))
     if not user:
         raise SallaERPExecutionError("No active tenant user is available for ERP posting")
     return user.id
 
 
 def _uom(db, company_id):
-    obj = db.scalar(
-        select(UnitOfMeasure).where(
-            UnitOfMeasure.company_id == company_id,
-            UnitOfMeasure.code == "unit",
-            UnitOfMeasure.is_active.is_(True),
-        )
-    )
+    obj = db.scalar(select(UnitOfMeasure).where(UnitOfMeasure.company_id == company_id,
+                                                UnitOfMeasure.code == "unit",
+                                                UnitOfMeasure.is_active.is_(True)))
     if obj:
         return obj
-    obj = db.scalar(
-        select(UnitOfMeasure)
-        .where(UnitOfMeasure.company_id == company_id, UnitOfMeasure.is_active.is_(True))
-        .order_by(UnitOfMeasure.id)
-    )
+    obj = db.scalar(select(UnitOfMeasure).where(UnitOfMeasure.company_id == company_id,
+                                                UnitOfMeasure.is_active.is_(True)).order_by(UnitOfMeasure.id))
     if not obj:
         raise SallaERPExecutionError("No active UOM is configured for the company")
     return obj
@@ -94,39 +75,24 @@ def _customer(db, order, customer):
     external_id = order.customer_id or f"guest-{order.external_id}"
     mapped = _mapping(db, order.company_id, order.connection_id, "salla_customer", external_id)
     if mapped:
-        obj = db.scalar(
-            select(BusinessPartner).where(
-                BusinessPartner.id == mapped.local_id,
-                BusinessPartner.company_id == order.company_id,
-            )
-        )
+        obj = db.scalar(select(BusinessPartner).where(BusinessPartner.id == mapped.local_id,
+                                                      BusinessPartner.company_id == order.company_id))
         if obj:
             if customer:
                 obj.name = " ".join(x for x in [customer.first_name, customer.last_name] if x) or obj.name
                 obj.phone = customer.mobile or obj.phone
                 obj.email = customer.email or obj.email
             return obj
-    name = " ".join(
-        x for x in [customer.first_name if customer else None, customer.last_name if customer else None] if x
-    ) or f"Salla Customer {external_id}"
+    name = " ".join(x for x in [customer.first_name if customer else None,
+                                customer.last_name if customer else None] if x) or f"Salla Customer {external_id}"
     code = f"SALLA-{external_id}"[:50]
-    obj = db.scalar(
-        select(BusinessPartner).where(
-            BusinessPartner.company_id == order.company_id,
-            BusinessPartner.code == code,
-        )
-    )
+    obj = db.scalar(select(BusinessPartner).where(BusinessPartner.company_id == order.company_id,
+                                                   BusinessPartner.code == code))
     if not obj:
-        obj = BusinessPartner(
-            company_id=order.company_id,
-            code=code,
-            name=name,
-            partner_type="customer",
-            phone=customer.mobile if customer else None,
-            email=customer.email if customer else None,
-        )
-        db.add(obj)
-        db.flush()
+        obj = BusinessPartner(company_id=order.company_id, code=code, name=name,
+                              partner_type="customer", phone=customer.mobile if customer else None,
+                              email=customer.email if customer else None)
+        db.add(obj); db.flush()
     _set_mapping(db, order.company_id, order.connection_id, "salla_customer", external_id, obj.id)
     return obj
 
@@ -137,23 +103,17 @@ def _tax_id_for_item(db, company_id, item):
     if base <= 0 or tax <= 0:
         return None
     rate = (tax / base * Decimal("100")).quantize(Decimal("0.0001"))
-    taxes = db.scalars(
-        select(TaxRate).where(
-            TaxRate.company_id == company_id,
-            TaxRate.is_active.is_(True),
-            TaxRate.is_withholding.is_(False),
-        )
-    ).all()
+    taxes = db.scalars(select(TaxRate).where(TaxRate.company_id == company_id,
+                                              TaxRate.is_active.is_(True),
+                                              TaxRate.is_withholding.is_(False))).all()
     matches = [t for t in taxes if abs(Decimal(t.rate) - rate) <= Decimal("0.02")]
     if not matches:
-        raise SallaERPExecutionError(
-            f"No active ERP Tax Master rate matches Salla tax rate {rate}% for item {item.external_id}"
-        )
+        raise SallaERPExecutionError(f"No active ERP Tax Master rate matches Salla tax rate {rate}% for item {item.external_id}")
     return min(matches, key=lambda t: abs(Decimal(t.rate) - rate)).id
 
 
 def _typed_product_mapping(db, order, item):
-    """Resolve the authoritative typed product mapping before legacy SKU fallback."""
+    """Return (product, variant) for the authoritative typed mapping."""
     keys = []
     if item.variant_external_id:
         keys.append(str(item.variant_external_id).strip())
@@ -162,229 +122,132 @@ def _typed_product_mapping(db, order, item):
     if item.sku:
         keys.append(str(item.sku).strip())
     for key in [k for k in keys if k]:
-        mapping = db.scalar(
-            select(IntegrationProductMapping)
-            .where(
-                IntegrationProductMapping.company_id == order.company_id,
-                IntegrationProductMapping.connection_id == order.connection_id,
-                IntegrationProductMapping.external_id == key,
-                IntegrationProductMapping.sync_status.in_(["active", "paused"]),
-            )
-            .with_for_update()
-        )
+        mapping = db.scalar(select(IntegrationProductMapping).where(
+            IntegrationProductMapping.company_id == order.company_id,
+            IntegrationProductMapping.connection_id == order.connection_id,
+            IntegrationProductMapping.external_id == key,
+            IntegrationProductMapping.sync_status.in_(["active", "paused"]),
+        ).with_for_update())
         if mapping is None:
             continue
-        product = db.scalar(
-            select(InventoryItem).where(
-                InventoryItem.id == mapping.product_id,
-                InventoryItem.company_id == order.company_id,
-                InventoryItem.is_active.is_(True),
-            )
-        )
+        product = db.scalar(select(InventoryItem).where(
+            InventoryItem.id == mapping.product_id,
+            InventoryItem.company_id == order.company_id,
+            InventoryItem.is_active.is_(True),
+        ))
         if product is None:
-            raise SallaERPExecutionError(
-                f"Salla mapping {mapping.external_id} points to a missing or inactive ERP product"
-            )
-        if mapping.variant_id is not None and item.variant_external_id:
-            from app.modules.catalog.models import ProductVariant
-            variant = db.scalar(
-                select(ProductVariant).where(
-                    ProductVariant.id == mapping.variant_id,
-                    ProductVariant.company_id == order.company_id,
-                    ProductVariant.product_id == product.id,
-                    ProductVariant.is_active.is_(True),
-                )
-            )
+            raise SallaERPExecutionError(f"Salla mapping {mapping.external_id} points to a missing or inactive ERP product")
+        variant = None
+        if mapping.variant_id is not None:
+            variant = db.scalar(select(ProductVariant).where(
+                ProductVariant.id == mapping.variant_id,
+                ProductVariant.company_id == order.company_id,
+                ProductVariant.product_id == product.id,
+                ProductVariant.is_active.is_(True),
+            ))
             if variant is None:
-                raise SallaERPExecutionError(
-                    f"Salla mapping {mapping.external_id} points to a missing or inactive ERP variant"
-                )
-        return product
-    return None
+                raise SallaERPExecutionError(f"Salla mapping {mapping.external_id} points to a missing or inactive ERP variant")
+        return product, variant
+    return None, None
 
 
 def _product(db, order, item):
     external = item.variant_external_id or item.product_external_id or item.sku
     if not external:
         raise SallaERPExecutionError(f"Salla order item {item.external_id} has no product/SKU identifier")
-
-    typed_product = _typed_product_mapping(db, order, item)
+    typed_product, typed_variant = _typed_product_mapping(db, order, item)
     if typed_product is not None:
-        return typed_product
-
+        return typed_product, typed_variant
     mapped = _mapping(db, order.company_id, order.connection_id, "salla_product", external)
     if mapped:
-        obj = db.scalar(
-            select(InventoryItem).where(
-                InventoryItem.id == mapped.local_id,
-                InventoryItem.company_id == order.company_id,
-                InventoryItem.is_active.is_(True),
-            )
-        )
+        obj = db.scalar(select(InventoryItem).where(InventoryItem.id == mapped.local_id,
+                                                     InventoryItem.company_id == order.company_id,
+                                                     InventoryItem.is_active.is_(True)))
         if obj:
-            return obj
-
+            return obj, None
     sku = (item.sku or f"SALLA-{external}")[:80]
-    obj = db.scalar(
-        select(InventoryItem).where(
-            InventoryItem.company_id == order.company_id,
-            InventoryItem.sku == sku,
-            InventoryItem.is_active.is_(True),
-        )
-    )
+    obj = db.scalar(select(InventoryItem).where(InventoryItem.company_id == order.company_id,
+                                                 InventoryItem.sku == sku,
+                                                 InventoryItem.is_active.is_(True)))
     tax_id = _tax_id_for_item(db, order.company_id, item)
     if not obj:
         uom = _uom(db, order.company_id)
-        raw = db.scalar(
-            select(SallaProduct).where(
-                SallaProduct.company_id == order.company_id,
-                SallaProduct.connection_id == order.connection_id,
-                SallaProduct.external_id == (item.product_external_id or external),
-            )
-        )
+        raw = db.scalar(select(SallaProduct).where(SallaProduct.company_id == order.company_id,
+                                                    SallaProduct.connection_id == order.connection_id,
+                                                    SallaProduct.external_id == (item.product_external_id or external)))
         name = item.name or (raw.name if raw else None) or sku
-        obj = InventoryItem(
-            company_id=order.company_id,
-            sku=sku,
-            name_ar=name[:200],
-            name_en=name[:200],
-            item_type="stockable",
-            uom=uom.code,
-            uom_id=uom.id,
-            sales_tax_ids=[tax_id] if tax_id else [],
-            purchase_tax_ids=[],
-            standard_cost=_d(item.cost_price),
-            sales_price=_d(item.price),
-            purchase_price=_d(item.cost_price),
-            is_active=True,
-        )
-        db.add(obj)
-        db.flush()
+        obj = InventoryItem(company_id=order.company_id, sku=sku, name_ar=name[:200], name_en=name[:200],
+                            item_type="stockable", uom=uom.code, uom_id=uom.id,
+                            sales_tax_ids=[tax_id] if tax_id else [], purchase_tax_ids=[],
+                            standard_cost=_d(item.cost_price), sales_price=_d(item.price),
+                            purchase_price=_d(item.cost_price), is_active=True)
+        db.add(obj); db.flush()
     elif tax_id and not obj.sales_tax_ids:
         obj.sales_tax_ids = [tax_id]
     _set_mapping(db, order.company_id, order.connection_id, "salla_product", external, obj.id)
-    return obj
+    return obj, None
 
 
 def _warehouse(db, company_id):
-    return db.scalar(
-        select(InventoryWarehouse)
-        .where(
-            InventoryWarehouse.company_id == company_id,
-            InventoryWarehouse.is_active.is_(True),
-        )
-        .order_by(InventoryWarehouse.is_central.desc(), InventoryWarehouse.id)
-    )
+    return db.scalar(select(InventoryWarehouse).where(InventoryWarehouse.company_id == company_id,
+                                                       InventoryWarehouse.is_active.is_(True)).order_by(
+                                                           InventoryWarehouse.is_central.desc(), InventoryWarehouse.id))
 
 
 def _document(db, order, partner, items: Iterable[SallaOrderItem], warehouse_id):
     mapped = _mapping(db, order.company_id, order.connection_id, "salla_order", order.external_id)
     if mapped:
-        existing = db.scalar(
-            select(SalesDocument).where(
-                SalesDocument.id == mapped.local_id,
-                SalesDocument.company_id == order.company_id,
-            )
-        )
+        existing = db.scalar(select(SalesDocument).where(SalesDocument.id == mapped.local_id,
+                                                          SalesDocument.company_id == order.company_id))
         if existing:
             return existing
     number = f"SALLA-{order.reference_id or order.external_id}"[:60]
-    existing = db.scalar(
-        select(SalesDocument).where(
-            SalesDocument.company_id == order.company_id,
-            SalesDocument.number == number,
-        )
-    )
+    existing = db.scalar(select(SalesDocument).where(SalesDocument.company_id == order.company_id,
+                                                      SalesDocument.number == number))
     if existing:
         _set_mapping(db, order.company_id, order.connection_id, "salla_order", order.external_id, existing.id)
         return existing
-    document = SalesDocument(
-        company_id=order.company_id,
-        partner_id=partner.id,
-        document_type="invoice",
-        number=number,
-        document_date=(order.created_at_salla.date() if order.created_at_salla else date.today()),
-        warehouse_id=warehouse_id,
-        notes=f"Imported from Salla order {order.external_id}",
-    )
-    subtotal = Decimal("0")
-    tax_total = Decimal("0")
-    discount_total = Decimal("0")
+    document = SalesDocument(company_id=order.company_id, partner_id=partner.id, document_type="invoice",
+                             number=number,
+                             document_date=(order.created_at_salla.date() if order.created_at_salla else date.today()),
+                             warehouse_id=warehouse_id,
+                             notes=f"Imported from Salla order {order.external_id}")
+    subtotal = Decimal("0"); tax_total = Decimal("0"); discount_total = Decimal("0")
     for s_item in items:
         if _d(s_item.quantity) <= 0:
             continue
-        product = _product(db, order, s_item)
-        quantity = _d(s_item.quantity)
-        price = _d(s_item.price)
-        gross = quantity * price
-        discount = _d(s_item.discount)
-        net = max(gross - discount, Decimal("0"))
-        tax_id = _tax_id_for_item(db, order.company_id, s_item)
-        tax_amount = _d(s_item.tax)
-        document.lines.append(
-            SalesLine(
-                item_id=product.id,
-                tax_rate_id=tax_id,
-                tax_rate_ids=[tax_id] if tax_id else [],
-                description=s_item.name,
-                quantity=quantity,
-                unit_price=price,
-                discount_percent=((discount / gross * Decimal("100")) if gross else Decimal("0")),
-                tax_percent=Decimal("0"),
-                line_total=net + tax_amount,
-            )
-        )
-        subtotal += net
-        tax_total += tax_amount
-        discount_total += discount
+        product, variant = _product(db, order, s_item)
+        quantity = _d(s_item.quantity); price = _d(s_item.price); gross = quantity * price
+        discount = _d(s_item.discount); net = max(gross - discount, Decimal("0"))
+        tax_id = _tax_id_for_item(db, order.company_id, s_item); tax_amount = _d(s_item.tax)
+        document.lines.append(SalesLine(item_id=product.id,
+                                        variant_id=variant.id if variant else None,
+                                        tax_rate_id=tax_id,
+                                        tax_rate_ids=[tax_id] if tax_id else [],
+                                        description=s_item.name, quantity=quantity, unit_price=price,
+                                        discount_percent=((discount / gross * Decimal("100")) if gross else Decimal("0")),
+                                        tax_percent=Decimal("0"), line_total=net + tax_amount))
+        subtotal += net; tax_total += tax_amount; discount_total += discount
     shipping = _d(order.shipping)
     if shipping:
-        shipping_item = db.scalar(
-            select(InventoryItem).where(
-                InventoryItem.company_id == order.company_id,
-                InventoryItem.sku == "SALLA-SHIPPING",
-            )
-        )
+        shipping_item = db.scalar(select(InventoryItem).where(InventoryItem.company_id == order.company_id,
+                                                              InventoryItem.sku == "SALLA-SHIPPING"))
         if not shipping_item:
             uom = _uom(db, order.company_id)
-            shipping_item = InventoryItem(
-                company_id=order.company_id,
-                sku="SALLA-SHIPPING",
-                name_ar="Salla Shipping",
-                name_en="Salla Shipping",
-                item_type="service",
-                uom=uom.code,
-                uom_id=uom.id,
-                sales_price=shipping,
-                purchase_price=0,
-                standard_cost=0,
-                is_active=True,
-            )
-            db.add(shipping_item)
-            db.flush()
-        document.lines.append(
-            SalesLine(
-                item_id=shipping_item.id,
-                description="Salla shipping",
-                quantity=Decimal("1"),
-                unit_price=shipping,
-                discount_percent=0,
-                tax_percent=0,
-                tax_rate_ids=[],
-                line_total=shipping,
-            )
-        )
+            shipping_item = InventoryItem(company_id=order.company_id, sku="SALLA-SHIPPING",
+                                          name_ar="Salla Shipping", name_en="Salla Shipping", item_type="service",
+                                          uom=uom.code, uom_id=uom.id, sales_price=shipping, purchase_price=0,
+                                          standard_cost=0, is_active=True)
+            db.add(shipping_item); db.flush()
+        document.lines.append(SalesLine(item_id=shipping_item.id, description="Salla shipping", quantity=Decimal("1"),
+                                        unit_price=shipping, discount_percent=0, tax_percent=0,
+                                        tax_rate_ids=[], line_total=shipping))
         subtotal += shipping
-    document.subtotal = subtotal
-    document.tax_total = tax_total
-    document.discount_total = discount_total
+    document.subtotal = subtotal; document.tax_total = tax_total; document.discount_total = discount_total
     document.total = subtotal + tax_total
     if order.total is not None and abs(Decimal(document.total) - Decimal(order.total)) > Decimal("0.02"):
-        raise SallaERPExecutionError(
-            f"Salla order {order.external_id} total mismatch: ERP candidate {document.total} vs Salla {order.total}"
-        )
-    db.add(document)
-    db.flush()
+        raise SallaERPExecutionError(f"Salla order {order.external_id} total mismatch: ERP candidate {document.total} vs Salla {order.total}")
+    db.add(document); db.flush()
     _set_mapping(db, order.company_id, order.connection_id, "salla_order", order.external_id, document.id)
     return document
 
@@ -395,255 +258,118 @@ def _payment(db, order, document, user_id):
     amount = _d(order.total)
     if amount <= 0 or document.paid_total >= amount:
         return None
-    methods = order.payment_methods or []
-    raw_method = "salla"
-    reference = order.reference_id or order.external_id
+    methods = order.payment_methods or []; raw_method = "salla"; reference = order.reference_id or order.external_id
     if methods and isinstance(methods[0], dict):
         raw_method = str(methods[0].get("payment_method") or methods[0].get("name") or "salla")
         reference = str(methods[0].get("transaction_reference") or reference)[:100]
     elif methods and isinstance(methods[0], str):
         raw_method = methods[0]
     method_key = raw_method.lower().replace("-", "_").replace(" ", "_")
-    if method_key in {"cash_on_delivery", "cod"}:
-        method = "cod"
-    elif method_key == "cash":
-        method = "cash"
-    elif method_key in {"bank", "bank_transfer", "banktransfer"}:
-        method = "bank_transfer"
-    elif method_key in {"credit_card", "creditcard", "card", "mada", "apple_pay", "stc_pay", "visa", "mastercard"}:
-        method = "card"
-    elif method_key in {"wallet", "digital_wallet"}:
-        method = "wallet"
-    elif method_key == "cheque":
-        method = "cheque"
-    else:
-        method = "other"
-    _, payment = post_payment(
-        db,
-        company_id=order.company_id,
-        document_kind="sale",
-        document_id=document.id,
-        amount=amount - _d(document.paid_total),
-        payment_date=document.document_date,
-        method=method,
-        wht_amount=Decimal("0"),
-        reference=reference,
-        notes=f"Salla order {order.external_id}",
-        idempotency_key=f"salla:{order.connection_id}:{order.external_id}:payment",
-    )
+    if method_key in {"cash_on_delivery", "cod"}: method = "cod"
+    elif method_key == "cash": method = "cash"
+    elif method_key in {"bank", "bank_transfer", "banktransfer"}: method = "bank_transfer"
+    elif method_key in {"credit_card", "creditcard", "card", "mada", "apple_pay", "stc_pay", "visa", "mastercard"}: method = "card"
+    elif method_key in {"wallet", "digital_wallet"}: method = "wallet"
+    elif method_key == "cheque": method = "cheque"
+    else: method = "other"
+    _, payment = post_payment(db, company_id=order.company_id, document_kind="sale", document_id=document.id,
+                              amount=amount - _d(document.paid_total), payment_date=document.document_date,
+                              method=method, wht_amount=Decimal("0"), reference=reference,
+                              notes=f"Salla order {order.external_id}",
+                              idempotency_key=f"salla:{order.connection_id}:{order.external_id}:payment")
     commerce_accounting_service.post_payment(db, payment, document, user_id)
     return payment
 
 
 def execute_salla_order(db, order, user_id=None):
-    if user_id is None:
-        user_id = _system_user_id(db, order.company_id)
-
+    if user_id is None: user_id = _system_user_id(db, order.company_id)
     if order.erp_status == "reversed":
         refund_mapping = _mapping(db, order.company_id, order.connection_id, "salla_refund", order.external_id)
-        return {
-            "status": "already_reversed",
-            "sales_document_id": order.erp_entity_id,
-            "credit_note_id": refund_mapping.local_id if refund_mapping else None,
-        }
-
+        return {"status": "already_reversed", "sales_document_id": order.erp_entity_id,
+                "credit_note_id": refund_mapping.local_id if refund_mapping else None}
     if order.erp_status == "processed" and order.erp_entity_id:
-        document = db.scalar(
-            select(SalesDocument).where(
-                SalesDocument.id == order.erp_entity_id,
-                SalesDocument.company_id == order.company_id,
-                SalesDocument.document_type == "invoice",
-            )
-        )
+        document = db.scalar(select(SalesDocument).where(SalesDocument.id == order.erp_entity_id,
+                                                          SalesDocument.company_id == order.company_id,
+                                                          SalesDocument.document_type == "invoice"))
         if document is None:
-            raise SallaERPExecutionError(
-                f"Processed Salla order {order.external_id} points to a missing ERP invoice"
-            )
+            raise SallaERPExecutionError(f"Processed Salla order {order.external_id} points to a missing ERP invoice")
         payment = _payment(db, order, document, user_id)
-        return {
-            "status": "already_processed",
-            "sales_document_id": document.id,
-            "payment_id": payment.id if payment else None,
-        }
-
+        return {"status": "already_processed", "sales_document_id": document.id, "payment_id": payment.id if payment else None}
     try:
-        customer = (
-            db.scalar(
-                select(SallaCustomer).where(
-                    SallaCustomer.connection_id == order.connection_id,
-                    SallaCustomer.external_id == order.customer_id,
-                )
-            )
-            if order.customer_id
-            else None
-        )
+        customer = db.scalar(select(SallaCustomer).where(SallaCustomer.connection_id == order.connection_id,
+                                                          SallaCustomer.external_id == order.customer_id)) if order.customer_id else None
         partner = _customer(db, order, customer)
-        items = list(
-            db.scalars(
-                select(SallaOrderItem)
-                .where(SallaOrderItem.order_id == order.id)
-                .order_by(SallaOrderItem.id)
-            ).all()
-        )
-        if not items:
-            raise SallaERPExecutionError(f"Salla order {order.external_id} has no normalized order items")
+        items = list(db.scalars(select(SallaOrderItem).where(SallaOrderItem.order_id == order.id).order_by(SallaOrderItem.id)).all())
+        if not items: raise SallaERPExecutionError(f"Salla order {order.external_id} has no normalized order items")
         warehouse = _warehouse(db, order.company_id)
         document = _document(db, order, partner, items, warehouse.id if warehouse else None)
-        if document.document_type != "invoice":
-            raise SallaERPExecutionError(
-                f"Salla order {order.external_id} is mapped to a non-invoice ERP document"
-            )
-        if document.status == "draft":
-            document.status = "confirmed"
-            db.flush()
+        if document.document_type != "invoice": raise SallaERPExecutionError(f"Salla order {order.external_id} is mapped to a non-invoice ERP document")
+        if document.status == "draft": document.status = "confirmed"; db.flush()
         commerce_accounting_service.post_sales_invoice(db, document, user_id)
         payment = _payment(db, order, document, user_id)
-        order.erp_status = "processed"
-        order.erp_entity_id = document.id
-        order.erp_error = None
-        order.erp_synced_at = datetime.now(timezone.utc)
-        db.flush()
-        return {
-            "status": "processed",
-            "sales_document_id": document.id,
-            "payment_id": payment.id if payment else None,
-        }
+        order.erp_status = "processed"; order.erp_entity_id = document.id; order.erp_error = None
+        order.erp_synced_at = datetime.now(timezone.utc); db.flush()
+        return {"status": "processed", "sales_document_id": document.id, "payment_id": payment.id if payment else None}
     except Exception as exc:
-        order.erp_status = "failed"
-        order.erp_error = str(exc)[:4000]
-        order.erp_synced_at = datetime.now(timezone.utc)
-        db.flush()
-        raise
+        order.erp_status = "failed"; order.erp_error = str(exc)[:4000]
+        order.erp_synced_at = datetime.now(timezone.utc); db.flush(); raise
 
 
 def reverse_salla_order(db, order, user_id=None):
-    if user_id is None:
-        user_id = _system_user_id(db, order.company_id)
+    if user_id is None: user_id = _system_user_id(db, order.company_id)
     if order.erp_status == "reversed":
         refund_mapping = _mapping(db, order.company_id, order.connection_id, "salla_refund", order.external_id)
-        return {
-            "status": "already_reversed",
-            "credit_note_id": refund_mapping.local_id if refund_mapping else None,
-        }
-    if not order.erp_entity_id:
-        return {"status": "not_executed"}
-    document = db.scalar(
-        select(SalesDocument).where(
-            SalesDocument.id == order.erp_entity_id,
-            SalesDocument.company_id == order.company_id,
-            SalesDocument.document_type == "invoice",
-        )
-    )
-    if not document:
-        raise SallaERPExecutionError(f"ERP sales invoice {order.erp_entity_id} was not found")
+        return {"status": "already_reversed", "credit_note_id": refund_mapping.local_id if refund_mapping else None}
+    if not order.erp_entity_id: return {"status": "not_executed"}
+    document = db.scalar(select(SalesDocument).where(SalesDocument.id == order.erp_entity_id,
+                                                      SalesDocument.company_id == order.company_id,
+                                                      SalesDocument.document_type == "invoice"))
+    if not document: raise SallaERPExecutionError(f"ERP sales invoice {order.erp_entity_id} was not found")
     refund_mapping = _mapping(db, order.company_id, order.connection_id, "salla_refund", order.external_id)
     if refund_mapping:
-        order.erp_status = "reversed"
-        order.erp_error = None
-        order.erp_synced_at = datetime.now(timezone.utc)
-        db.flush()
+        order.erp_status = "reversed"; order.erp_error = None; order.erp_synced_at = datetime.now(timezone.utc); db.flush()
         return {"status": "already_reversed", "credit_note_id": refund_mapping.local_id}
-    credit = SalesDocument(
-        company_id=order.company_id,
-        partner_id=document.partner_id,
-        document_type="credit_note",
-        number=f"SALLA-CR-{order.reference_id or order.external_id}"[:60],
-        document_date=date.today(),
-        warehouse_id=document.warehouse_id,
-        notes=f"Salla reversal for order {order.external_id}",
-    )
+    credit = SalesDocument(company_id=order.company_id, partner_id=document.partner_id, document_type="credit_note",
+                           number=f"SALLA-CR-{order.reference_id or order.external_id}"[:60], document_date=date.today(),
+                           warehouse_id=document.warehouse_id, notes=f"Salla reversal for order {order.external_id}")
     for line in document.lines:
-        credit.lines.append(
-            SalesLine(
-                item_id=line.item_id,
-                tax_rate_id=line.tax_rate_id,
-                tax_rate_ids=list(line.tax_rate_ids or []),
-                description=f"Reversal: {line.description or ''}",
-                quantity=line.quantity,
-                unit_price=line.unit_price,
-                discount_percent=line.discount_percent,
-                tax_percent=line.tax_percent,
-                line_total=line.line_total,
-            )
-        )
-    credit.subtotal = document.subtotal
-    credit.tax_total = document.tax_total
-    credit.discount_total = document.discount_total
-    credit.total = document.total
-    db.add(credit)
-    db.flush()
-    credit.status = "confirmed"
-    db.flush()
+        credit.lines.append(SalesLine(item_id=line.item_id, variant_id=line.variant_id,
+                                      tax_rate_id=line.tax_rate_id, tax_rate_ids=list(line.tax_rate_ids or []),
+                                      description=f"Reversal: {line.description or ''}", quantity=line.quantity,
+                                      unit_price=line.unit_price, discount_percent=line.discount_percent,
+                                      tax_percent=line.tax_percent, line_total=line.line_total))
+    credit.subtotal = document.subtotal; credit.tax_total = document.tax_total
+    credit.discount_total = document.discount_total; credit.total = document.total
+    db.add(credit); db.flush(); credit.status = "confirmed"; db.flush()
     commerce_accounting_service.post_sales_credit_note(db, credit, user_id)
-    payments = db.scalars(
-        select(CommercePayment)
-        .where(
-            CommercePayment.company_id == order.company_id,
-            CommercePayment.document_kind == "sale",
-            CommercePayment.document_id == document.id,
-            CommercePayment.status == "posted",
-            CommercePayment.reversed_of_id.is_(None),
-        )
-        .order_by(CommercePayment.id)
-    ).all()
+    payments = db.scalars(select(CommercePayment).where(
+        CommercePayment.company_id == order.company_id, CommercePayment.document_kind == "sale",
+        CommercePayment.document_id == document.id, CommercePayment.status == "posted",
+        CommercePayment.reversed_of_id.is_(None)).order_by(CommercePayment.id)).all()
     reversed_count = 0
     for payment in payments:
-        _, original, _reversal = reverse_payment(
-            db,
-            company_id=order.company_id,
-            payment_id=payment.id,
-            reversal_date=date.today(),
-            notes=f"Salla order {order.external_id} reversal",
-        )
-        commerce_accounting_service.post_payment_reversal(
-            db,
-            original,
-            document,
-            user_id,
-            reversal_date=date.today(),
-        )
+        _, original, _reversal = reverse_payment(db, company_id=order.company_id, payment_id=payment.id,
+                                                  reversal_date=date.today(), notes=f"Salla order {order.external_id} reversal")
+        commerce_accounting_service.post_payment_reversal(db, original, document, user_id, reversal_date=date.today())
         reversed_count += 1
     _set_mapping(db, order.company_id, order.connection_id, "salla_refund", order.external_id, credit.id)
-    order.erp_status = "reversed"
-    order.erp_error = None
-    order.erp_synced_at = datetime.now(timezone.utc)
-    db.flush()
+    order.erp_status = "reversed"; order.erp_error = None; order.erp_synced_at = datetime.now(timezone.utc); db.flush()
     return {"status": "reversed", "credit_note_id": credit.id, "payments_reversed": reversed_count}
 
 
 def execute_pending_salla_orders(db, company_id, user_id=None, limit=50):
-    orders = db.scalars(
-        select(SallaOrder)
-        .where(
-            SallaOrder.company_id == company_id,
-            SallaOrder.erp_status.in_(["pending", "failed"]),
-        )
-        .order_by(SallaOrder.id)
-        .limit(limit)
-        .with_for_update()
-    ).all()
-    processed = failed = 0
-    errors = []
+    orders = db.scalars(select(SallaOrder).where(SallaOrder.company_id == company_id,
+                                                  SallaOrder.erp_status.in_(["pending", "failed"])).order_by(SallaOrder.id).limit(limit).with_for_update()).all()
+    processed = failed = 0; errors = []
     for order in orders:
         external_id = order.external_id
         try:
-            execute_salla_order(db, order, user_id=user_id)
-            db.commit()
-            processed += 1
+            execute_salla_order(db, order, user_id=user_id); db.commit(); processed += 1
         except Exception as exc:
-            db.rollback()
-            failed += 1
-            error = str(exc)[:500]
-            errors.append({"order_id": external_id, "error": error})
-            failed_order = db.scalar(
-                select(SallaOrder).where(
-                    SallaOrder.company_id == company_id,
-                    SallaOrder.external_id == external_id,
-                )
-            )
+            db.rollback(); failed += 1; error = str(exc)[:500]; errors.append({"order_id": external_id, "error": error})
+            failed_order = db.scalar(select(SallaOrder).where(SallaOrder.company_id == company_id,
+                                                              SallaOrder.external_id == external_id))
             if failed_order:
-                failed_order.erp_status = "failed"
-                failed_order.erp_error = error
-                failed_order.erp_synced_at = datetime.now(timezone.utc)
-                db.commit()
+                failed_order.erp_status = "failed"; failed_order.erp_error = error
+                failed_order.erp_synced_at = datetime.now(timezone.utc); db.commit()
     return {"processed": processed, "failed": failed, "errors": errors}
