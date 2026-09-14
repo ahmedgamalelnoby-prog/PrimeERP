@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, CheckConstraint, Column, Date, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Column, Date, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.database.base import Base
 
@@ -97,6 +97,18 @@ class PurchaseLine(Base):
     tax_percent = Column(Numeric(8, 4), nullable=False, default=0)
     line_total = Column(Numeric(18, 4), nullable=False, default=0)
     document = relationship("PurchaseDocument", back_populates="lines")
+
+
+class PurchaseBillReceiptLink(Base):
+    __tablename__ = "purchase_bill_receipt_links"
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    bill_id = Column(Integer, ForeignKey("purchase_documents.id", ondelete="CASCADE"), nullable=False, index=True)
+    receipt_id = Column(Integer, ForeignKey("purchase_documents.id", ondelete="RESTRICT"), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default="CURRENT_TIMESTAMP")
+    __table_args__ = (
+        UniqueConstraint("bill_id", "receipt_id", name="uq_purchase_bill_receipt_link"),
+    )
 
 
 class CommercePayment(Base):
