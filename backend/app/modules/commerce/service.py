@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.accounting.models import TaxRate
 from app.modules.accounting.tax_engine import calculate_taxes
+from app.modules.commerce.accounting_service import commerce_accounting_service
 from app.modules.catalog.models import ProductVariant
 from app.modules.commerce.models import BusinessPartner, CommercePayment, PurchaseDocument, PurchaseLine, SalesDocument, SalesLine
 from app.modules.commerce.payment_workflow import post_payment, reverse_payment
@@ -125,14 +126,33 @@ class CommerceService:
         model = SalesDocument if kind == "sale" else PurchaseDocument
         return list(db.scalars(select(model).where(model.company_id == company_id).order_by(model.document_date.desc(), model.id.desc())).all())
 
-    def confirm(self, db, company_id, document_id, kind):
+    def confirm(self, db, company_id, document_id, kind, user_id: int | None = None):
         model = SalesDocument if kind == "sale" else PurchaseDocument
         obj = db.scalar(select(model).where(model.id == document_id, model.company_id == company_id).with_for_update())
         if not obj: raise ValueError("Document not found")
         if obj.status != "draft": raise ValueError("Only draft documents can be confirmed")
-        obj.status = "confirmed"; db.flush(); return obj
+        if not obj.lines:
+            raise ValueError("A document must contain at least one line before confirmation")
+        obj.status = "confirmed"; db.flush()
 
-    def post_inventory(self, db, company_id, document_id, kind):
+        # Accounting is part of the same database transaction. If the configured
+        # journal/period/accounting validation fails, the caller can roll back the
+        # whole confirmation instead of leaving an operational document without
+        # its financial posting.
+        if user_id is not None:
+            if kind == "sale":
+                if obj.document_type == "invoice":
+                    commerce_accounting_service.post_sales_invoice(db, obj, user_id)
+                elif obj.document_type == "credit_note":
+                    commerce_accounting_service.post_sales_credit_note(db, obj, user_id)
+            else:
+                if obj.document_type == "bill":
+                    commerce_accounting_service.post_purchase_bill(db, obj, user_id)
+                elif obj.document_type == "debit_note":
+                    commerce_accounting_service.post_purchase_debit_note(db, obj, user_id)
+        return obj
+
+    def post_inventory(self, db, company_id, document_id, kind, user_id: int | None = None):
         model = SalesDocument if kind == "sale" else PurchaseDocument
         obj = db.scalar(select(model).where(model.id == document_id, model.company_id == company_id).with_for_update())
         if not obj: raise ValueError("Document not found")
@@ -156,9 +176,12 @@ class CommerceService:
                 payload = StockMoveCreate(company_id=company_id, item_id=line.item_id, variant_id=getattr(line, "variant_id", None), movement_type="receipt", source_location_id=None, destination_location_id=loc.id, quantity=line.quantity, unit_cost=net_unit_cost, reference=obj.number, source_module="commerce", source_entity=source_entity, source_id=source_id, notes="Purchase receipt")
             move = inventory_stock_move_service.create_draft(db, payload)
             inventory_stock_move_service.post(db, company_id=company_id, move_id=move.id)
-        obj.status = "fulfilled" if kind == "sale" else "received"; db.flush(); return obj
+        obj.status = "fulfilled" if kind == "sale" else "received"; db.flush()
+        if kind == "sale" and user_id is not None:
+            commerce_accounting_service.post_sales_delivery_cogs(db, obj, user_id)
+        return obj
 
-    def pay(self, db, payload, kind):
+    def pay(self, db, payload, kind, user_id: int | None = None):
         model = SalesDocument if kind == "sale" else PurchaseDocument; allowed_types = {"invoice"} if kind == "sale" else {"bill"}
         document = db.scalar(select(model).where(model.id == payload.document_id, model.company_id == payload.company_id).with_for_update())
         if document is None: raise ValueError("Document not found")
@@ -166,10 +189,16 @@ class CommerceService:
         if document.status not in {"confirmed", "posted"}: raise ValueError("Document must be confirmed or posted before payment")
         wht_amount = Decimal(payload.wht_amount or 0)
         if wht_amount == 0 and getattr(payload, "auto_wht", True): wht_amount = self._auto_payment_wht(db, document=document, company_id=payload.company_id, amount=Decimal(payload.amount), document_kind=kind)
-        return post_payment(db, company_id=payload.company_id, document_kind=kind, document_id=payload.document_id, amount=payload.amount, payment_date=payload.payment_date, method=payload.method, wht_amount=wht_amount, reference=payload.reference, notes=payload.notes, idempotency_key=payload.idempotency_key)
+        document, payment = post_payment(db, company_id=payload.company_id, document_kind=kind, document_id=payload.document_id, amount=payload.amount, payment_date=payload.payment_date, method=payload.method, wht_amount=wht_amount, reference=payload.reference, notes=payload.notes, idempotency_key=payload.idempotency_key)
+        if user_id is not None:
+            commerce_accounting_service.post_payment(db, payment, document, user_id)
+        return document, payment
 
-    def reverse_payment(self, db, company_id: int, payment_id: int, reversal_date, notes=None):
-        return reverse_payment(db, company_id=company_id, payment_id=payment_id, reversal_date=reversal_date, notes=notes)
+    def reverse_payment(self, db, company_id: int, payment_id: int, reversal_date, notes=None, user_id: int | None = None):
+        document, payment, reversal = reverse_payment(db, company_id=company_id, payment_id=payment_id, reversal_date=reversal_date, notes=notes)
+        if user_id is not None:
+            commerce_accounting_service.post_payment_reversal(db, payment, document, user_id, reversal_date=reversal_date)
+        return document, payment, reversal
 
 
 commerce_service = CommerceService()
