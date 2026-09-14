@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import yaml
@@ -21,19 +22,24 @@ REQUIRED_FILES = (
 )
 
 REQUIRED_SERVICES = {"db", "migrate", "backend", "frontend"}
-REQUIRED_API_MARKERS = (
-    "/api/v1/identity/login",
-    "/api/v1/identity/me",
-    "/api/v1/tenants",
-    "/api/v1/subscriptions/tenant/{tenant_id}",
-    "/api/v1/accounting/tax-rates",
-    "/api/v1/taxes/rates",
-    "/api/v1/uom",
-    "/api/v1/inventory/items",
-    "/api/v1/inventory/items/{item_id}/stock",
-    "/api/v1/integrations/connections",
-    "/api/v1/shipping/carriers",
-)
+
+# This is the release contract. These are the canonical runtime paths after
+# the /api/v1 prefix is mounted by backend/main.py. Keep this list aligned
+# with the public module API, not with the source-file layout: router prefixes
+# are intentionally distributed between module routers and the v1 aggregator.
+REQUIRED_API_CONTRACT = {
+    "/api/v1/identity/login": {"POST"},
+    "/api/v1/identity/me": {"GET"},
+    "/api/v1/platform/tenants": {"GET", "POST"},
+    "/api/v1/subscriptions/tenant/{tenant_id}": {"GET"},
+    "/api/v1/accounting/tax-rates": {"GET", "POST"},
+    "/api/v1/taxes/rates": {"GET", "POST"},
+    "/api/v1/uom": {"GET", "POST"},
+    "/api/v1/inventory/items": {"GET", "POST"},
+    "/api/v1/inventory/items/{item_id}/stock": {"GET"},
+    "/api/v1/integrations/connections": {"GET", "POST"},
+    "/api/v1/shipping/carriers": {"GET", "POST"},
+}
 
 
 def fail(message: str) -> None:
@@ -88,21 +94,11 @@ def main() -> int:
     if "FROM nginx:" not in frontend_dockerfile or "HEALTHCHECK" not in frontend_dockerfile:
         fail("frontend must use a production nginx stage with a healthcheck")
 
-    router_text = "\n".join(
-        p.read_text(encoding="utf-8") for p in (BACKEND / "app").rglob("router.py")
-    )
-    main_text = (BACKEND / "main.py").read_text(encoding="utf-8")
-    missing_static = [
-        marker for marker in REQUIRED_API_MARKERS
-        if marker not in main_text and marker.split("{")[0] not in router_text
-    ]
-    if missing_static:
-        fail(f"required API contract markers are not present: {missing_static}")
-
-    # Stronger contract: verify the actual FastAPI application registers the
-    # routes, rather than relying only on source-text markers.
+    # Route contract is verified from FastAPI's registered OpenAPI route map.
+    # A source-text search is deliberately not used here because a router's
+    # prefix may live in a child module while its endpoint lives in another
+    # file; source matching therefore produced false failures in CI.
     try:
-        import sys
         sys.path.insert(0, str(BACKEND))
         from main import create_application
 
@@ -111,11 +107,26 @@ def main() -> int:
     except Exception as exc:
         fail(f"FastAPI application could not be constructed for route audit: {exc}")
 
-    missing_runtime = [marker for marker in REQUIRED_API_MARKERS if marker not in paths]
-    if missing_runtime:
-        fail(f"required registered API routes are missing: {missing_runtime}")
+    missing_paths = [path for path in REQUIRED_API_CONTRACT if path not in paths]
+    if missing_paths:
+        fail(f"required registered API routes are missing: {missing_paths}")
 
-    print("Release readiness static and route audit passed.")
+    method_mismatches = []
+    for path, required_methods in REQUIRED_API_CONTRACT.items():
+        registered_methods = {
+            method.upper()
+            for method in paths[path]
+            if method.upper() in {"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"}
+        }
+        missing_methods = required_methods - registered_methods
+        if missing_methods:
+            method_mismatches.append(
+                f"{path}: missing methods {sorted(missing_methods)}; registered {sorted(registered_methods)}"
+            )
+    if method_mismatches:
+        fail(f"registered API method contract mismatch: {method_mismatches}")
+
+    print("Release readiness static, runtime route and Docker contract audit passed.")
     return 0
 
 
