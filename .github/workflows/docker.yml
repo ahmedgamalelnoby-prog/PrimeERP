@@ -32,6 +32,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Add Docker Desktop to runner PATH
+        shell: cmd
+        run: |
+          if not exist "C:\Users\Admin\AppData\Local\Programs\DockerDesktop\resources\bin\docker.exe" (
+            echo Docker Desktop CLI was not found at the configured installation path.
+            exit /b 1
+          )
+          echo C:\Users\Admin\AppData\Local\Programs\DockerDesktop\resources\bin>>"%GITHUB_PATH%"
+          where docker
+          docker --version
+          docker compose version
+
       - name: Validate local runtimes
         shell: cmd
         run: |
