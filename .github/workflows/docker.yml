@@ -30,7 +30,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Configure Docker CLI
-        shell: powershell
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
           $ErrorActionPreference = 'Stop'
           $root = Join-Path $env:RUNNER_TEMP 'primeerp-docker-cli'
