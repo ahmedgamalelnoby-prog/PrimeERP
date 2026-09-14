@@ -14,202 +14,183 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  POSTGRES_DB: primeerp_ci
+  POSTGRES_USER: primeerp
+  POSTGRES_PASSWORD: PrimeERP-CI-Only-Strong-Password-2026
+  SECRET_KEY: PrimeERP-CI-Only-Secret-Key-2026-Change-Me
+  CORS_ORIGINS: http://localhost:3000
+  APP_ENV: ci
+  DEBUG: "true"
+
 jobs:
-  backend:
-    name: Backend Unit & Static Validation
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: backend
-        shell: bash
+  validation:
+    name: Full validation - self-hosted Windows
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.10"
-          cache: pip
-          cache-dependency-path: backend/requirements.txt
-
-      - name: Install backend dependencies
-        run: python -m pip install --upgrade pip && pip install -r requirements.txt
-
-      - name: Compile Python
-        run: python -m compileall -q app
-
-      - name: Run accounting and inventory regression tests
-        run: pytest -q tests/accounting tests/inventory
-
-  frontend:
-    name: Frontend Typecheck Lint & Build
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: frontend
-        shell: bash
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Setup Node
-        uses: actions/setup-node@v5
-        with:
-          node-version: "20"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install frontend dependencies
-        run: npm ci
-
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Build
-        run: npm run build
-
-  docker:
-    name: Docker Build Migration & Runtime Validation
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-    needs:
-      - backend
-      - frontend
-    defaults:
-      run:
-        shell: bash
-    env:
-      COMPOSE_PROJECT_NAME: primeerp-ci
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Validate Docker runtime
+      - name: Validate local runtimes
+        shell: cmd
         run: |
-          set -euxo pipefail
+          python --version
+          node --version
+          npm --version
           docker version
           docker compose version
+          python -c "import sys; assert sys.version_info[:2] == (3, 10), f'Expected Python 3.10, got {sys.version}'"
+          node -e "if (parseInt(process.versions.node.split('.')[0]) < 20) process.exit(1)"
 
-      - name: Prepare CI environment
+      - name: Backend compile architecture security smoke and tests
+        shell: cmd
+        working-directory: backend
         run: |
-          set -euxo pipefail
-          cp .env.docker.example .env.docker
-          printf '\nAPP_ENV=ci\nDEBUG=true\n' >> .env.docker
+          python -m venv .ci-venv
+          .ci-venv\Scripts\python.exe -m pip install --upgrade pip
+          .ci-venv\Scripts\python.exe -m pip install -r requirements.txt
+          .ci-venv\Scripts\python.exe -m pip install pytest
+          .ci-venv\Scripts\python.exe -m compileall -q app
+          .ci-venv\Scripts\python.exe scripts\check_modular_architecture.py
+          .ci-venv\Scripts\python.exe scripts\check_api_security.py
+          set DATABASE_URL=sqlite:///./primeerp_ci_smoke.db
+          set APP_ENV=test
+          .ci-venv\Scripts\python.exe scripts\smoke_import.py
+          set APP_ENV=production
+          set DEBUG=false
+          set DATABASE_URL=sqlite:///./unsafe.db
+          set SECRET_KEY=your-secret-key-change-this-in-production
+          set CORS_ORIGINS=https://erp.example.com
+          .ci-venv\Scripts\python.exe scripts\check_production_config.py
+          set APP_ENV=ci
+          set DEBUG=true
+          .ci-venv\Scripts\python.exe scripts\check_release_readiness.py
+          .ci-venv\Scripts\python.exe -m alembic heads > alembic-heads.txt
+          type alembic-heads.txt
+          .ci-venv\Scripts\python.exe -c "from pathlib import Path; n=sum('(head)' in x for x in Path('alembic-heads.txt').read_text().splitlines()); assert n == 1, f'Expected exactly one Alembic head; found {n}'"
+          .ci-venv\Scripts\python.exe -m pytest -q
+
+      - name: Frontend typecheck lint and build
+        shell: cmd
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run typecheck
+          npm run lint
+          npm run build
+
+      - name: Prepare Docker CI environment
+        shell: cmd
+        run: |
+          if exist .env.docker del /f /q .env.docker
+          copy /y .env.docker.example .env.docker
+          >>.env.docker echo APP_ENV=ci
+          >>.env.docker echo DEBUG=true
           docker compose --env-file .env.docker config -q
 
-      - name: Build backend image
-        run: docker build --pull -t primeerp-backend:ci ./backend
+      - name: Clean previous CI stack
+        shell: cmd
+        run: docker compose --env-file .env.docker down -v --remove-orphans
+        continue-on-error: true
 
-      - name: Validate backend image
-        run: docker run --rm primeerp-backend:ci python -m compileall -q app
+      - name: Build production images
+        shell: cmd
+        run: docker compose --env-file .env.docker build --pull migrate backend frontend
 
-      - name: Build frontend image
-        run: docker build --pull -t primeerp-frontend:ci ./frontend
+      - name: Start database and migration
+        shell: cmd
+        run: docker compose --env-file .env.docker up -d db migrate
 
-      - name: Start stack
-        run: docker compose --env-file .env.docker up -d --build
-
-      - name: Wait for stack health
+      - name: Wait for migration and database
+        shell: cmd
         run: |
-          set -euxo pipefail
-          for _ in $(seq 1 48); do
-            db=$(docker inspect --format '{{.State.Health.Status}}' primeerp-db 2>/dev/null || true)
-            migration=$(docker inspect --format '{{.State.Status}}' primeerp-migrate 2>/dev/null || true)
-            backend=$(docker inspect --format '{{.State.Health.Status}}' primeerp-backend 2>/dev/null || true)
-            frontend=$(docker inspect --format '{{.State.Health.Status}}' primeerp-frontend 2>/dev/null || true)
-            echo "db=$db migration=$migration backend=$backend frontend=$frontend"
+          for /L %%I in (1,1,60) do (
+            for /f %%S in ('docker inspect -f "{{.State.Status}}" primeerp-migrate 2^>nul') do set STATUS=%%S
+            if "!STATUS!"=="exited" goto migration_done
+            timeout /t 5 /nobreak >nul
+          )
+          docker compose --env-file .env.docker logs migrate
+          exit /b 1
+          :migration_done
+          for /f %%C in ('docker inspect -f "{{.State.ExitCode}}" primeerp-migrate') do set CODE=%%C
+          if not "!CODE!"=="0" (
+            docker compose --env-file .env.docker logs migrate
+            exit /b 1
+          )
+        env:
+          COMSPEC: cmd.exe
 
-            if [[ "$migration" == "exited" ]]; then
-              code=$(docker inspect --format '{{.State.ExitCode}}' primeerp-migrate)
-              if [[ "$code" != "0" ]]; then
-                docker compose --env-file .env.docker logs migrate
-                exit 1
-              fi
-            fi
+      - name: Execute real PostgreSQL effective-date guard tests
+        shell: cmd
+        working-directory: backend
+        run: |
+          set TEST_DATABASE_URL=postgresql://primeerp:PrimeERP-CI-Only-Strong-Password-2026@db:5432/primeerp_ci
+          set DATABASE_URL=postgresql+psycopg://primeerp:PrimeERP-CI-Only-Strong-Password-2026@db:5432/primeerp_ci
+          set APP_ENV=test
+          set DEBUG=false
+          set SECRET_KEY=PrimeERP-CI-Only-Secret-Key-2026-Change-Me
+          set CORS_ORIGINS=http://localhost:3000
+          .ci-venv\Scripts\python.exe -m pytest -q tests/jurisdiction/test_effective_date_db_guard.py
 
-            if [[ "$backend" == "unhealthy" || "$frontend" == "unhealthy" ]]; then
-              docker compose --env-file .env.docker logs --tail=200 backend frontend
-              exit 1
-            fi
+      - name: Start full runtime
+        shell: cmd
+        run: docker compose --env-file .env.docker up -d backend frontend
 
-            if [[ "$backend" == "healthy" && "$frontend" == "healthy" && "$migration" == "exited" ]]; then
-              code=$(docker inspect --format '{{.State.ExitCode}}' primeerp-migrate)
-              [[ "$code" == "0" ]] && exit 0
-            fi
-            sleep 5
-          done
-
+      - name: Wait for runtime health
+        shell: cmd
+        run: |
+          for /L %%I in (1,1,60) do (
+            set BACKEND=
+            set FRONTEND=
+            for /f %%S in ('docker inspect -f "{{.State.Health.Status}}" primeerp-backend 2^>nul') do set BACKEND=%%S
+            for /f %%S in ('docker inspect -f "{{.State.Health.Status}}" primeerp-frontend 2^>nul') do set FRONTEND=%%S
+            echo backend=!BACKEND! frontend=!FRONTEND!
+            if "!BACKEND!"=="healthy" if "!FRONTEND!"=="healthy" goto healthy
+            if "!BACKEND!"=="unhealthy" goto unhealthy
+            if "!FRONTEND!"=="unhealthy" goto unhealthy
+            timeout /t 5 /nobreak >nul
+          )
           docker compose --env-file .env.docker ps
           docker compose --env-file .env.docker logs --tail=200 db migrate backend frontend
-          exit 1
+          exit /b 1
+          :unhealthy
+          docker compose --env-file .env.docker logs --tail=200 db migrate backend frontend
+          exit /b 1
+          :healthy
+          exit /b 0
+        env:
+          COMSPEC: cmd.exe
 
       - name: API readiness smoke test
-        run: |
-          set -euxo pipefail
-          docker exec primeerp-backend python -c "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8001/ready', timeout=15); assert r.status == 200; print(r.read().decode())"
+        shell: cmd
+        run: docker exec primeerp-backend python -c "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8001/ready', timeout=15); assert r.status == 200; print(r.read().decode())"
 
       - name: OpenAPI contract smoke test
+        shell: cmd
         run: |
-          set -euxo pipefail
-          docker exec primeerp-backend python - <<'PY'
-          import json
-          import urllib.request
-
-          spec = json.load(urllib.request.urlopen(
-              'http://127.0.0.1:8001/api/v1/openapi.json', timeout=15
-          ))
-          paths = spec.get('paths', {})
-          required = [
-              '/api/v1/identity/login',
-              '/api/v1/identity/me',
-              '/api/v1/platform/tenants',
-              '/api/v1/subscriptions/tenant/{tenant_id}',
-              '/api/v1/accounting/tax-rates',
-              '/api/v1/taxes/rates',
-              '/api/v1/uom',
-              '/api/v1/inventory/items',
-              '/api/v1/inventory/items/{item_id}/stock',
-              '/api/v1/catalog/categories',
-              '/api/v1/catalog/price-lists',
-              '/api/v1/catalog/prices',
-              '/api/v1/catalog/recipes',
-              '/api/v1/catalog/menus',
-              '/api/v1/catalog/products/{product_id}/pricing-analysis',
-              '/api/v1/integrations/connections',
-              '/api/v1/shipping/carriers',
-          ]
-          missing = [path for path in required if path not in paths]
-          assert not missing, f'Missing required API routes: {missing}'
-          print(f'Runtime OpenAPI contract passed: {len(paths)} paths registered')
-          PY
+          docker exec primeerp-backend python -c "import json,urllib.request; s=json.load(urllib.request.urlopen('http://127.0.0.1:8001/api/v1/openapi.json',timeout=15)); p=s.get('paths',{}); req=['/api/v1/identity/login','/api/v1/identity/me','/api/v1/platform/tenants','/api/v1/subscriptions/tenant/{tenant_id}','/api/v1/accounting/tax-rates','/api/v1/taxes/rates','/api/v1/uom','/api/v1/inventory/items','/api/v1/inventory/items/{item_id}/stock','/api/v1/catalog/categories','/api/v1/catalog/price-lists','/api/v1/catalog/prices','/api/v1/catalog/recipes','/api/v1/catalog/menus','/api/v1/catalog/products/{product_id}/pricing-analysis','/api/v1/integrations/connections','/api/v1/shipping/carriers']; m=[x for x in req if x not in p]; assert not m, f'Missing required API routes: {m}'; print(f'Runtime OpenAPI contract passed: {len(p)} paths registered')"
 
       - name: Frontend smoke test
-        run: curl -fsS http://127.0.0.1:3000/ >/dev/null
+        shell: cmd
+        run: curl.exe -fsS http://127.0.0.1:3000/ >nul
 
       - name: Frontend API proxy smoke test
+        shell: cmd
         run: |
-          set -euxo pipefail
-          status=$(curl -s -o /tmp/api-response.txt -w '%{http_code}' http://127.0.0.1:3000/api/v1/identity/me)
-          test "$status" = "401"
-          grep -Eq 'detail|Not authenticated' /tmp/api-response.txt
+          curl.exe -s -o api-response.txt -w "%{http_code}" http://127.0.0.1:3000/api/v1/identity/me > api-status.txt
+          set /p STATUS=<api-status.txt
+          if not "%STATUS%"=="401" exit /b 1
+          findstr /I /C:"detail" /C:"Not authenticated" api-response.txt >nul
 
       - name: Migration idempotency check
+        shell: cmd
         run: docker compose --env-file .env.docker run --rm migrate
 
-      - name: Diagnostics
+      - name: Diagnostics and cleanup
         if: always()
+        shell: cmd
         run: |
-          docker compose --env-file .env.docker ps || true
-          docker compose --env-file .env.docker logs --tail=150 db migrate backend frontend || true
-
-      - name: Cleanup
-        if: always()
-        run: |
-          docker compose --env-file .env.docker down -v --remove-orphans >/dev/null 2>&1 || true
-          docker image rm primeerp-backend:ci primeerp-frontend:ci >/dev/null 2>&1 || true
+          docker compose --env-file .env.docker ps
+          docker compose --env-file .env.docker logs --tail=150 db migrate backend frontend
+          docker compose --env-file .env.docker down -v --remove-orphans
