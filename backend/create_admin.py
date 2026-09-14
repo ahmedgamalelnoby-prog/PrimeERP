@@ -1,24 +1,13 @@
-﻿from app.database.session import SessionLocal
-from app.database.models import User
-from app.core.security import get_password_hash
+"""Backward-compatible entry point for the supported Super Admin bootstrapper.
 
-db = SessionLocal()
+The old script created a legacy User shape and contained a hard-coded weak
+password. Keep the entry point for existing operational habits, but delegate
+to the single supported bootstrap implementation and require a secure
+password through PRIMEERP_SUPERADMIN_PASSWORD or an interactive prompt.
+"""
 
-existing = db.query(User).filter(User.email == "admin@example.com").first()
+from scripts.create_super_admin import main
 
-if existing:
-    print("Admin already exists")
-else:
-    admin = User(
-        email="admin@example.com",
-        hashed_password=get_password_hash("admin123"),
-        full_name="Administrator",
-        role="admin",
-        is_active=True
-    )
 
-    db.add(admin)
-    db.commit()
-    print("Admin created successfully")
-
-db.close()
+if __name__ == "__main__":
+    main()
