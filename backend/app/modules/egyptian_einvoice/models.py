@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.sql import func
 
 from app.database.base import Base
@@ -6,6 +6,11 @@ from app.database.base import Base
 
 class EgyptianEInvoiceDocument(Base):
     __tablename__ = "egyptian_einvoice_documents"
+    __table_args__ = (
+        UniqueConstraint("company_id", "source_type", "source_id", name="uq_eta_source_document"),
+        UniqueConstraint("submission_uuid", name="uq_eta_submission_uuid"),
+        UniqueConstraint("eta_uuid", name="uq_eta_document_uuid"),
+    )
 
     id = Column(Integer, primary_key=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
