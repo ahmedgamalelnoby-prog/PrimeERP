@@ -10,6 +10,7 @@ class InventoryReservation(Base):
     id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     item_id = Column(Integer, ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False, index=True)
+    variant_id = Column(Integer, ForeignKey("product_variants.id", ondelete="RESTRICT"), nullable=True, index=True)
     location_id = Column(Integer, ForeignKey("inventory_locations.id", ondelete="RESTRICT"), nullable=False, index=True)
     quantity = Column(Numeric(18, 4), nullable=False)
     status = Column(String(20), nullable=False, default="active", index=True)
@@ -20,6 +21,7 @@ class InventoryReservation(Base):
     notes = Column(Text, nullable=True)
 
     item = relationship("InventoryItem")
+    variant = relationship("ProductVariant")
     location = relationship("InventoryLocation")
 
     __table_args__ = (
