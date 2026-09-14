@@ -130,7 +130,8 @@ class CommerceAccountingService:
         if payment.document_kind == "sale":
             lines = [{"account_combination_id": settings.default_payment_account_id, "debit": cash, "credit": 0}, {"account_combination_id": settings.wht_account_id, "debit": wht, "credit": 0}, {"account_combination_id": control, "debit": 0, "credit": gross}]
         else:
-            lines = [{"account_combination_id": control, "debit": gross, "credit": 0}, {"account_combination_id": settings.default_payment_account_id, "debit": cash, "credit": 0}, {"account_combination_id": settings.wht_account_id, "debit": 0, "credit": wht}]
+            # Purchase payment settles AP: Dr AP gross, Cr Cash net, Cr WHT.
+            lines = [{"account_combination_id": control, "debit": gross, "credit": 0}, {"account_combination_id": settings.default_payment_account_id, "debit": 0, "credit": cash}, {"account_combination_id": settings.wht_account_id, "debit": 0, "credit": wht}]
         lines = [x for x in lines if Decimal(x["debit"]) or Decimal(x["credit"])]
         return self._post(db, company_id=payment.company_id, user_id=user_id, entry_date=payment.payment_date, journal_id=settings.cash_journal_id, entry_number=f"PAY-{payment.id}", description=f"Commerce payment {payment.id}", lines=lines, source_entity="commerce_payment", source_id=payment.id)
 
@@ -147,8 +148,9 @@ class CommerceAccountingService:
             # original = Dr Cash, Dr WHT, Cr AR; reversal = Dr AR, Cr Cash, Cr WHT.
             lines = [{"account_combination_id": control, "debit": gross, "credit": 0}, {"account_combination_id": settings.default_payment_account_id, "debit": 0, "credit": cash}, {"account_combination_id": settings.wht_account_id, "debit": 0, "credit": wht}]
         else:
-            # Exact accounting opposite of the original purchase payment.
-            lines = [{"account_combination_id": settings.default_payment_account_id, "debit": 0, "credit": cash}, {"account_combination_id": settings.wht_account_id, "debit": wht, "credit": 0}, {"account_combination_id": control, "debit": 0, "credit": gross}]
+            # Exact accounting opposite of the original purchase payment:
+            # original = Dr AP, Cr Cash, Cr WHT; reversal = Dr Cash, Dr WHT, Cr AP.
+            lines = [{"account_combination_id": settings.default_payment_account_id, "debit": cash, "credit": 0}, {"account_combination_id": settings.wht_account_id, "debit": wht, "credit": 0}, {"account_combination_id": control, "debit": 0, "credit": gross}]
         lines = [x for x in lines if Decimal(x["debit"]) or Decimal(x["credit"])]
         effective_date = reversal_date or payment.payment_date
         return self._post(db, company_id=payment.company_id, user_id=user_id, entry_date=effective_date, journal_id=settings.cash_journal_id, entry_number=f"PAY-REV-{payment.id}", description=f"Reversal of commerce payment {payment.id}", lines=lines, source_entity="commerce_payment_reversal", source_id=payment.id)
