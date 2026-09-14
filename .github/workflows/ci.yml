@@ -77,6 +77,8 @@ jobs:
           SECRET_KEY: your-secret-key-change-this-in-production
           CORS_ORIGINS: https://erp.example.com
         run: .ci-venv\Scripts\python.exe scripts\check_production_config.py
+      - name: Validate release architecture and Docker contract
+        run: .ci-venv\Scripts\python.exe scripts\check_release_readiness.py
       - name: Require a single Alembic head
         run: |
           .ci-venv\Scripts\python.exe -m alembic heads > alembic-heads.txt
