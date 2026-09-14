@@ -49,29 +49,16 @@ jobs:
           }
           if (-not $sourceDir) { throw 'Docker CLI was not found in an installed/system location.' }
 
-          $dockerRoot = Split-Path $sourceDir -Parent
           $stageDir = Join-Path $env:RUNNER_TEMP 'primeerp-docker-cli'
           if (Test-Path -LiteralPath $stageDir) { Remove-Item -LiteralPath $stageDir -Recurse -Force }
           New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
           Copy-Item -LiteralPath (Join-Path $sourceDir 'docker.exe') -Destination $stageDir -Force
-
-          $pluginCandidates = @(
-            (Join-Path $sourceDir 'docker-compose.exe'),
-            (Join-Path $dockerRoot 'cli-plugins\docker-compose.exe'),
-            (Join-Path $dockerRoot 'bin\docker-compose.exe')
-          )
-          $composePlugin = $pluginCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-          if ($composePlugin) {
-            New-Item -ItemType Directory -Force -Path (Join-Path $stageDir 'cli-plugins') | Out-Null
-            Copy-Item -LiteralPath $composePlugin -Destination (Join-Path $stageDir 'cli-plugins\docker-compose.exe') -Force
-          }
-
+          $composePlugin = Join-Path $sourceDir 'docker-compose.exe'
+          if (Test-Path -LiteralPath $composePlugin) { Copy-Item -LiteralPath $composePlugin -Destination $stageDir -Force }
+          $cliPlugins = Join-Path $sourceDir 'cli-plugins'
+          if (Test-Path -LiteralPath $cliPlugins) { Copy-Item -LiteralPath $cliPlugins -Destination $stageDir -Recurse -Force }
           Get-ChildItem -LiteralPath $stageDir -Recurse -File | Unblock-File -ErrorAction SilentlyContinue
-          Get-ChildItem -LiteralPath $stageDir -Recurse | Select-Object FullName,Length | Format-Table -AutoSize | Out-String | Write-Output
 
-          # This runner is installed as a Windows service. Stage the executable into
-          # the runner temp area and invoke it through CMD to avoid the failing
-          # PowerShell native-command boundary seen with the installed user-local CLI.
           $wrapper = Join-Path $stageDir 'docker.cmd'
           Set-Content -LiteralPath $wrapper -Encoding ASCII -Value "@echo off`r`n\"%~dp0docker.exe\" %*`r`n"
           Add-Content $env:GITHUB_PATH $stageDir
@@ -85,59 +72,57 @@ jobs:
 
       - name: Verify Docker daemon
         run: |
-          docker version
+          cmd.exe /d /c "docker version"
           if ($LASTEXITCODE -ne 0) { throw "docker version failed with exit code $LASTEXITCODE" }
-          docker compose version
+          cmd.exe /d /c "docker compose version"
           if ($LASTEXITCODE -ne 0) { throw "docker compose version failed with exit code $LASTEXITCODE" }
 
       - name: Prepare Docker environment
         run: Copy-Item .env.docker.example .env.docker -Force
 
       - name: Validate Docker Compose
-        run: docker compose --env-file .env.docker config -q
+        run: cmd.exe /d /c "docker compose --env-file .env.docker config -q"
 
       - name: Build backend image
-        run: docker build --pull -t primeerp-backend:ci ./backend
+        run: cmd.exe /d /c "docker build --pull -t primeerp-backend:ci ./backend"
 
       - name: Validate backend image Python sources
-        run: docker run --rm primeerp-backend:ci python -m compileall -q app
+        run: cmd.exe /d /c "docker run --rm primeerp-backend:ci python -m compileall -q app"
 
       - name: Build frontend image
-        run: docker build --pull -t primeerp-frontend:ci ./frontend
+        run: cmd.exe /d /c "docker build --pull -t primeerp-frontend:ci ./frontend"
 
       - name: Start full Docker stack
-        run: docker compose --env-file .env.docker up -d --build
+        run: cmd.exe /d /c "docker compose --env-file .env.docker up -d --build"
 
       - name: Wait for database, migration and backend health
         run: |
           $deadline = [DateTime]::UtcNow.AddMinutes(8)
           $healthy = $false
           while ([DateTime]::UtcNow -lt $deadline) {
-            $db = docker inspect --format '{{.State.Health.Status}}' primeerp-db 2>$null
-            $migration = docker inspect --format '{{.State.Status}}' primeerp-migrate 2>$null
-            $backend = docker inspect --format '{{.State.Health.Status}}' primeerp-backend 2>$null
+            $db = cmd.exe /d /c "docker inspect --format \"{{.State.Health.Status}}\" primeerp-db 2>NUL"
+            $migration = cmd.exe /d /c "docker inspect --format \"{{.State.Status}}\" primeerp-migrate 2>NUL"
+            $backend = cmd.exe /d /c "docker inspect --format \"{{.State.Health.Status}}\" primeerp-backend 2>NUL"
             Write-Output "db=$db migration=$migration backend=$backend"
-            if ($migration -eq 'exited') {
-              $exitCode = docker inspect --format '{{.State.ExitCode}}' primeerp-migrate 2>$null
-              if ($exitCode -ne '0') { docker compose --env-file .env.docker logs migrate; throw 'Migration container failed' }
+            if ($migration -match 'exited') {
+              $exitCode = cmd.exe /d /c "docker inspect --format \"{{.State.ExitCode}}\" primeerp-migrate 2>NUL"
+              if ($exitCode.Trim() -ne '0') { cmd.exe /d /c "docker compose --env-file .env.docker logs migrate"; throw 'Migration container failed' }
             }
-            if ($backend -eq 'healthy') { $healthy = $true; break }
-            if ($backend -eq 'unhealthy') { docker compose --env-file .env.docker logs --tail=200 backend; throw 'Backend became unhealthy' }
+            if ($backend -match 'healthy') { $healthy = $true; break }
+            if ($backend -match 'unhealthy') { cmd.exe /d /c "docker compose --env-file .env.docker logs --tail=200 backend"; throw 'Backend became unhealthy' }
             Start-Sleep -Seconds 10
           }
           if (-not $healthy) {
-            docker compose --env-file .env.docker ps
-            docker compose --env-file .env.docker logs --tail=200 db migrate backend
+            cmd.exe /d /c "docker compose --env-file .env.docker ps"
+            cmd.exe /d /c "docker compose --env-file .env.docker logs --tail=200 db migrate backend"
             throw 'Backend did not become healthy within 8 minutes'
           }
 
       - name: Runtime API readiness smoke test
-        run: |
-          docker exec primeerp-backend python -c "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8001/ready', timeout=15); assert r.status == 200; print(r.read().decode())"
+        run: cmd.exe /d /c "docker exec primeerp-backend python -c \"import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8001/ready', timeout=15); assert r.status == 200; print(r.read().decode())\""
 
       - name: Runtime API contract smoke test
-        run: |
-          docker exec primeerp-backend python -c "import json,urllib.request; s=json.load(urllib.request.urlopen('http://127.0.0.1:8001/api/v1/openapi.json',timeout=15)); p=s.get('paths',{}); required=['/api/v1/identity/login','/api/v1/identity/me','/api/v1/companies','/api/v1/tenants','/api/v1/subscriptions/tenant/{tenant_id}','/api/v1/inventory/items','/api/v1/inventory/items/{item_id}/stock']; missing=[x for x in required if x not in p]; assert not missing, f'Missing required API routes: {missing}'; assert 'post' in p['/api/v1/identity/login']; assert 'get' in p['/api/v1/companies']; assert 'get' in p['/api/v1/inventory/items']; assert 'get' in p['/api/v1/inventory/items/{item_id}/stock']; print(f'Runtime OpenAPI contract passed: {len(p)} paths registered')"
+        run: cmd.exe /d /c "docker exec primeerp-backend python -c \"import json,urllib.request; s=json.load(urllib.request.urlopen('http://127.0.0.1:8001/api/v1/openapi.json',timeout=15)); p=s.get('paths',{}); required=['/api/v1/identity/login','/api/v1/identity/me','/api/v1/companies','/api/v1/tenants','/api/v1/subscriptions/tenant/{tenant_id}','/api/v1/inventory/items','/api/v1/inventory/items/{item_id}/stock']; missing=[x for x in required if x not in p]; assert not missing, f'Missing required API routes: {missing}'; assert 'post' in p['/api/v1/identity/login']; assert 'get' in p['/api/v1/companies']; assert 'get' in p['/api/v1/inventory/items']; assert 'get' in p['/api/v1/inventory/items/{item_id}/stock']; print(f'Runtime OpenAPI contract passed: {len(p)} paths registered')\""
 
       - name: Runtime frontend smoke test
         run: |
@@ -148,12 +133,12 @@ jobs:
       - name: Docker runtime diagnostics
         if: always()
         run: |
-          docker compose --env-file .env.docker ps
-          docker compose --env-file .env.docker logs --tail=100 migrate
-          docker compose --env-file .env.docker logs --tail=100 backend
+          cmd.exe /d /c "docker compose --env-file .env.docker ps"
+          cmd.exe /d /c "docker compose --env-file .env.docker logs --tail=100 migrate"
+          cmd.exe /d /c "docker compose --env-file .env.docker logs --tail=100 backend"
 
       - name: Cleanup Docker stack
         if: always()
         run: |
-          docker compose --env-file .env.docker down -v --remove-orphans
-          docker image rm primeerp-backend:ci primeerp-frontend:ci 2>$null
+          cmd.exe /d /c "docker compose --env-file .env.docker down -v --remove-orphans"
+          cmd.exe /d /c "docker image rm primeerp-backend:ci primeerp-frontend:ci"
