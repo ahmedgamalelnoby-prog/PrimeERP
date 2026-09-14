@@ -6,7 +6,6 @@ from app.database.base import Base
 
 class InventoryItem(Base):
     __tablename__ = "inventory_items"
-
     id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     category_id = Column(Integer, ForeignKey("product_categories.id", ondelete="SET NULL"), nullable=True, index=True)
@@ -17,6 +16,8 @@ class InventoryItem(Base):
     item_type = Column(String(30), nullable=False, default="stockable")
     uom = Column(String(30), nullable=False, default="unit")
     uom_id = Column(Integer, ForeignKey("units_of_measure.id", ondelete="RESTRICT"), nullable=True, index=True)
+    sales_uom_id = Column(Integer, ForeignKey("units_of_measure.id", ondelete="RESTRICT"), nullable=True, index=True)
+    purchase_uom_id = Column(Integer, ForeignKey("units_of_measure.id", ondelete="RESTRICT"), nullable=True, index=True)
     sales_tax_ids = Column(JSON, nullable=False, default=list)
     purchase_tax_ids = Column(JSON, nullable=False, default=list)
     costing_method = Column(String(20), nullable=False, default="weighted_average")
@@ -26,7 +27,6 @@ class InventoryItem(Base):
     reorder_level = Column(Numeric(18, 4), nullable=False, default=0)
     is_active = Column(Boolean, nullable=False, default=True)
     description = Column(Text, nullable=True)
-
     __table_args__ = (
         UniqueConstraint("company_id", "sku", name="uq_inventory_item_company_sku"),
         UniqueConstraint("company_id", "barcode", name="uq_inventory_item_company_barcode"),
@@ -37,15 +37,15 @@ class InventoryItem(Base):
         CheckConstraint("purchase_price >= 0", name="ck_inventory_item_purchase_price"),
         CheckConstraint("reorder_level >= 0", name="ck_inventory_item_reorder_level"),
     )
-
     stocks = relationship("InventoryStock", back_populates="item", cascade="all, delete-orphan")
     uom_master = relationship("UnitOfMeasure", foreign_keys=[uom_id])
+    sales_uom = relationship("UnitOfMeasure", foreign_keys=[sales_uom_id])
+    purchase_uom = relationship("UnitOfMeasure", foreign_keys=[purchase_uom_id])
     category = relationship("ProductCategory", foreign_keys=[category_id])
 
 
 class InventoryStock(Base):
     __tablename__ = "inventory_stocks"
-
     id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     item_id = Column(Integer, ForeignKey("inventory_items.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -53,10 +53,8 @@ class InventoryStock(Base):
     quantity_on_hand = Column(Numeric(18, 4), nullable=False, default=0)
     quantity_reserved = Column(Numeric(18, 4), nullable=False, default=0)
     average_cost = Column(Numeric(18, 4), nullable=False, default=0)
-
     item = relationship("InventoryItem", back_populates="stocks")
     warehouse = relationship("InventoryWarehouse", back_populates="stocks")
-
     __table_args__ = (
         UniqueConstraint("company_id", "item_id", "warehouse_id", name="uq_inventory_stock_location"),
         CheckConstraint("quantity_on_hand >= 0", name="ck_inventory_stock_on_hand"),
