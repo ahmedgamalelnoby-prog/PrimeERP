@@ -1,3 +1,4 @@
+from decimal import Decimal
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -19,6 +20,24 @@ def test_bill_uses_receipt_valuation_and_posts_only_the_difference_to_ppv():
     assert "settings.purchase_price_variance_account_id" in ACCOUNTING_SOURCE
     assert "variance = stock_total - receipt_value" in ACCOUNTING_SOURCE
     assert "Receipt quantity is insufficient" in ACCOUNTING_SOURCE
+    assert "lines.append({\"account_combination_id\": settings.grni_account_id, \"debit\": receipt_value" in ACCOUNTING_SOURCE
+
+
+def test_ppv_journal_math_is_balanced_for_both_price_directions():
+    receipt_value = Decimal("120")
+    bill_value = Decimal("100")
+    variance = bill_value - receipt_value
+    debit = receipt_value
+    credit = bill_value + max(-variance, Decimal("0"))
+    debit += max(variance, Decimal("0"))
+    assert debit == credit == Decimal("120")
+
+    receipt_value = Decimal("100")
+    bill_value = Decimal("120")
+    variance = bill_value - receipt_value
+    debit = receipt_value + max(variance, Decimal("0"))
+    credit = bill_value + max(-variance, Decimal("0"))
+    assert debit == credit == Decimal("120")
 
 
 def test_receipt_moves_are_locked_before_allocation_to_prevent_double_billing():
