@@ -88,7 +88,7 @@ def test_compliance_snapshot_uses_effective_standards():
     snapshot = compliance_snapshot(ComplianceContext(as_of=date(2026, 9, 14)))
     assert snapshot["jurisdiction"] == "EG"
     assert snapshot["accounting_framework"] == "IFRS"
-    assert "IFRS_18" not in snapshot["effective_ifrs_standards"]
+    assert "IFRS_18" not in {standard.code for standard in snapshot["effective_ifrs_standards"]}
     future = compliance_snapshot(ComplianceContext(as_of=date(2027, 1, 1)))
-    assert "IFRS_18" in future["effective_ifrs_standards"]
+    assert "IFRS_18" in {standard.code for standard in future["effective_ifrs_standards"]}
     assert future["legal_status"] == "configuration_required"
