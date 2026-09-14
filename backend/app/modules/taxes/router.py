@@ -1,10 +1,6 @@
-"""Canonical tax-domain API.
+"""Canonical tax-domain API."""
 
-The accounting module still owns the persisted TaxRate model for backwards
-compatibility. This router exposes the tax domain under /taxes without
-creating a second tax table or a second implementation of tax calculations.
-"""
-
+from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -21,12 +17,9 @@ from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.saas.entitlements import require_module
+from .models import TaxReturnDraft
 
-router = APIRouter(
-    prefix="/taxes",
-    tags=["taxes"],
-    dependencies=[Depends(require_module("accounting"))],
-)
+router = APIRouter(prefix="/taxes", tags=["taxes"], dependencies=[Depends(require_module("accounting"))])
 
 
 def _company_for_user(db: Session, company_id: int, user: User) -> Company:
@@ -121,3 +114,47 @@ def deactivate_tax(tax_id: int, company_id: int = Query(..., gt=0), current_user
     tax = _tax_for_company(db, tax_id, company_id, current_user)
     tax.is_active = False
     db.commit()
+
+
+def _return_values(payload: dict) -> dict:
+    try:
+        period_from = date.fromisoformat(str(payload["period_from"]))
+        period_to = date.fromisoformat(str(payload["period_to"]))
+        output_vat = Decimal(str(payload.get("output_vat", 0)))
+        input_vat = Decimal(str(payload.get("input_vat", 0)))
+        adjustments = Decimal(str(payload.get("adjustments", 0)))
+        wht_payable = Decimal(str(payload.get("wht_payable", 0)))
+        reconciliation_difference = Decimal(str(payload.get("reconciliation_difference", 0)))
+    except (KeyError, ValueError, InvalidOperation, TypeError) as exc:
+        raise HTTPException(422, "Invalid tax-return period or decimal values") from exc
+    if period_to < period_from:
+        raise HTTPException(422, "period_to must be on or after period_from")
+    decimals = (output_vat, input_vat, adjustments, wht_payable, reconciliation_difference)
+    if any(not value.is_finite() for value in decimals):
+        raise HTTPException(422, "Tax-return values must be finite")
+    net_vat = output_vat - input_vat + adjustments
+    return {"period_from": period_from, "period_to": period_to, "output_vat": output_vat, "input_vat": input_vat, "adjustments": adjustments, "wht_payable": wht_payable, "net_vat": net_vat, "reconciliation_difference": reconciliation_difference, "is_reconciled": reconciliation_difference == 0}
+
+
+@router.post("/returns/preview", dependencies=[Depends(require_permission("tax.access"))])
+def preview_tax_return(payload: dict, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    company_id = int(payload.get("company_id", 0))
+    _company_for_user(db, company_id, current_user)
+    values = _return_values(payload)
+    return {"company_id": company_id, **values, "submission_status": "not_supported_by_this_endpoint"}
+
+
+@router.post("/returns/drafts", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("tax.write"))])
+def create_tax_return_draft(payload: dict, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    company_id = int(payload.get("company_id", 0))
+    _company_for_user(db, company_id, current_user)
+    values = _return_values(payload)
+    obj = TaxReturnDraft(company_id=company_id, jurisdiction_code=str(payload.get("jurisdiction_code", "EG")).upper(), **values, notes=payload.get("notes"))
+    db.add(obj); db.commit(); db.refresh(obj)
+    return obj
+
+
+@router.get("/returns/drafts", dependencies=[Depends(require_permission("tax.access"))])
+def list_tax_return_drafts(company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company_for_user(db, company_id, current_user)
+    return list(db.scalars(select(TaxReturnDraft).where(TaxReturnDraft.company_id == company_id).order_by(TaxReturnDraft.id.desc()).limit(200)).all())
