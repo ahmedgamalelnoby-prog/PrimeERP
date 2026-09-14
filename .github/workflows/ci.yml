@@ -13,14 +13,18 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  PYTHON_VERSION: '3.10'
+  NODE_VERSION: '20'
+
 jobs:
   backend:
     name: Backend - compile, architecture, security, smoke and tests
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 30
     defaults:
       run:
-        shell: bash
+        shell: pwsh
         working-directory: backend
     steps:
       - name: Checkout
@@ -28,34 +32,32 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.10'
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
           cache-dependency-path: backend/requirements.txt
       - name: Validate Python runtime
         run: |
           python --version
-          python - <<'PY'
-          import sys
-          assert sys.version_info >= (3, 10), sys.version
-          PY
+          $version = python -c "import sys; print('.'.join(map(str, sys.version_info[:3])))"
+          if ([version]$version -lt [version]'3.10.0') { throw "Python 3.10+ is required; found $version" }
       - name: Create isolated CI virtual environment
         run: python -m venv .ci-venv
       - name: Install dependencies
         run: |
-          .ci-venv/bin/python -m pip install --upgrade pip
-          .ci-venv/bin/python -m pip install -r requirements.txt
-          .ci-venv/bin/python -m pip install pytest
+          .\.ci-venv\Scripts\python.exe -m pip install --upgrade pip
+          .\.ci-venv\Scripts\python.exe -m pip install -r requirements.txt
+          .\.ci-venv\Scripts\python.exe -m pip install pytest
       - name: Compile Python sources
-        run: .ci-venv/bin/python -m compileall -q app
+        run: .\.ci-venv\Scripts\python.exe -m compileall -q app
       - name: Validate modular architecture
-        run: .ci-venv/bin/python scripts/check_modular_architecture.py
+        run: .\.ci-venv\Scripts\python.exe scripts\check_modular_architecture.py
       - name: Validate API security boundaries
-        run: .ci-venv/bin/python scripts/check_api_security.py
+        run: .\.ci-venv\Scripts\python.exe scripts\check_api_security.py
       - name: Import application smoke test
         env:
           DATABASE_URL: sqlite:///./primeerp_ci_smoke.db
           APP_ENV: test
-        run: .ci-venv/bin/python scripts/smoke_import.py
+        run: .\.ci-venv\Scripts\python.exe scripts\smoke_import.py
       - name: Validate production configuration rejects unsafe defaults
         env:
           APP_ENV: production
@@ -63,21 +65,22 @@ jobs:
           DATABASE_URL: sqlite:///./unsafe.db
           SECRET_KEY: your-secret-key-change-this-in-production
           CORS_ORIGINS: https://erp.example.com
-        run: .ci-venv/bin/python scripts/check_production_config.py
+        run: .\.ci-venv\Scripts\python.exe scripts\check_production_config.py
       - name: Require a single Alembic head
         run: |
-          .ci-venv/bin/python -m alembic heads | tee alembic-heads.txt
-          test "$(grep -c '(head)' alembic-heads.txt)" -eq 1
+          .\.ci-venv\Scripts\python.exe -m alembic heads | Tee-Object -FilePath alembic-heads.txt
+          $heads = (Get-Content alembic-heads.txt | Select-String '\(head\)').Count
+          if ($heads -ne 1) { throw "Expected exactly one Alembic head; found $heads" }
       - name: Run tests
-        run: .ci-venv/bin/python -m pytest -q
+        run: .\.ci-venv\Scripts\python.exe -m pytest -q
 
   frontend:
     name: Frontend - typecheck, lint and build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 20
     defaults:
       run:
-        shell: bash
+        shell: pwsh
         working-directory: frontend
     steps:
       - name: Checkout
@@ -85,14 +88,15 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: Validate Node.js runtime
         run: |
           node --version
           npm --version
-          test "$(node -p "process.versions.node.split('.')[0]")" -ge 20
+          $major = [int](node -p "process.versions.node.split('.')[0]")
+          if ($major -lt 20) { throw "Node.js 20+ is required; found $major" }
       - name: Install dependencies
         run: npm ci
       - name: Typecheck
@@ -104,24 +108,21 @@ jobs:
 
   repository:
     name: Repository boundaries and hygiene
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Windows, X64]
     steps:
       - name: Checkout
         uses: actions/checkout@v5
       - name: Reject cross-system references and generated files
-        shell: bash
+        shell: pwsh
         run: |
-          set -euo pipefail
-          forbidden=$(git ls-files | grep -E '(^|/)\.env$|(^|/)__pycache__(/|$)|(^|/)node_modules(/|$)|(^|/)dist(/|$)|\.pyc$|\.backup$|\.bak$' || true)
-          if [ -n "$forbidden" ]; then
-            echo "$forbidden"
-            echo 'Forbidden tracked/generated file detected.'
-            exit 1
-          fi
-          matches=$(git grep -n -I -E 'CommercialERP|ContentAI|commercialERP|contentai|D:\\(commercialERP|ContentAI)' -- ':!docs/SYSTEM_BOUNDARIES.md' ':!.github/workflows/ci.yml' || true)
-          if [ -n "$matches" ]; then
-            echo "$matches"
-            echo 'Cross-system reference detected in PrimeERP.'
-            exit 1
-          fi
-          echo 'PrimeERP repository boundary check passed.'
+          $forbidden = git ls-files | Select-String '(^|/)\.env$|(^|/)__pycache__(/|$)|(^|/)node_modules(/|$)|(^|/)dist(/|$)|\.pyc$|\.backup$|\.bak$'
+          if ($forbidden) {
+            $forbidden | ForEach-Object { $_.Line }
+            throw 'Forbidden tracked/generated file detected.'
+          }
+          $matches = git grep -n -I -E 'CommercialERP|ContentAI|commercialERP|contentai|D:\\(commercialERP|ContentAI)' -- ':!docs/SYSTEM_BOUNDARIES.md' ':!.github/workflows/ci.yml'
+          if ($LASTEXITCODE -eq 0 -and $matches) {
+            $matches
+            throw 'Cross-system reference detected in PrimeERP.'
+          }
+          Write-Host 'PrimeERP repository boundary check passed.'
