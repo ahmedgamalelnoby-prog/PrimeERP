@@ -40,7 +40,17 @@ def create_application() -> FastAPI:
         allow_origins=settings.BACKEND_CORS_ORIGINS,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Request-ID"],
+        # X-Tenant-ID is part of the supported platform-admin tenant-context
+        # contract. Without it, browsers cannot complete a CORS preflight even
+        # though the API accepts the header server-side.
+        allow_headers=[
+            "Authorization",
+            "Content-Type",
+            "Accept",
+            "Origin",
+            "X-Request-ID",
+            "X-Tenant-ID",
+        ],
         expose_headers=["X-Request-ID"],
     )
 
