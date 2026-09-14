@@ -24,7 +24,7 @@ jobs:
     timeout-minutes: 40
     defaults:
       run:
-        shell: cmd.exe /d /s /c "{0}"
+        shell: cmd
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -61,28 +61,33 @@ jobs:
         run: docker compose --env-file .env.docker up -d --build
 
       - name: Wait for database, migration and backend health
-        shell: powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ". ''{0}''"
         run: |
-          $deadline = [DateTime]::UtcNow.AddMinutes(8)
-          $healthy = $false
-          while ([DateTime]::UtcNow -lt $deadline) {
-            $db = cmd.exe /d /c "docker inspect --format '{{.State.Health.Status}}' primeerp-db 2>NUL"
-            $migration = cmd.exe /d /c "docker inspect --format '{{.State.Status}}' primeerp-migrate 2>NUL"
-            $backend = cmd.exe /d /c "docker inspect --format '{{.State.Health.Status}}' primeerp-backend 2>NUL"
-            Write-Output "db=$db migration=$migration backend=$backend"
-            if ($migration.Trim() -eq 'exited') {
-              $exitCode = cmd.exe /d /c "docker inspect --format '{{.State.ExitCode}}' primeerp-migrate 2>NUL"
-              if ($exitCode.Trim() -ne '0') { cmd.exe /d /c "docker compose --env-file .env.docker logs migrate"; throw 'Migration container failed' }
-            }
-            if ($backend.Trim() -eq 'healthy') { $healthy = $true; break }
-            if ($backend.Trim() -eq 'unhealthy') { cmd.exe /d /c "docker compose --env-file .env.docker logs --tail=200 backend"; throw 'Backend became unhealthy' }
-            Start-Sleep -Seconds 10
-          }
-          if (-not $healthy) {
-            cmd.exe /d /c "docker compose --env-file .env.docker ps"
-            cmd.exe /d /c "docker compose --env-file .env.docker logs --tail=200 db migrate backend"
-            throw 'Backend did not become healthy within 8 minutes'
-          }
+          set "HEALTHY=0"
+          for /L %%N in (1,1,48) do (
+            for /F "delims=" %%A in ('docker inspect --format "{{.State.Health.Status}}" primeerp-db 2^>NUL') do set "DB=%%A"
+            for /F "delims=" %%A in ('docker inspect --format "{{.State.Status}}" primeerp-migrate 2^>NUL') do set "MIGRATION=%%A"
+            for /F "delims=" %%A in ('docker inspect --format "{{.State.Health.Status}}" primeerp-backend 2^>NUL') do set "BACKEND=%%A"
+            echo db=%DB% migration=%MIGRATION% backend=%BACKEND%
+            if /I "%BACKEND%"=="healthy" set "HEALTHY=1"
+            if /I "%MIGRATION%"=="exited" (
+              for /F "delims=" %%A in ('docker inspect --format "{{.State.ExitCode}}" primeerp-migrate 2^>NUL') do set "MIGRATION_EXIT=%%A"
+              if not "%MIGRATION_EXIT%"=="0" (
+                docker compose --env-file .env.docker logs migrate
+                exit /b 1
+              )
+            )
+            if /I "%BACKEND%"=="unhealthy" (
+              docker compose --env-file .env.docker logs --tail=200 backend
+              exit /b 1
+            )
+            if "%HEALTHY%"=="1" goto :backend_ready
+            timeout /t 10 /nobreak >NUL
+          )
+          docker compose --env-file .env.docker ps
+          docker compose --env-file .env.docker logs --tail=200 db migrate backend
+          exit /b 1
+          :backend_ready
+          echo Backend is healthy and migrations completed.
 
       - name: Runtime API readiness smoke test
         run: docker exec primeerp-backend python -c "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8001/ready', timeout=15); assert r.status == 200; print(r.read().decode())"
@@ -91,11 +96,7 @@ jobs:
         run: docker exec primeerp-backend python -c "import json,urllib.request; s=json.load(urllib.request.urlopen('http://127.0.0.1:8001/api/v1/openapi.json',timeout=15)); p=s.get('paths',{}); required=['/api/v1/identity/login','/api/v1/identity/me','/api/v1/companies','/api/v1/tenants','/api/v1/subscriptions/tenant/{tenant_id}','/api/v1/inventory/items','/api/v1/inventory/items/{item_id}/stock']; missing=[x for x in required if x not in p]; assert not missing, f'Missing required API routes: {missing}'; assert 'post' in p['/api/v1/identity/login']; assert 'get' in p['/api/v1/companies']; assert 'get' in p['/api/v1/inventory/items']; assert 'get' in p['/api/v1/inventory/items/{item_id}/stock']; print(f'Runtime OpenAPI contract passed: {len(p)} paths registered')"
 
       - name: Runtime frontend smoke test
-        shell: powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ". ''{0}''"
-        run: |
-          $response = Invoke-WebRequest -Uri http://127.0.0.1:3000/ -UseBasicParsing
-          if ($response.StatusCode -ne 200 -or $response.Content.Length -le 0) { throw 'Frontend runtime smoke test failed' }
-          Write-Output "Frontend HTTP $($response.StatusCode), response length=$($response.Content.Length)"
+        run: curl.exe -fsS http://127.0.0.1:3000/ >NUL
 
       - name: Docker runtime diagnostics
         if: always()
