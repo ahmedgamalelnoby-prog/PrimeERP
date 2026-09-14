@@ -3,13 +3,13 @@ from datetime import date
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.accounting.reports.schemas import FinancialSummaryResponse, TrialBalanceResponse
 from app.modules.accounting.reports.service import financial_report_service
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
-
 
 router = APIRouter(
     prefix="/accounting/reports",
@@ -19,10 +19,7 @@ router = APIRouter(
 
 
 def tenant_id(current_user: User) -> int:
-    if current_user.tenant_id is None:
-        from fastapi import HTTPException, status
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is not assigned to a tenant")
-    return current_user.tenant_id
+    return get_effective_tenant_id(current_user)
 
 
 @router.get("/trial-balance", response_model=TrialBalanceResponse)
