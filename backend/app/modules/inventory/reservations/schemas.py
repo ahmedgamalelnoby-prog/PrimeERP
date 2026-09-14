@@ -10,6 +10,7 @@ ReservationStatus = Literal["active", "released", "consumed", "cancelled"]
 class ReservationCreate(BaseModel):
     company_id: int = Field(gt=0)
     item_id: int = Field(gt=0)
+    variant_id: int | None = Field(default=None, gt=0)
     location_id: int = Field(gt=0)
     quantity: Decimal = Field(gt=0)
     source_module: str = Field(min_length=1, max_length=80)
@@ -23,6 +24,7 @@ class ReservationResponse(BaseModel):
     id: int
     company_id: int
     item_id: int
+    variant_id: int | None
     location_id: int
     quantity: Decimal
     status: ReservationStatus
