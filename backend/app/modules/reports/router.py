@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import smtplib
+import uuid
 from email.message import EmailMessage
 from typing import Any
 
@@ -18,6 +19,7 @@ from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.reports.models import ReportDefinition, ReportDelivery
+from app.modules.reports.worker import calculate_next_run
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -45,8 +47,8 @@ class ScheduleRequest(BaseModel):
     destination: str = Field(min_length=3, max_length=320)
     schedule: str = Field(min_length=1, max_length=120)
     format: str = Field(default="json", pattern="^(json|text)$")
-    parameters: dict[str, Any] = {}
-    filters: dict[str, Any] = {}
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    filters: dict[str, Any] = Field(default_factory=dict)
 
 
 class AIAnalysisRequest(BaseModel):
@@ -139,6 +141,10 @@ def deliver_report(request: DeliveryRequest, current_user: User = Depends(get_cu
 @router.post("/schedules", status_code=201)
 def create_schedule(request: ScheduleRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict[str, Any]:
     _company_for_user(db, request.company_id, current_user)
+    try:
+        next_run = calculate_next_run(request.schedule)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(422, str(exc)) from exc
     definition = db.scalar(select(ReportDefinition).where(ReportDefinition.company_id == request.company_id, ReportDefinition.code == request.code))
     if definition is None:
         definition = ReportDefinition(company_id=request.company_id, code=request.code, name=request.name, report_type=request.report_type, parameters_json=json.dumps(request.parameters, ensure_ascii=False))
@@ -146,11 +152,11 @@ def create_schedule(request: ScheduleRequest, current_user: User = Depends(get_c
         db.flush()
     elif not definition.is_active:
         raise HTTPException(409, "Report definition is inactive")
-    delivery = ReportDelivery(company_id=request.company_id, report_definition_id=definition.id, channel=request.channel, destination=request.destination, schedule=request.schedule, format=request.format, filters_json=json.dumps(request.filters, ensure_ascii=False))
+    delivery = ReportDelivery(company_id=request.company_id, report_definition_id=definition.id, channel=request.channel, destination=request.destination, schedule=request.schedule, format=request.format, filters_json=json.dumps(request.filters, ensure_ascii=False), next_run_at=next_run, delivery_key=uuid.uuid4().hex)
     db.add(delivery)
     db.commit()
     db.refresh(delivery)
-    return {"id": delivery.id, "report_definition_id": definition.id, "status": "scheduled"}
+    return {"id": delivery.id, "report_definition_id": definition.id, "next_run_at": delivery.next_run_at, "status": "scheduled"}
 
 
 @router.get("/schedules")
