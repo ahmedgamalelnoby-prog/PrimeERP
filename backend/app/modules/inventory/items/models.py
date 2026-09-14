@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Integer, JSON, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Index, Integer, JSON, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from app.database.base import Base
@@ -58,8 +58,9 @@ class InventoryStock(Base):
     variant = relationship("ProductVariant")
     warehouse = relationship("InventoryWarehouse", back_populates="stocks")
     __table_args__ = (
+        Index("uq_inventory_stock_variant", "company_id", "item_id", "variant_id", "warehouse_id", unique=True, postgresql_where=variant_id.is_not(None)),
+        Index("uq_inventory_stock_product", "company_id", "item_id", "warehouse_id", unique=True, postgresql_where=variant_id.is_(None)),
         CheckConstraint("quantity_on_hand >= 0", name="ck_inventory_stock_on_hand"),
         CheckConstraint("quantity_reserved >= 0", name="ck_inventory_stock_reserved"),
         CheckConstraint("average_cost >= 0", name="ck_inventory_stock_average_cost"),
-        CheckConstraint("variant_id IS NOT NULL OR item_id IS NOT NULL", name="ck_inventory_stock_item_key"),
     )
