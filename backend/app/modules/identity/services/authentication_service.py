@@ -1,8 +1,11 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
+from app.core.context import get_optional_request_context
+from app.modules.audit.models import AuditEvent
 from app.modules.audit.service import record_audit_event
 from app.modules.identity.models.refresh_token import RefreshToken
 from app.modules.identity.repositories.user_repository import user_repository
@@ -14,15 +17,21 @@ from app.modules.saas.models import Subscription, SystemModule, Tenant, TenantMo
 
 
 class AuthenticationService:
+    LOGIN_WINDOW_MINUTES = 10
+    LOGIN_FAILURE_LIMIT = 5
+
     def login(self, db: Session, payload: LoginRequest) -> dict:
+        login_key = self._login_key(payload)
+        self._enforce_login_throttle(db, login_key)
+
         users = user_repository.find_for_login(db=db, login=payload.login, tenant_slug=payload.tenant_slug)
         if not users:
-            self._raise_invalid_credentials()
+            self._reject_login(db, login_key, "unknown_account")
         if len(users) > 1:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Multiple accounts match this login. Please provide tenant_slug.")
         user = users[0]
         if not password_service.verify_password(payload.password, user.hashed_password):
-            self._raise_invalid_credentials()
+            self._reject_login(db, login_key, "invalid_password")
         self._validate_user(user)
 
         tenant = None
@@ -68,6 +77,63 @@ class AuthenticationService:
                 "enabled_modules": enabled_modules,
             },
         }
+
+    def _login_key(self, payload: LoginRequest) -> str:
+        tenant = (payload.tenant_slug or "").strip().lower()
+        login = payload.login.strip().lower()
+        return f"{tenant}:{login}"
+
+    def _request_ip(self) -> str | None:
+        context = get_optional_request_context()
+        return context.ip_address if context is not None else None
+
+    def _enforce_login_throttle(self, db: Session, login_key: str) -> None:
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=self.LOGIN_WINDOW_MINUTES)
+        ip_address = self._request_ip()
+
+        account_failures = (
+            db.query(func.count(AuditEvent.id))
+            .filter(
+                AuditEvent.action == "login.failure",
+                AuditEvent.entity_type == "authentication",
+                AuditEvent.entity_id == login_key,
+                AuditEvent.created_at >= cutoff,
+            )
+            .scalar()
+            or 0
+        )
+        ip_failures = 0
+        if ip_address:
+            ip_failures = (
+                db.query(func.count(AuditEvent.id))
+                .filter(
+                    AuditEvent.action == "login.failure",
+                    AuditEvent.entity_type == "authentication",
+                    AuditEvent.ip_address == ip_address,
+                    AuditEvent.created_at >= cutoff,
+                )
+                .scalar()
+                or 0
+            )
+
+        if account_failures >= self.LOGIN_FAILURE_LIMIT or ip_failures >= self.LOGIN_FAILURE_LIMIT:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many failed login attempts. Try again later.",
+                headers={"Retry-After": str(self.LOGIN_WINDOW_MINUTES * 60)},
+            )
+
+    def _reject_login(self, db: Session, login_key: str, reason: str) -> None:
+        record_audit_event(
+            db,
+            action="login.failure",
+            entity_type="authentication",
+            entity_id=login_key,
+            ip_address=self._request_ip(),
+            metadata={"reason": reason},
+        )
+        db.commit()
+        self._raise_invalid_credentials()
 
     def refresh(self, db: Session, refresh_token: str) -> dict:
         try:
