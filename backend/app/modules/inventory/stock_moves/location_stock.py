@@ -11,14 +11,15 @@ class InventoryLocationStock(Base):
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     location_id = Column(Integer, ForeignKey("inventory_locations.id", ondelete="RESTRICT"), nullable=False, index=True)
     item_id = Column(Integer, ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False, index=True)
+    variant_id = Column(Integer, ForeignKey("product_variants.id", ondelete="RESTRICT"), nullable=True, index=True)
     quantity_on_hand = Column(Numeric(18, 4), nullable=False, default=0)
     quantity_reserved = Column(Numeric(18, 4), nullable=False, default=0)
 
     location = relationship("InventoryLocation")
     item = relationship("InventoryItem")
+    variant = relationship("ProductVariant")
 
     __table_args__ = (
-        UniqueConstraint("company_id", "location_id", "item_id", name="uq_inventory_location_stock"),
         CheckConstraint("quantity_on_hand >= 0", name="ck_inventory_location_stock_on_hand"),
         CheckConstraint("quantity_reserved >= 0", name="ck_inventory_location_stock_reserved"),
     )
