@@ -20,13 +20,11 @@ from app.modules.inventory.stock_moves.models import InventoryStockMove
 class CommerceAccountingService:
     def _settings(self, db: Session, company_id: int) -> CommerceAccountingSettings:
         obj = db.scalar(select(CommerceAccountingSettings).where(CommerceAccountingSettings.company_id == company_id))
-        if obj is None:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Commerce accounting configuration is missing for this company")
+        if obj is None: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Commerce accounting configuration is missing for this company")
         return obj
 
     def _context(self, db: Session, company_id: int, entry_date: date):
-        settings = self._settings(db, company_id)
-        company = db.scalar(select(Company).where(Company.id == company_id))
+        settings = self._settings(db, company_id); company = db.scalar(select(Company).where(Company.id == company_id))
         if company is None: raise HTTPException(404, "Company not found")
         branch = db.scalar(select(Branch).where(Branch.id == settings.default_branch_id, Branch.company_id == company_id, Branch.tenant_id == company.tenant_id, Branch.is_active.is_(True)))
         if branch is None: raise HTTPException(409, "Configured accounting branch was not found")
@@ -114,8 +112,7 @@ class CommerceAccountingService:
                     item = db.scalar(select(InventoryItem).where(InventoryItem.id == line.item_id, InventoryItem.company_id == document.company_id))
                     if item and item.item_type in {"stockable", "consumable"}: receipt_value += self._allocate_receipt_value(db, document=document, line=line)
                 if receipt_value <= 0 and stock_total > 0: raise HTTPException(409, "Linked purchase receipts have no inventory valuation")
-                grni_value = min(receipt_value, stock_total)
-                lines.append({"account_combination_id": settings.grni_account_id, "debit": grni_value, "credit": 0, "description": f"GRNI clearing {document.number}"})
+                lines.append({"account_combination_id": settings.grni_account_id, "debit": receipt_value, "credit": 0, "description": f"GRNI clearing {document.number}"})
                 variance = stock_total - receipt_value
                 if variance > 0: lines.append({"account_combination_id": settings.purchase_price_variance_account_id, "debit": variance, "credit": 0, "description": f"Purchase price variance {document.number}"})
                 elif variance < 0: lines.append({"account_combination_id": settings.purchase_price_variance_account_id, "debit": 0, "credit": -variance, "description": f"Purchase price variance credit {document.number}"})
