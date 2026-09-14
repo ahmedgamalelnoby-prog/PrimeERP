@@ -20,6 +20,7 @@ from app.modules.catalog.schemas import (
     PriceListResponse,
     PriceResponse,
     PricingAnalysis,
+    PricingImpactResponse,
     RecipeCreate,
     RecipeResponse,
 )
@@ -228,5 +229,14 @@ def pricing_analysis(product_id: int, company_id: int = Query(..., gt=0), price_
     _company_for_user(db, company_id, current_user)
     try:
         return catalog_service.pricing_analysis(db, company_id, product_id, target_margin, price_list_id)
+    except ValueError as exc:
+        _error(exc)
+
+
+@router.get("/pricing-impact", response_model=PricingImpactResponse, dependencies=GUARDS)
+def pricing_impact(company_id: int = Query(..., gt=0), price_list_id: int | None = Query(default=None, gt=0), target_margin: Decimal = Query(default=Decimal("30"), ge=0, lt=100), below_margin: Decimal | None = Query(default=None, ge=0, lt=100), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _company_for_user(db, company_id, current_user)
+    try:
+        return catalog_service.pricing_impact(db, company_id, target_margin, price_list_id, below_margin)
     except ValueError as exc:
         _error(exc)
