@@ -38,14 +38,18 @@ class SubscriptionService:
         return self.repository.list_for_tenant(self.db, tenant_id)
 
     def get_active_for_tenant(self, tenant_id: int):
-        instance = self.repository.get_active_for_tenant(self.db, tenant_id)
-        if instance is not None:
-            self._expire_if_needed(instance)
+        """Return the latest subscription only when it is currently entitled to access."""
+        instance = self.repository.get_latest_for_tenant(self.db, tenant_id)
+        if instance is None:
+            return None
+        self._expire_if_needed(instance)
+        if instance.status not in {"trialing", "active", "past_due"}:
             self._reconcile_tenant_state_if_needed(instance)
+            return None
+        self._reconcile_tenant_state_if_needed(instance)
         return instance
 
     def is_tenant_access_allowed(self, tenant_id: int) -> bool:
-        """Return whether the tenant currently has an allowed subscription state."""
         subscription = self.get_active_for_tenant(tenant_id)
         return subscription is not None and subscription.status in {"trialing", "active", "past_due"}
 
@@ -119,28 +123,26 @@ class SubscriptionService:
             legacy.storage_limit_mb = plan.storage_limit_mb
             return
 
-        self.db.add(
-            SubscriptionPlan(
-                id=plan.id,
-                name_ar=plan.name_ar or plan.name,
-                name_en=plan.name,
-                code=plan.code,
-                description_en=plan.description,
-                monthly_price=plan.monthly_price,
-                yearly_price=plan.yearly_price,
-                currency_code=plan.currency,
-                trial_days=plan.trial_days,
-                is_public=plan.is_public,
-                is_active=plan.status == "active",
-                display_order=plan.sort_order,
-                max_users=plan.max_users,
-                max_companies=plan.max_companies,
-                max_branches=plan.max_branches,
-                max_products=plan.max_products,
-                max_integrations=plan.max_integrations,
-                storage_limit_mb=plan.storage_limit_mb,
-            )
-        )
+        self.db.add(SubscriptionPlan(
+            id=plan.id,
+            name_ar=plan.name_ar or plan.name,
+            name_en=plan.name,
+            code=plan.code,
+            description_en=plan.description,
+            monthly_price=plan.monthly_price,
+            yearly_price=plan.yearly_price,
+            currency_code=plan.currency,
+            trial_days=plan.trial_days,
+            is_public=plan.is_public,
+            is_active=plan.status == "active",
+            display_order=plan.sort_order,
+            max_users=plan.max_users,
+            max_companies=plan.max_companies,
+            max_branches=plan.max_branches,
+            max_products=plan.max_products,
+            max_integrations=plan.max_integrations,
+            storage_limit_mb=plan.storage_limit_mb,
+        ))
         self.db.flush()
 
     def create(self, schema: SubscriptionCreate) -> Subscription:
@@ -248,8 +250,6 @@ class SubscriptionService:
             raise ValueError("Tenant not found")
 
         allowed = instance.status in {"trialing", "active", "past_due"}
-        # A platform/manual suspension is an independent access-control state.
-        # Subscription changes must never silently reactivate a suspended tenant.
         if tenant.status == "suspended":
             tenant.is_active = False
             tenant.is_trial = instance.status == "trialing"
@@ -262,13 +262,11 @@ class SubscriptionService:
         tenant.trial_ends_at = instance.trial_ends_at if instance.status == "trialing" else None
 
     def _reconcile_tenant_state_if_needed(self, instance: Subscription) -> None:
-        """Repair stale tenant lifecycle flags without writing on every read."""
         tenant = self.db.query(Tenant).filter(Tenant.id == instance.tenant_id).first()
         if tenant is None:
             raise ValueError("Tenant not found")
 
         if tenant.status == "suspended":
-            # Manual suspension is authoritative. Only normalize derived flags.
             if tenant.is_active:
                 tenant.is_active = False
                 self.db.commit()
@@ -287,8 +285,6 @@ class SubscriptionService:
         )
         if stale:
             self._sync_tenant_state(instance)
-            # Subscription-derived reconciliation clears stale suspension metadata
-            # only when the tenant is no longer actually suspended.
             tenant.suspended_at = None
             tenant.suspension_reason = None
             self.db.commit()
@@ -313,5 +309,4 @@ class SubscriptionService:
 
 
 def subscription_service(db: Session) -> SubscriptionService:
-    """Return a request-scoped subscription service bound to the current DB session."""
     return SubscriptionService(db)
