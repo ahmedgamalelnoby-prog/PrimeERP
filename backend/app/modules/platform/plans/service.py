@@ -3,9 +3,11 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.modules.platform.plans.exceptions import (
+    ArchivedPlanModificationError,
     DefaultPlanAlreadyExistsError,
     PlanCodeAlreadyExistsError,
     PlanNotFoundError,
+    PlanValidationError,
 )
 from app.modules.platform.plans.models import Plan
 from app.modules.platform.plans.repository import PlanRepository
@@ -13,9 +15,21 @@ from app.modules.platform.plans.schemas import (
     PlanCreate,
     PlanUpdate,
 )
+from app.modules.saas.models import Subscription
 
 
 class PlanService:
+
+    # Once a plan has ever been assigned to a subscription, its commercial
+    # contract must remain immutable. Otherwise changing price/limits/trial
+    # values on the same plan row silently changes historical and active
+    # subscriptions because subscriptions reference the legacy plan id.
+    _CATALOG_ONLY_FIELDS = frozenset({
+        "is_default",
+        "is_public",
+        "status",
+        "sort_order",
+    })
 
     def __init__(self, db: Session) -> None:
         self.db = db
@@ -31,7 +45,7 @@ class PlanService:
         )
 
         if plan is None:
-            raise PlanNotFoundError()
+            raise PlanNotFoundError(plan_id)
 
         return plan
 
@@ -47,7 +61,7 @@ class PlanService:
         )
 
         if plan is None:
-            raise PlanNotFoundError()
+            raise PlanNotFoundError(code)
 
         return plan
 
@@ -74,7 +88,7 @@ class PlanService:
         )
 
         if existing_plan is not None:
-            raise PlanCodeAlreadyExistsError()
+            raise PlanCodeAlreadyExistsError(code)
 
         if schema.is_default:
             default_plan = self.repository.get_default(
@@ -104,6 +118,28 @@ class PlanService:
 
         return plan
 
+    def _has_subscription_history(self, plan_id: int) -> bool:
+        """Return True when this plan id has ever been assigned to a tenant."""
+        return (
+            self.db.query(Subscription)
+            .filter(Subscription.plan_id == plan_id)
+            .first()
+            is not None
+        )
+
+    def _validate_referenced_plan_update(self, plan: Plan, data: dict) -> None:
+        if not data or not self._has_subscription_history(plan.id):
+            return
+
+        changed_contract_fields = set(data) - self._CATALOG_ONLY_FIELDS
+        if changed_contract_fields:
+            fields = ", ".join(sorted(changed_contract_fields))
+            raise PlanValidationError(
+                "A plan that has been assigned to a subscription is immutable. "
+                "Create a new plan/version for commercial changes. "
+                f"Restricted fields: {fields}."
+            )
+
     def update_plan(
         self,
         plan_id: int,
@@ -116,12 +152,14 @@ class PlanService:
         )
 
         if plan is None:
-            raise PlanNotFoundError()
+            raise PlanNotFoundError(plan_id)
 
         data = schema.model_dump(
             exclude_unset=True,
             mode="json",
         )
+
+        self._validate_referenced_plan_update(plan, data)
 
         if "code" in data and data["code"] is not None:
             data["code"] = data["code"].strip().lower()
@@ -136,7 +174,7 @@ class PlanService:
                 existing_plan is not None
                 and existing_plan.id != plan.id
             ):
-                raise PlanCodeAlreadyExistsError()
+                raise PlanCodeAlreadyExistsError(data["code"])
 
         if data.get("is_default") is True:
             default_plan = self.repository.get_default(
@@ -174,7 +212,10 @@ class PlanService:
         )
 
         if plan is None:
-            raise PlanNotFoundError()
+            raise PlanNotFoundError(plan_id)
+
+        if self._has_subscription_history(plan.id):
+            raise ArchivedPlanModificationError()
 
         self.repository.soft_delete(
             db=self.db,
