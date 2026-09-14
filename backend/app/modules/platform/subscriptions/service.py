@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.modules.platform.plans.models import Plan
@@ -24,6 +25,31 @@ class SubscriptionService:
     def _period_days(billing_cycle: str) -> int:
         return {"monthly": 30, "quarterly": 90, "semi_annual": 182, "yearly": 365}.get(billing_cycle, 30)
 
+    @classmethod
+    def _subscription_is_current(cls, instance: Subscription) -> bool:
+        if instance.status not in {"trialing", "active", "past_due"}:
+            return False
+        now = cls._now()
+        starts_at = instance.starts_at
+        ends_at = instance.ends_at
+        if starts_at is not None:
+            if starts_at.tzinfo is None:
+                starts_at = starts_at.replace(tzinfo=timezone.utc)
+            if starts_at > now:
+                return False
+        if ends_at is not None:
+            if ends_at.tzinfo is None:
+                ends_at = ends_at.replace(tzinfo=timezone.utc)
+            if ends_at <= now:
+                return False
+        if instance.status == "trialing" and instance.trial_ends_at is not None:
+            trial_end = instance.trial_ends_at
+            if trial_end.tzinfo is None:
+                trial_end = trial_end.replace(tzinfo=timezone.utc)
+            if trial_end <= now:
+                return False
+        return True
+
     def _get(self, subscription_id: int, for_update: bool = False) -> Subscription:
         instance = self.repository.get_by_id(self.db, subscription_id, for_update)
         if instance is None:
@@ -44,15 +70,14 @@ class SubscriptionService:
         if instance is None:
             return None
         self._expire_if_needed(instance)
-        if instance.status not in {"trialing", "active", "past_due"}:
+        if not self._subscription_is_current(instance):
             self._reconcile_tenant_state_if_needed(instance)
             return None
         self._reconcile_tenant_state_if_needed(instance)
         return instance
 
     def is_tenant_access_allowed(self, tenant_id: int) -> bool:
-        subscription = self.get_active_for_tenant(tenant_id)
-        return subscription is not None and subscription.status in {"trialing", "active", "past_due"}
+        return self.get_active_for_tenant(tenant_id) is not None
 
     def _resolve_plan(self, plan_id: int) -> Plan:
         plan = self.db.query(Plan).filter(Plan.id == plan_id).first()
@@ -240,16 +265,16 @@ class SubscriptionService:
         tenant = self.db.query(Tenant).filter(Tenant.id == instance.tenant_id).with_for_update().first()
         if tenant is None:
             raise ValueError("Tenant not found")
-        allowed = instance.status in {"trialing", "active", "past_due"}
+        allowed = self._subscription_is_current(instance)
         if tenant.status == "suspended":
             tenant.is_active = False
-            tenant.is_trial = instance.status == "trialing"
-            tenant.trial_ends_at = instance.trial_ends_at if instance.status == "trialing" else None
+            tenant.is_trial = instance.status == "trialing" and allowed
+            tenant.trial_ends_at = instance.trial_ends_at if instance.status == "trialing" and allowed else None
             return
         tenant.is_active = allowed
-        tenant.is_trial = instance.status == "trialing"
-        tenant.status = "trial" if instance.status == "trialing" else ("active" if allowed else "expired")
-        tenant.trial_ends_at = instance.trial_ends_at if instance.status == "trialing" else None
+        tenant.is_trial = instance.status == "trialing" and allowed
+        tenant.status = "trial" if instance.status == "trialing" and allowed else ("active" if allowed else "expired")
+        tenant.trial_ends_at = instance.trial_ends_at if instance.status == "trialing" and allowed else None
 
     def _reconcile_tenant_state_if_needed(self, instance: Subscription) -> None:
         tenant = self.db.query(Tenant).filter(Tenant.id == instance.tenant_id).first()
@@ -260,11 +285,11 @@ class SubscriptionService:
                 tenant.is_active = False
                 self.db.commit()
             return
-        allowed = instance.status in {"trialing", "active", "past_due"}
-        expected_status = "trial" if instance.status == "trialing" else ("active" if allowed else "expired")
-        expected_trial_end = instance.trial_ends_at if instance.status == "trialing" else None
+        allowed = self._subscription_is_current(instance)
+        expected_status = "trial" if instance.status == "trialing" and allowed else ("active" if allowed else "expired")
+        expected_trial_end = instance.trial_ends_at if instance.status == "trialing" and allowed else None
         stale = (
-            tenant.is_active != allowed or tenant.is_trial != (instance.status == "trialing")
+            tenant.is_active != allowed or tenant.is_trial != (instance.status == "trialing" and allowed)
             or tenant.status != expected_status or tenant.trial_ends_at != expected_trial_end
             or tenant.suspended_at is not None or tenant.suspension_reason is not None
         )
