@@ -10,6 +10,7 @@ from app.modules.branches.models import Branch
 from app.modules.catalog.models import Menu, MenuItem, ProductCategory, ProductCostHistory, ProductPrice, ProductPriceList, Recipe, RecipeLine
 from app.modules.companies.models import Company
 from app.modules.inventory.items.models import InventoryItem, InventoryStock
+from app.modules.uom.models import UnitOfMeasure
 
 MONEY = Decimal("0.0001")
 
@@ -144,7 +145,68 @@ class CatalogService:
         self._product(db, company_id, product_id)
         return list(db.scalars(select(ProductCostHistory).where(ProductCostHistory.company_id == company_id, ProductCostHistory.product_id == product_id).order_by(ProductCostHistory.effective_at.desc())).all())
 
+    def _recipe_would_cycle(self, db: Session, company_id: int, product_id: int, ingredient_ids: list[int]) -> bool:
+        """Reject indirect active-recipe cycles before the new recipe is activated."""
+        memo: dict[int, bool] = {}
+        visiting: set[int] = set()
+
+        def reaches_target(node_id: int) -> bool:
+            if node_id == product_id:
+                return True
+            if node_id in memo:
+                return memo[node_id]
+            if node_id in visiting:
+                # A pre-existing cycle is already invalid for costing; do not
+                # allow the new recipe to compound it.
+                return True
+            visiting.add(node_id)
+            recipe = db.scalar(
+                select(Recipe).options(selectinload(Recipe.lines)).where(
+                    Recipe.company_id == company_id,
+                    Recipe.product_id == node_id,
+                    Recipe.is_active.is_(True),
+                ).order_by(Recipe.version.desc())
+            )
+            result = False
+            if recipe is not None:
+                result = any(reaches_target(line.ingredient_product_id) for line in recipe.lines)
+            visiting.remove(node_id)
+            memo[node_id] = result
+            return result
+
+        return any(reaches_target(ingredient_id) for ingredient_id in ingredient_ids)
+
+    def _recipe_line_conversion(self, db: Session, company_id: int, ingredient: InventoryItem, line_uom_id: int | None) -> Decimal:
+        ingredient_uom = None
+        if ingredient.uom_id is not None:
+            ingredient_uom = db.scalar(select(UnitOfMeasure).where(
+                UnitOfMeasure.id == ingredient.uom_id,
+                UnitOfMeasure.company_id == company_id,
+                UnitOfMeasure.is_active.is_(True),
+            ))
+            if ingredient_uom is None:
+                raise ValueError("Ingredient base UOM is invalid or inactive")
+
+        if line_uom_id is None:
+            return Decimal("1")
+        line_uom = db.scalar(select(UnitOfMeasure).where(
+            UnitOfMeasure.id == line_uom_id,
+            UnitOfMeasure.company_id == company_id,
+            UnitOfMeasure.is_active.is_(True),
+        ))
+        if line_uom is None:
+            raise ValueError("Recipe line UOM does not belong to this company")
+        if ingredient_uom is None:
+            raise ValueError("Recipe line UOM cannot be used when the ingredient has no base UOM")
+        if line_uom.category != ingredient_uom.category:
+            raise ValueError("Recipe line UOM category must match the ingredient product UOM category")
+        factor = Decimal(line_uom.factor_to_base) / Decimal(ingredient_uom.factor_to_base)
+        if factor <= 0:
+            raise ValueError("Recipe UOM conversion factor must be positive")
+        return factor
+
     def create_recipe(self, db: Session, payload):
+        self._locked_company(db, payload.company_id)
         self._product(db, payload.company_id, payload.product_id)
         ingredient_ids = [line.ingredient_product_id for line in payload.lines]
         if len(ingredient_ids) != len(set(ingredient_ids)):
@@ -154,19 +216,18 @@ class CatalogService:
         ingredients = list(db.scalars(select(InventoryItem).where(InventoryItem.company_id == payload.company_id, InventoryItem.id.in_(ingredient_ids), InventoryItem.is_active.is_(True))).all())
         if len(ingredients) != len(set(ingredient_ids)):
             raise ValueError("One or more recipe ingredients are invalid or inactive")
-        for line in payload.lines:
-            if line.uom_id is not None:
-                from app.modules.uom.models import UnitOfMeasure
-                uom = db.scalar(select(UnitOfMeasure).where(UnitOfMeasure.id == line.uom_id, UnitOfMeasure.company_id == payload.company_id, UnitOfMeasure.is_active.is_(True)))
-                if uom is None:
-                    raise ValueError("Recipe line UOM does not belong to this company")
+        ingredient_by_id = {item.id: item for item in ingredients}
+        if self._recipe_would_cycle(db, payload.company_id, payload.product_id, ingredient_ids):
+            raise ValueError("Recipe would create an indirect product recipe cycle")
+
         current = db.scalar(select(Recipe).where(Recipe.company_id == payload.company_id, Recipe.product_id == payload.product_id, Recipe.is_active.is_(True)).order_by(Recipe.version.desc()).limit(1).with_for_update())
         version = (current.version + 1) if current else 1
         if current:
             current.is_active = False
         recipe = Recipe(company_id=payload.company_id, product_id=payload.product_id, code=payload.code, name_ar=payload.name_ar, name_en=payload.name_en, yield_quantity=payload.yield_quantity, waste_percentage=payload.waste_percentage, version=version, is_active=True)
         for line_no, line in enumerate(payload.lines, start=1):
-            recipe.lines.append(RecipeLine(line_no=line_no, **line.model_dump()))
+            factor = self._recipe_line_conversion(db, payload.company_id, ingredient_by_id[line.ingredient_product_id], line.uom_id)
+            recipe.lines.append(RecipeLine(line_no=line_no, **line.model_dump(), conversion_factor_to_product_uom=factor))
         db.add(recipe)
         db.commit()
         db.refresh(recipe)
@@ -197,6 +258,8 @@ class CatalogService:
         costing_method = (product.costing_method or "weighted_average").lower()
         if costing_method == "standard":
             return _money(Decimal(product.standard_cost or 0))
+        if costing_method == "fifo":
+            raise ValueError("FIFO product cost requires a quantity-aware stock valuation context")
         average = db.scalar(select(func.avg(InventoryStock.average_cost)).where(InventoryStock.company_id == company_id, InventoryStock.item_id == product_id))
         if average is not None and Decimal(average) > 0:
             return _money(Decimal(average))
@@ -209,7 +272,8 @@ class CatalogService:
         total = Decimal("0")
         for line in recipe.lines:
             ingredient_cost = self.ingredient_unit_cost(db, company_id, line.ingredient_product_id, set(visited))
-            total += Decimal(line.quantity) * (Decimal("1") + Decimal(line.waste_percentage or 0) / 100) * ingredient_cost
+            quantity_in_product_uom = Decimal(line.quantity) * Decimal(line.conversion_factor_to_product_uom or 1)
+            total += quantity_in_product_uom * (Decimal("1") + Decimal(line.waste_percentage or 0) / 100) * ingredient_cost
         return _money((total * (Decimal("1") + Decimal(recipe.waste_percentage or 0) / 100)) / Decimal(recipe.yield_quantity))
 
     def recipe_cost(self, db: Session, company_id: int, recipe_id: int) -> Decimal:
