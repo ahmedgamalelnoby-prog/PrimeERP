@@ -6,7 +6,7 @@ from app.modules.platform.subscriptions.service import SubscriptionService
 
 
 class _DB:
-    def pass
+    pass
 
 
 def _service(subscription, tenant):
