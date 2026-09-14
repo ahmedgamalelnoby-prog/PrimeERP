@@ -6,6 +6,7 @@ from app.core.context.manager import (
     set_request_context,
 )
 from app.core.context.request_context import RequestContext
+from app.core.context.tenant import get_effective_tenant_id
 
 __all__ = [
     "RequestContext",
@@ -14,4 +15,5 @@ __all__ = [
     "get_optional_request_context",
     "reset_request_context",
     "clear_request_context",
+    "get_effective_tenant_id",
 ]
