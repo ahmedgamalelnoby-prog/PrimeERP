@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class CategoryCreate(BaseModel):
@@ -26,6 +26,11 @@ class PriceListCreate(BaseModel):
     channel: str = Field(default="default", max_length=30)
     is_default: bool = False
 
+    @field_validator("currency")
+    @classmethod
+    def normalize_currency(cls, value: str) -> str:
+        return value.strip().upper()
+
 
 class PriceListResponse(PriceListCreate):
     model_config = ConfigDict(from_attributes=True)
@@ -41,6 +46,14 @@ class PriceCreate(BaseModel):
     valid_from: Optional[datetime] = None
     valid_to: Optional[datetime] = None
     source: str = Field(default="manual", max_length=30)
+
+    @field_validator("valid_to")
+    @classmethod
+    def validate_valid_to(cls, value, info):
+        valid_from = info.data.get("valid_from")
+        if value is not None and valid_from is not None and value <= valid_from:
+            raise ValueError("valid_to must be after valid_from")
+        return value
 
 
 class PriceResponse(PriceCreate):
@@ -109,7 +122,8 @@ class MenuItemCreate(BaseModel):
     product_id: int = Field(gt=0)
     price_list_id: Optional[int] = Field(default=None, gt=0)
     sale_price_override: Optional[Decimal] = Field(default=None, ge=0)
-    display_order: int = 0
+    display_order: int = Field(default=0, ge=0)
+    is_available: bool = True
     is_featured: bool = False
 
 
