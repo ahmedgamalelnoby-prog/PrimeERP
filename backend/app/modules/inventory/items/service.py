@@ -1,10 +1,9 @@
-from __future__ import annotations
-
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.modules.accounting.models import TaxRate
+from app.modules.catalog.models import ProductCategory
 from app.modules.inventory.items.models import InventoryItem
 from app.modules.inventory.items.repository import inventory_item_repository
 from app.modules.inventory.items.schemas import InventoryItemCreate, InventoryItemUpdate
@@ -49,6 +48,19 @@ class InventoryItemService:
 
         raise ValueError("A valid active UOM is required for the inventory item")
 
+    def _validate_category(self, db: Session, *, company_id: int, category_id: int | None):
+        if category_id is None:
+            return
+        category = db.scalar(
+            select(ProductCategory).where(
+                ProductCategory.id == category_id,
+                ProductCategory.company_id == company_id,
+                ProductCategory.is_active.is_(True),
+            )
+        )
+        if category is None:
+            raise ValueError("Product category is inactive or does not belong to this company")
+
     def _validate_tax_profile(self, db: Session, *, company_id: int, tax_ids: list[int], profile_name: str):
         if not tax_ids:
             return []
@@ -77,6 +89,7 @@ class InventoryItemService:
         if tenant_id is not None:
             enforce_product_limit(db, tenant_id, payload.company_id)
 
+        self._validate_category(db, company_id=payload.company_id, category_id=payload.category_id)
         uom = self._resolve_uom(
             db,
             company_id=payload.company_id,
@@ -117,6 +130,8 @@ class InventoryItemService:
             raise ValueError("Inventory item not found")
 
         values = payload.model_dump(exclude_unset=True)
+        if "category_id" in values:
+            self._validate_category(db, company_id=company_id, category_id=values["category_id"])
         if "uom_id" in values or "uom" in values:
             uom = self._resolve_uom(
                 db,
