@@ -27,6 +27,39 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Diagnose Windows Docker execution environment
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Write-Output "USER=$env:USERNAME"
+          Write-Output "USERDOMAIN=$env:USERDOMAIN"
+          Write-Output "TEMP=$env:TEMP"
+          Write-Output "RUNNER_TEMP=$env:RUNNER_TEMP"
+          Write-Output "PATH=$env:PATH"
+          Write-Output '--- Docker candidates ---'
+          $candidates = @(
+            'C:\Program Files\Docker\Docker\resources\bin\docker.exe',
+            'C:\Program Files\Docker\Docker\resources\bin\docker-compose.exe',
+            'C:\Users\Admin\AppData\Local\Programs\DockerDesktop\resources\bin\docker.exe',
+            'C:\Users\Admin\AppData\Local\Programs\DockerDesktop\resources\bin\docker-compose.exe',
+            'C:\ProgramData\DockerDesktop\version-bin\docker.exe',
+            'C:\ProgramData\DockerDesktop\version-bin\docker-compose.exe'
+          )
+          foreach ($path in $candidates) {
+            if (Test-Path $path) {
+              $item = Get-Item $path
+              Write-Output "FOUND $path size=$($item.Length)"
+              try { Get-Item $path -Stream Zone.Identifier -ErrorAction Stop | Format-List | Out-String | Write-Output } catch { Write-Output "NO_ZONE_IDENTIFIER $path" }
+            } else { Write-Output "MISSING $path" }
+          }
+          Write-Output '--- command discovery ---'
+          where.exe docker 2>&1 | Out-String | Write-Output
+          Get-Command docker -ErrorAction SilentlyContinue | Format-List * | Out-String | Write-Output
+          Write-Output '--- Docker named pipe ---'
+          Get-ChildItem '\\.\pipe\' -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'docker' } | Select-Object Name | Format-Table | Out-String | Write-Output
+          Write-Output '--- service ---'
+          Get-Service -Name com.docker.service -ErrorAction SilentlyContinue | Format-List Name,Status,StartType | Out-String | Write-Output
+
       - name: Prepare portable Docker CLI and Compose
         run: |
           $ErrorActionPreference = 'Stop'
@@ -43,26 +76,37 @@ jobs:
           if (-not (Test-Path $composeExe)) {
             Invoke-WebRequest -Uri 'https://github.com/docker/compose/releases/download/v5.5.1/docker-compose-windows-x86_64.exe' -OutFile $composeExe
           }
+          Unblock-File -Path $dockerExe,$composeExe -ErrorAction SilentlyContinue
           $env:Path = "$toolDir;$env:Path"
           Add-Content $env:GITHUB_PATH $toolDir
+          Write-Output "docker=$dockerExe"
+          Write-Output "compose=$composeExe"
           & $dockerExe version
           & $composeExe version
+
       - name: Verify Docker daemon
         run: |
           docker version
           docker-compose version
+
       - name: Prepare Docker environment
         run: Copy-Item .env.docker.example .env.docker -Force
+
       - name: Validate Docker Compose
         run: docker-compose --env-file .env.docker config -q
+
       - name: Build backend image
         run: docker build --pull -t primeerp-backend:ci ./backend
+
       - name: Validate backend image Python sources
         run: docker run --rm primeerp-backend:ci python -m compileall -q app
+
       - name: Build frontend image
         run: docker build --pull -t primeerp-frontend:ci ./frontend
+
       - name: Start full Docker stack
         run: docker-compose --env-file .env.docker up -d --build
+
       - name: Wait for database, migration and backend health
         run: |
           $deadline = [DateTime]::UtcNow.AddMinutes(8)
@@ -85,23 +129,28 @@ jobs:
             docker-compose --env-file .env.docker logs --tail=200 db migrate backend
             throw 'Backend did not become healthy within 8 minutes'
           }
+
       - name: Runtime API readiness smoke test
         run: |
           docker exec primeerp-backend python -c "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8001/ready', timeout=15); assert r.status == 200; print(r.read().decode())"
+
       - name: Runtime API contract smoke test
         run: |
           docker exec primeerp-backend python -c "import json,urllib.request; s=json.load(urllib.request.urlopen('http://127.0.0.1:8001/api/v1/openapi.json',timeout=15)); p=s.get('paths',{}); required=['/api/v1/identity/login','/api/v1/identity/me','/api/v1/companies','/api/v1/tenants','/api/v1/subscriptions/tenant/{tenant_id}','/api/v1/inventory/items','/api/v1/inventory/items/{item_id}/stock']; missing=[x for x in required if x not in p]; assert not missing, f'Missing required API routes: {missing}'; assert 'post' in p['/api/v1/identity/login']; assert 'get' in p['/api/v1/companies']; assert 'get' in p['/api/v1/inventory/items']; assert 'get' in p['/api/v1/inventory/items/{item_id}/stock']; print(f'Runtime OpenAPI contract passed: {len(p)} paths registered')"
+
       - name: Runtime frontend smoke test
         run: |
           $response = Invoke-WebRequest -Uri http://127.0.0.1:3000/ -UseBasicParsing
           if ($response.StatusCode -ne 200 -or $response.Content.Length -le 0) { throw 'Frontend runtime smoke test failed' }
           Write-Output "Frontend HTTP $($response.StatusCode), response length=$($response.Content.Length)"
+
       - name: Docker runtime diagnostics
         if: always()
         run: |
           docker-compose --env-file .env.docker ps
           docker-compose --env-file .env.docker logs --tail=100 migrate
           docker-compose --env-file .env.docker logs --tail=100 backend
+
       - name: Cleanup Docker stack
         if: always()
         run: |
