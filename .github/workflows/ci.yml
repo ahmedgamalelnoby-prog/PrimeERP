@@ -14,52 +14,72 @@ permissions:
   contents: read
 
 env:
-  CI_POSTGRES_PORT: 55432
-  DOCKER_HOST: npipe:////./pipe/dockerDesktopLinuxEngine
+  DATABASE_URL: postgresql+psycopg://primeerp:primeerp@127.0.0.1:55432/primeerp_ci
 
 jobs:
   backend:
     name: Backend - compile, architecture, security, smoke, tests and migrations
-    runs-on: [self-hosted, PrimeERP]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
       run:
-        shell: cmd
+        shell: bash
         working-directory: backend
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: primeerp
+          POSTGRES_PASSWORD: primeerp
+          POSTGRES_DB: primeerp_ci
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U primeerp -d primeerp_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-      - name: Configure Docker CLI
-        working-directory: .
-        shell: cmd
-        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%GITHUB_WORKSPACE%\scripts\ci\configure_docker.ps1"
+
+      - name: Configure Python 3.10
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
       - name: Validate runtime
         run: |
           python --version
-          if errorlevel 1 exit /b 1
           docker version
-          if errorlevel 1 exit /b 1
+          docker compose version
+
       - name: Create isolated CI virtual environment
         run: python -m venv .ci-venv
+
       - name: Install dependencies
         run: |
-          .\.ci-venv\Scripts\python.exe -m pip install --upgrade pip
-          if errorlevel 1 exit /b 1
-          .\.ci-venv\Scripts\python.exe -m pip install -r requirements.txt
-          if errorlevel 1 exit /b 1
-          .\.ci-venv\Scripts\python.exe -m pip install pytest
-          if errorlevel 1 exit /b 1
+          .ci-venv/bin/python -m pip install --upgrade pip
+          .ci-venv/bin/python -m pip install -r requirements.txt
+          .ci-venv/bin/python -m pip install pytest
+
       - name: Compile Python sources
-        run: .\.ci-venv\Scripts\python.exe -m compileall -q app
+        run: .ci-venv/bin/python -m compileall -q app
+
       - name: Validate modular architecture
-        run: .\.ci-venv\Scripts\python.exe scripts\check_modular_architecture.py
+        run: .ci-venv/bin/python scripts/check_modular_architecture.py
+
       - name: Validate API security boundaries
-        run: .\.ci-venv\Scripts\python.exe scripts\check_api_security.py
+        run: .ci-venv/bin/python scripts/check_api_security.py
+
       - name: Import application smoke test
         env:
           DATABASE_URL: sqlite:///./primeerp_ci_smoke.db
           APP_ENV: test
-        run: .\.ci-venv\Scripts\python.exe scripts\smoke_import.py
+        run: .ci-venv/bin/python scripts/smoke_import.py
+
       - name: Validate production configuration rejects unsafe defaults
         env:
           APP_ENV: production
@@ -67,89 +87,75 @@ jobs:
           DATABASE_URL: sqlite:///./unsafe.db
           SECRET_KEY: your-secret-key-change-this-in-production
           CORS_ORIGINS: https://erp.example.com
-        run: .\.ci-venv\Scripts\python.exe scripts\check_production_config.py
-      - name: Prepare CI database
-        working-directory: .
-        run: |
-          docker rm -f primeerp-ci-postgres 2>NUL
-          docker run -d --name primeerp-ci-postgres -e POSTGRES_USER=primeerp -e POSTGRES_PASSWORD=primeerp -e POSTGRES_DB=primeerp_ci -p %CI_POSTGRES_PORT%:5432 postgres:17
-          if errorlevel 1 exit /b 1
-          set "READY=0"
-          for /L %%N in (1,1,30) do (
-            if "%READY%"=="0" (
-              docker exec primeerp-ci-postgres pg_isready -U primeerp -d primeerp_ci >NUL 2>&1
-              if not errorlevel 1 set "READY=1"
-              if "%READY%"=="0" timeout /t 2 /nobreak >NUL
-            )
-          )
-          if "%READY%"=="0" (
-            docker logs primeerp-ci-postgres
-            exit /b 1
-          )
+        run: .ci-venv/bin/python scripts/check_production_config.py
+
       - name: Run Alembic migrations
-        env:
-          DATABASE_URL: postgresql+psycopg://primeerp:primeerp@127.0.0.1:55432/primeerp_ci
-        run: .\.ci-venv\Scripts\python.exe -m alembic upgrade head
+        run: .ci-venv/bin/python -m alembic upgrade head
+
       - name: Require a single Alembic head
-        run: .\.ci-venv\Scripts\python.exe -c "import subprocess,sys; o=subprocess.check_output([sys.executable,'-m','alembic','heads'],text=True); print(o); n=o.count('(head)'); assert n==1, f'Expected exactly one Alembic head; found {n}'"
-      - name: Check Alembic configuration
-        env:
-          DATABASE_URL: postgresql+psycopg://primeerp:primeerp@127.0.0.1:55432/primeerp_ci
-        run: .\.ci-venv\Scripts\python.exe -m alembic check
-      - name: Run tests
-        run: .\.ci-venv\Scripts\python.exe -m pytest -q
-      - name: Cleanup CI database
-        if: always()
-        working-directory: .
         run: |
-          docker rm -f primeerp-ci-postgres >NUL 2>&1
-          exit /b 0
+          .ci-venv/bin/python -m alembic heads | tee /tmp/alembic-heads.txt
+          test "$(grep -c '(head)' /tmp/alembic-heads.txt)" -eq 1
+
+      - name: Check Alembic configuration
+        run: .ci-venv/bin/python -m alembic check
+
+      - name: Run tests
+        run: .ci-venv/bin/python -m pytest -q
 
   frontend:
     name: Frontend - typecheck, lint and build
-    runs-on: [self-hosted, PrimeERP]
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
       run:
-        shell: cmd
+        shell: bash
         working-directory: frontend
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Configure Node.js 20
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
       - name: Validate Node.js runtime
         run: |
           node --version
-          if errorlevel 1 exit /b 1
           npm --version
-          if errorlevel 1 exit /b 1
-          node -e "if(Number(process.versions.node.split('.')[0])<20) process.exit(1)"
+
       - name: Install dependencies
         run: npm ci
+
       - name: Typecheck
         run: npm run typecheck
+
       - name: Lint
         run: npm run lint
+
       - name: Production build
         run: npm run build
 
   repository:
     name: Repository boundaries and hygiene
-    runs-on: [self-hosted, PrimeERP]
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
       - name: Reject cross-system references and generated files
-        shell: cmd
+        shell: bash
         run: |
-          git ls-files | findstr /R /C:"^\.env$" /C:"__pycache__" /C:"node_modules" /C:"dist/" /C:"\.pyc$" /C:"\.backup$" /C:"\.bak$" >NUL 2>&1
-          if not errorlevel 1 (
-            echo Forbidden tracked/generated file detected.
-            exit /b 1
-          )
-          git grep -n -I -E "CommercialERP|ContentAI|commercialERP|contentai|D:\\(commercialERP|ContentAI)" -- ":!docs/SYSTEM_BOUNDARIES.md" ":!.github/workflows/ci.yml" >NUL 2>&1
-          if not errorlevel 1 (
-            echo Cross-system reference detected in PrimeERP.
-            exit /b 1
-          )
-          echo PrimeERP repository boundary check passed.
-          exit /b 0
+          set -euo pipefail
+          if git ls-files | grep -E '(^\.env$|__pycache__|node_modules|dist/|\.pyc$|\.backup$|\.bak$)'; then
+            echo 'Forbidden tracked/generated file detected.'
+            exit 1
+          fi
+          if git grep -n -I -E 'CommercialERP|ContentAI|commercialERP|contentai|D:\\\\(commercialERP|ContentAI)' -- ':!docs/SYSTEM_BOUNDARIES.md' ':!.github/workflows/ci.yml'; then
+            echo 'Cross-system reference detected in PrimeERP.'
+            exit 1
+          fi
+          echo 'PrimeERP repository boundary check passed.'
