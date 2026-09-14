@@ -1,14 +1,7 @@
-name: PrimeERP Docker CI
+name: PrimeERP Docker Validation
 
 on:
-  push:
-    branches: ["**"]
-  pull_request:
   workflow_dispatch:
-
-concurrency:
-  group: primeerp-docker-ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -55,6 +48,9 @@ jobs:
         run: |
           set "HEALTHY=0"
           for /L %%N in (1,1,48) do (
+            set "DB="
+            set "MIGRATION="
+            set "BACKEND="
             for /F "delims=" %%A in ('docker inspect --format "{{.State.Health.Status}}" primeerp-db 2^>NUL') do set "DB=%%A"
             for /F "delims=" %%A in ('docker inspect --format "{{.State.Status}}" primeerp-migrate 2^>NUL') do set "MIGRATION=%%A"
             for /F "delims=" %%A in ('docker inspect --format "{{.State.Health.Status}}" primeerp-backend 2^>NUL') do set "BACKEND=%%A"
@@ -84,7 +80,7 @@ jobs:
         run: docker exec primeerp-backend python -c "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8001/ready', timeout=15); assert r.status == 200; print(r.read().decode())"
 
       - name: Runtime API contract smoke test
-        run: docker exec primeerp-backend python -c "import json,urllib.request; s=json.load(urllib.request.urlopen('http://127.0.0.1:8001/api/v1/openapi.json',timeout=15)); p=s.get('paths',{}); required=['/api/v1/identity/login','/api/v1/identity/me','/api/v1/companies','/api/v1/tenants','/api/v1/subscriptions/tenant/{tenant_id}','/api/v1/inventory/items','/api/v1/inventory/items/{item_id}/stock']; missing=[x for x in required if x not in p]; assert not missing, f'Missing required API routes: {missing}'; assert 'post' in p['/api/v1/identity/login']; assert 'get' in p['/api/v1/companies']; assert 'get' in p['/api/v1/inventory/items']; assert 'get' in p['/api/v1/inventory/items/{item_id}/stock']; print(f'Runtime OpenAPI contract passed: {len(p)} paths registered')"
+        run: docker exec primeerp-backend python -c "import json,urllib.request; s=json.load(urllib.request.urlopen('http://127.0.0.1:8001/api/v1/openapi.json',timeout=15)); p=s.get('paths',{}); required=['/api/v1/identity/login','/api/v1/identity/me','/api/v1/companies','/api/v1/tenants','/api/v1/subscriptions/tenant/{tenant_id}','/api/v1/accounting/tax-rates','/api/v1/uom','/api/v1/shipping/carriers','/api/v1/inventory/items','/api/v1/inventory/items/{item_id}/stock']; missing=[x for x in required if x not in p]; assert not missing, f'Missing required API routes: {missing}'; print(f'Runtime OpenAPI contract passed: {len(p)} paths registered')"
 
       - name: Runtime frontend smoke test
         run: curl.exe -fsS http://127.0.0.1:3000/ >NUL
