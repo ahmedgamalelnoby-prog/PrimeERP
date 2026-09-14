@@ -54,14 +54,14 @@ class CommerceAccountingService:
             journal_service.post(db, tenant_id=tenant_id, entry_id=entry.id, user_id=user_id, commit=False)
         return entry
 
-    def post_sales_invoice(self, db: Session, document, user_id: int):
+    def post_sales_invoice(self, db, document, user_id: int):
         settings = self._settings(db, document.company_id)
         lines = [{"account_combination_id": settings.ar_account_id, "debit": Decimal(document.total), "credit": 0, "description": f"AR {document.number}"}, {"account_combination_id": settings.sales_account_id, "debit": 0, "credit": Decimal(document.subtotal), "description": f"Sales {document.number}"}]
         if Decimal(document.tax_total or 0):
             lines.append({"account_combination_id": settings.output_vat_account_id, "debit": 0, "credit": Decimal(document.tax_total), "description": f"Output VAT {document.number}"})
         return self._post(db, company_id=document.company_id, user_id=user_id, entry_date=document.document_date, journal_id=settings.sales_journal_id, entry_number=f"SI-{document.id}", description=f"Sales invoice {document.number}", lines=lines, source_entity="sales_invoice", source_id=document.id)
 
-    def post_sales_credit_note(self, db: Session, document, user_id: int):
+    def post_sales_credit_note(self, db, document, user_id: int):
         settings = self._settings(db, document.company_id)
         lines = [{"account_combination_id": settings.sales_account_id, "debit": Decimal(document.subtotal), "credit": 0, "description": f"Sales return {document.number}"}]
         if Decimal(document.tax_total or 0):
@@ -69,7 +69,7 @@ class CommerceAccountingService:
         lines.append({"account_combination_id": settings.ar_account_id, "debit": 0, "credit": Decimal(document.total), "description": f"AR reduction {document.number}"})
         return self._post(db, company_id=document.company_id, user_id=user_id, entry_date=document.document_date, journal_id=settings.sales_journal_id, entry_number=f"SCN-{document.id}", description=f"Sales credit note {document.number}", lines=lines, source_entity="sales_credit_note", source_id=document.id)
 
-    def post_purchase_bill(self, db: Session, document, user_id: int):
+    def post_purchase_bill(self, db, document, user_id: int):
         settings = self._settings(db, document.company_id)
         stock_total = Decimal("0")
         expense_total = Decimal("0")
@@ -90,7 +90,7 @@ class CommerceAccountingService:
         lines.append({"account_combination_id": settings.ap_account_id, "debit": 0, "credit": Decimal(document.total), "description": f"AP {document.number}"})
         return self._post(db, company_id=document.company_id, user_id=user_id, entry_date=document.document_date, journal_id=settings.purchase_journal_id, entry_number=f"PB-{document.id}", description=f"Purchase bill {document.number}", lines=lines, source_entity="purchase_bill", source_id=document.id)
 
-    def post_purchase_debit_note(self, db: Session, document, user_id: int):
+    def post_purchase_debit_note(self, db, document, user_id: int):
         settings = self._settings(db, document.company_id)
         stock_total = Decimal("0")
         expense_total = Decimal("0")
@@ -111,7 +111,7 @@ class CommerceAccountingService:
         lines.append({"account_combination_id": settings.ap_account_id, "debit": Decimal(document.total), "credit": 0, "description": f"AP reduction {document.number}"})
         return self._post(db, company_id=document.company_id, user_id=user_id, entry_date=document.document_date, journal_id=settings.purchase_journal_id, entry_number=f"PDN-{document.id}", description=f"Purchase debit note {document.number}", lines=lines, source_entity="purchase_debit_note", source_id=document.id)
 
-    def post_sales_delivery_cogs(self, db: Session, document, user_id: int):
+    def post_sales_delivery_cogs(self, db, document, user_id: int):
         settings = self._settings(db, document.company_id)
         moves = list(db.scalars(select(InventoryStockMove).where(InventoryStockMove.company_id == document.company_id, InventoryStockMove.source_module == "commerce", InventoryStockMove.source_entity == "sales_delivery", InventoryStockMove.source_id.like(f"{document.id}:%"), InventoryStockMove.status == "posted")))
         total = sum((Decimal(m.quantity) * Decimal(m.unit_cost or 0) for m in moves), Decimal("0"))
@@ -119,7 +119,7 @@ class CommerceAccountingService:
             return None
         return self._post(db, company_id=document.company_id, user_id=user_id, entry_date=document.document_date, journal_id=settings.sales_journal_id, entry_number=f"COGS-{document.id}", description=f"COGS for delivery {document.number}", lines=[{"account_combination_id": settings.cogs_account_id, "debit": total, "credit": 0}, {"account_combination_id": settings.inventory_account_id, "debit": 0, "credit": total}], source_entity="sales_cogs", source_id=document.id)
 
-    def post_payment(self, db: Session, payment, document, user_id: int):
+    def post_payment(self, db, payment, document, user_id: int):
         settings = self._settings(db, payment.company_id)
         control = settings.ar_account_id if payment.document_kind == "sale" else settings.ap_account_id
         gross = Decimal(payment.amount)
@@ -134,7 +134,7 @@ class CommerceAccountingService:
         lines = [x for x in lines if Decimal(x["debit"]) or Decimal(x["credit"])]
         return self._post(db, company_id=payment.company_id, user_id=user_id, entry_date=payment.payment_date, journal_id=settings.cash_journal_id, entry_number=f"PAY-{payment.id}", description=f"Commerce payment {payment.id}", lines=lines, source_entity="commerce_payment", source_id=payment.id)
 
-    def post_payment_reversal(self, db: Session, payment, document, user_id: int, reversal_date: date | None = None):
+    def post_payment_reversal(self, db, payment, document, user_id: int, reversal_date: date | None = None):
         settings = self._settings(db, payment.company_id)
         control = settings.ar_account_id if payment.document_kind == "sale" else settings.ap_account_id
         gross = Decimal(payment.amount)
@@ -143,9 +143,12 @@ class CommerceAccountingService:
         if wht and settings.wht_account_id is None:
             raise HTTPException(409, "WHT account is required when reversing a WHT payment")
         if payment.document_kind == "sale":
-            lines = [{"account_combination_id": control, "debit": gross, "credit": 0}, {"account_combination_id": settings.default_payment_account_id, "debit": cash, "credit": 0}, {"account_combination_id": settings.wht_account_id, "debit": 0, "credit": wht}]
+            # Exact accounting opposite of the original sale payment:
+            # original = Dr Cash, Dr WHT, Cr AR; reversal = Dr AR, Cr Cash, Cr WHT.
+            lines = [{"account_combination_id": control, "debit": gross, "credit": 0}, {"account_combination_id": settings.default_payment_account_id, "debit": 0, "credit": cash}, {"account_combination_id": settings.wht_account_id, "debit": 0, "credit": wht}]
         else:
-            lines = [{"account_combination_id": settings.default_payment_account_id, "debit": cash, "credit": 0}, {"account_combination_id": settings.wht_account_id, "debit": wht, "credit": 0}, {"account_combination_id": control, "debit": 0, "credit": gross}]
+            # Exact accounting opposite of the original purchase payment.
+            lines = [{"account_combination_id": settings.default_payment_account_id, "debit": 0, "credit": cash}, {"account_combination_id": settings.wht_account_id, "debit": wht, "credit": 0}, {"account_combination_id": control, "debit": 0, "credit": gross}]
         lines = [x for x in lines if Decimal(x["debit"]) or Decimal(x["credit"])]
         effective_date = reversal_date or payment.payment_date
         return self._post(db, company_id=payment.company_id, user_id=user_id, entry_date=effective_date, journal_id=settings.cash_journal_id, entry_number=f"PAY-REV-{payment.id}", description=f"Reversal of commerce payment {payment.id}", lines=lines, source_entity="commerce_payment_reversal", source_id=payment.id)
