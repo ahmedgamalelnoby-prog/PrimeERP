@@ -7,6 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.modules.commerce.models import CommercePayment, PurchaseDocument, SalesDocument
+from app.modules.jurisdiction.models import TaxSnapshot
+from app.modules.jurisdiction.tax_posting_guard import validate_payment_wht
 
 
 PAYMENT_METHODS = {"cash", "bank_transfer", "card", "cheque", "wallet", "cod", "other"}
@@ -25,6 +27,34 @@ def post_payment(db: Session, *, company_id: int, document_kind: str, document_i
     document = db.scalar(select(model).where(model.id == document_id, model.company_id == company_id).with_for_update())
     if document is None:
         raise ValueError("Document not found")
+
+    snapshot = db.scalar(select(TaxSnapshot).where(
+        TaxSnapshot.company_id == company_id,
+        TaxSnapshot.document_kind == document_kind,
+        TaxSnapshot.document_id == document_id,
+    ).with_for_update())
+    if snapshot is None:
+        raise ValueError("Tax snapshot is required before posting payment")
+
+    balance = Decimal(document.total or 0) - Decimal(document.paid_total or 0)
+    if amount > balance:
+        raise ValueError("Payment exceeds outstanding balance")
+
+    candidate = CommercePayment(
+        company_id=company_id,
+        document_kind=document_kind,
+        document_id=document_id,
+        payment_date=payment_date,
+        amount=amount,
+        wht_amount=wht_amount,
+        method=method,
+        reference=reference,
+        notes=notes,
+        idempotency_key=idempotency_key,
+        status="posted",
+    )
+    validate_payment_wht(candidate, snapshot)
+
     if idempotency_key:
         existing = db.scalar(select(CommercePayment).where(
             CommercePayment.company_id == company_id,
@@ -45,10 +75,8 @@ def post_payment(db: Session, *, company_id: int, document_kind: str, document_i
             if existing.status != "posted":
                 raise ValueError("The idempotent payment is no longer posted")
             return document, existing
-    balance = Decimal(document.total or 0) - Decimal(document.paid_total or 0)
-    if amount > balance:
-        raise ValueError("Payment exceeds outstanding balance")
-    payment = CommercePayment(company_id=company_id, document_kind=document_kind, document_id=document_id, payment_date=payment_date, amount=amount, wht_amount=wht_amount, method=method, reference=reference, notes=notes, idempotency_key=idempotency_key, status="posted")
+
+    payment = candidate
     db.add(payment)
     document.paid_total = Decimal(document.paid_total or 0) + amount
     db.flush()
