@@ -1,4 +1,4 @@
-name: PrimeERP Docker Validation
+name: PrimeERP Validation
 
 on:
   push:
@@ -8,61 +8,123 @@ on:
   workflow_dispatch: {}
 
 concurrency:
-  group: primeerp-docker-${{ github.workflow }}-${{ github.ref }}
+  group: primeerp-validation-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
   contents: read
 
-env:
-  COMPOSE_PROJECT_NAME: primeerp-ci
-
 jobs:
+  backend:
+    name: Backend Unit & Static Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: python -m pip install --upgrade pip && pip install -r requirements.txt
+
+      - name: Compile Python
+        run: python -m compileall -q app
+
+      - name: Run accounting and inventory regression tests
+        run: pytest -q tests/accounting tests/inventory
+
+  frontend:
+    name: Frontend Typecheck Lint & Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
   docker:
-    name: Docker Build, Migration & Runtime Validation
+    name: Docker Build Migration & Runtime Validation
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    needs:
+      - backend
+      - frontend
     defaults:
       run:
         shell: bash
+    env:
+      COMPOSE_PROJECT_NAME: primeerp-ci
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
       - name: Validate Docker runtime
         run: |
+          set -euxo pipefail
           docker version
           docker compose version
 
-      - name: Prepare Docker environment
+      - name: Prepare CI environment
         run: |
+          set -euxo pipefail
           cp .env.docker.example .env.docker
           printf '\nAPP_ENV=ci\nDEBUG=true\n' >> .env.docker
-
-      - name: Validate Docker Compose
-        run: docker compose --env-file .env.docker config -q
+          docker compose --env-file .env.docker config -q
 
       - name: Build backend image
         run: docker build --pull -t primeerp-backend:ci ./backend
 
-      - name: Validate backend image Python sources
+      - name: Validate backend image
         run: docker run --rm primeerp-backend:ci python -m compileall -q app
 
       - name: Build frontend image
         run: docker build --pull -t primeerp-frontend:ci ./frontend
 
-      - name: Start full Docker stack
+      - name: Start stack
         run: docker compose --env-file .env.docker up -d --build
 
-      - name: Wait for database, migration and application health
+      - name: Wait for stack health
         run: |
-          set -euo pipefail
+          set -euxo pipefail
           for _ in $(seq 1 48); do
             db=$(docker inspect --format '{{.State.Health.Status}}' primeerp-db 2>/dev/null || true)
             migration=$(docker inspect --format '{{.State.Status}}' primeerp-migrate 2>/dev/null || true)
             backend=$(docker inspect --format '{{.State.Health.Status}}' primeerp-backend 2>/dev/null || true)
             frontend=$(docker inspect --format '{{.State.Health.Status}}' primeerp-frontend 2>/dev/null || true)
             echo "db=$db migration=$migration backend=$backend frontend=$frontend"
+
             if [[ "$migration" == "exited" ]]; then
               code=$(docker inspect --format '{{.State.ExitCode}}' primeerp-migrate)
               if [[ "$code" != "0" ]]; then
@@ -70,34 +132,38 @@ jobs:
                 exit 1
               fi
             fi
+
             if [[ "$backend" == "unhealthy" || "$frontend" == "unhealthy" ]]; then
               docker compose --env-file .env.docker logs --tail=200 backend frontend
               exit 1
             fi
+
             if [[ "$backend" == "healthy" && "$frontend" == "healthy" && "$migration" == "exited" ]]; then
               code=$(docker inspect --format '{{.State.ExitCode}}' primeerp-migrate)
               [[ "$code" == "0" ]] && exit 0
             fi
             sleep 5
           done
+
           docker compose --env-file .env.docker ps
           docker compose --env-file .env.docker logs --tail=200 db migrate backend frontend
           exit 1
 
-      - name: Runtime API readiness smoke test
-        run: docker exec primeerp-backend python -c "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8001/ready', timeout=15); assert r.status == 200; print(r.read().decode())"
-
-      - name: Runtime API contract smoke test
+      - name: API readiness smoke test
         run: |
+          set -euxo pipefail
+          docker exec primeerp-backend python -c "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8001/ready', timeout=15); assert r.status == 200; print(r.read().decode())"
+
+      - name: OpenAPI contract smoke test
+        run: |
+          set -euxo pipefail
           docker exec primeerp-backend python - <<'PY'
           import json
           import urllib.request
 
-          spec = json.load(
-              urllib.request.urlopen(
-                  'http://127.0.0.1:8001/api/v1/openapi.json', timeout=15
-              )
-          )
+          spec = json.load(urllib.request.urlopen(
+              'http://127.0.0.1:8001/api/v1/openapi.json', timeout=15
+          ))
           paths = spec.get('paths', {})
           required = [
               '/api/v1/identity/login',
@@ -123,11 +189,12 @@ jobs:
           print(f'Runtime OpenAPI contract passed: {len(paths)} paths registered')
           PY
 
-      - name: Runtime frontend smoke test
+      - name: Frontend smoke test
         run: curl -fsS http://127.0.0.1:3000/ >/dev/null
 
-      - name: Runtime frontend API proxy smoke test
+      - name: Frontend API proxy smoke test
         run: |
+          set -euxo pipefail
           status=$(curl -s -o /tmp/api-response.txt -w '%{http_code}' http://127.0.0.1:3000/api/v1/identity/me)
           test "$status" = "401"
           grep -Eq 'detail|Not authenticated' /tmp/api-response.txt
@@ -135,15 +202,13 @@ jobs:
       - name: Migration idempotency check
         run: docker compose --env-file .env.docker run --rm migrate
 
-      - name: Docker runtime diagnostics
+      - name: Diagnostics
         if: always()
         run: |
-          docker compose --env-file .env.docker ps
-          docker compose --env-file .env.docker logs --tail=100 migrate
-          docker compose --env-file .env.docker logs --tail=100 backend
-          docker compose --env-file .env.docker logs --tail=100 frontend
+          docker compose --env-file .env.docker ps || true
+          docker compose --env-file .env.docker logs --tail=150 db migrate backend frontend || true
 
-      - name: Cleanup Docker stack
+      - name: Cleanup
         if: always()
         run: |
           docker compose --env-file .env.docker down -v --remove-orphans >/dev/null 2>&1 || true
