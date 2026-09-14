@@ -140,6 +140,57 @@ class PlanService:
                 f"Restricted fields: {fields}."
             )
 
+    def create_plan_version(
+        self,
+        plan_id: int,
+        schema: PlanCreate,
+    ) -> Plan:
+        """Create a new immutable commercial version without mutating the old row."""
+        source = self.repository.get_by_id(
+            db=self.db,
+            plan_id=plan_id,
+            for_update=True,
+        )
+
+        if source is None:
+            raise PlanNotFoundError(plan_id)
+
+        code = source.code.strip().lower()
+        requested_code = schema.code.strip().lower()
+        if requested_code != code:
+            raise PlanValidationError(
+                "A plan version must keep the same commercial plan code."
+            )
+
+        data = schema.model_dump(mode="json")
+        data["code"] = code
+
+        latest = (
+            self.db.query(Plan)
+            .filter(Plan.code == code)
+            .order_by(Plan.version.desc())
+            .with_for_update()
+            .first()
+        )
+        next_version = (latest.version if latest is not None else source.version) + 1
+        data["version"] = next_version
+
+        if data.get("is_default") is True:
+            default_plan = self.repository.get_default(db=self.db)
+            if default_plan is not None and default_plan.id != source.id:
+                # Default is a catalog flag. The old version remains valid for
+                # existing subscriptions but is no longer the catalog default.
+                default_plan.is_default = False
+
+        version = self.repository.create(
+            db=self.db,
+            data=data,
+        )
+
+        self.db.commit()
+        self.repository.refresh(db=self.db, instance=version)
+        return version
+
     def update_plan(
         self,
         plan_id: int,
