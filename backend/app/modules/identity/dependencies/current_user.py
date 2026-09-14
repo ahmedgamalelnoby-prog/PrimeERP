@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
@@ -99,7 +99,7 @@ def _authenticate_user(
 def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
-    tenant_context_header: str | None = None,
+    tenant_context_header: str | None = Header(default=None, alias=TENANT_CONTEXT_HEADER),
 ) -> User:
     user = _authenticate_user(token, db, tenant_context_header)
     if not user.is_platform_admin:
@@ -122,7 +122,7 @@ def get_current_user(
 def get_current_user_for_billing(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
-    tenant_context_header: str | None = None,
+    tenant_context_header: str | None = Header(default=None, alias=TENANT_CONTEXT_HEADER),
 ) -> User:
     """Authenticate while allowing expired tenants to reach billing/subscription flows."""
     return _authenticate_user(token, db, tenant_context_header)
