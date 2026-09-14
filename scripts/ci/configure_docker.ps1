@@ -16,9 +16,17 @@ $composeVersion = '5.5.1'
 $dockerUrl = "https://download.docker.com/win/static/stable/x86_64/docker-$dockerVersion.zip"
 $composeUrl = "https://github.com/docker/compose/releases/download/v$composeVersion/docker-compose-windows-x86_64.exe"
 
+function Download-File([string]$Url, [string]$Destination) {
+    $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
+    if (-not $curl) { throw 'curl.exe is required on the self-hosted Windows runner.' }
+    & $curl.Source -fL --retry 4 --retry-delay 2 --connect-timeout 20 --max-time 180 -o $Destination $Url
+    if ($LASTEXITCODE -ne 0) { throw "Download failed: $Url (exit code $LASTEXITCODE)" }
+    if (-not (Test-Path -LiteralPath $Destination -PathType Leaf)) { throw "Download did not create: $Destination" }
+}
+
 if (-not (Test-Path -LiteralPath $dockerExe -PathType Leaf)) {
     $zip = Join-Path $root "docker-$dockerVersion.zip"
-    Invoke-WebRequest -UseBasicParsing -Uri $dockerUrl -OutFile $zip
+    Download-File $dockerUrl $zip
     $extract = Join-Path $root 'extract'
     if (Test-Path -LiteralPath $extract) { Remove-Item $extract -Recurse -Force }
     Expand-Archive -Path $zip -DestinationPath $extract -Force
@@ -28,7 +36,7 @@ if (-not (Test-Path -LiteralPath $dockerExe -PathType Leaf)) {
 }
 
 if (-not (Test-Path -LiteralPath $composeExe -PathType Leaf)) {
-    Invoke-WebRequest -UseBasicParsing -Uri $composeUrl -OutFile $composeExe
+    Download-File $composeUrl $composeExe
 }
 
 $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
