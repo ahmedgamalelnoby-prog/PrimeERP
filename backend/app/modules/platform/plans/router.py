@@ -52,6 +52,20 @@ def create_plan(schema: PlanCreate, db: Session = Depends(get_db)):
     return service.create_plan(schema)
 
 
+@router.post(
+    "/{plan_id}/versions",
+    response_model=PlanResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_platform_admin)],
+)
+def create_plan_version(plan_id: int, schema: PlanCreate, db: Session = Depends(get_db)):
+    service = PlanService(db)
+    try:
+        return service.create_plan_version(plan_id=plan_id, schema=schema)
+    except PlanValidationError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @router.put(
     "/{plan_id}",
     response_model=PlanResponse,
