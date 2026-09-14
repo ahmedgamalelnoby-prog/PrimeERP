@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from .models import IntegrationEvent
 from .salla_models import SallaCustomer, SallaInvoice, SallaOrder, SallaOrderItem, SallaProduct, SallaProductVariant, SallaShipment
+from .salla_product_mapping_service import reconcile_salla_product_mapping
 
 
 def _dict(value: Any) -> dict:
@@ -131,6 +132,7 @@ def _normalize_product(db: Session, company_id: int, connection_id: int, data: d
         "urls": _dict(data.get("urls")), "images": _list(data.get("images")), "updated_at_salla": _dt(data.get("updated_at")), "raw_payload": data,
     })
     db.flush()
+    before = db.query(SallaProductVariant).filter(SallaProductVariant.connection_id == connection_id, SallaProductVariant.product_id == obj.id).count()
     for variant in _list(data.get("skus") or data.get("variants")):
         variant = _dict(variant)
         variant_id = _id(variant.get("id") or variant.get("sku_id"))
@@ -144,6 +146,12 @@ def _normalize_product(db: Session, company_id: int, connection_id: int, data: d
             "weight": _decimal(variant.get("weight")), "weight_type": variant.get("weight_type"),
             "option_values": _list(variant.get("related_options") or variant.get("options")), "raw_payload": variant,
         })
+    db.flush()
+    try:
+        reconcile_result = reconcile_salla_product_mapping(db, company_id=company_id, connection_id=connection_id, salla_product_id=obj.id)
+    except ValueError as exc:
+        reconcile_result = {"product_mapped": 0, "variants_mapped": 0, "product_id": None, "reason": str(exc)}
+    setattr(obj, "_mapping_result", reconcile_result)
     return obj
 
 
@@ -225,7 +233,7 @@ def normalize_salla_event(db: Session, event: IntegrationEvent) -> dict[str, int
     payload = payload if isinstance(payload, dict) else {}
     data = _data(payload)
     key = _event_key(event.event_type)
-    counters = {"orders": 0, "order_items": 0, "customers": 0, "products": 0, "variants": 0, "shipments": 0, "invoices": 0}
+    counters = {"orders": 0, "order_items": 0, "customers": 0, "products": 0, "variants": 0, "shipments": 0, "invoices": 0, "product_mapped": 0, "variants_mapped": 0}
     if key == "order":
         obj = _normalize_order(db, event.company_id, event.connection_id, data)
         counters["orders"] = int(obj is not None)
@@ -234,8 +242,12 @@ def normalize_salla_event(db: Session, event: IntegrationEvent) -> dict[str, int
         counters["customers"] = int(_normalize_customer(db, event.company_id, event.connection_id, data) is not None)
     elif key == "product":
         before = db.query(SallaProductVariant).filter(SallaProductVariant.connection_id == event.connection_id).count()
-        counters["products"] = int(_normalize_product(db, event.company_id, event.connection_id, data) is not None)
+        obj = _normalize_product(db, event.company_id, event.connection_id, data)
+        counters["products"] = int(obj is not None)
         counters["variants"] = db.query(SallaProductVariant).filter(SallaProductVariant.connection_id == event.connection_id).count() - before
+        mapping_result = getattr(obj, "_mapping_result", {}) if obj else {}
+        counters["product_mapped"] = int(mapping_result.get("product_mapped", 0))
+        counters["variants_mapped"] = int(mapping_result.get("variants_mapped", 0))
     elif key == "shipment":
         counters["shipments"] = int(_normalize_shipment(db, event.company_id, event.connection_id, data) is not None)
     elif key == "invoice":
