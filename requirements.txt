@@ -9,7 +9,7 @@ passlib==1.7.4
 bcrypt==4.0.1
 python-multipart==0.0.32
 email-validator==2.3.0
-psycopg2-binary==2.9.12
+psycopg[binary]==3.2.10
 python-dotenv==1.2.2
 cryptography==49.0.0
 requests==2.32.5
