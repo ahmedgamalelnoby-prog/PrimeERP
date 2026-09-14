@@ -7,7 +7,9 @@ ROOT = Path(__file__).resolve().parents[1] / "app"
 PUBLIC_MUTATION_FILES = {
     "modules/identity/api/router.py",
     "modules/saas/router.py",
-    "modules/integrations/public_router.py",
+}
+PUBLIC_ROUTER_NAMES = {
+    "modules/integrations/router.py": {"public_router"},
 }
 MUTATING = {"post", "put", "patch", "delete"}
 AUTH_DEPENDENCIES = {
@@ -57,7 +59,8 @@ def function_has_auth(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     return False
 
 
-def router_has_auth(tree: ast.AST) -> bool:
+def router_auth_map(tree: ast.AST) -> dict[str, bool]:
+    result: dict[str, bool] = {}
     for node in ast.walk(tree):
         if not isinstance(node, (ast.Assign, ast.AnnAssign)):
             continue
@@ -65,19 +68,38 @@ def router_has_auth(tree: ast.AST) -> bool:
         if not isinstance(value, ast.Call) or dependency_name(value.func) != "APIRouter":
             continue
         dependencies = next((keyword.value for keyword in value.keywords if keyword.arg == "dependencies"), None)
-        if contains_authorizing_dep(dependencies):
-            return True
-    return False
+        names: list[str] = []
+        if isinstance(node, ast.Assign):
+            names = [target.id for target in node.targets if isinstance(target, ast.Name)]
+        elif isinstance(node.target, ast.Name):
+            names = [node.target.id]
+        authorized = contains_authorizing_dep(dependencies)
+        for name in names:
+            result[name] = authorized
+    return result
+
+
+def route_router_name(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str | None:
+    for decorator in node.decorator_list:
+        if not isinstance(decorator, ast.Call) or not isinstance(decorator.func, ast.Attribute):
+            continue
+        if decorator.func.attr not in MUTATING:
+            continue
+        value = decorator.func.value
+        if isinstance(value, ast.Name):
+            return value.id
+    return None
 
 
 def is_explicitly_public_mutation(path: Path, node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    if relative(path) not in PUBLIC_MUTATION_FILES:
-        return False
-    decorators = [ast.unparse(d) for d in node.decorator_list]
-    return any(
-        any(f"router.{method}" in decorator for method in MUTATING)
-        for decorator in decorators
-    )
+    rel = relative(path)
+    if rel in PUBLIC_MUTATION_FILES:
+        decorators = [ast.unparse(d) for d in node.decorator_list]
+        return any(
+            any(f"router.{method}" in decorator for method in MUTATING)
+            for decorator in decorators
+        )
+    return route_router_name(node) in PUBLIC_ROUTER_NAMES.get(rel, set())
 
 
 def main() -> int:
@@ -94,7 +116,7 @@ def main() -> int:
             failures.append(f"{rel}: syntax error: {exc}")
             continue
 
-        router_level_auth = router_has_auth(tree)
+        router_auth = router_auth_map(tree)
         for node in ast.walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
@@ -102,14 +124,20 @@ def main() -> int:
             mutation_decorators = [
                 decorator
                 for decorator in decorators
-                if any(f"router.{method}" in decorator for method in MUTATING)
+                if any(f".{method}" in decorator for method in MUTATING)
             ]
-            if not mutation_decorators or is_explicitly_public_mutation(path, node):
+            if not mutation_decorators:
                 continue
-            if not (router_level_auth or function_has_auth(node)):
-                failures.append(
-                    f"{rel}:{node.lineno} {node.name}: mutating API route has no real FastAPI authentication/authorization dependency"
-                )
+            if is_explicitly_public_mutation(path, node):
+                continue
+            if function_has_auth(node):
+                continue
+            router_name = route_router_name(node)
+            if router_name and router_auth.get(router_name, False):
+                continue
+            failures.append(
+                f"{rel}:{node.lineno} {node.name}: mutating API route has no real FastAPI authentication/authorization dependency"
+            )
 
     if failures:
         print("API security boundary audit failed:")
