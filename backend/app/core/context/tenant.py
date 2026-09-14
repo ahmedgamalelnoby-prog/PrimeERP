@@ -13,15 +13,17 @@ def get_effective_tenant_id(user) -> int:
     carry their authenticated tenant on ``user.tenant_id``; their request
     context is populated with the same value by authentication.
 
-    Keeping the resolution based on tenant presence rather than a concrete
-    User ORM attribute also makes the helper safe for lightweight domain
-    objects used by services and tests.
+    The helper also accepts lightweight domain/test objects that do not
+    expose ``is_platform_admin``; when tenant context is missing entirely,
+    those objects receive the same explicit "tenant context required"
+    response used for platform-scoped operations.
     """
     context = get_request_context()
     tenant_id = user.tenant_id if user.tenant_id is not None else context.tenant_id
 
     if tenant_id is None:
-        if getattr(user, "is_platform_admin", False):
+        platform_flag = getattr(user, "is_platform_admin", None)
+        if platform_flag is True or platform_flag is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Tenant context is required for this operation",
