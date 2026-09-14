@@ -79,3 +79,26 @@ class JurisdictionDecision(Base):
     rationale = Column(JSON, nullable=False, default=dict)
     rule_ids = Column(JSON, nullable=False, default=list)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class TaxSnapshot(Base):
+    """Immutable tax/legal facts captured at posting time."""
+    __tablename__ = "tax_snapshots"
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    document_kind = Column(String(20), nullable=False)
+    document_id = Column(Integer, nullable=False)
+    decision_id = Column(Integer, ForeignKey("jurisdiction_decisions.id", ondelete="RESTRICT"), nullable=False)
+    jurisdiction_code = Column(String(20), nullable=False)
+    country_code = Column(String(2), nullable=False)
+    transaction_date = Column(Date, nullable=False)
+    transaction_type = Column(String(40), nullable=False)
+    place_of_supply = Column(String(30), nullable=False)
+    b2b = Column(Boolean, nullable=False)
+    facts = Column(JSON, nullable=False, default=dict)
+    rules = Column(JSON, nullable=False, default=list)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    __table_args__ = (
+        UniqueConstraint("company_id", "document_kind", "document_id", name="uq_tax_snapshot_document"),
+        CheckConstraint("document_kind IN ('sale','purchase','payment','credit_note','debit_note')", name="ck_tax_snapshot_document_kind"),
+    )
