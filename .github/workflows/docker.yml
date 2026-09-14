@@ -18,7 +18,7 @@ env:
 
 defaults:
   run:
-    shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
+    shell: powershell -NoProfile -ExecutionPolicy Bypass -Command "& {0}"
 
 jobs:
   docker:
