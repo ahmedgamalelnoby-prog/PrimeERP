@@ -32,12 +32,12 @@ jobs:
 
       - name: Validate local Python runtime
         run: |
-          where python
-          python --version
-          python -c "import sys; assert sys.version_info[:2] == (3, 10), f'Expected Python 3.10.x, found {sys.version}'"
+          where py
+          py -3.10 --version
+          py -3.10 -c "import sys; assert sys.version_info[:2] == (3, 10), f'Expected Python 3.10.x, found {sys.version}'"
 
       - name: Create isolated CI virtual environment
-        run: python -m venv .ci-venv
+        run: py -3.10 -m venv .ci-venv
 
       - name: Install dependencies
         run: |
@@ -123,7 +123,7 @@ jobs:
         shell: cmd
         run: |
           git ls-files > tracked-files.txt
-          findstr /R /C:"^\.env" /C:"/__pycache__/" /C:"/node_modules/" /C:"/dist/" /C:"\.pyc$" /C:"\.backup$" /C:"\.bak$" tracked-files.txt > forbidden-files.txt
+          findstr /R /C:"^\.env$" /C:"^\.env\.[^.]*$" /C:"/__pycache__/" /C:"/node_modules/" /C:"/dist/" /C:"\.pyc$" /C:"\.backup$" /C:"\.bak$" tracked-files.txt > forbidden-files.txt
           if not errorlevel 1 (
             type forbidden-files.txt
             echo Forbidden tracked/generated file detected.
