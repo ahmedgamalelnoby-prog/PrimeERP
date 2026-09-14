@@ -23,10 +23,7 @@ def _tenant(db: Session, tenant_id: int) -> Tenant:
 
 def _reject_suspended(tenant: Tenant) -> None:
     if tenant.status == "suspended" or not tenant.is_active:
-        raise HTTPException(
-            status_code=423,
-            detail="Tenant is suspended and requires explicit reactivation",
-        )
+        raise HTTPException(status_code=423, detail="Tenant requires explicit reactivation before subscription lifecycle changes")
 
 
 def _plan(db: Session, plan_id: int) -> SubscriptionPlan:
@@ -38,14 +35,12 @@ def _plan(db: Session, plan_id: int) -> SubscriptionPlan:
 
 def _active_subscription(db: Session, tenant_id: int, now: datetime) -> Subscription | None:
     return db.scalar(
-        select(Subscription)
-        .where(
+        select(Subscription).where(
             Subscription.tenant_id == tenant_id,
             Subscription.status.in_(ACTIVE_STATUSES),
             Subscription.starts_at <= now,
             (Subscription.ends_at.is_(None)) | (Subscription.ends_at > now),
-        )
-        .order_by(Subscription.ends_at.desc().nullslast(), Subscription.id.desc())
+        ).order_by(Subscription.ends_at.desc().nullslast(), Subscription.id.desc())
     )
 
 
@@ -56,31 +51,22 @@ def _period_end(start: datetime, billing_cycle: str) -> datetime:
     return start + timedelta(days=days)
 
 
-def convert_trial_to_paid(
-    db: Session,
-    tenant_id: int,
-    plan_id: int,
-    billing_cycle: str = "monthly",
-    auto_renew: bool = True,
-) -> Subscription:
+def convert_trial_to_paid(db: Session, tenant_id: int, plan_id: int, billing_cycle: str = "monthly", auto_renew: bool = True) -> Subscription:
     tenant = _tenant(db, tenant_id)
     _reject_suspended(tenant)
     plan = _plan(db, plan_id)
     now = _now()
     if billing_cycle not in BILLING_CYCLES:
         raise HTTPException(status_code=422, detail="Billing cycle must be monthly or yearly")
-
     current = _active_subscription(db, tenant_id, now)
     if current is not None and current.status == "active" and current.plan_id == plan.id:
         raise HTTPException(status_code=409, detail="Tenant already has this paid plan")
     if current is not None and current.status == "active":
         raise HTTPException(status_code=409, detail="Tenant already has an active paid subscription")
-
     subscription = current if current is not None and current.status == "trialing" else None
     if subscription is None:
         subscription = Subscription(tenant_id=tenant.id)
         db.add(subscription)
-
     subscription.plan_id = plan.id
     subscription.status = "active"
     subscription.billing_cycle = billing_cycle
@@ -99,30 +85,19 @@ def convert_trial_to_paid(
     return subscription
 
 
-def renew_subscription(
-    db: Session,
-    tenant_id: int,
-    plan_id: int | None = None,
-    billing_cycle: str | None = None,
-) -> Subscription:
+def renew_subscription(db: Session, tenant_id: int, plan_id: int | None = None, billing_cycle: str | None = None) -> Subscription:
     tenant = _tenant(db, tenant_id)
     _reject_suspended(tenant)
     now = _now()
     current = _active_subscription(db, tenant_id, now)
     if current is None:
-        current = db.scalar(
-            select(Subscription)
-            .where(Subscription.tenant_id == tenant_id)
-            .order_by(Subscription.ends_at.desc().nullslast(), Subscription.id.desc())
-        )
+        current = db.scalar(select(Subscription).where(Subscription.tenant_id == tenant_id).order_by(Subscription.ends_at.desc().nullslast(), Subscription.id.desc()))
     if current is None:
         raise HTTPException(status_code=404, detail="No subscription exists for tenant")
-
     plan = _plan(db, plan_id if plan_id is not None else current.plan_id)
     cycle = billing_cycle or current.billing_cycle
     if cycle not in BILLING_CYCLES:
         raise HTTPException(status_code=422, detail="Billing cycle must be monthly or yearly")
-
     start = current.ends_at if current.ends_at and current.ends_at > now else now
     current.plan_id = plan.id
     current.status = "active"
@@ -149,7 +124,6 @@ def cancel_auto_renewal(db: Session, tenant_id: int) -> Subscription:
         raise HTTPException(status_code=404, detail="No active subscription exists for tenant")
     subscription.is_auto_renew = False
     subscription.next_billing_date = None
-    subscription.cancelled_at = now
     db.commit()
     db.refresh(subscription)
     return subscription
@@ -171,8 +145,14 @@ def suspend_tenant(db: Session, tenant_id: int, reason: str) -> Tenant:
 
 def unsuspend_tenant(db: Session, tenant_id: int) -> Tenant:
     tenant = _tenant(db, tenant_id)
-    tenant.status = "active"
+    now = _now()
+    subscription = _active_subscription(db, tenant_id, now)
+    if subscription is None:
+        raise HTTPException(status_code=409, detail="Tenant has no valid subscription for reactivation")
+    tenant.status = "trial" if subscription.status == "trialing" else "active"
     tenant.is_active = True
+    tenant.is_trial = subscription.status == "trialing"
+    tenant.trial_ends_at = subscription.trial_ends_at if subscription.status == "trialing" else None
     tenant.suspended_at = None
     tenant.suspension_reason = None
     db.commit()
