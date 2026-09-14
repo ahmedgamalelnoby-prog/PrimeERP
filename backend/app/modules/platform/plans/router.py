@@ -1,11 +1,12 @@
 from typing import List
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
+from app.modules.platform.plans.exceptions import PlanValidationError
 from app.modules.platform.plans.schemas import PlanCreate, PlanResponse, PlanUpdate
 from app.modules.platform.plans.service import PlanService
 
@@ -18,7 +19,6 @@ router = APIRouter(
 
 def require_platform_admin(current_user: User = Depends(get_current_user)) -> User:
     if not current_user.is_platform_admin:
-        from fastapi import HTTPException
         raise HTTPException(status_code=403, detail="Platform administrator access required")
     return current_user
 
@@ -59,7 +59,10 @@ def create_plan(schema: PlanCreate, db: Session = Depends(get_db)):
 )
 def update_plan(plan_id: int, schema: PlanUpdate, db: Session = Depends(get_db)):
     service = PlanService(db)
-    return service.update_plan(plan_id=plan_id, schema=schema)
+    try:
+        return service.update_plan(plan_id=plan_id, schema=schema)
+    except PlanValidationError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.delete(
