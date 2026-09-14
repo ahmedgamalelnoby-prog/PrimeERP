@@ -1,0 +1,42 @@
+"""IFRS/CMA accounting foundation
+
+Revision ID: 20260914_ifrs_cma_accounting_foundation
+Revises: 20260914_namespace_integration_product_mapping_external_ids
+"""
+from alembic import op
+import sqlalchemy as sa
+
+revision = "20260914_ifrs_cma_accounting_foundation"
+down_revision = "20260914_namespace_integration_product_mapping_external_ids"
+branch_labels = None
+depends_on = None
+
+
+def upgrade():
+    op.create_table("accounting_policies",
+        sa.Column("id", sa.Integer(), primary_key=True), sa.Column("company_id", sa.Integer(), sa.ForeignKey("companies.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("jurisdiction", sa.String(20), nullable=False, server_default="EG"), sa.Column("accounting_framework", sa.String(30), nullable=False, server_default="IFRS"),
+        sa.Column("management_framework", sa.String(30), nullable=False, server_default="CMA"), sa.Column("functional_currency", sa.String(3), nullable=False, server_default="EGP"),
+        sa.Column("presentation_currency", sa.String(3), nullable=False, server_default="EGP"), sa.Column("tax_authority", sa.String(50), nullable=False, server_default="EGYPT_ETA"),
+        sa.Column("tax_inclusive", sa.Boolean(), nullable=False, server_default=sa.text("false")), sa.Column("require_period_close", sa.Boolean(), nullable=False, server_default=sa.text("true")),
+        sa.Column("require_posting_approval", sa.Boolean(), nullable=False, server_default=sa.text("true")), sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.UniqueConstraint("company_id", name="uq_accounting_policy_company"), sa.CheckConstraint("accounting_framework IN ('IFRS','IFRS_SME','LOCAL')", name="ck_accounting_policy_framework"),
+        sa.CheckConstraint("management_framework IN ('CMA','MANAGEMENT_ACCOUNTING')", name="ck_accounting_policy_management"), sa.CheckConstraint("length(functional_currency) = 3", name="ck_accounting_policy_functional_currency"))
+    op.create_table("accounting_fiscal_periods",
+        sa.Column("id", sa.Integer(), primary_key=True), sa.Column("company_id", sa.Integer(), sa.ForeignKey("companies.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("name", sa.String(80), nullable=False), sa.Column("start_date", sa.Date(), nullable=False), sa.Column("end_date", sa.Date(), nullable=False),
+        sa.Column("status", sa.String(20), nullable=False, server_default="open"), sa.Column("closed_at", sa.DateTime(timezone=True)), sa.Column("closed_by_user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="SET NULL")),
+        sa.UniqueConstraint("company_id","start_date","end_date",name="uq_fiscal_period_company_dates"), sa.CheckConstraint("end_date >= start_date",name="ck_fiscal_period_dates"), sa.CheckConstraint("status IN ('open','soft_closed','closed')",name="ck_fiscal_period_status"))
+    op.create_table("accounting_accounts",
+        sa.Column("id",sa.Integer(),primary_key=True), sa.Column("company_id",sa.Integer(),sa.ForeignKey("companies.id",ondelete="CASCADE"),nullable=False), sa.Column("code",sa.String(30),nullable=False), sa.Column("name_ar",sa.String(200),nullable=False), sa.Column("name_en",sa.String(200)), sa.Column("account_type",sa.String(30),nullable=False), sa.Column("parent_id",sa.Integer(),sa.ForeignKey("accounting_accounts.id",ondelete="RESTRICT")), sa.Column("normal_balance",sa.String(10),nullable=False), sa.Column("is_control_account",sa.Boolean(),nullable=False,server_default=sa.text("false")), sa.Column("allow_manual_posting",sa.Boolean(),nullable=False,server_default=sa.text("true")), sa.Column("is_active",sa.Boolean(),nullable=False,server_default=sa.text("true")), sa.UniqueConstraint("company_id","code",name="uq_accounting_account_company_code"), sa.CheckConstraint("account_type IN ('asset','liability','equity','revenue','expense','contra_asset','contra_revenue','contra_liability')",name="ck_accounting_account_type"), sa.CheckConstraint("normal_balance IN ('debit','credit')",name="ck_accounting_account_normal_balance"))
+    op.create_table("accounting_cost_centers",sa.Column("id",sa.Integer(),primary_key=True),sa.Column("company_id",sa.Integer(),sa.ForeignKey("companies.id",ondelete="CASCADE"),nullable=False),sa.Column("code",sa.String(30),nullable=False),sa.Column("name",sa.String(160),nullable=False),sa.Column("parent_id",sa.Integer(),sa.ForeignKey("accounting_cost_centers.id",ondelete="RESTRICT")),sa.Column("is_active",sa.Boolean(),nullable=False,server_default=sa.text("true")),sa.UniqueConstraint("company_id","code",name="uq_cost_center_company_code"))
+    op.create_table("accounting_journal_entries",sa.Column("id",sa.Integer(),primary_key=True),sa.Column("company_id",sa.Integer(),sa.ForeignKey("companies.id",ondelete="CASCADE"),nullable=False),sa.Column("fiscal_period_id",sa.Integer(),sa.ForeignKey("accounting_fiscal_periods.id",ondelete="RESTRICT"),nullable=False),sa.Column("entry_no",sa.String(40),nullable=False),sa.Column("entry_date",sa.Date(),nullable=False),sa.Column("description",sa.Text(),nullable=False),sa.Column("source_module",sa.String(80),nullable=False),sa.Column("source_entity",sa.String(80),nullable=False),sa.Column("source_id",sa.String(100),nullable=False),sa.Column("status",sa.String(20),nullable=False,server_default="draft"),sa.Column("approved_by_user_id",sa.Integer(),sa.ForeignKey("users.id",ondelete="SET NULL")),sa.Column("posted_at",sa.DateTime(timezone=True)),sa.Column("created_at",sa.DateTime(timezone=True),server_default=sa.func.now(),nullable=False),sa.UniqueConstraint("company_id","entry_no",name="uq_journal_entry_company_no"),sa.UniqueConstraint("company_id","source_module","source_entity","source_id",name="uq_journal_entry_source"),sa.CheckConstraint("status IN ('draft','approved','posted','reversed')",name="ck_journal_entry_status"))
+    op.create_table("accounting_journal_lines",sa.Column("id",sa.Integer(),primary_key=True),sa.Column("journal_entry_id",sa.Integer(),sa.ForeignKey("accounting_journal_entries.id",ondelete="CASCADE"),nullable=False),sa.Column("account_id",sa.Integer(),sa.ForeignKey("accounting_accounts.id",ondelete="RESTRICT"),nullable=False),sa.Column("cost_center_id",sa.Integer(),sa.ForeignKey("accounting_cost_centers.id",ondelete="RESTRICT")),sa.Column("description",sa.Text()),sa.Column("debit",sa.Numeric(20,4),nullable=False,server_default="0"),sa.Column("credit",sa.Numeric(20,4),nullable=False,server_default="0"),sa.Column("currency",sa.String(3),nullable=False,server_default="EGP"),sa.Column("exchange_rate",sa.Numeric(20,8),nullable=False,server_default="1"),sa.CheckConstraint("debit >= 0 AND credit >= 0",name="ck_journal_line_nonnegative"),sa.CheckConstraint("NOT (debit > 0 AND credit > 0)",name="ck_journal_line_one_side"),sa.CheckConstraint("debit > 0 OR credit > 0",name="ck_journal_line_nonzero"))
+    op.create_table("accounting_management_budgets",sa.Column("id",sa.Integer(),primary_key=True),sa.Column("company_id",sa.Integer(),sa.ForeignKey("companies.id",ondelete="CASCADE"),nullable=False),sa.Column("name",sa.String(160),nullable=False),sa.Column("fiscal_year",sa.Integer(),nullable=False),sa.Column("status",sa.String(20),nullable=False,server_default="draft"),sa.Column("version",sa.Integer(),nullable=False,server_default="1"),sa.UniqueConstraint("company_id","name","version",name="uq_management_budget_version"),sa.CheckConstraint("status IN ('draft','approved','locked')",name="ck_management_budget_status"))
+    op.create_table("accounting_management_budget_lines",sa.Column("id",sa.Integer(),primary_key=True),sa.Column("budget_id",sa.Integer(),sa.ForeignKey("accounting_management_budgets.id",ondelete="CASCADE"),nullable=False),sa.Column("cost_center_id",sa.Integer(),sa.ForeignKey("accounting_cost_centers.id",ondelete="RESTRICT")),sa.Column("account_id",sa.Integer(),sa.ForeignKey("accounting_accounts.id",ondelete="RESTRICT")),sa.Column("period_month",sa.Integer(),nullable=False),sa.Column("amount",sa.Numeric(20,4),nullable=False),sa.CheckConstraint("period_month BETWEEN 1 AND 12",name="ck_budget_line_month"),sa.CheckConstraint("amount >= 0",name="ck_budget_line_amount"))
+
+
+def downgrade():
+    for table in ["accounting_management_budget_lines","accounting_management_budgets","accounting_journal_lines","accounting_journal_entries","accounting_cost_centers","accounting_accounts","accounting_fiscal_periods","accounting_policies"]:
+        op.drop_table(table)
