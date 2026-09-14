@@ -31,13 +31,10 @@ jobs:
 
       - name: Configure Docker CLI
         run: |
-          for /F "delims=" %%D in ('where docker 2^>NUL') do if not defined DOCKER_EXE set "DOCKER_EXE=%%D"
-          if not defined DOCKER_EXE (
-            for /F "delims=" %%D in ('where /R "C:\Program Files\Docker" docker.exe 2^>NUL') do if not defined DOCKER_EXE set "DOCKER_EXE=%%D"
-          )
-          if not defined DOCKER_EXE (
-            for /F "delims=" %%D in ('where /R "C:\Users\Admin\AppData\Local\Programs\DockerDesktop" docker.exe 2^>NUL') do if not defined DOCKER_EXE set "DOCKER_EXE=%%D"
-          )
+          set "DOCKER_EXE="
+          if exist "C:\Users\Admin\AppData\Local\Programs\DockerDesktop\resources\bin\docker.exe" set "DOCKER_EXE=C:\Users\Admin\AppData\Local\Programs\DockerDesktop\resources\bin\docker.exe"
+          if not defined DOCKER_EXE for /F "delims=" %%D in ('where docker 2^>NUL') do if not defined DOCKER_EXE set "DOCKER_EXE=%%D"
+          if not defined DOCKER_EXE if exist "C:\Program Files\Docker\Docker\resources\bin\docker.exe" set "DOCKER_EXE=C:\Program Files\Docker\Docker\resources\bin\docker.exe"
           if not defined DOCKER_EXE (
             echo Docker CLI not found on the self-hosted runner.
             exit /b 1
@@ -118,5 +115,6 @@ jobs:
       - name: Cleanup Docker stack
         if: always()
         run: |
-          docker compose --env-file .env.docker down -v --remove-orphans
-          docker image rm primeerp-backend:ci primeerp-frontend:ci 2>NUL
+          docker compose --env-file .env.docker down -v --remove-orphans >NUL 2>&1
+          docker image rm primeerp-backend:ci primeerp-frontend:ci >NUL 2>&1
+          exit /b 0
