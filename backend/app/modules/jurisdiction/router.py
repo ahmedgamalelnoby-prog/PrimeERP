@@ -29,7 +29,9 @@ def jurisdiction_for_user(db: Session, jurisdiction_id: int):
 
 
 def _overlap_clause(model, start, end):
-    return and_(model.effective_from <= (end if end is not None else start), or_(model.effective_to.is_(None), model.effective_to >= start), model.is_active.is_(True))
+    starts_before_end = True if end is None else model.effective_from <= end
+    ends_after_start = or_(model.effective_to.is_(None), model.effective_to >= start)
+    return and_(starts_before_end, ends_after_start, model.is_active.is_(True))
 
 
 def _reject_overlap(db: Session, model, identity_filters, start, end, message):
