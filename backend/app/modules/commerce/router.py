@@ -10,7 +10,6 @@ from app.modules.accounting.journals.models import AccountingJournal
 from app.modules.branches.models import Branch
 from app.modules.commerce.accounting_models import CommerceAccountingSettings
 from app.modules.commerce.accounting_schemas import CommerceAccountingSettingsCreate
-from app.modules.commerce.accounting_service import commerce_accounting_service
 from app.modules.commerce.models import CommercePayment
 from app.modules.commerce.schemas import PartnerCreate, PartnerResponse, DocumentCreate, DocumentResponse, PaymentCreate, PaymentReverse
 from app.modules.commerce.service import commerce_service
@@ -119,41 +118,35 @@ def purchases(company_id: int = Query(..., gt=0), current_user: User = Depends(g
 @router.post("/sales/{document_id}/confirm", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def confirm_sale(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
-    obj = _run(lambda: commerce_service.confirm(db, company_id, document_id, "sale"))
-    if obj.document_type == "invoice": commerce_accounting_service.post_sales_invoice(db, obj, current_user.id)
-    elif obj.document_type == "credit_note": commerce_accounting_service.post_sales_credit_note(db, obj, current_user.id)
+    obj = _run(lambda: commerce_service.confirm(db, company_id, document_id, "sale", current_user.id))
     db.commit(); db.refresh(obj); return obj
 
 
 @router.post("/purchases/{document_id}/confirm", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def confirm_purchase(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
-    obj = _run(lambda: commerce_service.confirm(db, company_id, document_id, "purchase"))
-    if obj.document_type == "bill": commerce_accounting_service.post_purchase_bill(db, obj, current_user.id)
-    elif obj.document_type == "debit_note": commerce_accounting_service.post_purchase_debit_note(db, obj, current_user.id)
+    obj = _run(lambda: commerce_service.confirm(db, company_id, document_id, "purchase", current_user.id))
     db.commit(); db.refresh(obj); return obj
 
 
 @router.post("/sales/{document_id}/post-inventory", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def post_sale(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
-    obj = _run(lambda: commerce_service.post_inventory(db, company_id, document_id, "sale"))
-    commerce_accounting_service.post_sales_delivery_cogs(db, obj, current_user.id)
+    obj = _run(lambda: commerce_service.post_inventory(db, company_id, document_id, "sale", current_user.id))
     db.commit(); db.refresh(obj); return obj
 
 
 @router.post("/purchases/{document_id}/receive", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def receive_purchase(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
-    obj = _run(lambda: commerce_service.post_inventory(db, company_id, document_id, "purchase")); db.commit(); db.refresh(obj); return obj
+    obj = _run(lambda: commerce_service.post_inventory(db, company_id, document_id, "purchase", current_user.id)); db.commit(); db.refresh(obj); return obj
 
 
 @router.post("/sales/{document_id}/payments", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.payment"))])
 def pay_sale(document_id: int, payload: PaymentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if payload.document_id != document_id: raise HTTPException(400, "Document id mismatch")
     _company_for_user(db, payload.company_id, current_user)
-    obj, payment = _run(lambda: commerce_service.pay(db, payload, "sale"))
-    commerce_accounting_service.post_payment(db, payment, obj, current_user.id)
+    obj, payment = _run(lambda: commerce_service.pay(db, payload, "sale", current_user.id))
     db.commit(); db.refresh(obj); return obj
 
 
@@ -161,8 +154,7 @@ def pay_sale(document_id: int, payload: PaymentCreate, current_user: User = Depe
 def pay_purchase(document_id: int, payload: PaymentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if payload.document_id != document_id: raise HTTPException(400, "Document id mismatch")
     _company_for_user(db, payload.company_id, current_user)
-    obj, payment = _run(lambda: commerce_service.pay(db, payload, "purchase"))
-    commerce_accounting_service.post_payment(db, payment, obj, current_user.id)
+    obj, payment = _run(lambda: commerce_service.pay(db, payload, "purchase", current_user.id))
     db.commit(); db.refresh(obj); return obj
 
 
@@ -171,6 +163,5 @@ def reverse_payment(payment_id: int, payload: PaymentReverse, current_user: User
     _company_for_user(db, payload.company_id, current_user)
     original = db.scalar(select(CommercePayment).where(CommercePayment.id == payment_id, CommercePayment.company_id == payload.company_id))
     if original is None: raise HTTPException(404, "Payment not found")
-    obj, original, reversal = _run(lambda: commerce_service.reverse_payment(db, payload.company_id, payment_id, payload.reversal_date, payload.notes))
-    commerce_accounting_service.post_payment_reversal(db, original, obj, current_user.id, reversal_date=payload.reversal_date)
+    obj, original, reversal = _run(lambda: commerce_service.reverse_payment(db, payload.company_id, payment_id, payload.reversal_date, payload.notes, current_user.id))
     db.commit(); db.refresh(obj); return obj
