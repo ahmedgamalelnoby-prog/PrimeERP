@@ -27,42 +27,31 @@ class CommerceAccountingService:
     def _context(self, db: Session, company_id: int, entry_date: date):
         settings = self._settings(db, company_id)
         company = db.scalar(select(Company).where(Company.id == company_id))
-        if company is None:
-            raise HTTPException(404, "Company not found")
+        if company is None: raise HTTPException(404, "Company not found")
         branch = db.scalar(select(Branch).where(Branch.id == settings.default_branch_id, Branch.company_id == company_id, Branch.tenant_id == company.tenant_id, Branch.is_active.is_(True)))
-        if branch is None:
-            raise HTTPException(409, "Configured accounting branch was not found")
+        if branch is None: raise HTTPException(409, "Configured accounting branch was not found")
         period = db.scalar(select(AccountingPeriod).where(AccountingPeriod.company_id == company_id, AccountingPeriod.tenant_id == company.tenant_id, AccountingPeriod.start_date <= entry_date, AccountingPeriod.end_date >= entry_date, AccountingPeriod.status == "open", AccountingPeriod.allow_posting.is_(True)).order_by(AccountingPeriod.period_number.desc()))
-        if period is None:
-            raise HTTPException(409, "No open posting period exists for the document date")
+        if period is None: raise HTTPException(409, "No open posting period exists for the document date")
         fiscal_year = db.scalar(select(FiscalYear).where(FiscalYear.id == period.fiscal_year_id, FiscalYear.company_id == company_id, FiscalYear.tenant_id == company.tenant_id))
-        if fiscal_year is None:
-            raise HTTPException(409, "Fiscal year for the posting period was not found")
+        if fiscal_year is None: raise HTTPException(409, "Fiscal year for the posting period was not found")
         return settings, company.tenant_id, period, fiscal_year
 
     def _existing_source(self, db: Session, *, company_id: int, source_entity: str, source_id: int):
-        settings = self._settings(db, company_id)
         company = db.scalar(select(Company).where(Company.id == company_id))
-        if company is None:
-            return None
+        if company is None: return None
         return db.scalar(select(JournalEntry).where(JournalEntry.tenant_id == company.tenant_id, JournalEntry.company_id == company_id, JournalEntry.source_module == "commerce", JournalEntry.source_entity == source_entity, JournalEntry.source_id == source_id))
 
     def _post(self, db: Session, *, company_id: int, user_id: int, entry_date: date, journal_id: int, entry_number: str, description: str, lines: list[dict], source_entity: str, source_id: int):
-        validate_double_entry(lines)
-        validate_source(source_module="commerce", source_entity=source_entity, source_id=source_id)
+        validate_double_entry(lines); validate_source(source_module="commerce", source_entity=source_entity, source_id=source_id)
         settings, tenant_id, period, fiscal_year = self._context(db, company_id, entry_date)
         existing = db.scalar(select(JournalEntry).where(JournalEntry.tenant_id == tenant_id, JournalEntry.company_id == company_id, JournalEntry.source_module == "commerce", JournalEntry.source_entity == source_entity, JournalEntry.source_id == source_id))
-        if existing:
-            return existing
+        if existing: return existing
         journal = db.scalar(select(AccountingJournal).where(AccountingJournal.id == journal_id, AccountingJournal.company_id == company_id, AccountingJournal.tenant_id == tenant_id, AccountingJournal.is_active.is_(True)))
-        if journal is None:
-            raise HTTPException(409, "Configured accounting journal was not found")
+        if journal is None: raise HTTPException(409, "Configured accounting journal was not found")
         entry = journal_service.create_draft(db, tenant_id=tenant_id, company_id=company_id, branch_id=settings.default_branch_id, journal_id=journal_id, fiscal_year_id=fiscal_year.id, period_id=period.id, entry_number=entry_number, entry_date=entry_date, description=description, lines=lines, user_id=user_id, source_module="commerce", source_entity=source_entity, source_id=source_id, commit=False)
         journal_service.submit(db, tenant_id=tenant_id, entry_id=entry.id, user_id=user_id, commit=False)
-        if journal.requires_approval:
-            journal_service.approve(db, tenant_id=tenant_id, entry_id=entry.id, user_id=user_id, commit=False)
-        if settings.auto_post and journal.auto_post:
-            journal_service.post(db, tenant_id=tenant_id, entry_id=entry.id, user_id=user_id, commit=False)
+        if journal.requires_approval: journal_service.approve(db, tenant_id=tenant_id, entry_id=entry.id, user_id=user_id, commit=False)
+        if settings.auto_post and journal.auto_post: journal_service.post(db, tenant_id=tenant_id, entry_id=entry.id, user_id=user_id, commit=False)
         return entry
 
     def post_sales_invoice(self, db, document, user_id: int):
@@ -78,10 +67,6 @@ class CommerceAccountingService:
         lines.append({"account_combination_id": settings.ar_account_id, "debit": 0, "credit": Decimal(document.total), "description": f"AR reduction {document.number}"})
         return self._post(db, company_id=document.company_id, user_id=user_id, entry_date=document.document_date, journal_id=settings.sales_journal_id, entry_number=f"SCN-{document.id}", description=f"Sales credit note {document.number}", lines=lines, source_entity="sales_credit_note", source_id=document.id)
 
-    @staticmethod
-    def _purchase_net(document):
-        return sum((Decimal(line.quantity) * Decimal(line.unit_price) * (Decimal("100") - Decimal(line.discount_percent or 0)) / Decimal("100") for line in document.lines), Decimal("0"))
-
     def _purchase_stock_expense_totals(self, db, document):
         stock_total = Decimal("0"); expense_total = Decimal("0")
         for line in document.lines:
@@ -96,23 +81,19 @@ class CommerceAccountingService:
 
     def _allocate_receipt_value(self, db: Session, *, document, line) -> Decimal:
         receipt_ids = self._linked_receipt_ids(db, document)
-        if not receipt_ids:
-            return Decimal("0")
-        moves = list(db.scalars(select(InventoryStockMove).where(InventoryStockMove.company_id == document.company_id, InventoryStockMove.source_module == "commerce", InventoryStockMove.source_entity == "purchase_receipt", InventoryStockMove.status == "posted", InventoryStockMove.item_id == line.item_id, InventoryStockMove.variant_id == line.variant_id, *[InventoryStockMove.source_id.like(f"{rid}:%") for rid in receipt_ids]).with_for_update()).all())
-        required = Decimal(line.quantity)
-        remaining = required
-        value = Decimal("0")
+        if not receipt_ids: return Decimal("0")
+        receipt_predicates = [InventoryStockMove.source_id.like(f"{rid}:%") for rid in receipt_ids]
+        moves = list(db.scalars(select(InventoryStockMove).where(InventoryStockMove.company_id == document.company_id, InventoryStockMove.source_module == "commerce", InventoryStockMove.source_entity == "purchase_receipt", InventoryStockMove.status == "posted", InventoryStockMove.item_id == line.item_id, InventoryStockMove.variant_id == line.variant_id, *receipt_predicates).with_for_update()).all())
+        required = Decimal(line.quantity); remaining = required; value = Decimal("0")
         for move in moves:
-            allocated = db.scalar(select(func.coalesce(func.sum(PurchaseBillReceiptAllocation.quantity), 0)).where(PurchaseBillReceiptAllocation.company_id == document.company_id, PurchaseBillReceiptAllocation.receipt_move_id == move.id).with_for_update()) or Decimal("0")
+            allocated = db.scalar(select(func.coalesce(func.sum(PurchaseBillReceiptAllocation.quantity), 0)).where(PurchaseBillReceiptAllocation.company_id == document.company_id, PurchaseBillReceiptAllocation.receipt_move_id == move.id)) or Decimal("0")
             available = Decimal(move.quantity) - Decimal(allocated)
             if available <= 0: continue
-            take = min(available, remaining)
-            value += take * Decimal(move.unit_cost or 0)
+            take = min(available, remaining); value += take * Decimal(move.unit_cost or 0)
             db.add(PurchaseBillReceiptAllocation(company_id=document.company_id, bill_line_id=line.id, receipt_move_id=move.id, quantity=take, unit_cost=Decimal(move.unit_cost or 0)))
             remaining -= take
             if remaining <= 0: break
-        if remaining > 0:
-            raise HTTPException(status_code=409, detail=f"Receipt quantity is insufficient for bill line {line.id}; link sufficient received quantity before posting the bill")
+        if remaining > 0: raise HTTPException(status_code=409, detail=f"Receipt quantity is insufficient for bill line {line.id}; link sufficient received quantity before posting the bill")
         return value
 
     def post_purchase_receipt(self, db, document, user_id: int):
@@ -126,25 +107,18 @@ class CommerceAccountingService:
         settings = self._settings(db, document.company_id)
         existing = self._existing_source(db, company_id=document.company_id, source_entity="purchase_bill", source_id=document.id)
         if existing: return existing
-        stock_total, expense_total = self._purchase_stock_expense_totals(db, document)
-        linked_receipts = self._linked_receipt_ids(db, document)
-        lines = []
-        receipt_value = Decimal("0")
+        stock_total, expense_total = self._purchase_stock_expense_totals(db, document); linked_receipts = self._linked_receipt_ids(db, document); lines = []; receipt_value = Decimal("0")
         if stock_total:
             if linked_receipts:
                 for line in document.lines:
                     item = db.scalar(select(InventoryItem).where(InventoryItem.id == line.item_id, InventoryItem.company_id == document.company_id))
-                    if item and item.item_type in {"stockable", "consumable"}:
-                        receipt_value += self._allocate_receipt_value(db, document=document, line=line)
-                if receipt_value <= 0 and stock_total > 0:
-                    raise HTTPException(409, "Linked purchase receipts have no inventory valuation")
+                    if item and item.item_type in {"stockable", "consumable"}: receipt_value += self._allocate_receipt_value(db, document=document, line=line)
+                if receipt_value <= 0 and stock_total > 0: raise HTTPException(409, "Linked purchase receipts have no inventory valuation")
                 grni_value = min(receipt_value, stock_total)
                 lines.append({"account_combination_id": settings.grni_account_id, "debit": grni_value, "credit": 0, "description": f"GRNI clearing {document.number}"})
                 variance = stock_total - receipt_value
-                if variance > 0:
-                    lines.append({"account_combination_id": settings.purchase_price_variance_account_id, "debit": variance, "credit": 0, "description": f"Purchase price variance {document.number}"})
-                elif variance < 0:
-                    lines.append({"account_combination_id": settings.purchase_price_variance_account_id, "debit": 0, "credit": -variance, "description": f"Purchase price variance credit {document.number}"})
+                if variance > 0: lines.append({"account_combination_id": settings.purchase_price_variance_account_id, "debit": variance, "credit": 0, "description": f"Purchase price variance {document.number}"})
+                elif variance < 0: lines.append({"account_combination_id": settings.purchase_price_variance_account_id, "debit": 0, "credit": -variance, "description": f"Purchase price variance credit {document.number}"})
             else:
                 lines.append({"account_combination_id": settings.inventory_account_id, "debit": stock_total, "credit": 0, "description": f"Inventory {document.number}"})
         if expense_total: lines.append({"account_combination_id": settings.purchase_account_id, "debit": expense_total, "credit": 0, "description": f"Purchase expense {document.number}"})
