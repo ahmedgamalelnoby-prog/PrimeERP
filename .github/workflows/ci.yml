@@ -30,17 +30,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Validate local Python runtime
+      - name: Validate and provision Python 3.10 runtime
         run: |
-          where py
-          py -3.10 --version
-          py -3.10 -c "import sys; assert sys.version_info[:2] == (3, 10), f'Expected Python 3.10.x, found {sys.version}'"
-
-      - name: Create isolated CI virtual environment
-        run: py -3.10 -m venv .ci-venv
+          if exist "C:\Users\Admin\AppData\Local\Programs\Python\Python310\python.exe" (
+            "C:\Users\Admin\AppData\Local\Programs\Python\Python310\python.exe" --version
+            "C:\Users\Admin\AppData\Local\Programs\Python\Python310\python.exe" -m venv .ci-venv
+          ) else if exist "C:\Program Files\Python310\python.exe" (
+            "C:\Program Files\Python310\python.exe" --version
+            "C:\Program Files\Python310\python.exe" -m venv .ci-venv
+          ) else if exist "C:\Python310\python.exe" (
+            "C:\Python310\python.exe" --version
+            "C:\Python310\python.exe" -m venv .ci-venv
+          ) else if exist "C:\Windows\py.exe" (
+            C:\Windows\py.exe -3.10 --version
+            C:\Windows\py.exe -3.10 -m venv .ci-venv
+          ) else if exist "%SystemRoot%\py.exe" (
+            "%SystemRoot%\py.exe" -3.10 --version
+            "%SystemRoot%\py.exe" -3.10 -m venv .ci-venv
+          ) else (
+            echo Python 3.10 runtime was not found on the self-hosted runner.
+            exit /b 1
+          )
 
       - name: Install dependencies
         run: |
+          .ci-venv\Scripts\python.exe --version
           .ci-venv\Scripts\python.exe -m pip install --upgrade pip
           .ci-venv\Scripts\python.exe -m pip install -r requirements.txt
           .ci-venv\Scripts\python.exe -m pip install pytest
@@ -123,12 +137,20 @@ jobs:
         shell: cmd
         run: |
           git ls-files > tracked-files.txt
-          findstr /R /C:"^\.env$" /C:"^\.env\.[^.]*$" /C:"/__pycache__/" /C:"/node_modules/" /C:"/dist/" /C:"\.pyc$" /C:"\.backup$" /C:"\.bak$" tracked-files.txt > forbidden-files.txt
+          findstr /R /C:"/__pycache__/" /C:"/node_modules/" /C:"/dist/" /C:"\.pyc$" /C:"\.backup$" /C:"\.bak$" tracked-files.txt > forbidden-files.txt
           if not errorlevel 1 (
             type forbidden-files.txt
             echo Forbidden tracked/generated file detected.
             exit /b 1
           )
+
+          for /f "delims=" %%F in ('git ls-files ".env*"') do (
+            if /I not "%%F"==".env.docker.example" if /I not "%%F"==".env.production.example" (
+              echo Forbidden tracked environment file: %%F
+              exit /b 1
+            )
+          )
+
           git grep -n -I -E "CommercialERP|ContentAI|commercialERP|contentai|D:\\(commercialERP|ContentAI)" -- ":!docs/SYSTEM_BOUNDARIES.md" ":!.github/workflows/ci.yml"
           if not errorlevel 1 (
             echo Cross-system reference detected in PrimeERP.
