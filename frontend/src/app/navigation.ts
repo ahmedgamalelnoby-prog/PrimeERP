@@ -30,26 +30,11 @@ import {
   UsersRound,
   WalletCards,
   Warehouse,
+  BrainCircuit,
 } from "lucide-react";
 
 export type NavigationItemType = "item" | "group" | "separator";
-
-export interface NavigationItem {
-  id: string;
-  label: string;
-  labelAr: string;
-  type: NavigationItemType;
-  path?: string;
-  icon?: LucideIcon;
-  children?: NavigationItem[];
-  permission?: string;
-  module?: string;
-  visible?: boolean;
-  disabled?: boolean;
-  isNew?: boolean;
-  comingSoon?: boolean;
-  order?: number;
-}
+export interface NavigationItem { id: string; label: string; labelAr: string; type: NavigationItemType; path?: string; icon?: LucideIcon; children?: NavigationItem[]; permission?: string; module?: string; visible?: boolean; disabled?: boolean; isNew?: boolean; comingSoon?: boolean; order?: number; }
 
 export const navigationItems: NavigationItem[] = [
   { id: "dashboard", label: "Dashboard", labelAr: "لوحة التحكم", type: "item", path: "/dashboard", icon: LayoutDashboard, permission: "dashboard.view", module: "dashboard", visible: true, order: 1 },
@@ -99,37 +84,13 @@ export const navigationItems: NavigationItem[] = [
     { id: "hotel-revenue", label: "Hotel Revenue", labelAr: "إيرادات الفنادق", type: "item", path: "/hospitality/revenue", icon: BadgeDollarSign, permission: "hotel_revenue.view", module: "hospitality", visible: true, order: 2 },
     { id: "hotel-profit-share", label: "Profit Share", labelAr: "نسب الأرباح", type: "item", path: "/hospitality/profit-share", icon: ChartNoAxesCombined, permission: "hotel_profit_share.view", module: "hospitality", visible: true, order: 3 },
   ] },
-  { id: "reports", label: "Reports", labelAr: "التقارير", type: "item", path: "/reports", icon: BarChart3, permission: "reports.view", module: "reports", visible: true, order: 11 },
-  { id: "settings", label: "Settings", labelAr: "الإعدادات", type: "item", path: "/settings", icon: Settings, permission: "settings.view", module: "settings", visible: true, order: 12 },
+  { id: "ai-reporting", label: "AI & Automation", labelAr: "الذكاء الاصطناعي والتقارير", type: "item", path: "/ai-reporting", icon: BrainCircuit, permission: "reports.view", module: "reports", visible: true, isNew: true, order: 11 },
+  { id: "reports", label: "Reports", labelAr: "التقارير", type: "item", path: "/reports", icon: BarChart3, permission: "reports.view", module: "reports", visible: true, order: 12 },
+  { id: "settings", label: "Settings", labelAr: "الإعدادات", type: "item", path: "/settings", icon: Settings, permission: "settings.view", module: "settings", visible: true, order: 13 },
 ];
 
-export function getVisibleNavigationItems(): NavigationItem[] {
-  return navigationItems.filter((item) => item.visible !== false).sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).map((item) => ({ ...item, children: item.children?.filter((child) => child.visible !== false).sort((a, b) => (a.order ?? 0) - (b.order ?? 0)) }));
-}
-
-export function findNavigationItemByPath(path: string, items: NavigationItem[] = navigationItems): NavigationItem | undefined {
-  for (const item of items) {
-    if (item.path === path) return item;
-    if (item.children?.length) {
-      const child = findNavigationItemByPath(path, item.children);
-      if (child) return child;
-    }
-  }
-  return undefined;
-}
-
-export function findNavigationParent(path: string): NavigationItem | undefined {
-  return navigationItems.find((item) => item.children?.some((child) => child.path === path));
-}
-
-export function flattenNavigationItems(items: NavigationItem[] = navigationItems): NavigationItem[] {
-  return items.flatMap((item) => [item, ...(item.children ? flattenNavigationItems(item.children) : [])]);
-}
-
-export function isNavigationItemActive(item: NavigationItem, pathname: string): boolean {
-  if (item.path) {
-    if (item.path === "/dashboard") return pathname === item.path;
-    return pathname === item.path || pathname.startsWith(`${item.path}/`);
-  }
-  return item.children?.some((child) => isNavigationItemActive(child, pathname)) ?? false;
-}
+export function getVisibleNavigationItems(): NavigationItem[] { return navigationItems.filter((item) => item.visible !== false).sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).map((item) => ({ ...item, children: item.children?.filter((child) => child.visible !== false).sort((a, b) => (a.order ?? 0) - (b.order ?? 0)) })); }
+export function findNavigationItemByPath(path: string, items: NavigationItem[] = navigationItems): NavigationItem | undefined { for (const item of items) { if (item.path === path) return item; if (item.children?.length) { const child = findNavigationItemByPath(path, item.children); if (child) return child; } } return undefined; }
+export function findNavigationParent(path: string): NavigationItem | undefined { return navigationItems.find((item) => item.children?.some((child) => child.path === path)); }
+export function flattenNavigationItems(items: NavigationItem[] = navigationItems): NavigationItem[] { return items.flatMap((item) => [item, ...(item.children ? flattenNavigationItems(item.children) : [])]); }
+export function isNavigationItemActive(item: NavigationItem, pathname: string): boolean { if (item.path) { if (item.path === "/dashboard") return pathname === item.path; return pathname === item.path || pathname.startsWith(`${item.path}/`); } return item.children?.some((child) => isNavigationItemActive(child, pathname)) ?? false; }
