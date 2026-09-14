@@ -32,13 +32,10 @@ jobs:
       - name: Configure Docker CLI
         working-directory: .
         run: |
-          for /F "delims=" %%D in ('where docker 2^>NUL') do if not defined DOCKER_EXE set "DOCKER_EXE=%%D"
-          if not defined DOCKER_EXE (
-            for /F "delims=" %%D in ('where /R "C:\Program Files\Docker" docker.exe 2^>NUL') do if not defined DOCKER_EXE set "DOCKER_EXE=%%D"
-          )
-          if not defined DOCKER_EXE (
-            for /F "delims=" %%D in ('where /R "C:\Users\Admin\AppData\Local\Programs\DockerDesktop" docker.exe 2^>NUL') do if not defined DOCKER_EXE set "DOCKER_EXE=%%D"
-          )
+          set "DOCKER_EXE="
+          if exist "C:\Users\Admin\AppData\Local\Programs\DockerDesktop\resources\bin\docker.exe" set "DOCKER_EXE=C:\Users\Admin\AppData\Local\Programs\DockerDesktop\resources\bin\docker.exe"
+          if not defined DOCKER_EXE for /F "delims=" %%D in ('where docker 2^>NUL') do if not defined DOCKER_EXE set "DOCKER_EXE=%%D"
+          if not defined DOCKER_EXE if exist "C:\Program Files\Docker\Docker\resources\bin\docker.exe" set "DOCKER_EXE=C:\Program Files\Docker\Docker\resources\bin\docker.exe"
           if not defined DOCKER_EXE (
             echo Docker CLI not found on the self-hosted runner.
             exit /b 1
@@ -120,7 +117,9 @@ jobs:
       - name: Cleanup CI database
         if: always()
         working-directory: .
-        run: docker rm -f primeerp-ci-postgres 2>NUL
+        run: |
+          docker rm -f primeerp-ci-postgres >NUL 2>&1
+          exit /b 0
 
   frontend:
     name: Frontend - typecheck, lint and build
