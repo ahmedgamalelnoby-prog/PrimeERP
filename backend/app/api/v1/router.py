@@ -43,6 +43,7 @@ from app.modules.catalog.bundle_router import router as catalog_bundle_router
 from app.modules.catalog.pricing_engine_router import router as pricing_engine_router
 from app.modules.saas.entitlements import require_module
 from app.modules.jurisdiction.router import router as jurisdiction_router
+from app.modules.ai_reporting.router import router as ai_reporting_router
 
 
 def build_router() -> APIRouter:
@@ -84,4 +85,5 @@ def build_router() -> APIRouter:
     api_router.include_router(entitlements_router)
     api_router.include_router(roles_router)
     api_router.include_router(legal_router)
+    api_router.include_router(ai_reporting_router)
     return api_router
