@@ -1,13 +1,13 @@
 """Add variant dimension to purchase lines.
 
 Revision ID: 20260914_purchase_line_variants
-Revises: 20260914_ifrs_cma_accounting_foundation
+Revises: 20260914_merge_accounting_product_heads
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = "20260914_purchase_line_variants"
-down_revision = "20260914_ifrs_cma_accounting_foundation"
+down_revision = "20260914_merge_accounting_product_heads"
 branch_labels = None
 depends_on = None
 
