@@ -109,8 +109,8 @@ class InventoryItemService:
         db.refresh(item)
         return item
 
-    def stock(self, db: Session, *, company_id: int, item_id: int | None = None):
-        return inventory_item_repository.list_stock(db, company_id=company_id, item_id=item_id)
+    def stock(self, db: Session, *, company_id: int, item_id: int | None = None, variant_id: int | None = None):
+        return inventory_item_repository.list_stock(db, company_id=company_id, item_id=item_id, variant_id=variant_id)
 
 
 inventory_item_service = InventoryItemService()
