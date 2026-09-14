@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.accounting.models import TaxRate
 from app.modules.accounting.tax_engine import calculate_taxes
+from app.modules.catalog.models import ProductVariant
 from app.modules.commerce.models import BusinessPartner, CommercePayment, PurchaseDocument, PurchaseLine, SalesDocument, SalesLine
 from app.modules.commerce.payment_workflow import post_payment, reverse_payment
 from app.modules.inventory.items.models import InventoryItem
@@ -28,6 +29,19 @@ class CommerceService:
         q = select(BusinessPartner).where(BusinessPartner.company_id == company_id, BusinessPartner.is_active.is_(True))
         if partner_type: q = q.where(BusinessPartner.partner_type.in_([partner_type, "both"]))
         return list(db.scalars(q.order_by(BusinessPartner.name)).all())
+
+    def _resolve_line_variant(self, db: Session, *, company_id: int, item: InventoryItem, variant_id: int | None):
+        if variant_id is None:
+            return None
+        variant = db.scalar(select(ProductVariant).where(
+            ProductVariant.id == variant_id,
+            ProductVariant.company_id == company_id,
+            ProductVariant.product_id == item.id,
+            ProductVariant.is_active.is_(True),
+        ))
+        if variant is None:
+            raise ValueError("Variant does not belong to the item/company or is inactive")
+        return variant
 
     def _resolve_line_tax_ids(self, db: Session, *, company_id: int, item: InventoryItem, explicit_tax_ids: list[int] | None, is_sale: bool) -> list[int]:
         tax_ids = list(explicit_tax_ids) if explicit_tax_ids is not None else list((item.sales_tax_ids if is_sale else item.purchase_tax_ids) or [])
@@ -80,7 +94,7 @@ class CommerceService:
             return Decimal("0")
         return min(remaining_wht, (remaining_wht * amount / outstanding).quantize(Decimal("0.01")))
 
-    def create_document(self, db: Session, payload):
+    def create_document(self, db, payload):
         is_sale = payload.document_type in SALE_TYPES
         if not is_sale and payload.document_type not in PURCHASE_TYPES:
             raise ValueError("Unsupported document type")
@@ -92,11 +106,7 @@ class CommerceService:
         if not is_sale and partner.partner_type not in ("vendor", "both"):
             raise ValueError("Partner is not a vendor")
         if payload.warehouse_id is not None:
-            warehouse = db.scalar(select(InventoryWarehouse).where(
-                InventoryWarehouse.id == payload.warehouse_id,
-                InventoryWarehouse.company_id == payload.company_id,
-                InventoryWarehouse.is_active.is_(True),
-            ))
+            warehouse = db.scalar(select(InventoryWarehouse).where(InventoryWarehouse.id == payload.warehouse_id, InventoryWarehouse.company_id == payload.company_id, InventoryWarehouse.is_active.is_(True)))
             if warehouse is None:
                 raise ValueError("Warehouse does not belong to the company or is inactive")
         model = SalesDocument if is_sale else PurchaseDocument
@@ -109,6 +119,8 @@ class CommerceService:
             item = db.scalar(select(InventoryItem).where(InventoryItem.id == p.item_id, InventoryItem.company_id == payload.company_id, InventoryItem.is_active.is_(True)))
             if not item:
                 raise ValueError(f"Item {p.item_id} not found")
+            variant_id = getattr(p, "variant_id", None) if is_sale else None
+            self._resolve_line_variant(db, company_id=payload.company_id, item=item, variant_id=variant_id)
             explicit_tax_ids = getattr(p, "tax_rate_ids", None)
             tax_ids = self._resolve_line_tax_ids(db, company_id=payload.company_id, item=item, explicit_tax_ids=explicit_tax_ids, is_sale=is_sale)
             if explicit_tax_ids is None and p.tax_percent != 0:
@@ -128,7 +140,7 @@ class CommerceService:
             if primary_tax_id is not None:
                 primary_tax = next((tax for tax in tax_rows if tax.id == primary_tax_id), None)
                 primary_tax_percent = Decimal(primary_tax.rate) if primary_tax is not None else Decimal("0")
-            obj.lines.append(line_model(item_id=p.item_id, tax_rate_id=primary_tax_id, tax_rate_ids=tax_ids, description=p.description, quantity=p.quantity, unit_price=p.unit_price, discount_percent=p.discount_percent, tax_percent=primary_tax_percent, line_total=line_total))
+            obj.lines.append(line_model(item_id=p.item_id, variant_id=variant_id if is_sale else None, tax_rate_id=primary_tax_id, tax_rate_ids=tax_ids, description=p.description, quantity=p.quantity, unit_price=p.unit_price, discount_percent=p.discount_percent, tax_percent=primary_tax_percent, line_total=line_total))
             subtotal += net; discount += disc; tax += tax_amount
         obj.subtotal = subtotal; obj.discount_total = discount; obj.tax_total = tax; obj.total = subtotal + tax
         db.add(obj); db.flush(); return obj
