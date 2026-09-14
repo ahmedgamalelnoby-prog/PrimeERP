@@ -16,7 +16,6 @@ from app.modules.ai_reporting.service import ai_analysis_service, report_deliver
 
 router = APIRouter(prefix="/ai-reporting", tags=["ai-reporting"])
 
-
 REPORT_CATALOG = {
     "sales_performance": "Sales Performance",
     "cash_position": "Cash Position",
@@ -58,11 +57,9 @@ class RunRequest(BaseModel):
     include_ai: bool = True
 
 
-def _company_id(user: User) -> int:
+def _tenant_id(user: User) -> int:
     if user.tenant_id is None:
         raise HTTPException(status_code=403, detail="Authenticated user has no tenant context")
-    # Company context is intentionally resolved by the existing ERP request context.
-    # This module uses tenant_id as the isolation boundary until company selection is supplied.
     return int(user.tenant_id)
 
 
@@ -80,14 +77,12 @@ def analyze(request: AnalysisRequest, current_user: User = Depends(get_current_u
 def create_schedule(request: ScheduleRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> dict[str, Any]:
     if request.report_key not in REPORT_CATALOG:
         raise HTTPException(status_code=400, detail="Unknown report_key")
-    invalid_channels = set(request.channels) - {"email", "whatsapp"}
-    if invalid_channels:
-        raise HTTPException(status_code=400, detail=f"Unsupported channels: {sorted(invalid_channels)}")
+    if set(request.channels) - {"email", "whatsapp"}:
+        raise HTTPException(status_code=400, detail="Supported channels are email and whatsapp")
     if not request.recipients:
         raise HTTPException(status_code=400, detail="At least one recipient is required")
-
     schedule = ReportSchedule(
-        company_id=_company_id(current_user),
+        tenant_id=_tenant_id(current_user),
         name=request.name,
         report_key=request.report_key,
         frequency=request.frequency,
@@ -108,8 +103,8 @@ def create_schedule(request: ScheduleRequest, db: Session = Depends(get_db), cur
 
 @router.get("/schedules")
 def list_schedules(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> dict[str, Any]:
-    company_id = _company_id(current_user)
-    schedules = db.query(ReportSchedule).filter(ReportSchedule.company_id == company_id).order_by(ReportSchedule.id.desc()).all()
+    tenant_id = _tenant_id(current_user)
+    schedules = db.query(ReportSchedule).filter(ReportSchedule.tenant_id == tenant_id).order_by(ReportSchedule.id.desc()).all()
     return {"success": True, "data": {"schedules": [
         {
             "id": item.id,
@@ -136,7 +131,7 @@ def run_report(request: RunRequest, db: Session = Depends(get_db), current_user:
     if set(request.channels) - {"email", "whatsapp"}:
         raise HTTPException(status_code=400, detail="Supported channels are email and whatsapp")
 
-    company_id = _company_id(current_user)
+    tenant_id = _tenant_id(current_user)
     title = request.title or REPORT_CATALOG[request.report_key]
     analysis = ai_analysis_service.analyze(title, request.metrics) if request.include_ai else None
     summary = analysis.get("summary", "") if analysis else ""
@@ -147,12 +142,11 @@ def run_report(request: RunRequest, db: Session = Depends(get_db), current_user:
 
     for channel in request.channels:
         for recipient in request.recipients:
-            if channel == "email":
-                result = report_delivery_service.send_email(recipient, f"PrimeERP - {title}", body, attachment)
-            else:
-                result = report_delivery_service.send_whatsapp(recipient, body)
+            result = (report_delivery_service.send_email(recipient, f"PrimeERP - {title}", body, attachment)
+                      if channel == "email"
+                      else report_delivery_service.send_whatsapp(recipient, body))
             db.add(ReportDeliveryLog(
-                company_id=company_id,
+                tenant_id=tenant_id,
                 report_key=request.report_key,
                 channel=channel,
                 recipient=recipient,
@@ -167,8 +161,8 @@ def run_report(request: RunRequest, db: Session = Depends(get_db), current_user:
 
 @router.get("/deliveries")
 def delivery_logs(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> dict[str, Any]:
-    company_id = _company_id(current_user)
-    logs = db.query(ReportDeliveryLog).filter(ReportDeliveryLog.company_id == company_id).order_by(ReportDeliveryLog.id.desc()).limit(100).all()
+    tenant_id = _tenant_id(current_user)
+    logs = db.query(ReportDeliveryLog).filter(ReportDeliveryLog.tenant_id == tenant_id).order_by(ReportDeliveryLog.id.desc()).limit(100).all()
     return {"success": True, "data": {"deliveries": [
         {"id": log.id, "report_key": log.report_key, "channel": log.channel, "recipient": log.recipient, "status": log.status, "error": log.error, "created_at": log.created_at.isoformat() if log.created_at else None}
         for log in logs
