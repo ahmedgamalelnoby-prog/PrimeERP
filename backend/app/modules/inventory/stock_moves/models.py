@@ -10,6 +10,7 @@ class InventoryStockMove(Base):
     id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     item_id = Column(Integer, ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False, index=True)
+    variant_id = Column(Integer, ForeignKey("product_variants.id", ondelete="RESTRICT"), nullable=True, index=True)
     source_location_id = Column(Integer, ForeignKey("inventory_locations.id", ondelete="RESTRICT"), nullable=True, index=True)
     destination_location_id = Column(Integer, ForeignKey("inventory_locations.id", ondelete="RESTRICT"), nullable=True, index=True)
     quantity = Column(Numeric(18, 4), nullable=False)
@@ -23,6 +24,7 @@ class InventoryStockMove(Base):
     notes = Column(Text, nullable=True)
 
     item = relationship("InventoryItem")
+    variant = relationship("ProductVariant")
     source_location = relationship("InventoryLocation", foreign_keys=[source_location_id])
     destination_location = relationship("InventoryLocation", foreign_keys=[destination_location_id])
 
@@ -42,12 +44,14 @@ class InventoryCostLayer(Base):
     id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     item_id = Column(Integer, ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False, index=True)
+    variant_id = Column(Integer, ForeignKey("product_variants.id", ondelete="RESTRICT"), nullable=True, index=True)
     warehouse_id = Column(Integer, ForeignKey("inventory_warehouses.id", ondelete="RESTRICT"), nullable=False, index=True)
     receipt_move_id = Column(Integer, ForeignKey("inventory_stock_moves.id", ondelete="RESTRICT"), nullable=False, index=True)
     quantity_remaining = Column(Numeric(18, 4), nullable=False)
     unit_cost = Column(Numeric(18, 4), nullable=False)
 
     receipt_move = relationship("InventoryStockMove")
+    variant = relationship("ProductVariant")
 
     __table_args__ = (
         CheckConstraint("quantity_remaining >= 0", name="ck_inventory_cost_layer_quantity"),
