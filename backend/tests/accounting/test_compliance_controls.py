@@ -25,10 +25,14 @@ def test_double_entry_balances():
 
 def test_double_entry_rejects_unbalanced():
     with pytest.raises(AccountingComplianceError, match="Unbalanced"):
-        validate_double_entry([
-            {"debit": "100", "credit": "0"},
-            {"debit": "0", "credit": "99"},
-        ])
+        validate_double_entry([{"debit": "100", "credit": "0"}, {"debit": "0", "credit": "99"}])
+
+
+def test_double_entry_rejects_nan_and_both_sides():
+    with pytest.raises(AccountingComplianceError):
+        validate_double_entry([{"debit": "NaN", "credit": "0"}, {"debit": "0", "credit": "NaN"}])
+    with pytest.raises(AccountingComplianceError):
+        validate_double_entry([{"debit": "10", "credit": "1"}, {"debit": "0", "credit": "9"}])
 
 
 def test_tax_reconciliation_and_wht_cap():
@@ -53,35 +57,37 @@ def test_currency_requires_positive_rate():
 
 
 def test_ifrs_15_requires_satisfied_performance_obligation():
-    validate_ifrs_transaction(
-        standard="IFRS_15",
-        context={"performance_obligation_satisfied": True, "consideration": Decimal("100")},
-    )
+    validate_ifrs_transaction(standard="IFRS_15", context={"performance_obligation_satisfied": True, "consideration": Decimal("100")})
     with pytest.raises(AccountingComplianceError, match="performance obligation"):
-        validate_ifrs_transaction(
-            standard="IFRS_15",
-            context={"performance_obligation_satisfied": False, "consideration": Decimal("100"), "revenue_recognized": True},
-        )
+        validate_ifrs_transaction(standard="IFRS_15", context={"performance_obligation_satisfied": False, "consideration": Decimal("100"), "revenue_recognized": True})
+    with pytest.raises(AccountingComplianceError, match="consideration"):
+        validate_ifrs_transaction(standard="IFRS_15", context={"performance_obligation_satisfied": True, "consideration": Decimal("-1")})
 
 
 def test_ias_2_requires_write_down_when_nrv_is_lower():
     with pytest.raises(AccountingComplianceError, match="IAS 2"):
-        validate_ifrs_transaction(
-            standard="IAS_2",
-            context={"quantity": 10, "unit_cost": 20, "net_realizable_value": 150},
-        )
-    validate_ifrs_transaction(
-        standard="IAS_2",
-        context={"quantity": 10, "unit_cost": 20, "net_realizable_value": 150, "impairment_recognized": True},
-    )
+        validate_ifrs_transaction(standard="IAS_2", context={"quantity": 10, "unit_cost": 20, "net_realizable_value": 150})
+    validate_ifrs_transaction(standard="IAS_2", context={"quantity": 10, "unit_cost": 20, "net_realizable_value": 150, "impairment_recognized": True})
 
 
 def test_ifrs_36_impairment_control():
     with pytest.raises(AccountingComplianceError, match="IAS 36"):
-        validate_ifrs_transaction(
-            standard="IAS_36",
-            context={"carrying_amount": 1000, "recoverable_amount": 700},
-        )
+        validate_ifrs_transaction(standard="IAS_36", context={"carrying_amount": 1000, "recoverable_amount": 700})
+
+
+def test_ias_37_provision_control():
+    with pytest.raises(AccountingComplianceError, match="provision recognition"):
+        validate_ifrs_transaction(standard="IAS_37", context={"present_obligation": True, "probable_outflow": True, "reliably_estimable": True})
+    validate_ifrs_transaction(standard="IAS_37", context={"present_obligation": True, "probable_outflow": True, "reliably_estimable": True, "provision_recognized": True})
+    with pytest.raises(AccountingComplianceError, match="reliable estimation"):
+        validate_ifrs_transaction(standard="IAS_37", context={"present_obligation": True, "probable_outflow": True, "reliably_estimable": False, "provision_recognized": True})
+
+
+def test_compliance_context_uses_current_date_factory():
+    first = ComplianceContext()
+    second = ComplianceContext()
+    assert first.as_of == date.today()
+    assert second.as_of == date.today()
 
 
 def test_compliance_snapshot_uses_effective_standards():
