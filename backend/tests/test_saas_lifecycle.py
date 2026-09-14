@@ -69,7 +69,7 @@ def test_convert_trial_to_paid_changes_same_trial_subscription():
 
 def test_renewal_after_expiry_starts_from_now():
     now = datetime.now(timezone.utc)
-    tenant = SimpleNamespace(id=7, status="expired", is_trial=True, is_active=False, suspended_at="x", suspension_reason="x")
+    tenant = SimpleNamespace(id=7, status="expired", is_trial=True, is_active=True, suspended_at=None, suspension_reason=None)
     plan = SimpleNamespace(id=3, is_active=True)
     expired = SimpleNamespace(
         id=9, tenant_id=7, plan_id=1, status="cancelled", billing_cycle="monthly",
@@ -94,7 +94,7 @@ def test_renewal_after_expiry_starts_from_now():
 def test_cancel_auto_renew_keeps_access_until_existing_end_date():
     now = datetime.now(timezone.utc)
     end = now + timedelta(days=10)
-    tenant = SimpleNamespace(id=7)
+    tenant = SimpleNamespace(id=7, status="active", is_active=True)
     plan = SimpleNamespace(id=3, is_active=True)
     subscription = SimpleNamespace(
         id=9, tenant_id=7, plan_id=3, status="active", billing_cycle="monthly",
@@ -118,3 +118,74 @@ def test_suspend_requires_reason():
         lifecycle.suspend_tenant(db, 7, "   ")
 
     assert exc.value.status_code == 422
+
+
+def test_renewal_cannot_unsuspend_tenant():
+    tenant = SimpleNamespace(
+        id=7,
+        status="suspended",
+        is_trial=False,
+        is_active=False,
+        suspended_at="suspended-at",
+        suspension_reason="billing dispute",
+    )
+    plan = SimpleNamespace(id=3, is_active=True)
+    subscription = SimpleNamespace(
+        id=9,
+        tenant_id=7,
+        plan_id=3,
+        status="cancelled",
+        billing_cycle="monthly",
+        starts_at=None,
+        ends_at=None,
+        trial_ends_at=None,
+        next_billing_date=None,
+        cancelled_at=None,
+        is_auto_renew=True,
+    )
+    db = _DB(tenant, plan, subscription)
+
+    with pytest.raises(HTTPException) as exc:
+        lifecycle.renew_subscription(db, 7)
+
+    assert exc.value.status_code == 423
+    assert tenant.status == "suspended"
+    assert tenant.is_active is False
+    assert tenant.suspension_reason == "billing dispute"
+    assert db.commits == 0
+
+
+def test_conversion_cannot_unsuspend_tenant():
+    tenant = SimpleNamespace(
+        id=7,
+        status="suspended",
+        is_trial=True,
+        is_active=False,
+        trial_ends_at="old",
+        suspended_at="suspended-at",
+        suspension_reason="non-payment",
+    )
+    plan = SimpleNamespace(id=3, is_active=True)
+    trial = SimpleNamespace(
+        id=9,
+        tenant_id=7,
+        plan_id=1,
+        status="trialing",
+        billing_cycle="monthly",
+        starts_at=None,
+        ends_at=None,
+        trial_ends_at="old",
+        next_billing_date=None,
+        cancelled_at=None,
+        is_auto_renew=False,
+    )
+    db = _DB(tenant, plan, trial)
+
+    with pytest.raises(HTTPException) as exc:
+        lifecycle.convert_trial_to_paid(db, 7, 3)
+
+    assert exc.value.status_code == 423
+    assert tenant.status == "suspended"
+    assert tenant.is_active is False
+    assert tenant.suspension_reason == "non-payment"
+    assert db.commits == 0
