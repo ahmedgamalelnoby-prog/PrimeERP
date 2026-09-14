@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.sql import func
 
 from app.database.base import Base
@@ -6,6 +6,7 @@ from app.database.base import Base
 
 class ReportDefinition(Base):
     __tablename__ = "report_definitions"
+    __table_args__ = (UniqueConstraint("company_id", "code", name="uq_report_definitions_company_code"),)
 
     id = Column(Integer, primary_key=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -40,6 +41,7 @@ class ReportDelivery(Base):
 
 class ReportDeliveryAttempt(Base):
     __tablename__ = "report_delivery_attempts"
+    __table_args__ = (UniqueConstraint("delivery_id", "attempt_no", name="uq_report_delivery_attempt_no"),)
 
     id = Column(Integer, primary_key=True)
     delivery_id = Column(Integer, ForeignKey("report_deliveries.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -49,3 +51,5 @@ class ReportDeliveryAttempt(Base):
     response_reference = Column(String(255), nullable=True)
     error_message = Column(Text, nullable=True)
     attempted_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    locked_at = Column(DateTime(timezone=True), nullable=True)
+    locked_by = Column(String(100), nullable=True)
