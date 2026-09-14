@@ -5,11 +5,7 @@ from sqlalchemy.orm import Session
 from app.modules.platform.plans.models import Plan
 from app.modules.platform.subscriptions.models import Subscription
 from app.modules.platform.subscriptions.repository import subscription_repository
-from app.modules.platform.subscriptions.schemas import (
-    SubscriptionConvertToPaid,
-    SubscriptionCreate,
-    SubscriptionUpdate,
-)
+from app.modules.platform.subscriptions.schemas import SubscriptionConvertToPaid, SubscriptionCreate, SubscriptionUpdate
 from app.modules.saas.models import SubscriptionPlan, Tenant
 
 
@@ -34,11 +30,16 @@ class SubscriptionService:
             raise ValueError("Subscription not found")
         return instance
 
+    def _locked_tenant(self, tenant_id: int) -> Tenant:
+        tenant = self.db.query(Tenant).filter(Tenant.id == tenant_id).with_for_update().first()
+        if tenant is None:
+            raise ValueError("Tenant not found")
+        return tenant
+
     def list_for_tenant(self, tenant_id: int):
         return self.repository.list_for_tenant(self.db, tenant_id)
 
     def get_active_for_tenant(self, tenant_id: int):
-        """Return the latest subscription only when it is currently entitled to access."""
         instance = self.repository.get_latest_for_tenant(self.db, tenant_id)
         if instance is None:
             return None
@@ -57,36 +58,18 @@ class SubscriptionService:
         plan = self.db.query(Plan).filter(Plan.id == plan_id).first()
         if plan is not None:
             return plan
-
         legacy = self.db.query(SubscriptionPlan).filter(SubscriptionPlan.id == plan_id).first()
         if legacy is None:
             raise ValueError("Plan not found")
-
         plan = Plan(
-            id=legacy.id,
-            code=legacy.code,
-            version=1,
-            name=legacy.name_en,
-            name_ar=legacy.name_ar,
-            display_name=legacy.name_en,
-            description=legacy.description_en,
-            monthly_price=legacy.monthly_price,
-            yearly_price=legacy.yearly_price,
-            currency=legacy.currency_code,
-            billing_cycle="monthly",
-            trial_days=legacy.trial_days,
-            grace_period_days=7,
-            max_users=legacy.max_users,
-            max_companies=legacy.max_companies,
-            max_branches=legacy.max_branches,
-            max_products=legacy.max_products,
-            max_integrations=legacy.max_integrations,
-            storage_limit_mb=legacy.storage_limit_mb,
-            is_public=legacy.is_public,
-            is_free=legacy.monthly_price == 0 and legacy.yearly_price == 0,
-            status="active" if legacy.is_active else "inactive",
-            plan_type="standard",
-            sort_order=legacy.display_order,
+            id=legacy.id, code=legacy.code, version=1, name=legacy.name_en, name_ar=legacy.name_ar,
+            display_name=legacy.name_en, description=legacy.description_en, monthly_price=legacy.monthly_price,
+            yearly_price=legacy.yearly_price, currency=legacy.currency_code, billing_cycle="monthly",
+            trial_days=legacy.trial_days, grace_period_days=7, max_users=legacy.max_users,
+            max_companies=legacy.max_companies, max_branches=legacy.max_branches, max_products=legacy.max_products,
+            max_integrations=legacy.max_integrations, storage_limit_mb=legacy.storage_limit_mb,
+            is_public=legacy.is_public, is_free=legacy.monthly_price == 0 and legacy.yearly_price == 0,
+            status="active" if legacy.is_active else "inactive", plan_type="standard", sort_order=legacy.display_order,
         )
         self.db.add(plan)
         self.db.flush()
@@ -100,7 +83,6 @@ class SubscriptionService:
         return 7 if legacy is not None else 0
 
     def _ensure_legacy_subscription_plan(self, plan: Plan) -> None:
-        """Keep the legacy FK target synchronized until the physical table is migrated."""
         legacy = self.db.query(SubscriptionPlan).filter(SubscriptionPlan.id == plan.id).first()
         if legacy is not None:
             if legacy.code != plan.code:
@@ -122,26 +104,13 @@ class SubscriptionService:
             legacy.max_integrations = plan.max_integrations
             legacy.storage_limit_mb = plan.storage_limit_mb
             return
-
         self.db.add(SubscriptionPlan(
-            id=plan.id,
-            name_ar=plan.name_ar or plan.name,
-            name_en=plan.name,
-            code=plan.code,
-            description_en=plan.description,
-            monthly_price=plan.monthly_price,
-            yearly_price=plan.yearly_price,
-            currency_code=plan.currency,
-            trial_days=plan.trial_days,
-            is_public=plan.is_public,
-            is_active=plan.status == "active",
-            display_order=plan.sort_order,
-            max_users=plan.max_users,
-            max_companies=plan.max_companies,
-            max_branches=plan.max_branches,
-            max_products=plan.max_products,
-            max_integrations=plan.max_integrations,
-            storage_limit_mb=plan.storage_limit_mb,
+            id=plan.id, name_ar=plan.name_ar or plan.name, name_en=plan.name, code=plan.code,
+            description_en=plan.description, monthly_price=plan.monthly_price, yearly_price=plan.yearly_price,
+            currency_code=plan.currency, trial_days=plan.trial_days, is_public=plan.is_public,
+            is_active=plan.status == "active", display_order=plan.sort_order, max_users=plan.max_users,
+            max_companies=plan.max_companies, max_branches=plan.max_branches, max_products=plan.max_products,
+            max_integrations=plan.max_integrations, storage_limit_mb=plan.storage_limit_mb,
         ))
         self.db.flush()
 
@@ -149,10 +118,13 @@ class SubscriptionService:
         plan = self._resolve_plan(schema.plan_id)
         if plan.status != "active":
             raise ValueError("Only active plans can be subscribed to")
+        self._locked_tenant(schema.tenant_id)
         now = schema.starts_at or self._now()
         trial_end = schema.trial_ends_at
         if trial_end is None and plan.trial_days > 0:
             trial_end = now + timedelta(days=plan.trial_days)
+        if trial_end is not None and trial_end <= now:
+            raise ValueError("Trial end date must be after its start date")
         ends_at = schema.ends_at or now + timedelta(days=self._period_days(schema.billing_cycle))
         if ends_at <= now:
             raise ValueError("Subscription end date must be after its start date")
@@ -162,7 +134,11 @@ class SubscriptionService:
         self._ensure_legacy_subscription_plan(plan)
         subscription_status = "trialing" if trial_end and trial_end > now else "active"
         data = schema.model_dump()
-        data.update(starts_at=now, trial_ends_at=trial_end, ends_at=ends_at, next_billing_date=ends_at, status=subscription_status, is_auto_renew=schema.auto_renew)
+        data.update(
+            starts_at=now, trial_ends_at=trial_end, ends_at=ends_at,
+            next_billing_date=ends_at if schema.auto_renew else None,
+            status=subscription_status, is_auto_renew=schema.auto_renew,
+        )
         data.pop("auto_renew", None)
         instance = self.repository.create(self.db, data)
         self._sync_tenant_state(instance)
@@ -172,12 +148,17 @@ class SubscriptionService:
 
     def activate(self, subscription_id: int) -> Subscription:
         instance = self._get(subscription_id, True)
+        if instance.status not in {"trialing", "past_due"}:
+            raise ValueError("Only trialing or past_due subscriptions can be activated")
+        tenant = self._locked_tenant(instance.tenant_id)
+        if tenant.status == "suspended" or not tenant.is_active:
+            raise ValueError("Tenant requires explicit reactivation before subscription activation")
         now = self._now()
         instance.status = "active"
         instance.trial_ends_at = None
         instance.starts_at = now
         instance.ends_at = now + timedelta(days=self._period_days(instance.billing_cycle))
-        instance.next_billing_date = instance.ends_at
+        instance.next_billing_date = instance.ends_at if instance.is_auto_renew else None
         instance.cancelled_at = None
         self._sync_tenant_state(instance)
         self.db.commit()
@@ -188,6 +169,9 @@ class SubscriptionService:
         instance = self._get(subscription_id, True)
         if instance.status not in {"trialing", "past_due"}:
             raise ValueError("Only trialing or past_due subscriptions can be converted to paid")
+        tenant = self._locked_tenant(instance.tenant_id)
+        if tenant.status == "suspended" or not tenant.is_active:
+            raise ValueError("Tenant requires explicit reactivation before paid conversion")
         now = schema.starts_at or self._now()
         billing_cycle = schema.billing_cycle or instance.billing_cycle
         if schema.plan_id is not None:
@@ -204,9 +188,9 @@ class SubscriptionService:
         instance.ends_at = schema.ends_at or now + timedelta(days=self._period_days(billing_cycle))
         if instance.ends_at <= now:
             raise ValueError("Paid subscription end date must be after its start date")
-        instance.next_billing_date = instance.ends_at
         if schema.auto_renew is not None:
             instance.is_auto_renew = schema.auto_renew
+        instance.next_billing_date = instance.ends_at if instance.is_auto_renew else None
         if schema.notes is not None:
             instance.notes = schema.notes
         self._sync_tenant_state(instance)
@@ -219,6 +203,7 @@ class SubscriptionService:
         instance.status = "cancelled"
         instance.cancelled_at = self._now()
         instance.is_auto_renew = False
+        instance.next_billing_date = None
         instance.notes = f"Cancellation reason: {reason}"
         self._sync_tenant_state(instance)
         self.db.commit()
@@ -233,10 +218,18 @@ class SubscriptionService:
             if plan.status != "active":
                 raise ValueError("Only active plans can be assigned to a subscription")
             self._ensure_legacy_subscription_plan(plan)
-        if "auto_renew" in data:
-            data["is_auto_renew"] = data.pop("auto_renew")
-        if "ends_at" in data and data["ends_at"] is not None and data["ends_at"] <= instance.starts_at:
-            raise ValueError("Subscription end date must be after its start date")
+        auto_renew = data.pop("auto_renew", None) if "auto_renew" in data else None
+        if auto_renew is not None:
+            data["is_auto_renew"] = auto_renew
+        if "ends_at" in data:
+            if data["ends_at"] is not None and data["ends_at"] <= instance.starts_at:
+                raise ValueError("Subscription end date must be after its start date")
+            if data["ends_at"] is None:
+                data["next_billing_date"] = None
+            elif auto_renew is not None:
+                data["next_billing_date"] = data["ends_at"] if auto_renew else None
+        elif auto_renew is not None:
+            data["next_billing_date"] = instance.ends_at if auto_renew else None
         self.repository.update(self.db, instance, data)
         self._sync_tenant_state(instance)
         self.db.commit()
@@ -244,18 +237,15 @@ class SubscriptionService:
         return instance
 
     def _sync_tenant_state(self, instance: Subscription) -> None:
-        """Synchronize subscription state without silently undoing a manual tenant suspension."""
         tenant = self.db.query(Tenant).filter(Tenant.id == instance.tenant_id).with_for_update().first()
         if tenant is None:
             raise ValueError("Tenant not found")
-
         allowed = instance.status in {"trialing", "active", "past_due"}
         if tenant.status == "suspended":
             tenant.is_active = False
             tenant.is_trial = instance.status == "trialing"
             tenant.trial_ends_at = instance.trial_ends_at if instance.status == "trialing" else None
             return
-
         tenant.is_active = allowed
         tenant.is_trial = instance.status == "trialing"
         tenant.status = "trial" if instance.status == "trialing" else ("active" if allowed else "expired")
@@ -265,23 +255,18 @@ class SubscriptionService:
         tenant = self.db.query(Tenant).filter(Tenant.id == instance.tenant_id).first()
         if tenant is None:
             raise ValueError("Tenant not found")
-
         if tenant.status == "suspended":
             if tenant.is_active:
                 tenant.is_active = False
                 self.db.commit()
             return
-
         allowed = instance.status in {"trialing", "active", "past_due"}
         expected_status = "trial" if instance.status == "trialing" else ("active" if allowed else "expired")
         expected_trial_end = instance.trial_ends_at if instance.status == "trialing" else None
         stale = (
-            tenant.is_active != allowed
-            or tenant.is_trial != (instance.status == "trialing")
-            or tenant.status != expected_status
-            or tenant.trial_ends_at != expected_trial_end
-            or tenant.suspended_at is not None
-            or tenant.suspension_reason is not None
+            tenant.is_active != allowed or tenant.is_trial != (instance.status == "trialing")
+            or tenant.status != expected_status or tenant.trial_ends_at != expected_trial_end
+            or tenant.suspended_at is not None or tenant.suspension_reason is not None
         )
         if stale:
             self._sync_tenant_state(instance)
