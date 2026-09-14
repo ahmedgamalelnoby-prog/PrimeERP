@@ -6,7 +6,7 @@ from app.modules.accounting.models import TaxRate
 from app.modules.accounting.tax_engine import calculate_taxes
 from app.modules.commerce.accounting_service import commerce_accounting_service
 from app.modules.catalog.models import ProductVariant
-from app.modules.commerce.models import BusinessPartner, CommercePayment, PurchaseDocument, PurchaseLine, SalesDocument, SalesLine
+from app.modules.commerce.models import BusinessPartner, CommercePayment, PurchaseBillReceiptLink, PurchaseDocument, PurchaseLine, SalesDocument, SalesLine
 from app.modules.commerce.payment_workflow import post_payment, reverse_payment
 from app.modules.inventory.items.models import InventoryItem
 from app.modules.inventory.locations.models import InventoryLocation
@@ -32,38 +32,20 @@ class CommerceService:
         return list(db.scalars(q.order_by(BusinessPartner.name)).all())
 
     def _resolve_line_variant(self, db: Session, *, company_id: int, item: InventoryItem, variant_id: int | None):
-        active_variants = db.scalar(
-            select(ProductVariant.id)
-            .where(
-                ProductVariant.company_id == company_id,
-                ProductVariant.product_id == item.id,
-                ProductVariant.is_active.is_(True),
-            )
-            .limit(1)
-        )
+        active_variants = db.scalar(select(ProductVariant.id).where(ProductVariant.company_id == company_id, ProductVariant.product_id == item.id, ProductVariant.is_active.is_(True)).limit(1))
         if variant_id is None:
-            if active_variants is not None:
-                raise ValueError("This item has active variants; document lines must identify the variant")
+            if active_variants is not None: raise ValueError("This item has active variants; document lines must identify the variant")
             return None
-        variant = db.scalar(select(ProductVariant).where(
-            ProductVariant.id == variant_id,
-            ProductVariant.company_id == company_id,
-            ProductVariant.product_id == item.id,
-            ProductVariant.is_active.is_(True),
-        ))
-        if variant is None:
-            raise ValueError("Variant does not belong to the item/company or is inactive")
+        variant = db.scalar(select(ProductVariant).where(ProductVariant.id == variant_id, ProductVariant.company_id == company_id, ProductVariant.product_id == item.id, ProductVariant.is_active.is_(True)))
+        if variant is None: raise ValueError("Variant does not belong to the item/company or is inactive")
         return variant
 
     def _resolve_line_tax_ids(self, db: Session, *, company_id: int, item: InventoryItem, explicit_tax_ids: list[int] | None, is_sale: bool) -> list[int]:
         tax_ids = list(explicit_tax_ids) if explicit_tax_ids is not None else list((item.sales_tax_ids if is_sale else item.purchase_tax_ids) or [])
-        if not tax_ids:
-            return []
+        if not tax_ids: return []
         taxes = list(db.scalars(select(TaxRate).where(TaxRate.company_id == company_id, TaxRate.id.in_(tax_ids), TaxRate.is_active.is_(True))).all())
-        found = {tax.id for tax in taxes}
-        missing = [tax_id for tax_id in tax_ids if tax_id not in found]
-        if missing:
-            raise ValueError(f"Tax rate(s) not found or inactive: {missing}")
+        found = {tax.id for tax in taxes}; missing = [tax_id for tax_id in tax_ids if tax_id not in found]
+        if missing: raise ValueError(f"Tax rate(s) not found or inactive: {missing}")
         return tax_ids
 
     def _document_wht_total(self, db: Session, *, document, company_id: int) -> Decimal:
@@ -73,18 +55,16 @@ class CommerceService:
             if not tax_ids and getattr(line, "tax_rate_id", None): tax_ids = [line.tax_rate_id]
             if not tax_ids: continue
             taxes = list(db.scalars(select(TaxRate).where(TaxRate.company_id == company_id, TaxRate.id.in_(tax_ids), TaxRate.is_active.is_(True))).all())
-            wht_rates = [Decimal(tax.rate) for tax in taxes if tax.is_withholding]
             gross = Decimal(line.quantity) * Decimal(line.unit_price)
             net = gross - gross * Decimal(line.discount_percent or 0) / Decimal("100")
-            for rate in wht_rates: total += net * rate / Decimal("100")
+            for rate in [Decimal(tax.rate) for tax in taxes if tax.is_withholding]: total += net * rate / Decimal("100")
         return total.quantize(Decimal("0.01"))
 
     def _auto_payment_wht(self, db: Session, *, document, company_id: int, amount: Decimal, document_kind: str) -> Decimal:
         document_wht = self._document_wht_total(db, document=document, company_id=company_id)
         if document_wht <= 0: return Decimal("0")
         paid_wht = sum((Decimal(p.wht_amount or 0) for p in db.scalars(select(CommercePayment).where(CommercePayment.company_id == company_id, CommercePayment.document_kind == document_kind, CommercePayment.document_id == document.id, CommercePayment.status == "posted")).all()), Decimal("0"))
-        remaining_wht = max(document_wht - paid_wht, Decimal("0"))
-        outstanding = Decimal(document.total or 0) - Decimal(document.paid_total or 0)
+        remaining_wht = max(document_wht - paid_wht, Decimal("0")); outstanding = Decimal(document.total or 0) - Decimal(document.paid_total or 0)
         if remaining_wht <= 0 or outstanding <= 0: return Decimal("0")
         return min(remaining_wht, (remaining_wht * amount / outstanding).quantize(Decimal("0.01")))
 
@@ -95,32 +75,35 @@ class CommerceService:
         if not partner: raise ValueError("Partner not found")
         if is_sale and partner.partner_type not in ("customer", "both"): raise ValueError("Partner is not a customer")
         if not is_sale and partner.partner_type not in ("vendor", "both"): raise ValueError("Partner is not a vendor")
-        if payload.warehouse_id is not None and db.scalar(select(InventoryWarehouse).where(InventoryWarehouse.id == payload.warehouse_id, InventoryWarehouse.company_id == payload.company_id, InventoryWarehouse.is_active.is_(True))) is None:
-            raise ValueError("Warehouse does not belong to the company or is inactive")
+        if payload.warehouse_id is not None and db.scalar(select(InventoryWarehouse).where(InventoryWarehouse.id == payload.warehouse_id, InventoryWarehouse.company_id == payload.company_id, InventoryWarehouse.is_active.is_(True))) is None: raise ValueError("Warehouse does not belong to the company or is inactive")
         model = SalesDocument if is_sale else PurchaseDocument; line_model = SalesLine if is_sale else PurchaseLine
         if db.scalar(select(model).where(model.company_id == payload.company_id, model.number == payload.number)): raise ValueError("Document number already exists")
+        if payload.receipt_ids:
+            receipts = list(db.scalars(select(PurchaseDocument).where(PurchaseDocument.id.in_(payload.receipt_ids), PurchaseDocument.company_id == payload.company_id, PurchaseDocument.partner_id == payload.partner_id, PurchaseDocument.document_type == "receipt", PurchaseDocument.status.in_(["received", "partially_received"]))).all())
+            found = {r.id for r in receipts}
+            missing = [r for r in payload.receipt_ids if r not in found]
+            if missing: raise ValueError(f"Receipt(s) not found, not received, or not owned by the vendor/company: {missing}")
         obj = model(company_id=payload.company_id, partner_id=payload.partner_id, document_type=payload.document_type, number=payload.number, document_date=payload.document_date, warehouse_id=payload.warehouse_id, notes=payload.notes)
         subtotal = Decimal("0"); tax = Decimal("0"); discount = Decimal("0")
         for p in payload.lines:
             item = db.scalar(select(InventoryItem).where(InventoryItem.id == p.item_id, InventoryItem.company_id == payload.company_id, InventoryItem.is_active.is_(True)))
             if not item: raise ValueError(f"Item {p.item_id} not found")
-            variant_id = getattr(p, "variant_id", None)
-            self._resolve_line_variant(db, company_id=payload.company_id, item=item, variant_id=variant_id)
-            explicit_tax_ids = getattr(p, "tax_rate_ids", None)
-            tax_ids = self._resolve_line_tax_ids(db, company_id=payload.company_id, item=item, explicit_tax_ids=explicit_tax_ids, is_sale=is_sale)
+            variant_id = getattr(p, "variant_id", None); self._resolve_line_variant(db, company_id=payload.company_id, item=item, variant_id=variant_id)
+            explicit_tax_ids = getattr(p, "tax_rate_ids", None); tax_ids = self._resolve_line_tax_ids(db, company_id=payload.company_id, item=item, explicit_tax_ids=explicit_tax_ids, is_sale=is_sale)
             if explicit_tax_ids is None and p.tax_percent != 0: raise ValueError("Tax Master is required for non-zero tax rates")
             gross = p.quantity * p.unit_price; disc = gross * p.discount_percent / Decimal("100"); net = gross - disc
             if net < 0: raise ValueError("Line discount cannot exceed the line gross amount")
-            tax_result = calculate_taxes(db, company_id=payload.company_id, amount=net, tax_ids=tax_ids, inclusive=False)
-            tax_amount = Decimal(tax_result["tax_total"]); line_total = net + tax_amount
+            tax_result = calculate_taxes(db, company_id=payload.company_id, amount=net, tax_ids=tax_ids, inclusive=False); tax_amount = Decimal(tax_result["tax_total"]); line_total = net + tax_amount
             tax_rows = list(db.scalars(select(TaxRate).where(TaxRate.id.in_(tax_ids), TaxRate.company_id == payload.company_id)).all()) if tax_ids else []
-            non_wht_ids = [tax.id for tax in tax_rows if not tax.is_withholding]
-            primary_tax_id = non_wht_ids[0] if non_wht_ids else (tax_ids[0] if tax_ids else None)
-            primary_tax_percent = Decimal(next((tax.rate for tax in tax_rows if tax.id == primary_tax_id), 0))
+            non_wht_ids = [tax.id for tax in tax_rows if not tax.is_withholding]; primary_tax_id = non_wht_ids[0] if non_wht_ids else (tax_ids[0] if tax_ids else None); primary_tax_percent = Decimal(next((tax.rate for tax in tax_rows if tax.id == primary_tax_id), 0))
             obj.lines.append(line_model(item_id=p.item_id, variant_id=variant_id, tax_rate_id=primary_tax_id, tax_rate_ids=tax_ids, description=p.description, quantity=p.quantity, unit_price=p.unit_price, discount_percent=p.discount_percent, tax_percent=primary_tax_percent, line_total=line_total))
             subtotal += net; discount += disc; tax += tax_amount
         obj.subtotal = subtotal; obj.discount_total = discount; obj.tax_total = tax; obj.total = subtotal + tax
-        db.add(obj); db.flush(); return obj
+        db.add(obj); db.flush()
+        if payload.receipt_ids:
+            for receipt_id in payload.receipt_ids: db.add(PurchaseBillReceiptLink(company_id=payload.company_id, bill_id=obj.id, receipt_id=receipt_id))
+            db.flush()
+        return obj
 
     def list_documents(self, db, company_id, kind):
         model = SalesDocument if kind == "sale" else PurchaseDocument
@@ -131,25 +114,15 @@ class CommerceService:
         obj = db.scalar(select(model).where(model.id == document_id, model.company_id == company_id).with_for_update())
         if not obj: raise ValueError("Document not found")
         if obj.status != "draft": raise ValueError("Only draft documents can be confirmed")
-        if not obj.lines:
-            raise ValueError("A document must contain at least one line before confirmation")
+        if not obj.lines: raise ValueError("A document must contain at least one line before confirmation")
         obj.status = "confirmed"; db.flush()
-
-        # Accounting is part of the same database transaction. If the configured
-        # journal/period/accounting validation fails, the caller can roll back the
-        # whole confirmation instead of leaving an operational document without
-        # its financial posting.
         if user_id is not None:
             if kind == "sale":
-                if obj.document_type == "invoice":
-                    commerce_accounting_service.post_sales_invoice(db, obj, user_id)
-                elif obj.document_type == "credit_note":
-                    commerce_accounting_service.post_sales_credit_note(db, obj, user_id)
+                if obj.document_type == "invoice": commerce_accounting_service.post_sales_invoice(db, obj, user_id)
+                elif obj.document_type == "credit_note": commerce_accounting_service.post_sales_credit_note(db, obj, user_id)
             else:
-                if obj.document_type == "bill":
-                    commerce_accounting_service.post_purchase_bill(db, obj, user_id)
-                elif obj.document_type == "debit_note":
-                    commerce_accounting_service.post_purchase_debit_note(db, obj, user_id)
+                if obj.document_type == "bill": commerce_accounting_service.post_purchase_bill(db, obj, user_id)
+                elif obj.document_type == "debit_note": commerce_accounting_service.post_purchase_debit_note(db, obj, user_id)
         return obj
 
     def post_inventory(self, db, company_id, document_id, kind, user_id: int | None = None):
@@ -174,11 +147,9 @@ class CommerceService:
             else:
                 net_unit_cost = Decimal(line.unit_price) * (Decimal("100") - Decimal(line.discount_percent or 0)) / Decimal("100")
                 payload = StockMoveCreate(company_id=company_id, item_id=line.item_id, variant_id=getattr(line, "variant_id", None), movement_type="receipt", source_location_id=None, destination_location_id=loc.id, quantity=line.quantity, unit_cost=net_unit_cost, reference=obj.number, source_module="commerce", source_entity=source_entity, source_id=source_id, notes="Purchase receipt")
-            move = inventory_stock_move_service.create_draft(db, payload)
-            inventory_stock_move_service.post(db, company_id=company_id, move_id=move.id)
+            move = inventory_stock_move_service.create_draft(db, payload); inventory_stock_move_service.post(db, company_id=company_id, move_id=move.id)
         obj.status = "fulfilled" if kind == "sale" else "received"; db.flush()
-        if kind == "sale" and user_id is not None:
-            commerce_accounting_service.post_sales_delivery_cogs(db, obj, user_id)
+        if kind == "sale" and user_id is not None: commerce_accounting_service.post_sales_delivery_cogs(db, obj, user_id)
         return obj
 
     def pay(self, db, payload, kind, user_id: int | None = None):
@@ -190,14 +161,12 @@ class CommerceService:
         wht_amount = Decimal(payload.wht_amount or 0)
         if wht_amount == 0 and getattr(payload, "auto_wht", True): wht_amount = self._auto_payment_wht(db, document=document, company_id=payload.company_id, amount=Decimal(payload.amount), document_kind=kind)
         document, payment = post_payment(db, company_id=payload.company_id, document_kind=kind, document_id=payload.document_id, amount=payload.amount, payment_date=payload.payment_date, method=payload.method, wht_amount=wht_amount, reference=payload.reference, notes=payload.notes, idempotency_key=payload.idempotency_key)
-        if user_id is not None:
-            commerce_accounting_service.post_payment(db, payment, document, user_id)
+        if user_id is not None: commerce_accounting_service.post_payment(db, payment, document, user_id)
         return document, payment
 
     def reverse_payment(self, db, company_id: int, payment_id: int, reversal_date, notes=None, user_id: int | None = None):
         document, payment, reversal = reverse_payment(db, company_id=company_id, payment_id=payment_id, reversal_date=reversal_date, notes=notes)
-        if user_id is not None:
-            commerce_accounting_service.post_payment_reversal(db, payment, document, user_id, reversal_date=reversal_date)
+        if user_id is not None: commerce_accounting_service.post_payment_reversal(db, payment, document, user_id, reversal_date=reversal_date)
         return document, payment, reversal
 
 
