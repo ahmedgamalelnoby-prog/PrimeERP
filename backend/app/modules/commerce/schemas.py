@@ -28,6 +28,7 @@ class PartnerResponse(PartnerCreate):
 
 class DocumentLineCreate(BaseModel):
     item_id: int = Field(gt=0)
+    variant_id: int | None = Field(default=None, gt=0)
     # Legacy single-tax field remains supported. tax_rate_ids is authoritative when supplied.
     tax_rate_id: int | None = Field(default=None, gt=0)
     tax_rate_ids: list[int] | None = None
