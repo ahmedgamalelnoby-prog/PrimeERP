@@ -41,7 +41,7 @@ def test_reconcile_repairs_stale_tenant_state_for_active_subscription():
 
 def test_reconcile_preserves_explicit_tenant_suspension():
     tenant = SimpleNamespace(
-        is_active=False,
+        is_active=True,
         is_trial=False,
         status="suspended",
         trial_ends_at=None,
@@ -53,8 +53,9 @@ def test_reconcile_preserves_explicit_tenant_suspension():
 
     service._reconcile_tenant_state_if_needed(subscription)
 
+    assert tenant.is_active is False
     service._sync_tenant_state.assert_not_called()
-    db.commit.assert_not_called()
+    db.commit.assert_called_once()
 
 
 def test_reconcile_does_not_write_when_tenant_state_matches_subscription():
