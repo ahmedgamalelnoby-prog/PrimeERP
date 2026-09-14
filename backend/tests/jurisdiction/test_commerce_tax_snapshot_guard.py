@@ -10,6 +10,7 @@ def test_commerce_guard_covers_financial_document_types():
     assert '"invoice", "credit_note"' in text
     assert '"bill", "debit_note"' in text
     assert "TaxSnapshotService" in text
+    assert "validate_snapshot_tax(document, snapshot)" in text
 
 
 def test_confirmation_routes_capture_snapshot_before_confirm():
@@ -25,3 +26,10 @@ def test_tax_snapshot_is_not_recomputed_by_accounting_service():
     assert "TaxSnapshotService" not in text
     assert "source_entity=\"sales_invoice\"" in text
     assert "source_entity=\"purchase_bill\"" in text
+
+
+def test_payment_workflow_requires_snapshot_and_validates_wht():
+    text = (ROOT / "app/modules/commerce/payment_workflow.py").read_text(encoding="utf-8")
+    assert "TaxSnapshot" in text
+    assert "Tax snapshot is required before posting payment" in text
+    assert "validate_payment_wht(candidate, snapshot)" in text
