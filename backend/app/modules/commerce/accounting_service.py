@@ -5,6 +5,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.modules.accounting.compliance_controls import validate_double_entry, validate_source
 from app.modules.accounting.fiscal_years.models import AccountingPeriod, FiscalYear
 from app.modules.accounting.journals.models import AccountingJournal, JournalEntry
 from app.modules.accounting.journals.services.journal_service import journal_service
@@ -39,6 +40,8 @@ class CommerceAccountingService:
         return settings, company.tenant_id, period, fiscal_year
 
     def _post(self, db: Session, *, company_id: int, user_id: int, entry_date: date, journal_id: int, entry_number: str, description: str, lines: list[dict], source_entity: str, source_id: int):
+        validate_double_entry(lines)
+        validate_source(source_module="commerce", source_entity=source_entity, source_id=source_id)
         settings, tenant_id, period, fiscal_year = self._context(db, company_id, entry_date)
         existing = db.scalar(select(JournalEntry).where(JournalEntry.tenant_id == tenant_id, JournalEntry.company_id == company_id, JournalEntry.source_module == "commerce", JournalEntry.source_entity == source_entity, JournalEntry.source_id == source_id))
         if existing:
@@ -130,7 +133,6 @@ class CommerceAccountingService:
         if payment.document_kind == "sale":
             lines = [{"account_combination_id": settings.default_payment_account_id, "debit": cash, "credit": 0}, {"account_combination_id": settings.wht_account_id, "debit": wht, "credit": 0}, {"account_combination_id": control, "debit": 0, "credit": gross}]
         else:
-            # Purchase payment settles AP: Dr AP gross, Cr Cash net, Cr WHT.
             lines = [{"account_combination_id": control, "debit": gross, "credit": 0}, {"account_combination_id": settings.default_payment_account_id, "debit": 0, "credit": cash}, {"account_combination_id": settings.wht_account_id, "debit": 0, "credit": wht}]
         lines = [x for x in lines if Decimal(x["debit"]) or Decimal(x["credit"])]
         return self._post(db, company_id=payment.company_id, user_id=user_id, entry_date=payment.payment_date, journal_id=settings.cash_journal_id, entry_number=f"PAY-{payment.id}", description=f"Commerce payment {payment.id}", lines=lines, source_entity="commerce_payment", source_id=payment.id)
@@ -144,12 +146,8 @@ class CommerceAccountingService:
         if wht and settings.wht_account_id is None:
             raise HTTPException(409, "WHT account is required when reversing a WHT payment")
         if payment.document_kind == "sale":
-            # Exact accounting opposite of the original sale payment:
-            # original = Dr Cash, Dr WHT, Cr AR; reversal = Dr AR, Cr Cash, Cr WHT.
             lines = [{"account_combination_id": control, "debit": gross, "credit": 0}, {"account_combination_id": settings.default_payment_account_id, "debit": 0, "credit": cash}, {"account_combination_id": settings.wht_account_id, "debit": 0, "credit": wht}]
         else:
-            # Exact accounting opposite of the original purchase payment:
-            # original = Dr AP, Cr Cash, Cr WHT; reversal = Dr Cash, Dr WHT, Cr AP.
             lines = [{"account_combination_id": settings.default_payment_account_id, "debit": cash, "credit": 0}, {"account_combination_id": settings.wht_account_id, "debit": wht, "credit": 0}, {"account_combination_id": control, "debit": 0, "credit": gross}]
         lines = [x for x in lines if Decimal(x["debit"]) or Decimal(x["credit"])]
         effective_date = reversal_date or payment.payment_date
