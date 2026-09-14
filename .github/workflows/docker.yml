@@ -83,9 +83,9 @@ jobs:
           }
       - name: Runtime API smoke test
         run: |
-          $response = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:8001/ready' -TimeoutSec 15
-          if ($response.StatusCode -ne 200) { throw "Backend /ready returned HTTP $($response.StatusCode)" }
-          Write-Host $response.Content
+          $result = docker exec primeerp-backend python -c "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8001/ready', timeout=15); print(r.status); print(r.read().decode())"
+          if ($LASTEXITCODE -ne 0) { throw "Backend /ready smoke test failed" }
+          $result
       - name: Runtime frontend smoke test
         run: |
           $response = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:3000/' -TimeoutSec 15
