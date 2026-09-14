@@ -28,7 +28,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure installed Docker CLI
+      - name: Stage Docker CLI for service-runner execution
         run: |
           $ErrorActionPreference = 'Stop'
           $candidates = @(
@@ -36,40 +36,46 @@ jobs:
             'C:\ProgramData\DockerDesktop\version-bin',
             'C:\Users\Admin\AppData\Local\Programs\DockerDesktop\resources\bin'
           )
-          $dockerDir = $null
+          $sourceDir = $null
           foreach ($dir in $candidates) {
-            $docker = Join-Path $dir 'docker.exe'
-            if (Test-Path -LiteralPath $docker) {
-              $dockerDir = $dir
+            if (Test-Path -LiteralPath (Join-Path $dir 'docker.exe')) {
+              $sourceDir = $dir
               break
             }
           }
-          if (-not $dockerDir) {
+          if (-not $sourceDir) {
             $resolved = @(where.exe docker 2>$null)
-            if ($resolved.Count -gt 0) { $dockerDir = Split-Path $resolved[0] -Parent }
+            if ($resolved.Count -gt 0) { $sourceDir = Split-Path $resolved[0] -Parent }
           }
-          if (-not $dockerDir) { throw 'Docker CLI was not found in an installed/system location.' }
-          $dockerExe = Join-Path $dockerDir 'docker.exe'
-          if (-not (Test-Path -LiteralPath $dockerExe)) { throw "Docker executable not found at $dockerExe" }
-          Write-Output "Using installed Docker CLI: $dockerExe"
-          Get-Item -LiteralPath $dockerExe | Format-List FullName,Length,LastWriteTime | Out-String | Write-Output
+          if (-not $sourceDir) { throw 'Docker CLI was not found in an installed/system location.' }
 
-          # The self-hosted runner is a Windows service. Invoke Docker through cmd.exe
-          # and a .cmd shim instead of PowerShell's native-command path; this avoids
-          # execution-policy/native-command handling differences in service context.
-          $wrapperDir = Join-Path $env:RUNNER_TEMP 'primeerp-docker-wrapper'
-          New-Item -ItemType Directory -Force -Path $wrapperDir | Out-Null
-          $wrapper = Join-Path $wrapperDir 'docker.cmd'
-          $escapedDocker = $dockerExe.Replace('%','%%').Replace('^','^^').Replace('&','^&')
-          Set-Content -LiteralPath $wrapper -Encoding ASCII -Value "@echo off`r`n\"$escapedDocker\" %*`r`n"
-          Write-Output "Docker wrapper: $wrapper"
-          Add-Content $env:GITHUB_PATH $wrapperDir
-          $env:Path = "$wrapperDir;$dockerDir;$env:Path"
+          $stageDir = Join-Path $env:RUNNER_TEMP 'primeerp-docker-cli'
+          if (Test-Path -LiteralPath $stageDir) { Remove-Item -LiteralPath $stageDir -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
+          Copy-Item -LiteralPath (Join-Path $sourceDir 'docker.exe') -Destination $stageDir -Force
+          $composePlugin = Join-Path $sourceDir 'docker-compose.exe'
+          if (Test-Path -LiteralPath $composePlugin) {
+            Copy-Item -LiteralPath $composePlugin -Destination $stageDir -Force
+          }
+          $cliPlugins = Join-Path $sourceDir 'cli-plugins'
+          if (Test-Path -LiteralPath $cliPlugins) {
+            Copy-Item -LiteralPath $cliPlugins -Destination $stageDir -Recurse -Force
+          }
+          Get-ChildItem -LiteralPath $stageDir -Recurse | Select-Object FullName,Length | Format-Table -AutoSize | Out-String | Write-Output
+          Get-ChildItem -LiteralPath $stageDir -Recurse -File | Unblock-File -ErrorAction SilentlyContinue
 
+          # Use a CMD shim because this runner is installed as a Windows service and
+          # PowerShell native-command execution is the failing boundary on this host.
+          $wrapper = Join-Path $stageDir 'docker.cmd'
+          Set-Content -LiteralPath $wrapper -Encoding ASCII -Value "@echo off`r`n\"%~dp0docker.exe\" %*`r`n"
+          Add-Content $env:GITHUB_PATH $stageDir
+          $env:Path = "$stageDir;$env:Path"
+
+          Write-Output "Staged Docker CLI from $sourceDir to $stageDir"
           & cmd.exe /d /c "\"$wrapper\" version"
-          if ($LASTEXITCODE -ne 0) { throw "Docker CLI version check failed with exit code $LASTEXITCODE" }
+          if ($LASTEXITCODE -ne 0) { throw "Staged Docker CLI version check failed with exit code $LASTEXITCODE" }
           & cmd.exe /d /c "\"$wrapper\" compose version"
-          if ($LASTEXITCODE -ne 0) { throw "Docker Compose version check failed with exit code $LASTEXITCODE" }
+          if ($LASTEXITCODE -ne 0) { throw "Staged Docker Compose version check failed with exit code $LASTEXITCODE" }
 
       - name: Verify Docker daemon
         run: |
