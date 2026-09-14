@@ -26,23 +26,13 @@ def _company_for_user(db: Session, company_id: int, user: User) -> Company:
 
 
 @router.get("", response_model=list[InventoryItemResponse], dependencies=[Depends(require_permission("inventory.access")), Depends(require_module("inventory"))])
-def list_items(
-    company_id: int = Query(..., gt=0),
-    active_only: bool = True,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
+def list_items(company_id: int = Query(..., gt=0), active_only: bool = True, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _company_for_user(db, company_id, current_user)
     return inventory_item_service.list(db, company_id=company_id, active_only=active_only)
 
 
 @router.get("/{item_id}", response_model=InventoryItemResponse, dependencies=[Depends(require_permission("inventory.access")), Depends(require_module("inventory"))])
-def get_item(
-    item_id: int,
-    company_id: int = Query(..., gt=0),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
+def get_item(item_id: int, company_id: int = Query(..., gt=0), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _company_for_user(db, company_id, current_user)
     item = inventory_item_service.get(db, company_id=company_id, item_id=item_id)
     if item is None:
@@ -51,25 +41,16 @@ def get_item(
 
 
 @router.get("/{item_id}/stock", dependencies=[Depends(require_permission("inventory.access")), Depends(require_module("inventory"))])
-def get_item_stock(
-    item_id: int,
-    company_id: int = Query(..., gt=0),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
+def get_item_stock(item_id: int, company_id: int = Query(..., gt=0), variant_id: int | None = Query(default=None, gt=0), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _company_for_user(db, company_id, current_user)
     item = inventory_item_service.get(db, company_id=company_id, item_id=item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Inventory item not found")
-    return inventory_item_service.stock(db, company_id=company_id, item_id=item_id)
+    return inventory_item_service.stock(db, company_id=company_id, item_id=item_id, variant_id=variant_id)
 
 
 @router.post("", response_model=InventoryItemResponse, status_code=201, dependencies=[Depends(require_permission("inventory.write")), Depends(require_module("inventory"))])
-def create_item(
-    payload: InventoryItemCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
+def create_item(payload: InventoryItemCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     company = _company_for_user(db, payload.company_id, current_user)
     try:
         return inventory_item_service.create(db, payload, tenant_id=company.tenant_id)
@@ -78,13 +59,7 @@ def create_item(
 
 
 @router.patch("/{item_id}", response_model=InventoryItemResponse, dependencies=[Depends(require_permission("inventory.write")), Depends(require_module("inventory"))])
-def update_item(
-    item_id: int,
-    payload: InventoryItemUpdate,
-    company_id: int = Query(..., gt=0),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
+def update_item(item_id: int, payload: InventoryItemUpdate, company_id: int = Query(..., gt=0), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _company_for_user(db, company_id, current_user)
     try:
         return inventory_item_service.update(db, company_id=company_id, item_id=item_id, payload=payload)
