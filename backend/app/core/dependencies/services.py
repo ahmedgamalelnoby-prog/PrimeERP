@@ -1,6 +1,7 @@
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
+from app.core.context import get_effective_tenant_id
 from app.core.dependencies.database import get_db
 from app.modules.identity.dependencies.current_user import get_current_user
 from app.modules.identity.models import User
@@ -15,5 +16,5 @@ def get_user_service(
     return UserService(
         db=db,
         current_user=current_user,
-        current_tenant=current_user.tenant_id,
+        current_tenant=get_effective_tenant_id(current_user),
     )
