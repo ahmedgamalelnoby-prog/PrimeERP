@@ -1,7 +1,7 @@
 """IFRS/CMA and Egypt compliance controls used at accounting boundaries."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 from typing import Any, Mapping
@@ -19,7 +19,7 @@ class ComplianceContext:
     accounting_framework: str = "IFRS"
     management_framework: str = "CMA"
     currency: str = "EGP"
-    as_of: date = date.today()
+    as_of: date = field(default_factory=date.today)
 
 
 def validate_double_entry(lines: list[Mapping[str, Any]]) -> tuple[Decimal, Decimal]:
@@ -28,9 +28,12 @@ def validate_double_entry(lines: list[Mapping[str, Any]]) -> tuple[Decimal, Deci
     debit = Decimal("0")
     credit = Decimal("0")
     for index, line in enumerate(lines, 1):
-        d = Decimal(str(line.get("debit", 0)))
-        c = Decimal(str(line.get("credit", 0)))
-        if d < 0 or c < 0 or (d > 0 and c > 0) or (d == 0 and c == 0):
+        try:
+            d = Decimal(str(line.get("debit", 0)))
+            c = Decimal(str(line.get("credit", 0)))
+        except Exception as exc:
+            raise AccountingComplianceError(f"Invalid debit/credit on line {index}") from exc
+        if not d.is_finite() or not c.is_finite() or d < 0 or c < 0 or (d > 0 and c > 0) or (d == 0 and c == 0):
             raise AccountingComplianceError(f"Invalid debit/credit on line {index}")
         debit += d
         credit += c
@@ -103,9 +106,14 @@ def validate_ifrs_transaction(*, standard: str, context: Mapping[str, Any]) -> N
         if Decimal(str(context["recoverable_amount"])) < Decimal(str(context["carrying_amount"])) and not context.get("impairment_recognized", False):
             raise AccountingComplianceError("IAS 36 impairment is required when recoverable amount is below carrying amount")
     elif standard == "IAS_37":
+        if context["probable_outflow"] and context["reliably_estimable"] and not context.get("provision_recognized", False):
+            raise AccountingComplianceError("IAS 37 provision recognition is required for a probable reliably estimable obligation")
         if context["probable_outflow"] and not context["reliably_estimable"] and context.get("provision_recognized", False):
             raise AccountingComplianceError("IAS 37 provision cannot be recognized without reliable estimation")
     elif standard == "IFRS_15":
+        consideration = Decimal(str(context["consideration"]))
+        if consideration < 0:
+            raise AccountingComplianceError("IFRS 15 consideration cannot be negative")
         if not context["performance_obligation_satisfied"] and context.get("revenue_recognized", True):
             raise AccountingComplianceError("IFRS 15 revenue cannot be recognized before the performance obligation is satisfied")
     elif standard == "IFRS_16":
