@@ -7,9 +7,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.modules.branches.models import Branch
+from app.modules.catalog.models import Menu, MenuItem, ProductCategory, ProductCostHistory, ProductPrice, ProductPriceList, Recipe, RecipeLine
 from app.modules.companies.models import Company
 from app.modules.inventory.items.models import InventoryItem, InventoryStock
-from app.modules.catalog.models import Menu, MenuItem, ProductCategory, ProductCostHistory, ProductPrice, ProductPriceList, Recipe, RecipeLine
 
 MONEY = Decimal("0.0001")
 
@@ -43,7 +43,11 @@ class CatalogService:
                 raise ValueError("Parent category does not belong to this company")
         category = ProductCategory(**payload.model_dump())
         db.add(category)
-        db.commit()
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise ValueError("Category code already exists for this company")
         db.refresh(category)
         return category
 
@@ -54,12 +58,16 @@ class CatalogService:
     def create_price_list(self, db: Session, payload):
         self._company(db, payload.company_id)
         if payload.is_default:
-            db.execute(select(ProductPriceList).where(ProductPriceList.company_id == payload.company_id, ProductPriceList.is_default.is_(True)).with_for_update())
-            for existing in db.scalars(select(ProductPriceList).where(ProductPriceList.company_id == payload.company_id, ProductPriceList.is_default.is_(True))).all():
+            defaults = db.scalars(select(ProductPriceList).where(ProductPriceList.company_id == payload.company_id, ProductPriceList.is_default.is_(True)).with_for_update()).all()
+            for existing in defaults:
                 existing.is_default = False
         price_list = ProductPriceList(**payload.model_dump())
         db.add(price_list)
-        db.commit()
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise ValueError("Price list code already exists or another default price list was created concurrently")
         db.refresh(price_list)
         return price_list
 
@@ -69,15 +77,20 @@ class CatalogService:
 
     def set_base_price(self, db: Session, company_id: int, product_id: int, sale_price: Decimal, source: str = "manual"):
         product = self._product(db, company_id, product_id)
+        now = _now()
+        price_list = self._default_price_list(db, company_id)
+        previous = db.scalars(select(ProductPrice).where(ProductPrice.company_id == company_id, ProductPrice.price_list_id == price_list.id, ProductPrice.product_id == product_id, ProductPrice.min_quantity == 1, ProductPrice.is_active.is_(True), ProductPrice.valid_to.is_(None)).with_for_update()).all()
+        for row in previous:
+            row.valid_to = now
         product.sales_price = _money(sale_price)
-        history = ProductPrice(company_id=company_id, price_list_id=self._default_price_list(db, company_id).id, product_id=product_id, sale_price=product.sales_price, min_quantity=1, source=source, valid_from=_now())
+        history = ProductPrice(company_id=company_id, price_list_id=price_list.id, product_id=product_id, sale_price=product.sales_price, min_quantity=1, source=source, valid_from=now)
         db.add(history)
         db.commit()
         db.refresh(product)
         return product
 
     def _default_price_list(self, db: Session, company_id: int) -> ProductPriceList:
-        price_list = db.scalar(select(ProductPriceList).where(ProductPriceList.company_id == company_id, ProductPriceList.is_default.is_(True), ProductPriceList.is_active.is_(True)))
+        price_list = db.scalar(select(ProductPriceList).where(ProductPriceList.company_id == company_id, ProductPriceList.is_default.is_(True), ProductPriceList.is_active.is_(True)).with_for_update())
         if price_list is None:
             price_list = ProductPriceList(company_id=company_id, code="DEFAULT", name="Default Price List", currency="EGP", channel="default", is_default=True)
             db.add(price_list)
@@ -92,7 +105,7 @@ class CatalogService:
         valid_from = payload.valid_from or _now()
         if payload.valid_to and payload.valid_to <= valid_from:
             raise ValueError("valid_to must be after valid_from")
-        overlap = db.scalar(select(ProductPrice).where(ProductPrice.company_id == company_id, ProductPrice.price_list_id == payload.price_list_id, ProductPrice.product_id == payload.product_id, ProductPrice.min_quantity == payload.min_quantity, ProductPrice.is_active.is_(True), ProductPrice.valid_from < (payload.valid_to or datetime.max), (ProductPrice.valid_to.is_(None)) | (ProductPrice.valid_to > valid_from)))
+        overlap = db.scalar(select(ProductPrice).where(ProductPrice.company_id == company_id, ProductPrice.price_list_id == payload.price_list_id, ProductPrice.product_id == payload.product_id, ProductPrice.min_quantity == payload.min_quantity, ProductPrice.is_active.is_(True), ProductPrice.valid_from < (payload.valid_to or datetime.max), (ProductPrice.valid_to.is_(None)) | (ProductPrice.valid_to > valid_from)).with_for_update())
         if overlap is not None:
             raise ValueError("Overlapping active price period exists")
         price = ProductPrice(company_id=company_id, **payload.model_dump(exclude={"valid_from", "valid_to"}), valid_from=valid_from, valid_to=payload.valid_to)
@@ -111,9 +124,9 @@ class CatalogService:
 
     def create_recipe(self, db: Session, payload):
         self._product(db, payload.company_id, payload.product_id)
-        if not payload.lines:
-            raise ValueError("Recipe must contain at least one ingredient")
         ingredient_ids = [line.ingredient_product_id for line in payload.lines]
+        if not ingredient_ids:
+            raise ValueError("Recipe must contain at least one ingredient")
         if len(ingredient_ids) != len(set(ingredient_ids)):
             raise ValueError("Duplicate ingredient products are not allowed in one recipe")
         if payload.product_id in ingredient_ids:
@@ -189,9 +202,9 @@ class CatalogService:
         db.add(item)
         try:
             db.commit()
-        except Exception:
+        except Exception as exc:
             db.rollback()
-            raise ValueError("Product is already on this menu or menu item is invalid")
+            raise ValueError("Product is already on this menu or menu item is invalid") from exc
         db.refresh(item)
         return item
 
@@ -202,7 +215,8 @@ class CatalogService:
         recipe_cost = self.recipe_cost(db, company_id, recipe.id) if recipe else None
         if recipe_cost is not None:
             current_cost = recipe_cost
-        price = db.scalar(select(ProductPrice).where(ProductPrice.company_id == company_id, ProductPrice.product_id == product_id, ProductPrice.is_active.is_(True), ProductPrice.valid_from <= _now(), ((ProductPrice.valid_to.is_(None)) | (ProductPrice.valid_to > _now()))).order_by(ProductPrice.min_quantity.desc(), ProductPrice.valid_from.desc()))
+        now = _now()
+        price = db.scalar(select(ProductPrice).where(ProductPrice.company_id == company_id, ProductPrice.product_id == product_id, ProductPrice.is_active.is_(True), ProductPrice.valid_from <= now, ((ProductPrice.valid_to.is_(None)) | (ProductPrice.valid_to > now))).order_by(ProductPrice.min_quantity.desc(), ProductPrice.valid_from.desc()))
         sale_price = _money(price.sale_price if price else product.sales_price)
         margin = _money(sale_price - current_cost)
         margin_pct = _money((margin / sale_price * 100) if sale_price > 0 else 0)
