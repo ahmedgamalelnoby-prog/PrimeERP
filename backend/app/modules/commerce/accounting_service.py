@@ -146,6 +146,8 @@ class CommerceAccountingService:
                 grni_value = receipt_value
                 lines.append({"account_combination_id": settings.grni_account_id, "debit": grni_value, "credit": 0, "description": f"GRNI clearing {document.number}"})
                 variance = stock_total - receipt_value
+                if variance != 0 and settings.purchase_price_variance_account_id is None:
+                    raise HTTPException(409, "Purchase Price Variance account is required when bill and receipt valuations differ")
                 if variance > 0:
                     lines.append({"account_combination_id": settings.purchase_price_variance_account_id, "debit": variance, "credit": 0, "description": f"Purchase price variance {document.number}"})
                 elif variance < 0:
@@ -199,9 +201,7 @@ class CommerceAccountingService:
         original = self._existing_source(db, company_id=payment.company_id, source_entity="payment", source_id=payment.id)
         if original is None:
             raise HTTPException(409, "Original payment accounting entry was not found")
-        lines = []
-        for line in original.lines:
-            lines.append({"account_combination_id": line.account_combination_id, "debit": Decimal(line.credit), "credit": Decimal(line.debit), "description": f"Payment reversal {payment.id}"})
+        lines = [{"account_combination_id": line.account_combination_id, "debit": Decimal(line.credit), "credit": Decimal(line.debit), "description": f"Payment reversal {payment.id}"} for line in original.lines]
         return self._post(db, company_id=payment.company_id, user_id=user_id, entry_date=reversal_date, journal_id=settings.payment_journal_id, entry_number=f"PAY-REV-{payment.id}", description=f"Payment reversal {payment.id}", lines=lines, source_entity="payment_reversal", source_id=payment.id)
 
 
