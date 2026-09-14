@@ -28,23 +28,32 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Prepare Docker CLI for service runner
+      - name: Configure installed Docker CLI for service runner
         shell: 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ". ''{0}''"'
         working-directory: .
         run: |
           $ErrorActionPreference = 'Stop'
-          $toolDir = Join-Path $env:RUNNER_TEMP 'primeerp-docker-cli'
-          New-Item -ItemType Directory -Force -Path $toolDir | Out-Null
-          $dockerExe = Join-Path $toolDir 'docker.exe'
-          if (-not (Test-Path $dockerExe)) {
-            $zip = Join-Path $env:RUNNER_TEMP 'docker-cli.zip'
-            Invoke-WebRequest -Uri 'https://download.docker.com/win/static/stable/x86_64/docker-29.8.0.zip' -OutFile $zip
-            Expand-Archive -Path $zip -DestinationPath (Join-Path $env:RUNNER_TEMP 'docker-cli-extract') -Force
-            Copy-Item (Join-Path $env:RUNNER_TEMP 'docker-cli-extract\docker\docker.exe') $dockerExe -Force
+          $candidates = @(
+            'C:\Program Files\Docker\Docker\resources\bin',
+            'C:\ProgramData\DockerDesktop\version-bin',
+            'C:\Users\Admin\AppData\Local\Programs\DockerDesktop\resources\bin'
+          )
+          $dockerDir = $null
+          foreach ($dir in $candidates) {
+            if (Test-Path (Join-Path $dir 'docker.exe')) { $dockerDir = $dir; break }
           }
-          $env:Path = "$toolDir;$env:Path"
-          Add-Content $env:GITHUB_PATH $toolDir
+          if (-not $dockerDir) {
+            $resolved = @(where.exe docker 2>$null)
+            if ($resolved.Count -gt 0) { $dockerDir = Split-Path $resolved[0] -Parent }
+          }
+          if (-not $dockerDir) { throw 'Docker CLI was not found in an installed/system location. Portable downloads are intentionally disabled on the service runner.' }
+          $dockerExe = Join-Path $dockerDir 'docker.exe'
+          Write-Output "Using installed Docker CLI: $dockerExe"
+          Get-Item $dockerExe | Format-List FullName,Length,LastWriteTime | Out-String | Write-Output
+          $env:Path = "$dockerDir;$env:Path"
+          Add-Content $env:GITHUB_PATH $dockerDir
           & $dockerExe version
+          & $dockerExe compose version
       - name: Validate runtime
         run: |
           python --version
@@ -107,7 +116,9 @@ jobs:
       - name: Cleanup CI database
         if: always()
         working-directory: .
-        run: docker rm -f primeerp-ci-postgres 2>$null
+        run: |
+          $docker = Get-Command docker -ErrorAction SilentlyContinue
+          if ($null -ne $docker) { docker rm -f primeerp-ci-postgres 2>$null } else { Write-Output 'Docker CLI unavailable; skipping CI database cleanup.' }
 
   frontend:
     name: Frontend - typecheck, lint and build
