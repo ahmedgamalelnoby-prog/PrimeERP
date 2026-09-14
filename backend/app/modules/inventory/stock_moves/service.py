@@ -19,12 +19,12 @@ class InventoryStockMoveService:
 
     @staticmethod
     def _validate_variant(db: Session, *, company_id: int, item: InventoryItem, variant_id: int | None):
-        active_variants = db.scalar(select(ProductVariant.id).where(ProductVariant.company_id == company_id, ProductVariant.product_id == item.id, ProductVariant.active.is_(True)).limit(1))
+        active_variants = db.scalar(select(ProductVariant.id).where(ProductVariant.company_id == company_id, ProductVariant.product_id == item.id, ProductVariant.is_active.is_(True)).limit(1))
         if variant_id is None:
             if active_variants is not None:
                 raise ValueError("This item has active variants; stock movements must identify the variant")
             return None
-        variant = db.scalar(select(ProductVariant).where(ProductVariant.id == variant_id, ProductVariant.company_id == company_id, ProductVariant.product_id == item.id, ProductVariant.active.is_(True)))
+        variant = db.scalar(select(ProductVariant).where(ProductVariant.id == variant_id, ProductVariant.company_id == company_id, ProductVariant.product_id == item.id, ProductVariant.is_active.is_(True)))
         if variant is None:
             raise ValueError("Variant does not belong to the item/company or is inactive")
         return variant
