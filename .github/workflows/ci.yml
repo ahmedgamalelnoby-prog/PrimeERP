@@ -20,39 +20,50 @@ env:
 jobs:
   backend:
     name: Backend - compile, architecture, security, smoke and tests
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 30
     defaults:
       run:
-        shell: bash
+        shell: cmd
         working-directory: backend
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-          cache-dependency-path: backend/requirements.txt
+      - name: Locate Python 3.10 runtime
+        run: |
+          set "PYTHON_EXE="
+          for %%P in ("C:\Program Files\Python310\python.exe" "C:\Python310\python.exe" "C:\Users\Admin\AppData\Local\Programs\Python\Python310\python.exe") do (
+            if not defined PYTHON_EXE if exist %%~P set "PYTHON_EXE=%%~P"
+          )
+          if not defined PYTHON_EXE (
+            for /f "delims=" %%P in ('py -3.10 -c "import sys; print(sys.executable)" 2^>nul') do if not defined PYTHON_EXE set "PYTHON_EXE=%%P"
+          )
+          if not defined PYTHON_EXE (
+            echo Python 3.10 is required on the self-hosted runner.
+            where py
+            where python
+            exit /b 1
+          )
+          "%PYTHON_EXE%" -c "import sys; assert sys.version_info >= (3,10), sys.version; print(sys.executable); print(sys.version)"
+          echo PYTHON_EXE=%PYTHON_EXE%>>"%GITHUB_ENV%"
       - name: Create isolated CI virtual environment
-        run: python -m venv .ci-venv
+        run: "%PYTHON_EXE%" -m venv .ci-venv
       - name: Install dependencies
         run: |
-          .ci-venv/bin/python -m pip install --upgrade pip
-          .ci-venv/bin/python -m pip install -r requirements.txt
-          .ci-venv/bin/python -m pip install pytest
+          .ci-venv\Scripts\python.exe -m pip install --upgrade pip
+          .ci-venv\Scripts\python.exe -m pip install -r requirements.txt
+          .ci-venv\Scripts\python.exe -m pip install pytest
       - name: Compile Python sources
-        run: .ci-venv/bin/python -m compileall -q app
+        run: .ci-venv\Scripts\python.exe -m compileall -q app
       - name: Validate modular architecture
-        run: .ci-venv/bin/python scripts/check_modular_architecture.py
+        run: .ci-venv\Scripts\python.exe scripts\check_modular_architecture.py
       - name: Validate API security boundaries
-        run: .ci-venv/bin/python scripts/check_api_security.py
+        run: .ci-venv\Scripts\python.exe scripts\check_api_security.py
       - name: Import application smoke test
         env:
           DATABASE_URL: sqlite:///./primeerp_ci_smoke.db
           APP_ENV: test
-        run: .ci-venv/bin/python scripts/smoke_import.py
+        run: .ci-venv\Scripts\python.exe scripts\smoke_import.py
       - name: Validate production configuration rejects unsafe defaults
         env:
           APP_ENV: production
@@ -60,37 +71,33 @@ jobs:
           DATABASE_URL: sqlite:///./unsafe.db
           SECRET_KEY: your-secret-key-change-this-in-production
           CORS_ORIGINS: https://erp.example.com
-        run: .ci-venv/bin/python scripts/check_production_config.py
+        run: .ci-venv\Scripts\python.exe scripts\check_production_config.py
       - name: Validate release architecture and Docker contract
-        run: .ci-venv/bin/python scripts/check_release_readiness.py
+        run: .ci-venv\Scripts\python.exe scripts\check_release_readiness.py
       - name: Require a single Alembic head
         run: |
-          .ci-venv/bin/python -m alembic heads | tee alembic-heads.txt
-          .ci-venv/bin/python -c "from pathlib import Path; n=sum('(head)' in x for x in Path('alembic-heads.txt').read_text().splitlines()); assert n == 1, f'Expected exactly one Alembic head; found {n}'"
+          .ci-venv\Scripts\python.exe -m alembic heads > alembic-heads.txt
+          type alembic-heads.txt
+          .ci-venv\Scripts\python.exe -c "from pathlib import Path; n=sum('(head)' in x for x in Path('alembic-heads.txt').read_text().splitlines()); assert n == 1, f'Expected exactly one Alembic head; found {n}'"
       - name: Run tests
-        run: .ci-venv/bin/python -m pytest -q
+        run: .ci-venv\Scripts\python.exe -m pytest -q
 
   frontend:
     name: Frontend - typecheck, lint and build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 20
     defaults:
       run:
-        shell: bash
+        shell: cmd
         working-directory: frontend
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-      - name: Setup Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
       - name: Validate Node.js runtime
         run: |
           node --version
           npm --version
+          node -e "if (parseInt(process.versions.node.split('.')[0]) < 20) process.exit(1)"
       - name: Install dependencies
         run: npm ci
       - name: Typecheck
@@ -102,21 +109,23 @@ jobs:
 
   repository:
     name: Repository boundaries and hygiene
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Windows, X64]
     steps:
       - name: Checkout
         uses: actions/checkout@v5
       - name: Reject cross-system references and generated files
-        shell: bash
+        shell: cmd
         run: |
-          set -euo pipefail
           git ls-files > tracked-files.txt
-          if grep -E '(^|/)(\.env|__pycache__|node_modules|dist)(/|$)|\.(pyc|backup|bak)$' tracked-files.txt; then
-            echo 'Forbidden tracked/generated file detected.'
-            exit 1
-          fi
-          if git grep -n -I -E 'CommercialERP|ContentAI|commercialERP|contentai|D:\\(commercialERP|ContentAI)' -- ':!docs/SYSTEM_BOUNDARIES.md' ':!.github/workflows/ci.yml'; then
-            echo 'Cross-system reference detected in PrimeERP.'
-            exit 1
-          fi
-          echo 'PrimeERP repository boundary check passed.'
+          findstr /r /c:"^\.env$" /c:"/__pycache__/" /c:"/node_modules/" /c:"/dist/" /c:"\.pyc$" /c:"\.backup$" /c:"\.bak$" tracked-files.txt > forbidden-files.txt
+          if not errorlevel 1 (
+            type forbidden-files.txt
+            echo Forbidden tracked/generated file detected.
+            exit /b 1
+          )
+          git grep -n -I -E "CommercialERP|ContentAI|commercialERP|contentai|D:\\(commercialERP|ContentAI)" -- ":!docs/SYSTEM_BOUNDARIES.md" ":!.github/workflows/ci.yml"
+          if not errorlevel 1 (
+            echo Cross-system reference detected in PrimeERP.
+            exit /b 1
+          )
+          echo PrimeERP repository boundary check passed.
