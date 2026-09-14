@@ -5,6 +5,7 @@ from fastapi import Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.context import get_effective_tenant_id
 from app.database.session import get_db
 from app.modules.branches.models import Branch
 from app.modules.companies.models import Company
@@ -12,7 +13,6 @@ from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.inventory.items.models import InventoryItem
 from app.modules.saas.models import PlanModule, Subscription, SubscriptionPlan, SystemModule, TenantModule
-
 
 CORE_MODULES = {"dashboard", "users", "companies", "branches"}
 
@@ -63,11 +63,8 @@ def require_module(module_code: str) -> Callable:
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user),
     ) -> User:
-        if current_user.is_platform_admin:
-            return current_user
-        if current_user.tenant_id is None:
-            raise HTTPException(status_code=403, detail="User is not assigned to a tenant")
-        if not tenant_has_module(db, current_user.tenant_id, module_code):
+        tenant_id = get_effective_tenant_id(current_user)
+        if not tenant_has_module(db, tenant_id, module_code):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Module '{module_code}' is not enabled for this subscription",
