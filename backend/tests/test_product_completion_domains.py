@@ -2,7 +2,9 @@ from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
 
-from app.modules.accounting.tax_engine import money
+import pytest
+
+from app.modules.accounting.tax_engine import calculate_taxes, money
 from app.modules.commerce.accounting_service import commerce_accounting_service
 from app.modules.commerce.models import BusinessPartner, SalesDocument, PurchaseDocument, CommercePayment, SalesLine, PurchaseLine
 from app.modules.commerce.schemas import DocumentLineCreate
@@ -53,6 +55,29 @@ def test_tax_master_is_authoritative_for_explicit_line_tax():
 
 def test_money_rounding_used_by_tax_engine():
     assert money(Decimal('1.005')) == Decimal('1.01')
+
+
+def test_tax_engine_rejects_withholding_above_gross():
+    taxes = [
+        SimpleNamespace(id=1, code='WHT-60', name='WHT 60%', rate=Decimal('60'), tax_type='wht', is_withholding=True),
+        SimpleNamespace(id=2, code='WHT-50', name='WHT 50%', rate=Decimal('50'), tax_type='wht', is_withholding=True),
+    ]
+
+    class FakeScalarResult:
+        def all(self):
+            return taxes
+
+    class FakeDB:
+        def scalars(self, _query):
+            return FakeScalarResult()
+
+    with pytest.raises(Exception, match='Total withholding tax cannot exceed the gross taxable amount'):
+        calculate_taxes(
+            FakeDB(),
+            company_id=7,
+            amount=Decimal('100.00'),
+            tax_ids=[1, 2],
+        )
 
 
 def test_sales_invoice_accounting_is_balanced(monkeypatch):
