@@ -47,21 +47,14 @@ jobs:
             if ($resolved.Count -gt 0) { $sourceDir = Split-Path $resolved[0] -Parent }
           }
           if (-not $sourceDir) { throw 'Docker CLI was not found in an installed/system location.' }
-          $dockerRoot = Split-Path $sourceDir -Parent
           $stageDir = Join-Path $env:RUNNER_TEMP 'primeerp-docker-cli'
           if (Test-Path -LiteralPath $stageDir) { Remove-Item -LiteralPath $stageDir -Recurse -Force }
           New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
           Copy-Item -LiteralPath (Join-Path $sourceDir 'docker.exe') -Destination $stageDir -Force
-          $pluginCandidates = @(
-            (Join-Path $sourceDir 'docker-compose.exe'),
-            (Join-Path $dockerRoot 'cli-plugins\docker-compose.exe'),
-            (Join-Path $dockerRoot 'bin\docker-compose.exe')
-          )
-          $composePlugin = $pluginCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-          if ($composePlugin) {
-            New-Item -ItemType Directory -Force -Path (Join-Path $stageDir 'cli-plugins') | Out-Null
-            Copy-Item -LiteralPath $composePlugin -Destination (Join-Path $stageDir 'cli-plugins\docker-compose.exe') -Force
-          }
+          $composePlugin = Join-Path $sourceDir 'docker-compose.exe'
+          if (Test-Path -LiteralPath $composePlugin) { Copy-Item -LiteralPath $composePlugin -Destination $stageDir -Force }
+          $cliPlugins = Join-Path $sourceDir 'cli-plugins'
+          if (Test-Path -LiteralPath $cliPlugins) { Copy-Item -LiteralPath $cliPlugins -Destination $stageDir -Recurse -Force }
           Get-ChildItem -LiteralPath $stageDir -Recurse -File | Unblock-File -ErrorAction SilentlyContinue
           $wrapper = Join-Path $stageDir 'docker.cmd'
           Set-Content -LiteralPath $wrapper -Encoding ASCII -Value "@echo off`r`n\"%~dp0docker.exe\" %*`r`n"
@@ -73,27 +66,31 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Docker Compose version check failed with exit code $LASTEXITCODE" }
       - name: Validate runtime
         run: |
-          python --version
-          docker version
-          if ($LASTEXITCODE -ne 0) { throw "docker version failed with exit code $LASTEXITCODE" }
+          cmd.exe /d /c "python --version"
+          if ($LASTEXITCODE -ne 0) { throw 'Python runtime check failed' }
+          cmd.exe /d /c "docker version"
+          if ($LASTEXITCODE -ne 0) { throw 'Docker runtime check failed' }
       - name: Create isolated CI virtual environment
-        run: python -m venv .ci-venv
+        run: cmd.exe /d /c "python -m venv .ci-venv"
       - name: Install dependencies
         run: |
-          .\.ci-venv\Scripts\python.exe -m pip install --upgrade pip
-          .\.ci-venv\Scripts\python.exe -m pip install -r requirements.txt
-          .\.ci-venv\Scripts\python.exe -m pip install pytest
+          cmd.exe /d /c ".\.ci-venv\Scripts\python.exe -m pip install --upgrade pip"
+          if ($LASTEXITCODE -ne 0) { throw 'pip upgrade failed' }
+          cmd.exe /d /c ".\.ci-venv\Scripts\python.exe -m pip install -r requirements.txt"
+          if ($LASTEXITCODE -ne 0) { throw 'dependency installation failed' }
+          cmd.exe /d /c ".\.ci-venv\Scripts\python.exe -m pip install pytest"
+          if ($LASTEXITCODE -ne 0) { throw 'pytest installation failed' }
       - name: Compile Python sources
-        run: .\.ci-venv\Scripts\python.exe -m compileall -q app
+        run: cmd.exe /d /c ".\.ci-venv\Scripts\python.exe -m compileall -q app"
       - name: Validate modular architecture
-        run: .\.ci-venv\Scripts\python.exe scripts\check_modular_architecture.py
+        run: cmd.exe /d /c ".\.ci-venv\Scripts\python.exe scripts\check_modular_architecture.py"
       - name: Validate API security boundaries
-        run: .\.ci-venv\Scripts\python.exe scripts\check_api_security.py
+        run: cmd.exe /d /c ".\.ci-venv\Scripts\python.exe scripts\check_api_security.py"
       - name: Import application smoke test
         env:
           DATABASE_URL: sqlite:///./primeerp_ci_smoke.db
           APP_ENV: test
-        run: .\.ci-venv\Scripts\python.exe scripts\smoke_import.py
+        run: cmd.exe /d /c ".\.ci-venv\Scripts\python.exe scripts\smoke_import.py"
       - name: Validate production configuration rejects unsafe defaults
         env:
           APP_ENV: production
@@ -101,41 +98,41 @@ jobs:
           DATABASE_URL: sqlite:///./unsafe.db
           SECRET_KEY: your-secret-key-change-this-in-production
           CORS_ORIGINS: https://erp.example.com
-        run: .\.ci-venv\Scripts\python.exe scripts\check_production_config.py
+        run: cmd.exe /d /c ".\.ci-venv\Scripts\python.exe scripts\check_production_config.py"
       - name: Prepare CI database
         working-directory: .
         run: |
-          docker rm -f primeerp-ci-postgres 2>$null
-          docker run -d --name primeerp-ci-postgres -e POSTGRES_USER=primeerp -e POSTGRES_PASSWORD=primeerp -e POSTGRES_DB=primeerp_ci -p ${env:CI_POSTGRES_PORT}:5432 postgres:17
+          cmd.exe /d /c "docker rm -f primeerp-ci-postgres 2>NUL"
+          cmd.exe /d /c "docker run -d --name primeerp-ci-postgres -e POSTGRES_USER=primeerp -e POSTGRES_PASSWORD=primeerp -e POSTGRES_DB=primeerp_ci -p %CI_POSTGRES_PORT%:5432 postgres:17"
+          if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL container failed to start' }
           $ready = $false
           1..30 | ForEach-Object {
             if ($ready) { return }
-            docker exec primeerp-ci-postgres pg_isready -U primeerp -d primeerp_ci *> $null
+            cmd.exe /d /c "docker exec primeerp-ci-postgres pg_isready -U primeerp -d primeerp_ci"
             if ($LASTEXITCODE -eq 0) { $ready = $true; return }
             Start-Sleep -Seconds 2
           }
-          if (-not $ready) { docker logs primeerp-ci-postgres; throw 'PostgreSQL did not become ready' }
+          if (-not $ready) { cmd.exe /d /c "docker logs primeerp-ci-postgres"; throw 'PostgreSQL did not become ready' }
       - name: Run Alembic migrations
         env:
           DATABASE_URL: postgresql+psycopg://primeerp:primeerp@127.0.0.1:55432/primeerp_ci
-        run: .\.ci-venv\Scripts\python.exe -m alembic upgrade head
+        run: cmd.exe /d /c ".\.ci-venv\Scripts\python.exe -m alembic upgrade head"
       - name: Require a single Alembic head
         run: |
-          $heads = .\.ci-venv\Scripts\python.exe -m alembic heads
+          $heads = cmd.exe /d /c ".\.ci-venv\Scripts\python.exe -m alembic heads"
           $heads | Write-Output
           $count = @($heads | Select-String '\(head\)').Count
           if ($count -ne 1) { throw "Expected exactly one Alembic head; found $count" }
       - name: Check Alembic configuration
         env:
           DATABASE_URL: postgresql+psycopg://primeerp:primeerp@127.0.0.1:55432/primeerp_ci
-        run: .\.ci-venv\Scripts\python.exe -m alembic check
+        run: cmd.exe /d /c ".\.ci-venv\Scripts\python.exe -m alembic check"
       - name: Run tests
-        run: .\.ci-venv\Scripts\python.exe -m pytest -q
+        run: cmd.exe /d /c ".\.ci-venv\Scripts\python.exe -m pytest -q"
       - name: Cleanup CI database
         if: always()
         working-directory: .
-        run: |
-          docker rm -f primeerp-ci-postgres 2>$null
+        run: cmd.exe /d /c "docker rm -f primeerp-ci-postgres 2>NUL"
 
   frontend:
     name: Frontend - typecheck, lint and build
@@ -143,7 +140,7 @@ jobs:
     timeout-minutes: 20
     defaults:
       run:
-        shell: 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ". ''{0}''"'
+        shell: 'cmd.exe /d /s /c "{0}"'
         working-directory: frontend
     steps:
       - name: Checkout
@@ -152,8 +149,7 @@ jobs:
         run: |
           node --version
           npm --version
-          $major = [int](node -p "process.versions.node.split('.')[0]")
-          if ($major -lt 20) { throw "PrimeERP CI requires Node.js 20+; found $major" }
+          node -e "const major=Number(process.versions.node.split('.')[0]); if(major<20){process.exit(1)}"
       - name: Install dependencies
         run: npm ci
       - name: Typecheck
@@ -174,14 +170,15 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $bad = $false
-          git ls-files | ForEach-Object {
+          $tracked = cmd.exe /d /c "git ls-files"
+          $tracked | ForEach-Object {
             $file = $_
             if ($file -match '(^|/)(\.env($|/)|__pycache__/|node_modules/|dist/)|\.pyc$|\.backup$|\.bak$') {
               Write-Output "Forbidden tracked/generated file: $file"
               $bad = $true
             }
           }
-          $matches = git grep -n -I -E 'CommercialERP|ContentAI|commercialERP|contentai|D:\\(commercialERP|ContentAI)' -- ':!docs/SYSTEM_BOUNDARIES.md' ':!.github/workflows/ci.yml' 2>$null
+          $matches = cmd.exe /d /c "git grep -n -I -E \"CommercialERP|ContentAI|commercialERP|contentai|D:\\\\(commercialERP|ContentAI)\" -- \":!docs/SYSTEM_BOUNDARIES.md\" \":!.github/workflows/ci.yml\""
           if ($LASTEXITCODE -eq 0 -and $matches) {
             $matches | Write-Output
             Write-Output 'Cross-system reference detected in PrimeERP.'
