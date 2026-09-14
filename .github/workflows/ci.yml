@@ -30,31 +30,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Validate and provision Python 3.10 runtime
+      - name: Install and select Python 3.10 runtime
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          check-latest: true
+
+      - name: Provision isolated Python environment
         run: |
-          if exist "C:\Users\Admin\AppData\Local\Programs\Python\Python310\python.exe" (
-            "C:\Users\Admin\AppData\Local\Programs\Python\Python310\python.exe" --version
-            "C:\Users\Admin\AppData\Local\Programs\Python\Python310\python.exe" -m venv .ci-venv
-          ) else if exist "C:\Program Files\Python310\python.exe" (
-            "C:\Program Files\Python310\python.exe" --version
-            "C:\Program Files\Python310\python.exe" -m venv .ci-venv
-          ) else if exist "C:\Python310\python.exe" (
-            "C:\Python310\python.exe" --version
-            "C:\Python310\python.exe" -m venv .ci-venv
-          ) else if exist "C:\Windows\py.exe" (
-            C:\Windows\py.exe -3.10 --version
-            C:\Windows\py.exe -3.10 -m venv .ci-venv
-          ) else if exist "%SystemRoot%\py.exe" (
-            "%SystemRoot%\py.exe" -3.10 --version
-            "%SystemRoot%\py.exe" -3.10 -m venv .ci-venv
-          ) else (
-            echo Python 3.10 runtime was not found on the self-hosted runner.
-            exit /b 1
-          )
+          where python
+          python --version
+          python -m venv .ci-venv
+          .ci-venv\Scripts\python.exe --version
 
       - name: Install dependencies
         run: |
-          .ci-venv\Scripts\python.exe --version
           .ci-venv\Scripts\python.exe -m pip install --upgrade pip
           .ci-venv\Scripts\python.exe -m pip install -r requirements.txt
           .ci-venv\Scripts\python.exe -m pip install pytest
@@ -151,9 +141,15 @@ jobs:
             )
           )
 
-          git grep -n -I -E "CommercialERP|ContentAI|commercialERP|contentai|D:\\(commercialERP|ContentAI)" -- ":!docs/SYSTEM_BOUNDARIES.md" ":!.github/workflows/ci.yml"
-          if not errorlevel 1 (
+          git grep -n -I -E "CommercialERP|ContentAI|commercialERP|contentai|D:\\(commercialERP|ContentAI)" -- ":!docs/SYSTEM_BOUNDARIES.md" ":!.github/workflows/ci.yml" > cross-system-references.txt
+          set "GREP_EXIT=%ERRORLEVEL%"
+          if "%GREP_EXIT%"=="0" (
+            type cross-system-references.txt
             echo Cross-system reference detected in PrimeERP.
             exit /b 1
+          )
+          if not "%GREP_EXIT%"=="1" (
+            echo git grep failed with exit code %GREP_EXIT%.
+            exit /b %GREP_EXIT%
           )
           echo PrimeERP repository boundary check passed.
