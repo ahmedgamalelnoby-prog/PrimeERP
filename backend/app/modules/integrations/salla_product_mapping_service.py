@@ -6,9 +6,10 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.modules.catalog.models import ProductVariant
+from app.modules.catalog.models import ProductBarcode, ProductVariant
+from app.modules.companies.models import Company
 from app.modules.inventory.items.models import InventoryItem
-from .models import IntegrationProductMapping
+from .models import IntegrationConnection, IntegrationProductMapping
 from .salla_models import SallaProduct, SallaProductVariant
 
 
@@ -57,12 +58,27 @@ def _find_local_variant(db: Session, company_id: int, product_id: int, salla: Sa
                 ProductVariant.company_id == company_id,
                 ProductVariant.product_id == product_id,
                 ProductVariant.is_active.is_(True),
-                or_(ProductVariant.sku == key, ProductVariant.name == key),
+                or_(ProductVariant.sku == key, ProductVariant.name_ar == key, ProductVariant.name_en == key),
             )
             .with_for_update()
         )
         if row is not None:
             return row
+        barcode_variant = db.scalar(
+            select(ProductVariant)
+            .join(ProductBarcode, ProductBarcode.variant_id == ProductVariant.id)
+            .where(
+                ProductVariant.company_id == company_id,
+                ProductVariant.product_id == product_id,
+                ProductVariant.is_active.is_(True),
+                ProductBarcode.company_id == company_id,
+                ProductBarcode.barcode == key,
+                ProductBarcode.is_active.is_(True),
+            )
+            .with_for_update()
+        )
+        if barcode_variant is not None:
+            return barcode_variant
     return None
 
 
@@ -137,6 +153,21 @@ def reconcile_salla_product_mapping(
     connection_id: int,
     salla_product_id: int,
 ) -> dict[str, int | str | None]:
+    connection = db.scalar(
+        select(IntegrationConnection)
+        .join(Company, Company.id == IntegrationConnection.company_id)
+        .where(
+            IntegrationConnection.id == connection_id,
+            IntegrationConnection.company_id == company_id,
+            IntegrationConnection.provider == "salla",
+            IntegrationConnection.is_active.is_(True),
+            Company.id == company_id,
+            Company.is_active.is_(True),
+        )
+    )
+    if connection is None:
+        raise ValueError("Salla connection not found or inactive")
+
     salla_product = db.scalar(
         select(SallaProduct)
         .where(SallaProduct.id == salla_product_id, SallaProduct.company_id == company_id, SallaProduct.connection_id == connection_id)
