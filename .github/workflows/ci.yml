@@ -23,13 +23,13 @@ jobs:
     timeout-minutes: 30
     defaults:
       run:
-        shell: 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File {0}'
+        shell: 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ". ''{0}''"'
         working-directory: backend
     steps:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Prepare Docker CLI for service runner
-        shell: 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File {0}'
+        shell: 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ". ''{0}''"'
         working-directory: .
         run: |
           $ErrorActionPreference = 'Stop'
@@ -115,7 +115,7 @@ jobs:
     timeout-minutes: 20
     defaults:
       run:
-        shell: 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File {0}'
+        shell: 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ". ''{0}''"'
         working-directory: frontend
     steps:
       - name: Checkout
@@ -142,7 +142,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Reject cross-system references and generated files
-        shell: 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File {0}'
+        shell: 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ". ''{0}''"'
         run: |
           $ErrorActionPreference = 'Stop'
           $bad = $false
