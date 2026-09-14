@@ -47,14 +47,21 @@ jobs:
             if ($resolved.Count -gt 0) { $sourceDir = Split-Path $resolved[0] -Parent }
           }
           if (-not $sourceDir) { throw 'Docker CLI was not found in an installed/system location.' }
+          $dockerRoot = Split-Path $sourceDir -Parent
           $stageDir = Join-Path $env:RUNNER_TEMP 'primeerp-docker-cli'
           if (Test-Path -LiteralPath $stageDir) { Remove-Item -LiteralPath $stageDir -Recurse -Force }
           New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
           Copy-Item -LiteralPath (Join-Path $sourceDir 'docker.exe') -Destination $stageDir -Force
-          $composePlugin = Join-Path $sourceDir 'docker-compose.exe'
-          if (Test-Path -LiteralPath $composePlugin) { Copy-Item -LiteralPath $composePlugin -Destination $stageDir -Force }
-          $cliPlugins = Join-Path $sourceDir 'cli-plugins'
-          if (Test-Path -LiteralPath $cliPlugins) { Copy-Item -LiteralPath $cliPlugins -Destination $stageDir -Recurse -Force }
+          $pluginCandidates = @(
+            (Join-Path $sourceDir 'docker-compose.exe'),
+            (Join-Path $dockerRoot 'cli-plugins\docker-compose.exe'),
+            (Join-Path $dockerRoot 'bin\docker-compose.exe')
+          )
+          $composePlugin = $pluginCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          if ($composePlugin) {
+            New-Item -ItemType Directory -Force -Path (Join-Path $stageDir 'cli-plugins') | Out-Null
+            Copy-Item -LiteralPath $composePlugin -Destination (Join-Path $stageDir 'cli-plugins\docker-compose.exe') -Force
+          }
           Get-ChildItem -LiteralPath $stageDir -Recurse -File | Unblock-File -ErrorAction SilentlyContinue
           $wrapper = Join-Path $stageDir 'docker.cmd'
           Set-Content -LiteralPath $wrapper -Encoding ASCII -Value "@echo off`r`n\"%~dp0docker.exe\" %*`r`n"
