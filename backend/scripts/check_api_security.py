@@ -10,39 +10,49 @@ PUBLIC_MUTATION_FILES = {
     "modules/integrations/public_router.py",
 }
 MUTATING = {"post", "put", "patch", "delete"}
-AUTH_MARKERS = (
+AUTH_DEPENDENCIES = {
     "get_current_user",
     "get_current_user_for_billing",
     "require_permission",
     "require_platform_admin",
     "oauth2_scheme",
     "_require_eta_notification_secret",
-)
+}
 
 
 def relative(path: Path) -> str:
     return path.relative_to(ROOT).as_posix()
 
 
+def dependency_name(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    if isinstance(node, ast.Call):
+        return dependency_name(node.func)
+    return None
+
+
+def contains_authorizing_dep(node: ast.AST | None) -> bool:
+    if node is None:
+        return False
+    for current in ast.walk(node):
+        if not isinstance(current, ast.Call):
+            continue
+        if dependency_name(current.func) != "Depends":
+            continue
+        if current.args and dependency_name(current.args[0]) in AUTH_DEPENDENCIES:
+            return True
+    return False
+
+
 def function_has_auth(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     for decorator in node.decorator_list:
-        rendered = ast.unparse(decorator)
-        if any(marker in rendered for marker in AUTH_MARKERS):
+        if contains_authorizing_dep(decorator):
             return True
-
-    # FastAPI dependencies are commonly declared on endpoint parameters rather
-    # than in the route decorator. Inspect those Depends(...) expressions too.
-    for argument in [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]:
-        if argument.annotation is not None and any(
-            marker in ast.unparse(argument.annotation) for marker in AUTH_MARKERS
-        ):
-            return True
-    defaults = [*node.args.defaults, *node.args.kw_defaults]
-    for default in defaults:
-        if default is None:
-            continue
-        rendered = ast.unparse(default)
-        if any(marker in rendered for marker in AUTH_MARKERS):
+    for default in [*node.args.defaults, *node.args.kw_defaults]:
+        if contains_authorizing_dep(default):
             return True
     return False
 
@@ -52,10 +62,10 @@ def router_has_auth(tree: ast.AST) -> bool:
         if not isinstance(node, (ast.Assign, ast.AnnAssign)):
             continue
         value = node.value
-        if not isinstance(value, ast.Call) or not isinstance(value.func, ast.Name) or value.func.id != "APIRouter":
+        if not isinstance(value, ast.Call) or dependency_name(value.func) != "APIRouter":
             continue
         dependencies = next((keyword.value for keyword in value.keywords if keyword.arg == "dependencies"), None)
-        if dependencies is not None and any(marker in ast.unparse(dependencies) for marker in AUTH_MARKERS):
+        if contains_authorizing_dep(dependencies):
             return True
     return False
 
@@ -94,13 +104,11 @@ def main() -> int:
                 for decorator in decorators
                 if any(f"router.{method}" in decorator for method in MUTATING)
             ]
-            if not mutation_decorators:
-                continue
-            if is_explicitly_public_mutation(path, node):
+            if not mutation_decorators or is_explicitly_public_mutation(path, node):
                 continue
             if not (router_level_auth or function_has_auth(node)):
                 failures.append(
-                    f"{rel}:{node.lineno} {node.name}: mutating API route has no authentication/authorization dependency"
+                    f"{rel}:{node.lineno} {node.name}: mutating API route has no real FastAPI authentication/authorization dependency"
                 )
 
     if failures:
