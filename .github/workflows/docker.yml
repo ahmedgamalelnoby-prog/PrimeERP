@@ -39,7 +39,7 @@ jobs:
           $dockerDir = $null
           foreach ($dir in $candidates) {
             $docker = Join-Path $dir 'docker.exe'
-            if (Test-Path $docker) {
+            if (Test-Path -LiteralPath $docker) {
               $dockerDir = $dir
               break
             }
@@ -48,20 +48,35 @@ jobs:
             $resolved = @(where.exe docker 2>$null)
             if ($resolved.Count -gt 0) { $dockerDir = Split-Path $resolved[0] -Parent }
           }
-          if (-not $dockerDir) { throw 'Docker CLI was not found in an installed/system location. Portable downloads are intentionally disabled on the service runner.' }
+          if (-not $dockerDir) { throw 'Docker CLI was not found in an installed/system location.' }
           $dockerExe = Join-Path $dockerDir 'docker.exe'
-          if (-not (Test-Path $dockerExe)) { throw "Docker executable not found at $dockerExe" }
+          if (-not (Test-Path -LiteralPath $dockerExe)) { throw "Docker executable not found at $dockerExe" }
           Write-Output "Using installed Docker CLI: $dockerExe"
-          Get-Item $dockerExe | Format-List FullName,Length,LastWriteTime | Out-String | Write-Output
-          $env:Path = "$dockerDir;$env:Path"
-          Add-Content $env:GITHUB_PATH $dockerDir
-          & $dockerExe version
-          & $dockerExe compose version
+          Get-Item -LiteralPath $dockerExe | Format-List FullName,Length,LastWriteTime | Out-String | Write-Output
+
+          # The self-hosted runner is a Windows service. Invoke Docker through cmd.exe
+          # and a .cmd shim instead of PowerShell's native-command path; this avoids
+          # execution-policy/native-command handling differences in service context.
+          $wrapperDir = Join-Path $env:RUNNER_TEMP 'primeerp-docker-wrapper'
+          New-Item -ItemType Directory -Force -Path $wrapperDir | Out-Null
+          $wrapper = Join-Path $wrapperDir 'docker.cmd'
+          $escapedDocker = $dockerExe.Replace('%','%%').Replace('^','^^').Replace('&','^&')
+          Set-Content -LiteralPath $wrapper -Encoding ASCII -Value "@echo off`r`n\"$escapedDocker\" %*`r`n"
+          Write-Output "Docker wrapper: $wrapper"
+          Add-Content $env:GITHUB_PATH $wrapperDir
+          $env:Path = "$wrapperDir;$dockerDir;$env:Path"
+
+          & cmd.exe /d /c "\"$wrapper\" version"
+          if ($LASTEXITCODE -ne 0) { throw "Docker CLI version check failed with exit code $LASTEXITCODE" }
+          & cmd.exe /d /c "\"$wrapper\" compose version"
+          if ($LASTEXITCODE -ne 0) { throw "Docker Compose version check failed with exit code $LASTEXITCODE" }
 
       - name: Verify Docker daemon
         run: |
           docker version
+          if ($LASTEXITCODE -ne 0) { throw "docker version failed with exit code $LASTEXITCODE" }
           docker compose version
+          if ($LASTEXITCODE -ne 0) { throw "docker compose version failed with exit code $LASTEXITCODE" }
 
       - name: Prepare Docker environment
         run: Copy-Item .env.docker.example .env.docker -Force
@@ -121,8 +136,6 @@ jobs:
       - name: Docker runtime diagnostics
         if: always()
         run: |
-          $docker = Get-Command docker -ErrorAction SilentlyContinue
-          if ($null -eq $docker) { Write-Output 'Docker CLI unavailable; skipping runtime diagnostics.'; exit 0 }
           docker compose --env-file .env.docker ps
           docker compose --env-file .env.docker logs --tail=100 migrate
           docker compose --env-file .env.docker logs --tail=100 backend
@@ -130,7 +143,5 @@ jobs:
       - name: Cleanup Docker stack
         if: always()
         run: |
-          $docker = Get-Command docker -ErrorAction SilentlyContinue
-          if ($null -eq $docker) { Write-Output 'Docker CLI unavailable; skipping cleanup.'; exit 0 }
           docker compose --env-file .env.docker down -v --remove-orphans
           docker image rm primeerp-backend:ci primeerp-frontend:ci 2>$null
