@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.sql import func
 
 from app.database.base import Base
@@ -81,5 +81,16 @@ class IntegrationProductMapping(Base):
 
     __table_args__ = (
         UniqueConstraint("connection_id", "external_id", name="uq_integration_product_mapping_external"),
-        UniqueConstraint("connection_id", "product_id", "variant_id", name="uq_integration_product_mapping_local"),
+        Index(
+            "uq_integration_product_mapping_local_variant",
+            "connection_id", "product_id", "variant_id",
+            unique=True,
+            postgresql_where=variant_id.is_not(None),
+        ),
+        Index(
+            "uq_integration_product_mapping_local_product",
+            "connection_id", "product_id",
+            unique=True,
+            postgresql_where=variant_id.is_(None),
+        ),
     )
