@@ -130,6 +130,46 @@ def test_sale_payment_with_wht_posts_gross_control_and_net_cash(monkeypatch):
     assert captured['journal_id'] == 403
 
 
+def test_purchase_payment_with_wht_posts_gross_ap_and_net_cash(monkeypatch):
+    settings = SimpleNamespace(
+        sales_journal_id=401,
+        purchase_journal_id=402,
+        cash_journal_id=403,
+        ar_account_id=101,
+        ap_account_id=201,
+        default_payment_account_id=301,
+        wht_account_id=302,
+    )
+    payment = SimpleNamespace(
+        id=88,
+        company_id=7,
+        document_kind='purchase',
+        payment_date=date(2026, 9, 13),
+        amount=Decimal('1140.00'),
+        wht_amount=Decimal('11.40'),
+    )
+    captured = {}
+
+    monkeypatch.setattr(commerce_accounting_service, '_settings', lambda db, company_id: settings)
+    monkeypatch.setattr(
+        commerce_accounting_service,
+        '_post',
+        lambda db, **kwargs: captured.update(kwargs) or kwargs,
+    )
+
+    result = commerce_accounting_service.post_payment(None, payment, SimpleNamespace(id=66), user_id=9)
+    lines = result['lines']
+
+    assert sum(Decimal(line['debit']) for line in lines) == Decimal('1140.00')
+    assert sum(Decimal(line['credit']) for line in lines) == Decimal('1140.00')
+    assert next(line for line in lines if line['account_combination_id'] == 201)['debit'] == Decimal('1140.00')
+    assert next(line for line in lines if line['account_combination_id'] == 301)['credit'] == Decimal('1128.60')
+    assert next(line for line in lines if line['account_combination_id'] == 302)['credit'] == Decimal('11.40')
+    assert captured['source_entity'] == 'commerce_payment'
+    assert captured['source_id'] == 88
+    assert captured['journal_id'] == 403
+
+
 def test_sale_payment_reversal_is_exact_accounting_opposite_and_uses_reversal_date(monkeypatch):
     settings = SimpleNamespace(
         sales_journal_id=401,
@@ -216,7 +256,7 @@ def test_purchase_payment_reversal_is_exact_accounting_opposite(monkeypatch):
 
     assert sum(Decimal(line['debit']) for line in lines) == Decimal('1140.00')
     assert sum(Decimal(line['credit']) for line in lines) == Decimal('1140.00')
-    assert next(line for line in lines if line['account_combination_id'] == 301)['credit'] == Decimal('1128.60')
+    assert next(line for line in lines if line['account_combination_id'] == 301)['debit'] == Decimal('1128.60')
     assert next(line for line in lines if line['account_combination_id'] == 302)['debit'] == Decimal('11.40')
     assert next(line for line in lines if line['account_combination_id'] == 201)['credit'] == Decimal('1140.00')
     assert captured['entry_date'] == date(2026, 9, 20)
