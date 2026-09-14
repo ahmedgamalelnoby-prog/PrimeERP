@@ -35,6 +35,9 @@ class ReportDelivery(Base):
     next_run_at = Column(DateTime(timezone=True), nullable=True, index=True)
     last_status = Column(String(30), nullable=True)
     last_error = Column(Text, nullable=True)
+    locked_until = Column(DateTime(timezone=True), nullable=True, index=True)
+    locked_by = Column(String(100), nullable=True)
+    delivery_key = Column(String(255), nullable=True, unique=True, index=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
