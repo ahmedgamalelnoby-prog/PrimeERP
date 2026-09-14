@@ -151,32 +151,39 @@ class PricingAnalysis(BaseModel):
     product_id: int
     product_name: str
     price_list_id: Optional[int]
+    quantity: Decimal
     current_cost: Decimal
     sale_price: Decimal
     gross_margin: Decimal
     gross_margin_percentage: Decimal
     recommended_price_at_margin: Optional[Decimal]
+    pricing_status: str
+    price_source: str
     recipe_cost: Optional[Decimal]
     price_history: list[dict]
     cost_history: list[dict]
 
 
 class PricingImpactItem(BaseModel):
-    menu_id: int
-    menu_code: str
+    menu_id: Optional[int] = None
+    menu_code: Optional[str] = None
     product_id: int
     product_name: str
     price_list_id: Optional[int]
+    quantity: Decimal
     current_cost: Decimal
     sale_price: Decimal
     gross_margin_percentage: Decimal
     recommended_price_at_margin: Optional[Decimal]
+    pricing_status: str
+    price_source: str
 
 
 class PricingImpactResponse(BaseModel):
     target_margin: Decimal
     below_margin: Decimal
     price_list_id: Optional[int]
+    quantity: Decimal
     count: int
     items: list[PricingImpactItem]
 
