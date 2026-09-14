@@ -4,10 +4,12 @@ from datetime import datetime, timezone
 from typing import Any
 
 import requests
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.modules.audit.service import record_audit_event
+from app.modules.commerce.models import SalesDocument
 from .constants import ETA_DOCUMENT_SUBMISSION_PATH, ETA_DOCUMENT_PATH_TEMPLATE, ETA_SUBMISSION_PATH_TEMPLATE, SUPPORTED_STATUSES
 from .models import EgyptianEInvoiceDocument
 
@@ -86,12 +88,34 @@ eta_client = ETAClient()
 
 
 def create_document(db: Session, *, company_id: int, source_type: str, source_id: int, document_type: str, internal_number: str, signed_payload: str) -> EgyptianEInvoiceDocument:
+    normalized_source_type = source_type.strip().lower()
+    normalized_document_type = document_type.strip().lower()
+    if normalized_source_type not in {"sales_document", "sale", "sales_invoice"}:
+        raise ValueError("Unsupported ETA source type")
+    source = db.scalar(select(SalesDocument).where(
+        SalesDocument.id == source_id,
+        SalesDocument.company_id == company_id,
+    ))
+    if source is None:
+        raise ValueError("ETA source sales document does not belong to the company")
+    if source.document_type not in {"invoice", "credit_note"}:
+        raise ValueError("Only sales invoices and credit notes can be submitted to ETA")
+    if normalized_document_type not in {"invoice", "credit_note"}:
+        raise ValueError("Unsupported ETA document type")
+    if normalized_document_type != source.document_type:
+        raise ValueError("ETA document type does not match the source sales document")
+    if not internal_number.strip():
+        raise ValueError("ETA internal number is required")
+    try:
+        json.loads(signed_payload)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise ValueError("Signed ETA payload must be valid JSON") from exc
     obj = EgyptianEInvoiceDocument(
         company_id=company_id,
-        source_type=source_type,
+        source_type="sales_document",
         source_id=source_id,
-        document_type=document_type,
-        internal_number=internal_number,
+        document_type=normalized_document_type,
+        internal_number=internal_number.strip(),
         signed_payload=signed_payload,
         status="draft",
     )
@@ -134,7 +158,7 @@ def submit_document(db: Session, obj: EgyptianEInvoiceDocument, *, user_id: int 
         obj.retry_count += 1
         obj.error_code = "ETA_CLIENT_ERROR"
         obj.error_message = str(exc)[:4000]
-        record_audit_event(db, action="einvoice.submit_error", entity_type="egyptian_einvoice", entity_id=obj.id, user_id=user_id, tenant_id=tenant_id, company_id=obj.company_id, metadata={"error": str(exc)[:1000], "retry_count": obj.retry_count})
+        record_audit_event(db, action="einvoice.submit_error", entity_type="egyptian_einvoice", entity_id=obj.id, user_id=user_id, tenant_id=tenant_id, metadata={"error": str(exc)[:1000], "retry_count": obj.retry_count})
         raise
 
 
