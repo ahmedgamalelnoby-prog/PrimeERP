@@ -16,6 +16,10 @@ permissions:
 env:
   CI_POSTGRES_PORT: 55432
 
+defaults:
+  run:
+    shell: powershell -NoProfile -ExecutionPolicy Bypass -Command "& {0}"
+
 jobs:
   backend:
     name: Backend - compile, architecture, security, smoke, tests and migrations
@@ -28,44 +32,35 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Validate Python 3.10 launcher
-        shell: powershell
         run: |
           py -3.10 --version
           if ($LASTEXITCODE -ne 0) { throw "Python 3.10 is required on the self-hosted runner." }
       - name: Create isolated CI virtual environment
-        shell: powershell
         run: py -3.10 -m venv .ci-venv
       - name: Validate isolated Python runtime
-        shell: powershell
         run: |
           $python = "$PWD\.ci-venv\Scripts\python.exe"
           $version = (& $python --version 2>&1).ToString()
           $version
           if ($version -notmatch '^Python 3\.10\.') { throw "PrimeERP CI requires Python 3.10; found $version." }
       - name: Install dependencies
-        shell: powershell
         run: |
           $python = "$PWD\.ci-venv\Scripts\python.exe"
           & $python -m pip install --upgrade pip
           & $python -m pip install -r requirements.txt
           & $python -m pip install pytest
       - name: Compile Python sources
-        shell: powershell
         run: .\.ci-venv\Scripts\python.exe -m compileall -q app
       - name: Validate modular architecture
-        shell: powershell
         run: .\.ci-venv\Scripts\python.exe scripts/check_modular_architecture.py
       - name: Validate API security boundaries
-        shell: powershell
         run: .\.ci-venv\Scripts\python.exe scripts/check_api_security.py
       - name: Import application smoke test
-        shell: powershell
         env:
           DATABASE_URL: sqlite:///./primeerp_ci_smoke.db
           APP_ENV: test
         run: .\.ci-venv\Scripts\python.exe scripts/smoke_import.py
       - name: Validate production configuration rejects unsafe defaults
-        shell: powershell
         env:
           APP_ENV: production
           DEBUG: 'false'
@@ -74,7 +69,6 @@ jobs:
           CORS_ORIGINS: https://erp.example.com
         run: .\.ci-venv\Scripts\python.exe scripts/check_production_config.py
       - name: Prepare CI database
-        shell: powershell
         run: |
           docker rm -f primeerp-ci-postgres 2>$null
           docker run -d --name primeerp-ci-postgres -e POSTGRES_USER=primeerp -e POSTGRES_PASSWORD=primeerp -e POSTGRES_DB=primeerp_ci -p ${env:CI_POSTGRES_PORT}:5432 postgres:17
@@ -86,30 +80,25 @@ jobs:
           }
           if (-not $ready) { docker logs primeerp-ci-postgres; exit 1 }
       - name: Run Alembic migrations
-        shell: powershell
         env:
           DATABASE_URL: postgresql+psycopg://primeerp:primeerp@127.0.0.1:55432/primeerp_ci
         run: .\.ci-venv\Scripts\alembic.exe upgrade head
       - name: Require a single Alembic head
-        shell: powershell
         run: |
           $heads = & .\.ci-venv\Scripts\alembic.exe heads
           $heads
           $count = ($heads | Select-String '\(head\)').Count
           if ($count -ne 1) { throw "Expected exactly one Alembic head; found $count." }
       - name: Check Alembic configuration
-        shell: powershell
         env:
           DATABASE_URL: postgresql+psycopg://primeerp:primeerp@127.0.0.1:55432/primeerp_ci
         run: .\.ci-venv\Scripts\alembic.exe check
       - name: Run tests
-        shell: powershell
         run: |
           $tests = Get-ChildItem -Path tests -Filter 'test_*.py' -File -ErrorAction SilentlyContinue
           if ($tests) { .\.ci-venv\Scripts\python.exe -m pytest -q } else { Write-Host 'No backend tests found; compile, architecture and smoke checks passed.' }
       - name: Cleanup CI database
         if: always()
-        shell: powershell
         run: docker rm -f primeerp-ci-postgres 2>$null
 
   frontend:
@@ -123,23 +112,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Validate Node.js runtime
-        shell: powershell
         run: |
           node --version
           npm --version
           $major = node -p "process.versions.node.split('.')[0]"
           if ([int]$major -lt 20) { throw "PrimeERP CI requires Node.js 20+ on the self-hosted runner; found $major." }
       - name: Install dependencies
-        shell: powershell
         run: npm ci
       - name: Typecheck
-        shell: powershell
         run: npm run typecheck
       - name: Lint
-        shell: powershell
         run: npm run lint
       - name: Production build
-        shell: powershell
         run: npm run build
 
   repository:
@@ -149,7 +133,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Reject cross-system references and generated files
-        shell: powershell
         run: |
           $bad = $false
           $tracked = git ls-files
