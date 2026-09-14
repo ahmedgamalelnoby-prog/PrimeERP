@@ -18,7 +18,8 @@ from app.modules.commerce.service import commerce_service
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
-from app.modules.jurisdiction.commerce_guard import capture_document_tax_snapshot
+from app.modules.jurisdiction.commerce_guard import capture_document_tax_snapshot, validate_document_tax_snapshot
+from app.modules.jurisdiction.models import TaxSnapshot
 
 router = APIRouter(prefix="/commerce", tags=["Commerce"], dependencies=[Depends(require_permission("commerce.access"))])
 
@@ -118,7 +119,9 @@ def confirm_sale(document_id: int, company_id: int = Query(..., gt=0), current_u
     def action():
         obj = db.scalar(select(SalesDocument).where(SalesDocument.id == document_id, SalesDocument.company_id == company_id).with_for_update())
         if obj is None: raise ValueError("Document not found")
-        capture_document_tax_snapshot(db, obj, kind="sale")
+        snapshot = capture_document_tax_snapshot(db, obj, kind="sale")
+        if snapshot is None: raise ValueError("A jurisdiction tax snapshot is required before posting this sales document")
+        validate_document_tax_snapshot(obj, snapshot)
         return commerce_service.confirm(db, company_id, document_id, "sale", user_id=current_user.id)
     obj = _run(action); db.commit(); db.refresh(obj); return obj
 
@@ -129,7 +132,9 @@ def confirm_purchase(document_id: int, company_id: int = Query(..., gt=0), curre
     def action():
         obj = db.scalar(select(PurchaseDocument).where(PurchaseDocument.id == document_id, PurchaseDocument.company_id == company_id).with_for_update())
         if obj is None: raise ValueError("Document not found")
-        capture_document_tax_snapshot(db, obj, kind="purchase")
+        snapshot = capture_document_tax_snapshot(db, obj, kind="purchase")
+        if snapshot is None: raise ValueError("A jurisdiction tax snapshot is required before posting this purchase document")
+        validate_document_tax_snapshot(obj, snapshot)
         return commerce_service.confirm(db, company_id, document_id, "purchase", user_id=current_user.id)
     obj = _run(action); db.commit(); db.refresh(obj); return obj
 
