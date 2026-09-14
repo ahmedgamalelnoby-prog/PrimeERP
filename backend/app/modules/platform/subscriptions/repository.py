@@ -26,6 +26,14 @@ class SubscriptionRepository:
             .first()
         )
 
+    def get_latest_for_tenant(self, db: Session, tenant_id: int):
+        return (
+            db.query(Subscription)
+            .filter(Subscription.tenant_id == tenant_id)
+            .order_by(Subscription.id.desc())
+            .first()
+        )
+
     def get_conflicting_for_tenant(
         self,
         db: Session,
