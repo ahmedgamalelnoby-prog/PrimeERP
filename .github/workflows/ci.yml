@@ -145,7 +145,7 @@ jobs:
       - name: Reject cross-system references and generated files
         shell: cmd
         run: |
-          git ls-files | findstr /R /C:"^\.env" /C:"__pycache__" /C:"node_modules" /C:"dist/" /C:"\.pyc$" /C:"\.backup$" /C:"\.bak$"
+          git ls-files | findstr /R /C:"^\.env$" /C:"__pycache__" /C:"node_modules" /C:"dist/" /C:"\.pyc$" /C:"\.backup$" /C:"\.bak$"
           if not errorlevel 1 (
             echo Forbidden tracked/generated file detected.
             exit /b 1
