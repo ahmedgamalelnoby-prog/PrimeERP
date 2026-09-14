@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
@@ -17,11 +18,12 @@ router = APIRouter(prefix="/uom", tags=["Units of Measure"], dependencies=[Depen
 
 
 def _company_for_user(db: Session, company_id: int, user: User):
-    if user.tenant_id is None:
-        raise HTTPException(403, "User is not assigned to a tenant")
-    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == user.tenant_id))
+    tenant_id = get_effective_tenant_id(user)
+    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == tenant_id))
     if company is None:
         raise HTTPException(403, "Company is outside the current tenant")
+    if not company.is_active:
+        raise HTTPException(409, "Company is inactive")
     return company
 
 
