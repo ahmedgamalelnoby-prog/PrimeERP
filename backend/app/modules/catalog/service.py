@@ -131,7 +131,7 @@ class CatalogService:
             if db.scalar(select(ProductPriceList.id).where(ProductPriceList.id == price_list_id, ProductPriceList.company_id == company_id)) is None:
                 raise ValueError("Price list does not belong to this company")
             query = query.where(ProductPrice.price_list_id == price_list_id)
-        return list(db.scalars(query.order_by(ProductPrice.product_id, ProductPrice.valid_from.desc())).all())
+        return list(db.scalars(query.order_by(ProductPrice.product_id, ProductPrice.min_quantity.desc(), ProductPrice.valid_from.desc())).all())
 
     def record_cost(self, db: Session, company_id: int, payload):
         self._product(db, company_id, payload.product_id)
@@ -143,7 +143,7 @@ class CatalogService:
 
     def list_cost_history(self, db: Session, company_id: int, product_id: int):
         self._product(db, company_id, product_id)
-        return list(db.scalars(select(ProductCostHistory).where(ProductCostHistory.company_id == company_id, ProductCostHistory.product_id == product_id).order_by(ProductCostHistory.effective_at.desc())).all())
+        return list(db.scalars(select(ProductCostHistory).where(ProductCostHistory.company_id == company_id, ProductCostHistory.product_id == product_id).order_by(ProductCostHistory.effective_at.desc(), ProductCostHistory.id.desc())).all())
 
     def _recipe_would_cycle(self, db: Session, company_id: int, product_id: int, ingredient_ids: list[int]) -> bool:
         memo: dict[int, bool] = {}
@@ -190,12 +190,7 @@ class CatalogService:
             raise ValueError("Recipe line UOM does not belong to this company")
         if ingredient_uom is None:
             raise ValueError("Recipe line UOM cannot be used when the ingredient has no base UOM")
-        return self._calculate_uom_factor(
-            Decimal(line_uom.factor_to_base),
-            line_uom.category,
-            Decimal(ingredient_uom.factor_to_base),
-            ingredient_uom.category,
-        )
+        return self._calculate_uom_factor(Decimal(line_uom.factor_to_base), line_uom.category, Decimal(ingredient_uom.factor_to_base), ingredient_uom.category)
 
     def create_recipe(self, db: Session, payload):
         self._locked_company(db, payload.company_id)
@@ -332,13 +327,8 @@ class CatalogService:
         db.refresh(item)
         return item
 
-    def pricing_analysis(self, db: Session, company_id: int, product_id: int, target_margin: Decimal = Decimal("30"), price_list_id: int | None = None):
-        product = self._product(db, company_id, product_id)
-        current_cost = self.ingredient_unit_cost(db, company_id, product_id)
-        recipe = self._active_recipe_for_product(db, company_id, product_id)
-        recipe_cost = self.recipe_cost(db, company_id, recipe.id) if recipe else None
-        if recipe_cost is not None:
-            current_cost = recipe_cost
+    def _resolve_price(self, db: Session, company_id: int, product_id: int, quantity: Decimal, price_list_id: int | None = None):
+        now = _now()
         selected_price_list_id = price_list_id
         if selected_price_list_id is None:
             default_list = db.scalar(select(ProductPriceList).where(ProductPriceList.company_id == company_id, ProductPriceList.is_default.is_(True), ProductPriceList.is_active.is_(True)))
@@ -346,39 +336,73 @@ class CatalogService:
         else:
             if db.scalar(select(ProductPriceList.id).where(ProductPriceList.id == selected_price_list_id, ProductPriceList.company_id == company_id, ProductPriceList.is_active.is_(True))) is None:
                 raise ValueError("Price list does not belong to this company")
-        now = _now()
-        price_query = select(ProductPrice).where(ProductPrice.company_id == company_id, ProductPrice.product_id == product_id, ProductPrice.is_active.is_(True), ProductPrice.valid_from <= now, ((ProductPrice.valid_to.is_(None)) | (ProductPrice.valid_to > now)))
         if selected_price_list_id is not None:
-            price_query = price_query.where(ProductPrice.price_list_id == selected_price_list_id)
-        price = db.scalar(price_query.order_by(ProductPrice.min_quantity.asc(), ProductPrice.valid_from.desc()))
-        sale_price = _money(price.sale_price if price else product.sales_price)
+            price = db.scalar(select(ProductPrice).where(ProductPrice.company_id == company_id, ProductPrice.price_list_id == selected_price_list_id, ProductPrice.product_id == product_id, ProductPrice.is_active.is_(True), ProductPrice.valid_from <= now, ((ProductPrice.valid_to.is_(None)) | (ProductPrice.valid_to > now)), ProductPrice.min_quantity <= quantity).order_by(ProductPrice.min_quantity.desc(), ProductPrice.valid_from.desc()).limit(1))
+            if price is not None:
+                return price, selected_price_list_id
+        return None, selected_price_list_id
+
+    def pricing_analysis(self, db: Session, company_id: int, product_id: int, target_margin: Decimal = Decimal("30"), price_list_id: int | None = None, quantity: Decimal = Decimal("1")):
+        if quantity <= 0:
+            raise ValueError("Pricing quantity must be positive")
+        if target_margin < 0 or target_margin >= 100:
+            raise ValueError("Target margin must be between 0 and 100")
+        product = self._product(db, company_id, product_id)
+        current_cost = self.ingredient_unit_cost(db, company_id, product_id)
+        recipe = self._active_recipe_for_product(db, company_id, product_id)
+        recipe_cost = self.recipe_cost(db, company_id, recipe.id) if recipe else None
+        if recipe_cost is not None:
+            current_cost = recipe_cost
+        price, selected_price_list_id = self._resolve_price(db, company_id, product_id, quantity, price_list_id)
+        if price is not None:
+            sale_price = _money(price.sale_price)
+            price_source = price.source or "manual"
+        else:
+            sale_price = _money(product.sales_price)
+            price_source = "product.sales_price"
         margin = _money(sale_price - current_cost)
         margin_pct = _money((margin / sale_price * 100) if sale_price > 0 else 0)
-        recommended = _money(current_cost / (Decimal("1") - target_margin / 100)) if target_margin < 100 else None
+        recommended = _money(current_cost / (Decimal("1") - target_margin / 100))
+        if sale_price <= 0:
+            pricing_status = "NO_SELLING_PRICE"
+        elif margin_pct < target_margin:
+            pricing_status = "BELOW_TARGET"
+        else:
+            pricing_status = "OK"
         prices_query = select(ProductPrice).where(ProductPrice.company_id == company_id, ProductPrice.product_id == product_id)
         if selected_price_list_id is not None:
             prices_query = prices_query.where(ProductPrice.price_list_id == selected_price_list_id)
-        prices = list(db.scalars(prices_query.order_by(ProductPrice.valid_from.desc()).limit(50)).all())
-        costs = list(db.scalars(select(ProductCostHistory).where(ProductCostHistory.company_id == company_id, ProductCostHistory.product_id == product_id).order_by(ProductCostHistory.effective_at.desc()).limit(50)).all())
-        return {"product_id": product.id, "product_name": product.name_en or product.name_ar, "price_list_id": selected_price_list_id, "current_cost": current_cost, "sale_price": sale_price, "gross_margin": margin, "gross_margin_percentage": margin_pct, "recommended_price_at_margin": recommended, "recipe_cost": recipe_cost, "price_history": [{"id": p.id, "sale_price": p.sale_price, "valid_from": p.valid_from, "valid_to": p.valid_to, "min_quantity": p.min_quantity, "source": p.source} for p in prices], "cost_history": [{"id": c.id, "cost": c.cost, "cost_type": c.cost_type, "effective_at": c.effective_at, "source": c.source} for c in costs]}
+        prices = list(db.scalars(prices_query.order_by(ProductPrice.valid_from.desc(), ProductPrice.min_quantity.desc()).limit(50)).all())
+        costs = list(db.scalars(select(ProductCostHistory).where(ProductCostHistory.company_id == company_id, ProductCostHistory.product_id == product_id).order_by(ProductCostHistory.effective_at.desc(), ProductCostHistory.id.desc()).limit(50)).all())
+        return {"product_id": product.id, "product_name": product.name_en or product.name_ar, "price_list_id": selected_price_list_id, "quantity": quantity, "current_cost": current_cost, "sale_price": sale_price, "gross_margin": margin, "gross_margin_percentage": margin_pct, "recommended_price_at_margin": recommended, "pricing_status": pricing_status, "price_source": price_source, "recipe_cost": recipe_cost, "price_history": [{"id": p.id, "sale_price": p.sale_price, "valid_from": p.valid_from, "valid_to": p.valid_to, "min_quantity": p.min_quantity, "source": p.source} for p in prices], "cost_history": [{"id": c.id, "cost": c.cost, "cost_type": c.cost_type, "effective_at": c.effective_at, "source": c.source} for c in costs]}
 
-    def pricing_impact(self, db: Session, company_id: int, target_margin: Decimal = Decimal("30"), price_list_id: int | None = None, below_margin: Decimal | None = None):
+    def pricing_impact(self, db: Session, company_id: int, target_margin: Decimal = Decimal("30"), price_list_id: int | None = None, below_margin: Decimal | None = None, quantity: Decimal = Decimal("1"), include_all_products: bool = True):
         self._company(db, company_id)
+        if quantity <= 0:
+            raise ValueError("Pricing quantity must be positive")
         threshold = target_margin if below_margin is None else below_margin
+        if threshold < 0 or threshold >= 100:
+            raise ValueError("Margin threshold must be between 0 and 100")
+        menu_by_product: dict[int, tuple[int, str]] = {}
         menus = list(db.scalars(select(Menu).options(selectinload(Menu.items)).where(Menu.company_id == company_id, Menu.is_active.is_(True))).all())
-        seen: set[int] = set()
-        impacted = []
         for menu in menus:
             for item in menu.items:
-                if not item.is_available or item.product_id in seen:
-                    continue
-                seen.add(item.product_id)
-                selected_list = price_list_id if price_list_id is not None else item.price_list_id
-                analysis = self.pricing_analysis(db, company_id, item.product_id, target_margin, selected_list)
-                if analysis["gross_margin_percentage"] < threshold:
-                    impacted.append({"menu_id": menu.id, "menu_code": menu.code, "product_id": analysis["product_id"], "product_name": analysis["product_name"], "price_list_id": analysis["price_list_id"], "current_cost": analysis["current_cost"], "sale_price": analysis["sale_price"], "gross_margin_percentage": analysis["gross_margin_percentage"], "recommended_price_at_margin": analysis["recommended_price_at_margin"]})
+                if item.is_available and item.product_id not in menu_by_product:
+                    menu_by_product[item.product_id] = (menu.id, menu.code)
+        products = list(db.scalars(select(InventoryItem).where(InventoryItem.company_id == company_id, InventoryItem.is_active.is_(True)).order_by(InventoryItem.id)).all()) if include_all_products else [self._product(db, company_id, pid) for pid in menu_by_product]
+        impacted = []
+        for product in products:
+            selected_list = price_list_id
+            if selected_list is None and product.id in menu_by_product:
+                menu_id, menu_code = menu_by_product[product.id]
+                item = db.scalar(select(MenuItem).where(MenuItem.menu_id == menu_id, MenuItem.product_id == product.id))
+                selected_list = item.price_list_id if item and item.price_list_id else None
+            analysis = self.pricing_analysis(db, company_id, product.id, target_margin, selected_list, quantity)
+            if analysis["pricing_status"] != "OK" or analysis["gross_margin_percentage"] < threshold:
+                menu_id, menu_code = menu_by_product.get(product.id, (None, None))
+                impacted.append({"menu_id": menu_id, "menu_code": menu_code, "product_id": analysis["product_id"], "product_name": analysis["product_name"], "price_list_id": analysis["price_list_id"], "quantity": quantity, "current_cost": analysis["current_cost"], "sale_price": analysis["sale_price"], "gross_margin_percentage": analysis["gross_margin_percentage"], "recommended_price_at_margin": analysis["recommended_price_at_margin"], "pricing_status": analysis["pricing_status"], "price_source": analysis["price_source"]})
         impacted.sort(key=lambda row: (row["gross_margin_percentage"], row["product_id"]))
-        return {"target_margin": target_margin, "below_margin": threshold, "price_list_id": price_list_id, "count": len(impacted), "items": impacted}
+        return {"target_margin": target_margin, "below_margin": threshold, "price_list_id": price_list_id, "quantity": quantity, "count": len(impacted), "items": impacted}
 
 
 catalog_service = CatalogService()
