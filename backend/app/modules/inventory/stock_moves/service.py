@@ -36,7 +36,6 @@ class InventoryStockMoveService:
         if item.item_type not in {"stockable", "consumable"}:
             raise ValueError("Only stockable or consumable items can have stock movements")
         self._validate_variant(db, company_id=payload.company_id, item=item, variant_id=payload.variant_id)
-
         locations = {}
         for location_id in (payload.source_location_id, payload.destination_location_id):
             if location_id is not None:
