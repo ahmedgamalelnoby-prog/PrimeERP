@@ -8,6 +8,7 @@ from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.catalog.schemas import BarcodeResponse, VariantBarcodeCreate, VariantCreate, VariantResponse
+from app.modules.catalog.variant_lifecycle_service import product_variant_lifecycle_service
 from app.modules.catalog.variant_service import product_variant_service
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
@@ -41,19 +42,11 @@ def _variant_response(variant):
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=500, detail="Stored variant attributes are invalid JSON") from exc
     return {
-        "id": variant.id,
-        "company_id": variant.company_id,
-        "product_id": variant.product_id,
-        "sku": variant.sku,
-        "name_ar": variant.name_ar,
-        "name_en": variant.name_en,
-        "attributes": attributes,
-        "uom_id": variant.uom_id,
-        "sales_price": variant.sales_price,
-        "purchase_price": variant.purchase_price,
-        "is_active": variant.is_active,
-        "created_at": variant.created_at,
-        "updated_at": variant.updated_at,
+        "id": variant.id, "company_id": variant.company_id, "product_id": variant.product_id,
+        "sku": variant.sku, "name_ar": variant.name_ar, "name_en": variant.name_en,
+        "attributes": attributes, "uom_id": variant.uom_id, "sales_price": variant.sales_price,
+        "purchase_price": variant.purchase_price, "is_active": variant.is_active,
+        "created_at": variant.created_at, "updated_at": variant.updated_at,
         "barcodes": list(variant.barcodes or []),
     }
 
@@ -96,11 +89,56 @@ def get_variant(variant_id: int, company_id: int = Query(..., gt=0), db: Session
         _error(exc)
 
 
+@router.put("/variants/{variant_id}", response_model=VariantResponse, dependencies=WRITE_GUARDS)
+def update_variant(variant_id: int, payload: VariantCreate, company_id: int = Query(..., gt=0), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _company_for_user(db, company_id, current_user)
+    try:
+        return _variant_response(product_variant_lifecycle_service.update_variant(db, company_id, variant_id, payload))
+    except ValueError as exc:
+        _error(exc)
+
+
+@router.post("/variants/{variant_id}/deactivate", response_model=VariantResponse, dependencies=WRITE_GUARDS)
+def deactivate_variant(variant_id: int, company_id: int = Query(..., gt=0), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _company_for_user(db, company_id, current_user)
+    try:
+        return _variant_response(product_variant_lifecycle_service.deactivate_variant(db, company_id, variant_id))
+    except ValueError as exc:
+        _error(exc)
+
+
+@router.post("/variants/{variant_id}/reactivate", response_model=VariantResponse, dependencies=WRITE_GUARDS)
+def reactivate_variant(variant_id: int, company_id: int = Query(..., gt=0), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _company_for_user(db, company_id, current_user)
+    try:
+        return _variant_response(product_variant_lifecycle_service.reactivate_variant(db, company_id, variant_id))
+    except ValueError as exc:
+        _error(exc)
+
+
 @router.post("/variants/{variant_id}/barcodes", response_model=BarcodeResponse, status_code=201, dependencies=WRITE_GUARDS)
 def add_variant_barcode(variant_id: int, payload: VariantBarcodeCreate, company_id: int = Query(..., gt=0), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _company_for_user(db, company_id, current_user)
     try:
         return product_variant_service.add_barcode(db, company_id, variant_id, payload)
+    except ValueError as exc:
+        _error(exc)
+
+
+@router.post("/barcodes/{barcode_id}/deactivate", response_model=BarcodeResponse, dependencies=WRITE_GUARDS)
+def deactivate_barcode(barcode_id: int, company_id: int = Query(..., gt=0), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _company_for_user(db, company_id, current_user)
+    try:
+        return product_variant_lifecycle_service.deactivate_barcode(db, company_id, barcode_id)
+    except ValueError as exc:
+        _error(exc)
+
+
+@router.post("/barcodes/{barcode_id}/reactivate", response_model=BarcodeResponse, dependencies=WRITE_GUARDS)
+def reactivate_barcode(barcode_id: int, company_id: int = Query(..., gt=0), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _company_for_user(db, company_id, current_user)
+    try:
+        return product_variant_lifecycle_service.reactivate_barcode(db, company_id, barcode_id)
     except ValueError as exc:
         _error(exc)
 
