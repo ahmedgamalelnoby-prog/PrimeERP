@@ -57,6 +57,9 @@ def test_money_rounding_used_by_tax_engine():
 
 def test_sales_invoice_accounting_is_balanced(monkeypatch):
     settings = SimpleNamespace(
+        sales_journal_id=401,
+        purchase_journal_id=402,
+        cash_journal_id=403,
         ar_account_id=101,
         sales_account_id=102,
         output_vat_account_id=103,
@@ -85,11 +88,14 @@ def test_sales_invoice_accounting_is_balanced(monkeypatch):
     assert result['source_id'] == 55
     assert sum(Decimal(line['debit']) for line in result['lines']) == Decimal('1140.00')
     assert sum(Decimal(line['credit']) for line in result['lines']) == Decimal('1140.00')
-    assert captured['journal_id'] is not None
+    assert captured['journal_id'] == 401
 
 
 def test_sale_payment_with_wht_posts_gross_control_and_net_cash(monkeypatch):
     settings = SimpleNamespace(
+        sales_journal_id=401,
+        purchase_journal_id=402,
+        cash_journal_id=403,
         ar_account_id=101,
         ap_account_id=201,
         default_payment_account_id=301,
@@ -121,10 +127,14 @@ def test_sale_payment_with_wht_posts_gross_control_and_net_cash(monkeypatch):
     assert next(line for line in lines if line['account_combination_id'] == 302)['debit'] == Decimal('11.40')
     assert next(line for line in lines if line['account_combination_id'] == 101)['credit'] == Decimal('1140.00')
     assert captured['source_entity'] == 'commerce_payment'
+    assert captured['journal_id'] == 403
 
 
 def test_sale_payment_reversal_is_exact_accounting_opposite_and_uses_reversal_date(monkeypatch):
     settings = SimpleNamespace(
+        sales_journal_id=401,
+        purchase_journal_id=402,
+        cash_journal_id=403,
         ar_account_id=101,
         ap_account_id=201,
         default_payment_account_id=301,
@@ -165,6 +175,7 @@ def test_sale_payment_reversal_is_exact_accounting_opposite_and_uses_reversal_da
     assert captured['entry_date'] == reversal_date
     assert captured['source_entity'] == 'commerce_payment_reversal'
     assert captured['source_id'] == 77
+    assert captured['journal_id'] == 403
 
 
 def test_payment_auto_wht_uses_product_tax_profile_result(monkeypatch):
@@ -189,10 +200,6 @@ def test_payment_auto_wht_uses_product_tax_profile_result(monkeypatch):
         reference=None,
         notes=None,
         idempotency_key=None,
-    )
-    monkeypatch.setattr(
-        'app.modules.commerce.service.select',
-        lambda *args, **kwargs: None,
     )
 
     class FakeDB:
