@@ -19,37 +19,54 @@ env:
 jobs:
   backend:
     name: Backend - compile, architecture, security, smoke, tests and migrations
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, PrimeERP]
     timeout-minutes: 30
     defaults:
       run:
+        shell: powershell
         working-directory: backend
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Prepare Docker CLI for service runner
+        shell: powershell
+        working-directory: .
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $toolDir = Join-Path $env:RUNNER_TEMP 'primeerp-docker-cli'
+          New-Item -ItemType Directory -Force -Path $toolDir | Out-Null
+          $dockerExe = Join-Path $toolDir 'docker.exe'
+          if (-not (Test-Path $dockerExe)) {
+            $zip = Join-Path $env:RUNNER_TEMP 'docker-cli.zip'
+            Invoke-WebRequest -Uri 'https://download.docker.com/win/static/stable/x86_64/docker-29.8.0.zip' -OutFile $zip
+            Expand-Archive -Path $zip -DestinationPath (Join-Path $env:RUNNER_TEMP 'docker-cli-extract') -Force
+            Copy-Item (Join-Path $env:RUNNER_TEMP 'docker-cli-extract\docker\docker.exe') $dockerExe -Force
+          }
+          $env:Path = "$toolDir;$env:Path"
+          Add-Content $env:GITHUB_PATH $toolDir
+          & $dockerExe version
       - name: Validate runtime
         run: |
-          python3.10 --version
-          docker --version
-          docker compose version
+          python --version
+          docker version
       - name: Create isolated CI virtual environment
-        run: python3.10 -m venv .ci-venv
+        run: python -m venv .ci-venv
       - name: Install dependencies
         run: |
-          .ci-venv/bin/python -m pip install --upgrade pip
-          .ci-venv/bin/python -m pip install -r requirements.txt
-          .ci-venv/bin/python -m pip install pytest
+          .\.ci-venv\Scripts\python.exe -m pip install --upgrade pip
+          .\.ci-venv\Scripts\python.exe -m pip install -r requirements.txt
+          .\.ci-venv\Scripts\python.exe -m pip install pytest
       - name: Compile Python sources
-        run: .ci-venv/bin/python -m compileall -q app
+        run: .\.ci-venv\Scripts\python.exe -m compileall -q app
       - name: Validate modular architecture
-        run: .ci-venv/bin/python scripts/check_modular_architecture.py
+        run: .\.ci-venv\Scripts\python.exe scripts\check_modular_architecture.py
       - name: Validate API security boundaries
-        run: .ci-venv/bin/python scripts/check_api_security.py
+        run: .\.ci-venv\Scripts\python.exe scripts\check_api_security.py
       - name: Import application smoke test
         env:
           DATABASE_URL: sqlite:///./primeerp_ci_smoke.db
           APP_ENV: test
-        run: .ci-venv/bin/python scripts/smoke_import.py
+        run: .\.ci-venv\Scripts\python.exe scripts\smoke_import.py
       - name: Validate production configuration rejects unsafe defaults
         env:
           APP_ENV: production
@@ -57,50 +74,48 @@ jobs:
           DATABASE_URL: sqlite:///./unsafe.db
           SECRET_KEY: your-secret-key-change-this-in-production
           CORS_ORIGINS: https://erp.example.com
-        run: .ci-venv/bin/python scripts/check_production_config.py
+        run: .\.ci-venv\Scripts\python.exe scripts\check_production_config.py
       - name: Prepare CI database
         working-directory: .
         run: |
-          docker rm -f primeerp-ci-postgres >/dev/null 2>&1 || true
-          docker run -d --name primeerp-ci-postgres -e POSTGRES_USER=primeerp -e POSTGRES_PASSWORD=primeerp -e POSTGRES_DB=primeerp_ci -p ${CI_POSTGRES_PORT}:5432 postgres:17
-          ready=false
-          for i in $(seq 1 30); do
-            if docker exec primeerp-ci-postgres pg_isready -U primeerp -d primeerp_ci >/dev/null 2>&1; then ready=true; break; fi
-            sleep 2
-          done
-          if [ "$ready" != true ]; then docker logs primeerp-ci-postgres; exit 1; fi
+          docker rm -f primeerp-ci-postgres 2>$null
+          docker run -d --name primeerp-ci-postgres -e POSTGRES_USER=primeerp -e POSTGRES_PASSWORD=primeerp -e POSTGRES_DB=primeerp_ci -p ${env:CI_POSTGRES_PORT}:5432 postgres:17
+          $ready = $false
+          1..30 | ForEach-Object {
+            if ($ready) { return }
+            docker exec primeerp-ci-postgres pg_isready -U primeerp -d primeerp_ci *> $null
+            if ($LASTEXITCODE -eq 0) { $ready = $true; return }
+            Start-Sleep -Seconds 2
+          }
+          if (-not $ready) { docker logs primeerp-ci-postgres; throw 'PostgreSQL did not become ready' }
       - name: Run Alembic migrations
         env:
           DATABASE_URL: postgresql+psycopg://primeerp:primeerp@127.0.0.1:55432/primeerp_ci
-        run: .ci-venv/bin/alembic upgrade head
+        run: .\.ci-venv\Scripts\python.exe -m alembic upgrade head
       - name: Require a single Alembic head
         run: |
-          heads="$(.ci-venv/bin/alembic heads)"
-          printf '%s\n' "$heads"
-          count=$(printf '%s\n' "$heads" | grep -c '(head)' || true)
-          test "$count" -eq 1 || { echo "Expected exactly one Alembic head; found $count"; exit 1; }
+          $heads = .\.ci-venv\Scripts\python.exe -m alembic heads
+          $heads | Write-Output
+          $count = @($heads | Select-String '\(head\)').Count
+          if ($count -ne 1) { throw "Expected exactly one Alembic head; found $count" }
       - name: Check Alembic configuration
         env:
           DATABASE_URL: postgresql+psycopg://primeerp:primeerp@127.0.0.1:55432/primeerp_ci
-        run: .ci-venv/bin/alembic check
+        run: .\.ci-venv\Scripts\python.exe -m alembic check
       - name: Run tests
-        run: |
-          if find tests -maxdepth 1 -type f -name 'test_*.py' -print -quit 2>/dev/null | grep -q .; then
-            .ci-venv/bin/python -m pytest -q
-          else
-            echo 'No backend tests found; static, import and migration checks passed.'
-          fi
+        run: .\.ci-venv\Scripts\python.exe -m pytest -q
       - name: Cleanup CI database
         if: always()
         working-directory: .
-        run: docker rm -f primeerp-ci-postgres >/dev/null 2>&1 || true
+        run: docker rm -f primeerp-ci-postgres 2>$null
 
   frontend:
     name: Frontend - typecheck, lint and build
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, PrimeERP]
     timeout-minutes: 20
     defaults:
       run:
+        shell: powershell
         working-directory: frontend
     steps:
       - name: Checkout
@@ -109,8 +124,8 @@ jobs:
         run: |
           node --version
           npm --version
-          major=$(node -p "process.versions.node.split('.')[0]")
-          test "$major" -ge 20 || { echo "PrimeERP CI requires Node.js 20+; found $major"; exit 1; }
+          $major = [int](node -p "process.versions.node.split('.')[0]")
+          if ($major -lt 20) { throw "PrimeERP CI requires Node.js 20+; found $major" }
       - name: Install dependencies
         run: npm ci
       - name: Typecheck
@@ -122,25 +137,27 @@ jobs:
 
   repository:
     name: Repository boundaries and hygiene
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, PrimeERP]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Reject cross-system references and generated files
-        shell: bash
+        shell: powershell
         run: |
-          set -euo pipefail
-          bad=0
-          while IFS= read -r file; do
-            if [[ "$file" =~ (^|/)(\.env($|/)|__pycache__/|node_modules/|dist/)|\.pyc$|\.backup$|\.bak$ ]]; then
-              echo "Forbidden tracked/generated file: $file"
-              bad=1
-            fi
-          done < <(git ls-files)
-          if matches=$(git grep -n -I -E 'CommercialERP|ContentAI|commercialERP|contentai|D:\\(commercialERP|ContentAI)' -- ':!docs/SYSTEM_BOUNDARIES.md' ':!.github/workflows/ci.yml'); then
-            printf '%s\n' "$matches"
-            echo 'Cross-system reference detected in PrimeERP.'
-            bad=1
-          fi
-          test "$bad" -eq 0
-          echo 'PrimeERP repository boundary check passed.'
+          $ErrorActionPreference = 'Stop'
+          $bad = $false
+          git ls-files | ForEach-Object {
+            $file = $_
+            if ($file -match '(^|/)(\.env($|/)|__pycache__/|node_modules/|dist/)|\.pyc$|\.backup$|\.bak$') {
+              Write-Output "Forbidden tracked/generated file: $file"
+              $bad = $true
+            }
+          }
+          $matches = git grep -n -I -E 'CommercialERP|ContentAI|commercialERP|contentai|D:\\(commercialERP|ContentAI)' -- ':!docs/SYSTEM_BOUNDARIES.md' ':!.github/workflows/ci.yml' 2>$null
+          if ($LASTEXITCODE -eq 0 -and $matches) {
+            $matches | Write-Output
+            Write-Output 'Cross-system reference detected in PrimeERP.'
+            $bad = $true
+          }
+          if ($bad) { throw 'Repository boundary check failed.' }
+          Write-Output 'PrimeERP repository boundary check passed.'
