@@ -6,7 +6,6 @@ from app.database.base import Base
 
 class IntegrationConnection(Base):
     __tablename__ = "integration_connections"
-
     id = Column(Integer, primary_key=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     provider = Column(String(40), nullable=False)
@@ -17,15 +16,11 @@ class IntegrationConnection(Base):
     is_active = Column(Boolean, nullable=False, server_default="true")
     last_sync_at = Column(DateTime)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
-
-    __table_args__ = (
-        UniqueConstraint("company_id", "provider", "name", name="uq_integration_company_provider_name"),
-    )
+    __table_args__ = (UniqueConstraint("company_id", "provider", "name", name="uq_integration_company_provider_name"),)
 
 
 class IntegrationEvent(Base):
     __tablename__ = "integration_events"
-
     id = Column(Integer, primary_key=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     connection_id = Column(Integer, ForeignKey("integration_connections.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -38,15 +33,11 @@ class IntegrationEvent(Base):
     processed_at = Column(DateTime(timezone=True), nullable=True)
     last_error = Column(Text, nullable=True)
     received_at = Column(DateTime, nullable=False, server_default=func.now())
-
-    __table_args__ = (
-        UniqueConstraint("connection_id", "external_event_id", name="uq_integration_event_external_id"),
-    )
+    __table_args__ = (UniqueConstraint("connection_id", "external_event_id", name="uq_integration_event_external_id"),)
 
 
 class IntegrationMapping(Base):
     __tablename__ = "integration_mappings"
-
     id = Column(Integer, primary_key=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     connection_id = Column(Integer, ForeignKey("integration_connections.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -55,7 +46,6 @@ class IntegrationMapping(Base):
     local_id = Column(Integer, nullable=False)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
-
     __table_args__ = (
         UniqueConstraint("connection_id", "entity_type", "external_id", name="uq_integration_mapping_external"),
         UniqueConstraint("connection_id", "entity_type", "local_id", name="uq_integration_mapping_local"),
@@ -64,12 +54,12 @@ class IntegrationMapping(Base):
 
 class IntegrationProductMapping(Base):
     __tablename__ = "integration_product_mappings"
-
     id = Column(Integer, primary_key=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     connection_id = Column(Integer, ForeignKey("integration_connections.id", ondelete="CASCADE"), nullable=False, index=True)
     product_id = Column(Integer, ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False)
     variant_id = Column(Integer, ForeignKey("product_variants.id", ondelete="RESTRICT"), nullable=True)
+    entity_type = Column(String(20), nullable=False, server_default="product")
     external_id = Column(String(160), nullable=False)
     external_sku = Column(String(160), nullable=True)
     external_url = Column(String(500), nullable=True)
@@ -78,19 +68,9 @@ class IntegrationProductMapping(Base):
     last_synced_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
-
     __table_args__ = (
-        UniqueConstraint("connection_id", "external_id", name="uq_integration_product_mapping_external"),
-        Index(
-            "uq_integration_product_mapping_local_variant",
-            "connection_id", "product_id", "variant_id",
-            unique=True,
-            postgresql_where=variant_id.is_not(None),
-        ),
-        Index(
-            "uq_integration_product_mapping_local_product",
-            "connection_id", "product_id",
-            unique=True,
-            postgresql_where=variant_id.is_(None),
-        ),
+        UniqueConstraint("connection_id", "entity_type", "external_id", name="uq_integration_product_mapping_external"),
+        Index("uq_integration_product_mapping_local_variant", "connection_id", "product_id", "variant_id", unique=True, postgresql_where=variant_id.is_not(None)),
+        Index("uq_integration_product_mapping_local_product", "connection_id", "product_id", unique=True, postgresql_where=variant_id.is_(None)),
+        Index("ix_integration_product_mapping_connection_entity_external", "connection_id", "entity_type", "external_id"),
     )
