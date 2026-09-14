@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-
 from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
@@ -12,6 +11,7 @@ from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.saas.entitlements import require_module
+from app.modules.commerce.models import SalesDocument
 from app.modules.shipping.models import ShippingCarrier, ShippingMethod, Shipment
 from app.modules.shipping.schemas import CarrierCreate, CarrierResponse, MethodCreate, MethodResponse, ShipmentCreate, ShipmentResponse
 
@@ -106,6 +106,17 @@ def shipment(payload: ShipmentCreate, current_user: User = Depends(get_current_u
     method_obj = db.scalar(select(ShippingMethod).join(ShippingCarrier, ShippingCarrier.id == ShippingMethod.carrier_id).where(ShippingMethod.id == payload.method_id, ShippingMethod.carrier_id == payload.carrier_id, ShippingCarrier.company_id == payload.company_id, ShippingCarrier.is_active.is_(True)))
     if method_obj is None:
         raise HTTPException(400, "Invalid carrier/method for company")
+    if payload.sales_document_id is not None:
+        sales_document = db.scalar(select(SalesDocument).where(
+            SalesDocument.id == payload.sales_document_id,
+            SalesDocument.company_id == payload.company_id,
+        ))
+        if sales_document is None:
+            raise HTTPException(422, "Sales document does not belong to the company")
+        if sales_document.document_type not in {"order", "delivery", "invoice"}:
+            raise HTTPException(422, "Only sales orders, deliveries, or invoices can be linked to a shipment")
+        if sales_document.status in {"cancelled"}:
+            raise HTTPException(409, "Cannot create a shipment for a cancelled sales document")
     if payload.cod_amount and method_obj.payment_method == "prepaid":
         raise HTTPException(422, "COD amount is not allowed for prepaid shipping")
     fee = payload.shipping_fee if payload.shipping_fee > 0 else method_obj.base_fee
