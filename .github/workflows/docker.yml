@@ -107,6 +107,12 @@ jobs:
               '/api/v1/uom',
               '/api/v1/inventory/items',
               '/api/v1/inventory/items/{item_id}/stock',
+              '/api/v1/catalog/categories',
+              '/api/v1/catalog/price-lists',
+              '/api/v1/catalog/prices',
+              '/api/v1/catalog/recipes',
+              '/api/v1/catalog/menus',
+              '/api/v1/catalog/products/{product_id}/pricing-analysis',
               '/api/v1/integrations/connections',
               '/api/v1/shipping/carriers',
           ]
