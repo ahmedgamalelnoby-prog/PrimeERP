@@ -32,8 +32,13 @@ jobs:
       - name: Locate Python 3.10 runtime
         run: |
           set "PYTHON_EXE="
-          py -3.10 -c "import sys; print(sys.executable)" > python-path.txt 2>nul
-          if exist python-path.txt set /p PYTHON_EXE=<python-path.txt
+          for %%P in ("C:\Program Files\Python310\python.exe" "C:\Python310\python.exe" "C:\Users\Admin\AppData\Local\Programs\Python\Python310\python.exe") do (
+            if not defined PYTHON_EXE if exist %%~P set "PYTHON_EXE=%%~P"
+          )
+          if not defined PYTHON_EXE (
+            py -3.10 -c "import sys; print(sys.executable)" > python-path.txt 2>nul
+            if exist python-path.txt set /p PYTHON_EXE=<python-path.txt
+          )
           if not defined PYTHON_EXE (
             python -c "import sys; print(sys.executable)" > python-path.txt 2>nul
             if exist python-path.txt set /p PYTHON_EXE=<python-path.txt
@@ -76,9 +81,11 @@ jobs:
         run: |
           .ci-venv\Scripts\python.exe -m alembic heads > alembic-heads.txt
           type alembic-heads.txt
-          findstr /c:"(head)" alembic-heads.txt >nul
-          if errorlevel 1 exit /b 1
-          for /f "tokens=*" %%H in ('findstr /c:"(head)" alembic-heads.txt') do @echo %%H
+          for /f %%H in ('find /c "(head)" ^< alembic-heads.txt') do set "HEAD_COUNT=%%H"
+          if not "%HEAD_COUNT%"=="1" (
+            echo Expected exactly one Alembic head; found %HEAD_COUNT%.
+            exit /b 1
+          )
       - name: Run tests
         run: .ci-venv\Scripts\python.exe -m pytest -q
 
