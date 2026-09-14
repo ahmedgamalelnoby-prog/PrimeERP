@@ -79,6 +79,32 @@ def list_mappings(db: Session, *, company_id: int, connection_id: int, product_i
     return list(db.scalars(q.order_by(IntegrationProductMapping.id.desc())).all())
 
 
+def find_by_external_id(db: Session, *, company_id: int, connection_id: int, external_id: str):
+    _connection(db, company_id, connection_id)
+    value = external_id.strip()
+    if not value:
+        raise ValueError("External product id is required")
+    return list(db.scalars(select(IntegrationProductMapping).where(
+        IntegrationProductMapping.company_id == company_id,
+        IntegrationProductMapping.connection_id == connection_id,
+        IntegrationProductMapping.external_id == value,
+    ).order_by(IntegrationProductMapping.id.desc())).all())
+
+
+def find_by_product(db: Session, *, company_id: int, connection_id: int, product_id: int, variant_id: int | None = None):
+    _connection(db, company_id, connection_id)
+    _product(db, company_id, product_id)
+    q = select(IntegrationProductMapping).where(
+        IntegrationProductMapping.company_id == company_id,
+        IntegrationProductMapping.connection_id == connection_id,
+        IntegrationProductMapping.product_id == product_id,
+    )
+    if variant_id is not None:
+        _variant(db, company_id, variant_id, product_id)
+        q = q.where(IntegrationProductMapping.variant_id == variant_id)
+    return list(db.scalars(q.order_by(IntegrationProductMapping.id.desc())).all())
+
+
 def update_mapping(db: Session, *, company_id: int, mapping_id: int, external_id: str | None = None, external_sku: str | None = None, external_url: str | None = None, sync_direction: str | None = None, sync_status: str | None = None):
     mapping = db.scalar(select(IntegrationProductMapping).where(IntegrationProductMapping.id == mapping_id, IntegrationProductMapping.company_id == company_id).with_for_update())
     if mapping is None:
