@@ -191,9 +191,15 @@ class CommerceAccountingService:
         if wht and settings.wht_account_id is None:
             raise HTTPException(409, "WHT account is required when withholding tax is used")
         if payment.document_kind == "sale":
-            lines = [{"account_combination_id": settings.default_payment_account_id, "debit": cash, "credit": 0}, {"account_combination_id": settings.wht_account_id, "debit": wht, "credit": 0}, {"account_combination_id": control, "debit": 0, "credit": gross}]
+            lines = [{"account_combination_id": settings.default_payment_account_id, "debit": cash, "credit": 0}]
+            if wht:
+                lines.append({"account_combination_id": settings.wht_account_id, "debit": wht, "credit": 0})
+            lines.append({"account_combination_id": control, "debit": 0, "credit": gross})
         else:
-            lines = [{"account_combination_id": control, "debit": gross, "credit": 0}, {"account_combination_id": settings.wht_account_id, "debit": 0, "credit": wht}, {"account_combination_id": settings.default_payment_account_id, "debit": 0, "credit": cash}]
+            lines = [{"account_combination_id": control, "debit": gross, "credit": 0}]
+            if wht:
+                lines.append({"account_combination_id": settings.wht_account_id, "debit": 0, "credit": wht})
+            lines.append({"account_combination_id": settings.default_payment_account_id, "debit": 0, "credit": cash})
         return self._post(db, company_id=payment.company_id, user_id=user_id, entry_date=payment.payment_date, journal_id=settings.payment_journal_id, entry_number=f"PAY-{payment.id}", description=f"Payment {payment.id}", lines=lines, source_entity="payment", source_id=payment.id)
 
     def post_payment_reversal(self, db, payment, document, user_id: int, reversal_date: date):
