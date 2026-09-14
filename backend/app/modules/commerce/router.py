@@ -45,7 +45,7 @@ def _validate_accounting_configuration(db: Session, company: Company, payload: C
     for label, journal_id in journal_ids.items():
         if journal_id not in journal_by_id:
             raise HTTPException(422, f"Configured {label} does not belong to this company/tenant or is inactive")
-    account_ids = {"AR account": payload.ar_account_id, "AP account": payload.ap_account_id, "sales account": payload.sales_account_id, "purchase account": payload.purchase_account_id, "inventory account": payload.inventory_account_id, "COGS account": payload.cogs_account_id, "output VAT account": payload.output_vat_account_id, "input VAT account": payload.input_vat_account_id, "default payment account": payload.default_payment_account_id}
+    account_ids = {"AR account": payload.ar_account_id, "AP account": payload.ap_account_id, "sales account": payload.sales_account_id, "purchase account": payload.purchase_account_id, "inventory account": payload.inventory_account_id, "GRNI account": payload.grni_account_id, "COGS account": payload.cogs_account_id, "output VAT account": payload.output_vat_account_id, "input VAT account": payload.input_vat_account_id, "default payment account": payload.default_payment_account_id}
     if payload.wht_account_id is not None:
         account_ids["WHT account"] = payload.wht_account_id
     accounts = db.scalars(select(AccountCombination).where(AccountCombination.id.in_(account_ids.values()), AccountCombination.company_id == company.id, AccountCombination.is_active.is_(True))).all()
@@ -118,35 +118,36 @@ def purchases(company_id: int = Query(..., gt=0), current_user: User = Depends(g
 @router.post("/sales/{document_id}/confirm", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def confirm_sale(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
-    obj = _run(lambda: commerce_service.confirm(db, company_id, document_id, "sale", current_user.id))
+    obj = _run(lambda: commerce_service.confirm(db, company_id, document_id, "sale", user_id=current_user.id))
     db.commit(); db.refresh(obj); return obj
 
 
 @router.post("/purchases/{document_id}/confirm", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def confirm_purchase(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
-    obj = _run(lambda: commerce_service.confirm(db, company_id, document_id, "purchase", current_user.id))
+    obj = _run(lambda: commerce_service.confirm(db, company_id, document_id, "purchase", user_id=current_user.id))
     db.commit(); db.refresh(obj); return obj
 
 
 @router.post("/sales/{document_id}/post-inventory", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def post_sale(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
-    obj = _run(lambda: commerce_service.post_inventory(db, company_id, document_id, "sale", current_user.id))
+    obj = _run(lambda: commerce_service.post_inventory(db, company_id, document_id, "sale", user_id=current_user.id))
     db.commit(); db.refresh(obj); return obj
 
 
 @router.post("/purchases/{document_id}/receive", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def receive_purchase(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
-    obj = _run(lambda: commerce_service.post_inventory(db, company_id, document_id, "purchase", current_user.id)); db.commit(); db.refresh(obj); return obj
+    obj = _run(lambda: commerce_service.post_inventory(db, company_id, document_id, "purchase", user_id=current_user.id))
+    db.commit(); db.refresh(obj); return obj
 
 
 @router.post("/sales/{document_id}/payments", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.payment"))])
 def pay_sale(document_id: int, payload: PaymentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if payload.document_id != document_id: raise HTTPException(400, "Document id mismatch")
     _company_for_user(db, payload.company_id, current_user)
-    obj, payment = _run(lambda: commerce_service.pay(db, payload, "sale", current_user.id))
+    obj, payment = _run(lambda: commerce_service.pay(db, payload, "sale", user_id=current_user.id))
     db.commit(); db.refresh(obj); return obj
 
 
@@ -154,7 +155,7 @@ def pay_sale(document_id: int, payload: PaymentCreate, current_user: User = Depe
 def pay_purchase(document_id: int, payload: PaymentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if payload.document_id != document_id: raise HTTPException(400, "Document id mismatch")
     _company_for_user(db, payload.company_id, current_user)
-    obj, payment = _run(lambda: commerce_service.pay(db, payload, "purchase", current_user.id))
+    obj, payment = _run(lambda: commerce_service.pay(db, payload, "purchase", user_id=current_user.id))
     db.commit(); db.refresh(obj); return obj
 
 
@@ -163,5 +164,5 @@ def reverse_payment(payment_id: int, payload: PaymentReverse, current_user: User
     _company_for_user(db, payload.company_id, current_user)
     original = db.scalar(select(CommercePayment).where(CommercePayment.id == payment_id, CommercePayment.company_id == payload.company_id))
     if original is None: raise HTTPException(404, "Payment not found")
-    obj, original, reversal = _run(lambda: commerce_service.reverse_payment(db, payload.company_id, payment_id, payload.reversal_date, payload.notes, current_user.id))
+    obj, original, reversal = _run(lambda: commerce_service.reverse_payment(db, payload.company_id, payment_id, payload.reversal_date, payload.notes, user_id=current_user.id))
     db.commit(); db.refresh(obj); return obj
