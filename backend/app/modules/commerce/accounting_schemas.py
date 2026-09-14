@@ -11,6 +11,7 @@ class CommerceAccountingSettingsCreate(BaseModel):
     sales_account_id: int = Field(gt=0)
     purchase_account_id: int = Field(gt=0)
     inventory_account_id: int = Field(gt=0)
+    grni_account_id: int = Field(gt=0)
     cogs_account_id: int = Field(gt=0)
     output_vat_account_id: int = Field(gt=0)
     input_vat_account_id: int = Field(gt=0)
