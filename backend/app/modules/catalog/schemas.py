@@ -179,3 +179,48 @@ class PricingImpactResponse(BaseModel):
     price_list_id: Optional[int]
     count: int
     items: list[PricingImpactItem]
+
+
+class VariantCreate(BaseModel):
+    product_id: int = Field(gt=0)
+    sku: str = Field(min_length=1, max_length=100)
+    name_ar: str = Field(min_length=1, max_length=200)
+    name_en: Optional[str] = Field(default=None, max_length=200)
+    attributes: dict = Field(default_factory=dict)
+    uom_id: Optional[int] = Field(default=None, gt=0)
+    sales_price: Decimal = Field(default=0, ge=0)
+    purchase_price: Decimal = Field(default=0, ge=0)
+
+
+class VariantBarcodeCreate(BaseModel):
+    barcode: str = Field(min_length=1, max_length=120)
+    barcode_type: str = Field(default="EAN", min_length=1, max_length=30)
+    is_primary: bool = False
+    variant_id: Optional[int] = Field(default=None, gt=0)
+
+
+class BarcodeResponse(VariantBarcodeCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    company_id: int
+    product_id: int
+    is_active: bool
+    created_at: datetime
+
+
+class VariantResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    company_id: int
+    product_id: int
+    sku: str
+    name_ar: str
+    name_en: Optional[str]
+    attributes: dict
+    uom_id: Optional[int]
+    sales_price: Decimal
+    purchase_price: Decimal
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+    barcodes: list[BarcodeResponse] = []
