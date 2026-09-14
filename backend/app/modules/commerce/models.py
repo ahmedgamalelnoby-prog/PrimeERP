@@ -106,8 +106,21 @@ class PurchaseBillReceiptLink(Base):
     bill_id = Column(Integer, ForeignKey("purchase_documents.id", ondelete="CASCADE"), nullable=False, index=True)
     receipt_id = Column(Integer, ForeignKey("purchase_documents.id", ondelete="RESTRICT"), nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default="CURRENT_TIMESTAMP")
+    __table_args__ = (UniqueConstraint("bill_id", "receipt_id", name="uq_purchase_bill_receipt_link"),)
+
+
+class PurchaseBillReceiptAllocation(Base):
+    __tablename__ = "purchase_bill_receipt_allocations"
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    bill_line_id = Column(Integer, ForeignKey("purchase_lines.id", ondelete="CASCADE"), nullable=False, index=True)
+    receipt_move_id = Column(Integer, ForeignKey("inventory_stock_moves.id", ondelete="RESTRICT"), nullable=False, index=True)
+    quantity = Column(Numeric(18, 4), nullable=False)
+    unit_cost = Column(Numeric(18, 4), nullable=False)
     __table_args__ = (
-        UniqueConstraint("bill_id", "receipt_id", name="uq_purchase_bill_receipt_link"),
+        UniqueConstraint("bill_line_id", "receipt_move_id", name="uq_purchase_bill_receipt_allocation"),
+        CheckConstraint("quantity > 0", name="ck_purchase_bill_receipt_allocation_quantity"),
+        CheckConstraint("unit_cost >= 0", name="ck_purchase_bill_receipt_allocation_unit_cost"),
     )
 
 
