@@ -1,14 +1,20 @@
 name: PrimeERP Hosted Validation
 
 on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - 'feature/**'
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# Hosted validation is retained as an explicit/manual diagnostic path.
-# The branch gate uses docker.yml because this repository has a configured
-# Windows self-hosted runner with Docker Desktop.
+concurrency:
+  group: primeerp-validation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   backend:
     name: Backend - hosted validation
@@ -86,9 +92,10 @@ jobs:
         run: npm run build
 
   docker:
-    name: Docker - hosted diagnostic
+    name: Docker - hosted release gate
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    needs: [backend, frontend]
     steps:
       - name: Checkout
         uses: actions/checkout@v5
