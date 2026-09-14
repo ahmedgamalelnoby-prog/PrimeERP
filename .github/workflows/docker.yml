@@ -15,23 +15,37 @@ permissions:
 
 env:
   COMPOSE_PROJECT_NAME: primeerp-ci
+  DOCKER_DIR: C:\Users\Admin\AppData\Local\Programs\DockerDesktop\resources\bin
+  DOCKER_HOST: npipe:////./pipe/dockerDesktopLinuxEngine
 
 jobs:
   docker:
     name: Docker Build, Migration & Runtime Validation
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, PrimeERP]
     timeout-minutes: 40
+    defaults:
+      run:
+        shell: cmd
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate Docker runtime
+      - name: Configure Docker CLI
         run: |
-          docker version
-          docker compose version
+          if not exist "%DOCKER_DIR%\docker.exe" (
+            echo Docker CLI not found at %DOCKER_DIR%\docker.exe
+            exit /b 1
+          )
+          echo %DOCKER_DIR%>>%GITHUB_PATH%
+          set "PATH=%DOCKER_DIR%;%PATH%"
+          set "DOCKER_HOST=npipe:////./pipe/dockerDesktopLinuxEngine"
+          "%DOCKER_DIR%\docker.exe" version
+          if errorlevel 1 exit /b 1
+          "%DOCKER_DIR%\docker.exe" compose version
+          if errorlevel 1 exit /b 1
 
       - name: Prepare Docker environment
-        run: cp .env.docker.example .env.docker
+        run: copy /Y .env.docker.example .env.docker
 
       - name: Validate Docker Compose
         run: docker compose --env-file .env.docker config -q
@@ -50,31 +64,32 @@ jobs:
 
       - name: Wait for database, migration and backend health
         run: |
-          for n in $(seq 1 48); do
-            db=$(docker inspect --format '{{.State.Health.Status}}' primeerp-db 2>/dev/null || true)
-            migration=$(docker inspect --format '{{.State.Status}}' primeerp-migrate 2>/dev/null || true)
-            backend=$(docker inspect --format '{{.State.Health.Status}}' primeerp-backend 2>/dev/null || true)
-            echo "db=$db migration=$migration backend=$backend"
-            if [ "$migration" = "exited" ]; then
-              migration_exit=$(docker inspect --format '{{.State.ExitCode}}' primeerp-migrate)
-              if [ "$migration_exit" != "0" ]; then
+          set "HEALTHY=0"
+          for /L %%N in (1,1,48) do (
+            for /F "delims=" %%A in ('docker inspect --format "{{.State.Health.Status}}" primeerp-db 2^>NUL') do set "DB=%%A"
+            for /F "delims=" %%A in ('docker inspect --format "{{.State.Status}}" primeerp-migrate 2^>NUL') do set "MIGRATION=%%A"
+            for /F "delims=" %%A in ('docker inspect --format "{{.State.Health.Status}}" primeerp-backend 2^>NUL') do set "BACKEND=%%A"
+            echo db=%DB% migration=%MIGRATION% backend=%BACKEND%
+            if /I "%BACKEND%"=="healthy" set "HEALTHY=1"
+            if /I "%MIGRATION%"=="exited" (
+              for /F "delims=" %%A in ('docker inspect --format "{{.State.ExitCode}}" primeerp-migrate 2^>NUL') do set "MIGRATION_EXIT=%%A"
+              if not "%MIGRATION_EXIT%"=="0" (
                 docker compose --env-file .env.docker logs migrate
-                exit 1
-              fi
-            fi
-            if [ "$backend" = "unhealthy" ]; then
+                exit /b 1
+              )
+            )
+            if /I "%BACKEND%"=="unhealthy" (
               docker compose --env-file .env.docker logs --tail=200 backend
-              exit 1
-            fi
-            if [ "$backend" = "healthy" ]; then
-              echo 'Backend is healthy and migrations completed.'
-              exit 0
-            fi
-            sleep 10
-          done
+              exit /b 1
+            )
+            if "%HEALTHY%"=="1" goto :backend_ready
+            timeout /t 10 /nobreak >NUL
+          )
           docker compose --env-file .env.docker ps
           docker compose --env-file .env.docker logs --tail=200 db migrate backend
-          exit 1
+          exit /b 1
+          :backend_ready
+          echo Backend is healthy and migrations completed.
 
       - name: Runtime API readiness smoke test
         run: docker exec primeerp-backend python -c "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8001/ready', timeout=15); assert r.status == 200; print(r.read().decode())"
@@ -83,7 +98,7 @@ jobs:
         run: docker exec primeerp-backend python -c "import json,urllib.request; s=json.load(urllib.request.urlopen('http://127.0.0.1:8001/api/v1/openapi.json',timeout=15)); p=s.get('paths',{}); required=['/api/v1/identity/login','/api/v1/identity/me','/api/v1/companies','/api/v1/tenants','/api/v1/subscriptions/tenant/{tenant_id}','/api/v1/inventory/items','/api/v1/inventory/items/{item_id}/stock']; missing=[x for x in required if x not in p]; assert not missing, f'Missing required API routes: {missing}'; assert 'post' in p['/api/v1/identity/login']; assert 'get' in p['/api/v1/companies']; assert 'get' in p['/api/v1/inventory/items']; assert 'get' in p['/api/v1/inventory/items/{item_id}/stock']; print(f'Runtime OpenAPI contract passed: {len(p)} paths registered')"
 
       - name: Runtime frontend smoke test
-        run: curl -fsS http://127.0.0.1:3000/ >/dev/null
+        run: curl.exe -fsS http://127.0.0.1:3000/ >NUL
 
       - name: Docker runtime diagnostics
         if: always()
@@ -96,4 +111,4 @@ jobs:
         if: always()
         run: |
           docker compose --env-file .env.docker down -v --remove-orphans
-          docker image rm primeerp-backend:ci primeerp-frontend:ci >/dev/null 2>&1 || true
+          docker image rm primeerp-backend:ci primeerp-frontend:ci 2>NUL
