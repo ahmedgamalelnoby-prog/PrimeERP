@@ -167,25 +167,35 @@ class CatalogService:
 
         return any(reaches_target(ingredient_id) for ingredient_id in ingredient_ids)
 
+    @staticmethod
+    def _calculate_uom_factor(line_factor_to_base: Decimal, line_category: str, ingredient_factor_to_base: Decimal, ingredient_category: str) -> Decimal:
+        if line_category != ingredient_category:
+            raise ValueError("Recipe line UOM category must match the ingredient product UOM category")
+        line_factor = Decimal(line_factor_to_base)
+        ingredient_factor = Decimal(ingredient_factor_to_base)
+        if line_factor <= 0 or ingredient_factor <= 0:
+            raise ValueError("Recipe UOM conversion factors must be positive")
+        return line_factor / ingredient_factor
+
     def _recipe_line_conversion(self, db: Session, company_id: int, ingredient: InventoryItem, line_uom_id: int | None) -> Decimal:
+        if line_uom_id is None:
+            return Decimal("1")
         ingredient_uom = None
         if ingredient.uom_id is not None:
             ingredient_uom = db.scalar(select(UnitOfMeasure).where(UnitOfMeasure.id == ingredient.uom_id, UnitOfMeasure.company_id == company_id, UnitOfMeasure.is_active.is_(True)))
             if ingredient_uom is None:
                 raise ValueError("Ingredient base UOM is invalid or inactive")
-        if line_uom_id is None:
-            return Decimal("1")
         line_uom = db.scalar(select(UnitOfMeasure).where(UnitOfMeasure.id == line_uom_id, UnitOfMeasure.company_id == company_id, UnitOfMeasure.is_active.is_(True)))
         if line_uom is None:
             raise ValueError("Recipe line UOM does not belong to this company")
         if ingredient_uom is None:
             raise ValueError("Recipe line UOM cannot be used when the ingredient has no base UOM")
-        if line_uom.category != ingredient_uom.category:
-            raise ValueError("Recipe line UOM category must match the ingredient product UOM category")
-        factor = Decimal(line_uom.factor_to_base) / Decimal(ingredient_uom.factor_to_base)
-        if factor <= 0:
-            raise ValueError("Recipe UOM conversion factor must be positive")
-        return factor
+        return self._calculate_uom_factor(
+            Decimal(line_uom.factor_to_base),
+            line_uom.category,
+            Decimal(ingredient_uom.factor_to_base),
+            ingredient_uom.category,
+        )
 
     def create_recipe(self, db: Session, payload):
         self._locked_company(db, payload.company_id)
