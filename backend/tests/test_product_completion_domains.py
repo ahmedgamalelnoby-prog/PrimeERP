@@ -170,7 +170,7 @@ def test_sale_payment_reversal_is_exact_accounting_opposite_and_uses_reversal_da
     assert sum(Decimal(line['debit']) for line in lines) == Decimal('1140.00')
     assert sum(Decimal(line['credit']) for line in lines) == Decimal('1140.00')
     assert next(line for line in lines if line['account_combination_id'] == 101)['debit'] == Decimal('1140.00')
-    assert next(line for line in lines if line['account_combination_id'] == 301)['debit'] == Decimal('1128.60')
+    assert next(line for line in lines if line['account_combination_id'] == 301)['credit'] == Decimal('1128.60')
     assert next(line for line in lines if line['account_combination_id'] == 302)['credit'] == Decimal('11.40')
     assert captured['entry_date'] == reversal_date
     assert captured['source_entity'] == 'commerce_payment_reversal'
@@ -183,7 +183,7 @@ def test_payment_auto_wht_uses_product_tax_profile_result(monkeypatch):
     document = SimpleNamespace(id=55)
     captured = {}
 
-    monkeypatch.setattr(service, '_auto_payment_wht', lambda **kwargs: Decimal('11.40'))
+    monkeypatch.setattr(service, '_auto_payment_wht', lambda db, **kwargs: Decimal('11.40'))
     monkeypatch.setattr(
         'app.modules.commerce.service.post_payment',
         lambda **kwargs: captured.update(kwargs) or kwargs,
