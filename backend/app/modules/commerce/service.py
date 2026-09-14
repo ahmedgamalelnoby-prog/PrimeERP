@@ -11,6 +11,7 @@ from app.modules.inventory.locations.models import InventoryLocation
 from app.modules.inventory.stock_moves.models import InventoryStockMove
 from app.modules.inventory.stock_moves.schemas import StockMoveCreate
 from app.modules.inventory.stock_moves.service import inventory_stock_move_service
+from app.modules.inventory.warehouses.models import InventoryWarehouse
 
 SALE_TYPES = {"quotation", "order", "delivery", "invoice", "credit_note"}
 PURCHASE_TYPES = {"requisition", "rfq", "order", "receipt", "bill", "debit_note"}
@@ -40,7 +41,6 @@ class CommerceService:
         return tax_ids
 
     def _document_wht_total(self, db: Session, *, document, company_id: int) -> Decimal:
-        """Calculate withholding from document tax profiles using each line's net taxable base."""
         total = Decimal("0")
         for line in document.lines:
             tax_ids = list(getattr(line, "tax_rate_ids", None) or [])
@@ -82,19 +82,33 @@ class CommerceService:
 
     def create_document(self, db: Session, payload):
         is_sale = payload.document_type in SALE_TYPES
-        if not is_sale and payload.document_type not in PURCHASE_TYPES: raise ValueError("Unsupported document type")
+        if not is_sale and payload.document_type not in PURCHASE_TYPES:
+            raise ValueError("Unsupported document type")
         partner = db.scalar(select(BusinessPartner).where(BusinessPartner.id == payload.partner_id, BusinessPartner.company_id == payload.company_id, BusinessPartner.is_active.is_(True)))
-        if not partner: raise ValueError("Partner not found")
-        if is_sale and partner.partner_type not in ("customer", "both"): raise ValueError("Partner is not a customer")
-        if not is_sale and partner.partner_type not in ("vendor", "both"): raise ValueError("Partner is not a vendor")
+        if not partner:
+            raise ValueError("Partner not found")
+        if is_sale and partner.partner_type not in ("customer", "both"):
+            raise ValueError("Partner is not a customer")
+        if not is_sale and partner.partner_type not in ("vendor", "both"):
+            raise ValueError("Partner is not a vendor")
+        if payload.warehouse_id is not None:
+            warehouse = db.scalar(select(InventoryWarehouse).where(
+                InventoryWarehouse.id == payload.warehouse_id,
+                InventoryWarehouse.company_id == payload.company_id,
+                InventoryWarehouse.is_active.is_(True),
+            ))
+            if warehouse is None:
+                raise ValueError("Warehouse does not belong to the company or is inactive")
         model = SalesDocument if is_sale else PurchaseDocument
         line_model = SalesLine if is_sale else PurchaseLine
-        if db.scalar(select(model).where(model.company_id == payload.company_id, model.number == payload.number)): raise ValueError("Document number already exists")
+        if db.scalar(select(model).where(model.company_id == payload.company_id, model.number == payload.number)):
+            raise ValueError("Document number already exists")
         obj = model(company_id=payload.company_id, partner_id=payload.partner_id, document_type=payload.document_type, number=payload.number, document_date=payload.document_date, warehouse_id=payload.warehouse_id, notes=payload.notes)
         subtotal = Decimal("0"); tax = Decimal("0"); discount = Decimal("0")
         for p in payload.lines:
             item = db.scalar(select(InventoryItem).where(InventoryItem.id == p.item_id, InventoryItem.company_id == payload.company_id, InventoryItem.is_active.is_(True)))
-            if not item: raise ValueError(f"Item {p.item_id} not found")
+            if not item:
+                raise ValueError(f"Item {p.item_id} not found")
             explicit_tax_ids = getattr(p, "tax_rate_ids", None)
             tax_ids = self._resolve_line_tax_ids(db, company_id=payload.company_id, item=item, explicit_tax_ids=explicit_tax_ids, is_sale=is_sale)
             if explicit_tax_ids is None and p.tax_percent != 0:
@@ -107,12 +121,13 @@ class CommerceService:
             tax_result = calculate_taxes(db, company_id=payload.company_id, amount=net, tax_ids=tax_ids, inclusive=False)
             tax_amount = Decimal(tax_result["tax_total"])
             line_total = net + tax_amount
-            non_wht_ids = [tax_id for tax_id in tax_ids if not db.scalar(select(TaxRate).where(TaxRate.id == tax_id, TaxRate.company_id == payload.company_id)).is_withholding]
+            tax_rows = list(db.scalars(select(TaxRate).where(TaxRate.id.in_(tax_ids), TaxRate.company_id == payload.company_id)).all()) if tax_ids else []
+            non_wht_ids = [tax.id for tax in tax_rows if not tax.is_withholding]
             primary_tax_id = non_wht_ids[0] if non_wht_ids else (tax_ids[0] if tax_ids else None)
             primary_tax_percent = Decimal("0")
             if primary_tax_id is not None:
-                primary_tax = db.scalar(select(TaxRate).where(TaxRate.id == primary_tax_id, TaxRate.company_id == payload.company_id))
-                primary_tax_percent = Decimal(primary_tax.rate)
+                primary_tax = next((tax for tax in tax_rows if tax.id == primary_tax_id), None)
+                primary_tax_percent = Decimal(primary_tax.rate) if primary_tax is not None else Decimal("0")
             obj.lines.append(line_model(item_id=p.item_id, tax_rate_id=primary_tax_id, tax_rate_ids=tax_ids, description=p.description, quantity=p.quantity, unit_price=p.unit_price, discount_percent=p.discount_percent, tax_percent=primary_tax_percent, line_total=line_total))
             subtotal += net; discount += disc; tax += tax_amount
         obj.subtotal = subtotal; obj.discount_total = discount; obj.tax_total = tax; obj.total = subtotal + tax
@@ -157,9 +172,14 @@ class CommerceService:
 
     def pay(self, db, payload, kind):
         model = SalesDocument if kind == "sale" else PurchaseDocument
-        document = db.scalar(select(model).where(model.id == payload.document_id, model.company_id == payload.company_id))
+        allowed_types = {"invoice"} if kind == "sale" else {"bill"}
+        document = db.scalar(select(model).where(model.id == payload.document_id, model.company_id == payload.company_id).with_for_update())
         if document is None:
             raise ValueError("Document not found")
+        if document.document_type not in allowed_types:
+            raise ValueError("Payments are allowed only for invoices and bills")
+        if document.status not in {"confirmed", "posted"}:
+            raise ValueError("Document must be confirmed or posted before payment")
         wht_amount = Decimal(payload.wht_amount or 0)
         if wht_amount == 0 and getattr(payload, "auto_wht", True):
             wht_amount = self._auto_payment_wht(db, document=document, company_id=payload.company_id, amount=Decimal(payload.amount), document_kind=kind)
