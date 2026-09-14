@@ -12,6 +12,8 @@ from app.modules.commerce.accounting_models import CommerceAccountingSettings
 from app.modules.commerce.accounting_schemas import CommerceAccountingSettingsCreate
 from app.modules.commerce.models import CommercePayment
 from app.modules.commerce.schemas import PartnerCreate, PartnerResponse, DocumentCreate, DocumentResponse, PaymentCreate, PaymentReverse
+from app.modules.commerce.sales_return_schemas import SalesReturnCreate
+from app.modules.commerce.sales_return_service import sales_return_service
 from app.modules.commerce.service import commerce_service
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
@@ -45,19 +47,7 @@ def _validate_accounting_configuration(db: Session, company: Company, payload: C
     for label, journal_id in journal_ids.items():
         if journal_id not in journal_by_id:
             raise HTTPException(422, f"Configured {label} does not belong to this company/tenant or is inactive")
-    account_ids = {
-        "AR account": payload.ar_account_id,
-        "AP account": payload.ap_account_id,
-        "sales account": payload.sales_account_id,
-        "purchase account": payload.purchase_account_id,
-        "inventory account": payload.inventory_account_id,
-        "GRNI account": payload.grni_account_id,
-        "PPV account": payload.purchase_price_variance_account_id,
-        "COGS account": payload.cogs_account_id,
-        "output VAT account": payload.output_vat_account_id,
-        "input VAT account": payload.input_vat_account_id,
-        "default payment account": payload.default_payment_account_id,
-    }
+    account_ids = {"AR account": payload.ar_account_id, "AP account": payload.ap_account_id, "sales account": payload.sales_account_id, "purchase account": payload.purchase_account_id, "inventory account": payload.inventory_account_id, "GRNI account": payload.grni_account_id, "PPV account": payload.purchase_price_variance_account_id, "COGS account": payload.cogs_account_id, "output VAT account": payload.output_vat_account_id, "input VAT account": payload.input_vat_account_id, "default payment account": payload.default_payment_account_id}
     if payload.wht_account_id is not None:
         account_ids["WHT account"] = payload.wht_account_id
     accounts = db.scalars(select(AccountCombination).where(AccountCombination.id.in_(account_ids.values()), AccountCombination.company_id == company.id, AccountCombination.is_active.is_(True))).all()
@@ -108,6 +98,22 @@ def create_sale(payload: DocumentCreate, current_user: User = Depends(get_curren
     _company_for_user(db, payload.company_id, current_user)
     if payload.document_type not in {"quotation", "order", "delivery", "invoice", "credit_note"}: raise HTTPException(400, "Invalid sales document type")
     obj = _run(lambda: commerce_service.create_document(db, payload)); db.commit(); db.refresh(obj); return obj
+
+
+@router.post("/sales/returns", response_model=DocumentResponse, status_code=201, dependencies=[Depends(require_permission("commerce.post"))])
+def create_sales_return(payload: SalesReturnCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company_for_user(db, payload.company_id, current_user)
+    try:
+        obj = sales_return_service.create_and_post(db, payload, current_user.id)
+        db.commit()
+        db.refresh(obj)
+        return obj
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="The sales return conflicts with an existing allocation or document") from exc
 
 
 @router.post("/purchases/documents", response_model=DocumentResponse, status_code=201, dependencies=[Depends(require_permission("commerce.write"))])
