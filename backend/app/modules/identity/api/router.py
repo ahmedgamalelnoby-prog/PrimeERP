@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app.core.context import get_optional_request_context
 from app.database.session import get_db
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
@@ -13,9 +14,8 @@ from app.modules.identity.schemas.auth import (
 from app.modules.identity.schemas.token import TokenPairResponse
 from app.modules.identity.services.authentication_service import authentication_service
 from app.modules.identity.services.refresh_token_service import refresh_token_service
-
 from app.modules.identity.api.users import router as users_router
-
+from app.modules.saas.models import Tenant
 
 router = APIRouter()
 
@@ -42,7 +42,13 @@ def get_me(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    tenant = current_user.tenant if current_user.tenant_id else None
+    context = get_optional_request_context()
+    effective_tenant_id = (
+        context.tenant_id
+        if context is not None and context.tenant_id is not None
+        else current_user.tenant_id
+    )
+    tenant = db.get(Tenant, effective_tenant_id) if effective_tenant_id else None
 
     subscription_status = None
     enabled_modules: list[str] = []
@@ -52,7 +58,7 @@ def get_me(
             db=db,
             tenant_id=tenant.id,
         )
-        subscription_status = subscription.status
+        subscription_status = subscription.status if subscription else None
         enabled_modules = authentication_service._get_enabled_modules(
             db=db,
             tenant_id=tenant.id,
@@ -60,7 +66,7 @@ def get_me(
 
     return {
         "id": current_user.id,
-        "tenant_id": current_user.tenant_id,
+        "tenant_id": effective_tenant_id,
         "username": current_user.username,
         "email": current_user.email,
         "full_name": current_user.full_name,
