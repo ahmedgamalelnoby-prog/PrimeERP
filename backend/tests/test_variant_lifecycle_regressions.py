@@ -27,4 +27,5 @@ def test_variant_migration_uses_company_scoped_sku_and_primary_barcode_constrain
     text = migration.read_text(encoding="utf-8")
     assert "uq_product_variant_company_sku" in text
     assert "ux_product_primary_barcode" in text
-    assert "company_id", "product_id" in text
+    assert '"company_id", "sku"' in text
+    assert '"company_id", "product_id"' in text
