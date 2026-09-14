@@ -81,11 +81,7 @@ jobs:
         run: |
           .ci-venv\Scripts\python.exe -m alembic heads > alembic-heads.txt
           type alembic-heads.txt
-          for /f %%H in ('find /c "(head)" ^< alembic-heads.txt') do set "HEAD_COUNT=%%H"
-          if not "%HEAD_COUNT%"=="1" (
-            echo Expected exactly one Alembic head; found %HEAD_COUNT%.
-            exit /b 1
-          )
+          .ci-venv\Scripts\python.exe -c "from pathlib import Path; n=sum('(head)' in x for x in Path('alembic-heads.txt').read_text().splitlines()); assert n == 1, f'Expected exactly one Alembic head; found {n}'"
       - name: Run tests
         run: .ci-venv\Scripts\python.exe -m pytest -q
 
