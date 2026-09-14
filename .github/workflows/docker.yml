@@ -28,72 +28,46 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Diagnose Windows Docker execution environment
+      - name: Configure installed Docker CLI
         run: |
           $ErrorActionPreference = 'Stop'
-          Write-Output "USER=$env:USERNAME"
-          Write-Output "USERDOMAIN=$env:USERDOMAIN"
-          Write-Output "TEMP=$env:TEMP"
-          Write-Output "RUNNER_TEMP=$env:RUNNER_TEMP"
-          Write-Output "PATH=$env:PATH"
-          Write-Output '--- Docker candidates ---'
           $candidates = @(
-            'C:\Program Files\Docker\Docker\resources\bin\docker.exe',
-            'C:\Program Files\Docker\Docker\resources\bin\docker-compose.exe',
-            'C:\Users\Admin\AppData\Local\Programs\DockerDesktop\resources\bin\docker.exe',
-            'C:\Users\Admin\AppData\Local\Programs\DockerDesktop\resources\bin\docker-compose.exe',
-            'C:\ProgramData\DockerDesktop\version-bin\docker.exe',
-            'C:\ProgramData\DockerDesktop\version-bin\docker-compose.exe'
+            'C:\Program Files\Docker\Docker\resources\bin',
+            'C:\ProgramData\DockerDesktop\version-bin',
+            'C:\Users\Admin\AppData\Local\Programs\DockerDesktop\resources\bin'
           )
-          foreach ($path in $candidates) {
-            if (Test-Path $path) {
-              $item = Get-Item $path
-              Write-Output "FOUND $path size=$($item.Length)"
-              try { Get-Item $path -Stream Zone.Identifier -ErrorAction Stop | Format-List | Out-String | Write-Output } catch { Write-Output "NO_ZONE_IDENTIFIER $path" }
-            } else { Write-Output "MISSING $path" }
+          $dockerDir = $null
+          foreach ($dir in $candidates) {
+            $docker = Join-Path $dir 'docker.exe'
+            if (Test-Path $docker) {
+              $dockerDir = $dir
+              break
+            }
           }
-          Write-Output '--- command discovery ---'
-          where.exe docker 2>&1 | Out-String | Write-Output
-          Get-Command docker -ErrorAction SilentlyContinue | Format-List * | Out-String | Write-Output
-          Write-Output '--- Docker named pipe ---'
-          Get-ChildItem '\\.\pipe\' -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'docker' } | Select-Object Name | Format-Table | Out-String | Write-Output
-          Write-Output '--- service ---'
-          Get-Service -Name com.docker.service -ErrorAction SilentlyContinue | Format-List Name,Status,StartType | Out-String | Write-Output
-
-      - name: Prepare portable Docker CLI and Compose
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $toolDir = Join-Path $env:RUNNER_TEMP 'primeerp-docker-cli'
-          New-Item -ItemType Directory -Force -Path $toolDir | Out-Null
-          $dockerExe = Join-Path $toolDir 'docker.exe'
-          $composeExe = Join-Path $toolDir 'docker-compose.exe'
-          if (-not (Test-Path $dockerExe)) {
-            $zip = Join-Path $env:RUNNER_TEMP 'docker-cli.zip'
-            Invoke-WebRequest -Uri 'https://download.docker.com/win/static/stable/x86_64/docker-29.8.0.zip' -OutFile $zip
-            Expand-Archive -Path $zip -DestinationPath (Join-Path $env:RUNNER_TEMP 'docker-cli-extract') -Force
-            Copy-Item (Join-Path $env:RUNNER_TEMP 'docker-cli-extract\docker\docker.exe') $dockerExe -Force
+          if (-not $dockerDir) {
+            $resolved = @(where.exe docker 2>$null)
+            if ($resolved.Count -gt 0) { $dockerDir = Split-Path $resolved[0] -Parent }
           }
-          if (-not (Test-Path $composeExe)) {
-            Invoke-WebRequest -Uri 'https://github.com/docker/compose/releases/download/v5.5.1/docker-compose-windows-x86_64.exe' -OutFile $composeExe
-          }
-          Unblock-File -Path $dockerExe,$composeExe -ErrorAction SilentlyContinue
-          $env:Path = "$toolDir;$env:Path"
-          Add-Content $env:GITHUB_PATH $toolDir
-          Write-Output "docker=$dockerExe"
-          Write-Output "compose=$composeExe"
+          if (-not $dockerDir) { throw 'Docker CLI was not found in an installed/system location. Portable downloads are intentionally disabled on the service runner.' }
+          $dockerExe = Join-Path $dockerDir 'docker.exe'
+          if (-not (Test-Path $dockerExe)) { throw "Docker executable not found at $dockerExe" }
+          Write-Output "Using installed Docker CLI: $dockerExe"
+          Get-Item $dockerExe | Format-List FullName,Length,LastWriteTime | Out-String | Write-Output
+          $env:Path = "$dockerDir;$env:Path"
+          Add-Content $env:GITHUB_PATH $dockerDir
           & $dockerExe version
-          & $composeExe version
+          & $dockerExe compose version
 
       - name: Verify Docker daemon
         run: |
           docker version
-          docker-compose version
+          docker compose version
 
       - name: Prepare Docker environment
         run: Copy-Item .env.docker.example .env.docker -Force
 
       - name: Validate Docker Compose
-        run: docker-compose --env-file .env.docker config -q
+        run: docker compose --env-file .env.docker config -q
 
       - name: Build backend image
         run: docker build --pull -t primeerp-backend:ci ./backend
@@ -105,7 +79,7 @@ jobs:
         run: docker build --pull -t primeerp-frontend:ci ./frontend
 
       - name: Start full Docker stack
-        run: docker-compose --env-file .env.docker up -d --build
+        run: docker compose --env-file .env.docker up -d --build
 
       - name: Wait for database, migration and backend health
         run: |
@@ -118,15 +92,15 @@ jobs:
             Write-Output "db=$db migration=$migration backend=$backend"
             if ($migration -eq 'exited') {
               $exitCode = docker inspect --format '{{.State.ExitCode}}' primeerp-migrate 2>$null
-              if ($exitCode -ne '0') { docker-compose --env-file .env.docker logs migrate; throw 'Migration container failed' }
+              if ($exitCode -ne '0') { docker compose --env-file .env.docker logs migrate; throw 'Migration container failed' }
             }
             if ($backend -eq 'healthy') { $healthy = $true; break }
-            if ($backend -eq 'unhealthy') { docker-compose --env-file .env.docker logs --tail=200 backend; throw 'Backend became unhealthy' }
+            if ($backend -eq 'unhealthy') { docker compose --env-file .env.docker logs --tail=200 backend; throw 'Backend became unhealthy' }
             Start-Sleep -Seconds 10
           }
           if (-not $healthy) {
-            docker-compose --env-file .env.docker ps
-            docker-compose --env-file .env.docker logs --tail=200 db migrate backend
+            docker compose --env-file .env.docker ps
+            docker compose --env-file .env.docker logs --tail=200 db migrate backend
             throw 'Backend did not become healthy within 8 minutes'
           }
 
@@ -147,12 +121,16 @@ jobs:
       - name: Docker runtime diagnostics
         if: always()
         run: |
-          docker-compose --env-file .env.docker ps
-          docker-compose --env-file .env.docker logs --tail=100 migrate
-          docker-compose --env-file .env.docker logs --tail=100 backend
+          $docker = Get-Command docker -ErrorAction SilentlyContinue
+          if ($null -eq $docker) { Write-Output 'Docker CLI unavailable; skipping runtime diagnostics.'; exit 0 }
+          docker compose --env-file .env.docker ps
+          docker compose --env-file .env.docker logs --tail=100 migrate
+          docker compose --env-file .env.docker logs --tail=100 backend
 
       - name: Cleanup Docker stack
         if: always()
         run: |
-          docker-compose --env-file .env.docker down -v --remove-orphans
+          $docker = Get-Command docker -ErrorAction SilentlyContinue
+          if ($null -eq $docker) { Write-Output 'Docker CLI unavailable; skipping cleanup.'; exit 0 }
+          docker compose --env-file .env.docker down -v --remove-orphans
           docker image rm primeerp-backend:ci primeerp-frontend:ci 2>$null
