@@ -23,22 +23,13 @@ def _company_for_user(db: Session, company_id: int, user: User):
 
 
 @router.get("", response_model=list[StockMoveResponse], dependencies=[Depends(require_permission("inventory.access"))])
-def list_stock_moves(
-    company_id: int = Query(..., gt=0),
-    item_id: int | None = Query(default=None, gt=0),
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
+def list_stock_moves(company_id: int = Query(..., gt=0), item_id: int | None = Query(default=None, gt=0), variant_id: int | None = Query(default=None, gt=0), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _company_for_user(db, company_id, user)
-    return inventory_stock_move_service.list(db, company_id, item_id)
+    return inventory_stock_move_service.list(db, company_id, item_id, variant_id)
 
 
 @router.post("", response_model=StockMoveResponse, status_code=201, dependencies=[Depends(require_permission("inventory.write"))])
-def create_stock_move(
-    payload: StockMoveCreate,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
+def create_stock_move(payload: StockMoveCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _company_for_user(db, payload.company_id, user)
     try:
         move = inventory_stock_move_service.create_draft(db, payload)
