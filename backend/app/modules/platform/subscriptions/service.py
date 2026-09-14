@@ -242,10 +242,20 @@ class SubscriptionService:
         return instance
 
     def _sync_tenant_state(self, instance: Subscription) -> None:
+        """Synchronize subscription state without silently undoing a manual tenant suspension."""
         tenant = self.db.query(Tenant).filter(Tenant.id == instance.tenant_id).with_for_update().first()
         if tenant is None:
             raise ValueError("Tenant not found")
+
         allowed = instance.status in {"trialing", "active", "past_due"}
+        # A platform/manual suspension is an independent access-control state.
+        # Subscription changes must never silently reactivate a suspended tenant.
+        if tenant.status == "suspended":
+            tenant.is_active = False
+            tenant.is_trial = instance.status == "trialing"
+            tenant.trial_ends_at = instance.trial_ends_at if instance.status == "trialing" else None
+            return
+
         tenant.is_active = allowed
         tenant.is_trial = instance.status == "trialing"
         tenant.status = "trial" if instance.status == "trialing" else ("active" if allowed else "expired")
@@ -256,6 +266,14 @@ class SubscriptionService:
         tenant = self.db.query(Tenant).filter(Tenant.id == instance.tenant_id).first()
         if tenant is None:
             raise ValueError("Tenant not found")
+
+        if tenant.status == "suspended":
+            # Manual suspension is authoritative. Only normalize derived flags.
+            if tenant.is_active:
+                tenant.is_active = False
+                self.db.commit()
+            return
+
         allowed = instance.status in {"trialing", "active", "past_due"}
         expected_status = "trial" if instance.status == "trialing" else ("active" if allowed else "expired")
         expected_trial_end = instance.trial_ends_at if instance.status == "trialing" else None
@@ -264,9 +282,15 @@ class SubscriptionService:
             or tenant.is_trial != (instance.status == "trialing")
             or tenant.status != expected_status
             or tenant.trial_ends_at != expected_trial_end
+            or tenant.suspended_at is not None
+            or tenant.suspension_reason is not None
         )
         if stale:
             self._sync_tenant_state(instance)
+            # Subscription-derived reconciliation clears stale suspension metadata
+            # only when the tenant is no longer actually suspended.
+            tenant.suspended_at = None
+            tenant.suspension_reason = None
             self.db.commit()
 
     def _expire_if_needed(self, instance: Subscription) -> None:
