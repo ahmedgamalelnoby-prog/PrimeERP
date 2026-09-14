@@ -13,7 +13,7 @@ from app.modules.commerce.models import BusinessPartner, CommercePayment, SalesD
 from app.modules.commerce.payment_workflow import post_payment, reverse_payment
 from app.modules.companies.models import Company
 from app.modules.identity.models import User
-from app.modules.integrations.models import IntegrationMapping
+from app.modules.integrations.models import IntegrationMapping, IntegrationProductMapping
 from app.modules.integrations.salla_models import SallaCustomer, SallaOrder, SallaOrderItem, SallaProduct
 from app.modules.inventory.items.models import InventoryItem
 from app.modules.inventory.warehouses.models import InventoryWarehouse
@@ -152,25 +152,84 @@ def _tax_id_for_item(db, company_id, item):
     return min(matches, key=lambda t: abs(Decimal(t.rate) - rate)).id
 
 
+def _typed_product_mapping(db, order, item):
+    """Resolve the authoritative typed product mapping before legacy SKU fallback."""
+    keys = []
+    if item.variant_external_id:
+        keys.append(str(item.variant_external_id).strip())
+    if item.product_external_id:
+        keys.append(str(item.product_external_id).strip())
+    if item.sku:
+        keys.append(str(item.sku).strip())
+    for key in [k for k in keys if k]:
+        mapping = db.scalar(
+            select(IntegrationProductMapping)
+            .where(
+                IntegrationProductMapping.company_id == order.company_id,
+                IntegrationProductMapping.connection_id == order.connection_id,
+                IntegrationProductMapping.external_id == key,
+                IntegrationProductMapping.sync_status.in_(["active", "paused"]),
+            )
+            .with_for_update()
+        )
+        if mapping is None:
+            continue
+        product = db.scalar(
+            select(InventoryItem).where(
+                InventoryItem.id == mapping.product_id,
+                InventoryItem.company_id == order.company_id,
+                InventoryItem.is_active.is_(True),
+            )
+        )
+        if product is None:
+            raise SallaERPExecutionError(
+                f"Salla mapping {mapping.external_id} points to a missing or inactive ERP product"
+            )
+        if mapping.variant_id is not None and item.variant_external_id:
+            from app.modules.catalog.models import ProductVariant
+            variant = db.scalar(
+                select(ProductVariant).where(
+                    ProductVariant.id == mapping.variant_id,
+                    ProductVariant.company_id == order.company_id,
+                    ProductVariant.product_id == product.id,
+                    ProductVariant.is_active.is_(True),
+                )
+            )
+            if variant is None:
+                raise SallaERPExecutionError(
+                    f"Salla mapping {mapping.external_id} points to a missing or inactive ERP variant"
+                )
+        return product
+    return None
+
+
 def _product(db, order, item):
     external = item.variant_external_id or item.product_external_id or item.sku
     if not external:
         raise SallaERPExecutionError(f"Salla order item {item.external_id} has no product/SKU identifier")
+
+    typed_product = _typed_product_mapping(db, order, item)
+    if typed_product is not None:
+        return typed_product
+
     mapped = _mapping(db, order.company_id, order.connection_id, "salla_product", external)
     if mapped:
         obj = db.scalar(
             select(InventoryItem).where(
                 InventoryItem.id == mapped.local_id,
                 InventoryItem.company_id == order.company_id,
+                InventoryItem.is_active.is_(True),
             )
         )
         if obj:
             return obj
+
     sku = (item.sku or f"SALLA-{external}")[:80]
     obj = db.scalar(
         select(InventoryItem).where(
             InventoryItem.company_id == order.company_id,
             InventoryItem.sku == sku,
+            InventoryItem.is_active.is_(True),
         )
     )
     tax_id = _tax_id_for_item(db, order.company_id, item)
@@ -178,6 +237,7 @@ def _product(db, order, item):
         uom = _uom(db, order.company_id)
         raw = db.scalar(
             select(SallaProduct).where(
+                SallaProduct.company_id == order.company_id,
                 SallaProduct.connection_id == order.connection_id,
                 SallaProduct.external_id == (item.product_external_id or external),
             )
@@ -544,7 +604,6 @@ def reverse_salla_order(db, order, user_id=None):
         )
         reversed_count += 1
     _set_mapping(db, order.company_id, order.connection_id, "salla_refund", order.external_id, credit.id)
-    # Keep erp_entity_id pointing to the original invoice. The refund has its own integration mapping.
     order.erp_status = "reversed"
     order.erp_error = None
     order.erp_synced_at = datetime.now(timezone.utc)
