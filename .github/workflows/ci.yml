@@ -15,6 +15,7 @@ permissions:
 
 env:
   CI_POSTGRES_PORT: 55432
+  DOCKER_CLI_PATH: 'C:\Users\Admin\AppData\Local\Programs\DockerDesktop\resources\bin'
 
 defaults:
   run:
@@ -32,10 +33,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Validate Python 3.10 launcher
+      - name: Validate runner toolchain
+        working-directory: .
         run: |
+          $dockerBin = $env:DOCKER_CLI_PATH
+          if (-not (Test-Path "$dockerBin\docker.exe")) { throw "Docker CLI not found at $dockerBin" }
+          $env:Path = "$dockerBin;$env:Path"
+          docker version
           py -3.10 --version
-          if ($LASTEXITCODE -ne 0) { throw "Python 3.10 is required on the self-hosted runner." }
       - name: Create isolated CI virtual environment
         run: py -3.10 -m venv .ci-venv
       - name: Validate isolated Python runtime
@@ -70,7 +75,9 @@ jobs:
           CORS_ORIGINS: https://erp.example.com
         run: .\.ci-venv\Scripts\python.exe scripts/check_production_config.py
       - name: Prepare CI database
+        working-directory: .
         run: |
+          $env:Path = "$env:DOCKER_CLI_PATH;$env:Path"
           docker rm -f primeerp-ci-postgres 2>$null
           docker run -d --name primeerp-ci-postgres -e POSTGRES_USER=primeerp -e POSTGRES_PASSWORD=primeerp -e POSTGRES_DB=primeerp_ci -p ${env:CI_POSTGRES_PORT}:5432 postgres:17
           $ready = $false
@@ -100,7 +107,10 @@ jobs:
           if ($tests) { .\.ci-venv\Scripts\python.exe -m pytest -q } else { Write-Host 'No backend tests found; compile, architecture and smoke checks passed.' }
       - name: Cleanup CI database
         if: always()
-        run: docker rm -f primeerp-ci-postgres 2>$null
+        working-directory: .
+        run: |
+          $env:Path = "$env:DOCKER_CLI_PATH;$env:Path"
+          docker rm -f primeerp-ci-postgres 2>$null
 
   frontend:
     name: Frontend - typecheck, lint and build
