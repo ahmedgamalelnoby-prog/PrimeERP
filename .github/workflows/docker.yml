@@ -47,6 +47,7 @@ jobs:
         shell: cmd
         working-directory: backend
         run: |
+          if exist .ci-venv rmdir /S /Q .ci-venv
           python -m venv .ci-venv
           .ci-venv\Scripts\python.exe -m pip install --upgrade pip
           .ci-venv\Scripts\python.exe -m pip install -r requirements.txt
@@ -102,24 +103,28 @@ jobs:
         shell: cmd
         run: docker compose --env-file .env.docker up -d db migrate
 
-      - name: Wait for migration and database
+      - name: Wait for migration
         shell: cmd
         run: |
+          setlocal EnableExtensions EnableDelayedExpansion
+          set STATUS=
           for /L %%I in (1,1,60) do (
+            set STATUS=
             for /f %%S in ('docker inspect -f "{{.State.Status}}" primeerp-migrate 2^>nul') do set STATUS=%%S
+            echo migration=!STATUS!
             if "!STATUS!"=="exited" goto migration_done
             timeout /t 5 /nobreak >nul
           )
           docker compose --env-file .env.docker logs migrate
           exit /b 1
           :migration_done
+          set CODE=
           for /f %%C in ('docker inspect -f "{{.State.ExitCode}}" primeerp-migrate') do set CODE=%%C
+          echo migration exit code=!CODE!
           if not "!CODE!"=="0" (
             docker compose --env-file .env.docker logs migrate
             exit /b 1
           )
-        env:
-          COMSPEC: cmd.exe
 
       - name: Execute real PostgreSQL effective-date guard tests
         shell: cmd
@@ -140,6 +145,7 @@ jobs:
       - name: Wait for runtime health
         shell: cmd
         run: |
+          setlocal EnableExtensions EnableDelayedExpansion
           for /L %%I in (1,1,60) do (
             set BACKEND=
             set FRONTEND=
@@ -159,8 +165,6 @@ jobs:
           exit /b 1
           :healthy
           exit /b 0
-        env:
-          COMSPEC: cmd.exe
 
       - name: API readiness smoke test
         shell: cmd
