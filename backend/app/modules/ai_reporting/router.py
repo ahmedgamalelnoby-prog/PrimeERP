@@ -10,12 +10,13 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
 from app.core.context import get_effective_tenant_id
+from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.identity.models import User
 from app.modules.ai_reporting.models import ReportDeliveryLog, ReportSchedule
 from app.modules.ai_reporting.service import ai_analysis_service, report_delivery_service, rows_to_csv
 
-router = APIRouter(prefix="/ai-reporting", tags=["ai-reporting"])
+router = APIRouter(prefix="/ai-reporting", tags=["ai-reporting"], dependencies=[Depends(require_permission("reports.view"))])
 
 REPORT_CATALOG = {
     "sales_performance": "Sales Performance",
