@@ -1,6 +1,5 @@
 from decimal import Decimal
 
-from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -9,6 +8,7 @@ from app.modules.accounting.tax_engine import calculate_taxes
 from app.modules.catalog.models import ProductVariant
 from app.modules.commerce.accounting_service import commerce_accounting_service
 from app.modules.commerce.models import BusinessPartner, SalesDocument, SalesLine
+from app.modules.commerce.sales_return_accounting import post_sales_return_cogs
 from app.modules.commerce.sales_return_models import SalesReturnAllocation
 from app.modules.commerce.sales_return_schemas import SalesReturnCreate
 from app.modules.inventory.items.models import InventoryItem
@@ -21,16 +21,7 @@ from app.modules.inventory.warehouses.models import InventoryWarehouse
 
 class SalesReturnService:
     def _source_line(self, db: Session, company_id: int, line_id: int):
-        row = db.scalar(
-            select(SalesLine, SalesDocument)
-            .join(SalesDocument, SalesDocument.id == SalesLine.document_id)
-            .where(
-                SalesLine.id == line_id,
-                SalesDocument.company_id == company_id,
-                SalesDocument.document_type == "delivery",
-            )
-            .with_for_update()
-        )
+        row = db.scalar(select(SalesLine, SalesDocument).join(SalesDocument, SalesDocument.id == SalesLine.document_id).where(SalesLine.id == line_id, SalesDocument.company_id == company_id, SalesDocument.document_type == "delivery").with_for_update())
         if row is None:
             raise ValueError(f"Original delivery line {line_id} was not found")
         line, delivery = row
@@ -45,11 +36,8 @@ class SalesReturnService:
         active_variant = db.scalar(select(ProductVariant.id).where(ProductVariant.company_id == company_id, ProductVariant.product_id == item_id, ProductVariant.is_active.is_(True)).limit(1))
         if active_variant is not None and variant_id is None:
             raise ValueError("Original delivery line must identify an active product variant")
-        if variant_id is not None:
-            variant = db.scalar(select(ProductVariant.id).where(ProductVariant.id == variant_id, ProductVariant.company_id == company_id, ProductVariant.product_id == item_id, ProductVariant.is_active.is_(True)))
-            if variant is None:
-                raise ValueError("Original delivery variant is invalid or inactive")
-        return item
+        if variant_id is not None and db.scalar(select(ProductVariant.id).where(ProductVariant.id == variant_id, ProductVariant.company_id == company_id, ProductVariant.product_id == item_id, ProductVariant.is_active.is_(True))) is None:
+            raise ValueError("Original delivery variant is invalid or inactive")
 
     def create_and_post(self, db: Session, payload: SalesReturnCreate, user_id: int):
         partner = db.scalar(select(BusinessPartner).where(BusinessPartner.id == payload.partner_id, BusinessPartner.company_id == payload.company_id, BusinessPartner.is_active.is_(True)).with_for_update())
@@ -69,7 +57,7 @@ class SalesReturnService:
             self._validate_variant(db, payload.company_id, source_line.item_id, source_line.variant_id)
             if destination_warehouse_id is None:
                 destination_warehouse_id = delivery.warehouse_id
-            elif delivery.warehouse_id is None:
+            if destination_warehouse_id is not None and delivery.warehouse_id is None:
                 raise ValueError("Original delivery has no warehouse")
             source_rows.append((request_line, source_line, delivery))
 
@@ -91,6 +79,7 @@ class SalesReturnService:
             tax_ids = list(source_line.tax_rate_ids or [])
             if not tax_ids and source_line.tax_rate_id:
                 tax_ids = [source_line.tax_rate_id]
+            active_taxes = []
             if tax_ids:
                 active_taxes = list(db.scalars(select(TaxRate).where(TaxRate.company_id == payload.company_id, TaxRate.id.in_(tax_ids), TaxRate.is_active.is_(True))).all())
                 if {tax.id for tax in active_taxes} != set(tax_ids):
@@ -98,9 +87,8 @@ class SalesReturnService:
             gross = Decimal(request_line.quantity) * Decimal(source_line.unit_price)
             discount = gross * Decimal(source_line.discount_percent or 0) / Decimal("100")
             net = gross - discount
-            tax_result = calculate_taxes(db, company_id=payload.company_id, amount=net, tax_ids=tax_ids, inclusive=False)
-            tax_amount = Decimal(tax_result["tax_total"])
-            non_wht = [tax for tax in active_taxes if not tax.is_withholding] if tax_ids else []
+            tax_amount = Decimal(calculate_taxes(db, company_id=payload.company_id, amount=net, tax_ids=tax_ids, inclusive=False)["tax_total"])
+            non_wht = [tax for tax in active_taxes if not tax.is_withholding]
             primary_tax_id = non_wht[0].id if non_wht else (tax_ids[0] if tax_ids else None)
             primary_tax_percent = Decimal(next((tax.rate for tax in active_taxes if tax.id == primary_tax_id), 0)) if tax_ids else Decimal("0")
             document.lines.append(SalesLine(item_id=source_line.item_id, variant_id=source_line.variant_id, tax_rate_id=primary_tax_id, tax_rate_ids=tax_ids, description=source_line.description, quantity=request_line.quantity, unit_price=source_line.unit_price, discount_percent=source_line.discount_percent, tax_percent=primary_tax_percent, line_total=net + tax_amount))
@@ -111,8 +99,8 @@ class SalesReturnService:
         document.total = Decimal(document.subtotal) + Decimal(document.tax_total)
         db.flush()
 
-        for request_line, source_line, delivery in source_rows:
-            credit_line = next(line for line in document.lines if line.item_id == source_line.item_id and line.quantity == request_line.quantity and line.description == source_line.description)
+        for index, (request_line, source_line, delivery) in enumerate(source_rows):
+            credit_line = document.lines[index]
             delivery_move = db.scalar(select(InventoryStockMove).where(InventoryStockMove.company_id == payload.company_id, InventoryStockMove.source_module == "commerce", InventoryStockMove.source_entity == "sales_delivery", InventoryStockMove.source_id == f"{delivery.id}:{source_line.id}", InventoryStockMove.status == "posted", InventoryStockMove.item_id == source_line.item_id, InventoryStockMove.variant_id == source_line.variant_id).with_for_update())
             if delivery_move is None:
                 raise ValueError(f"Posted inventory movement for delivery line {source_line.id} was not found")
@@ -127,7 +115,7 @@ class SalesReturnService:
         document.status = "fulfilled"
         db.flush()
         commerce_accounting_service.post_sales_credit_note(db, document, user_id)
-        commerce_accounting_service.post_sales_return_cogs(db, document, user_id)
+        post_sales_return_cogs(db, document, user_id)
         return document
 
 
