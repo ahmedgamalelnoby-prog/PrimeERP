@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.accounting.chart_of_accounts.models import AccountCombination
@@ -17,10 +18,13 @@ from app.modules.shipping.schemas import CarrierCreate, CarrierResponse, MethodC
 router = APIRouter(prefix="/shipping", tags=["Shipping"], dependencies=[Depends(require_permission("shipping.access")), Depends(require_module("shipping"))])
 
 
+def _tenant_id(user: User) -> int:
+    return get_effective_tenant_id(user)
+
+
 def _company_for_user(db: Session, company_id: int, user: User):
-    if user.tenant_id is None:
-        raise HTTPException(403, "User is not assigned to a tenant")
-    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == user.tenant_id))
+    tenant_id = _tenant_id(user)
+    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == tenant_id))
     if company is None:
         raise HTTPException(403, "Company is outside the current tenant")
     if not company.is_active:
@@ -55,7 +59,7 @@ def carrier(payload: CarrierCreate, current_user: User = Depends(get_current_use
     _validate_account(db, company.id, payload.settlement_account_id, "Carrier settlement account")
     _validate_account(db, company.id, payload.cash_account_id, "Carrier cash account")
     _validate_account(db, company.id, payload.fee_account_id, "Carrier fee account")
-    _validate_journal_and_branch(db, company.id, payload.settlement_journal_id, payload.branch_id, company.tenant_id)
+    _validate_journal_and_branch(db, company.id, payload.settlement_journal_id, payload.branch_id, _tenant_id(current_user))
     if not all((payload.settlement_account_id, payload.cash_account_id, payload.fee_account_id)):
         raise HTTPException(422, "Settlement, cash and fee accounts must be configured together")
     if (payload.settlement_journal_id is None) != (payload.branch_id is None):
@@ -73,9 +77,8 @@ def carriers(company_id: int = Query(..., gt=0), current_user: User = Depends(ge
 
 @router.post("/methods", response_model=MethodResponse, status_code=201, dependencies=[Depends(require_permission("shipping.write"))])
 def method(payload: MethodCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    if current_user.tenant_id is None:
-        raise HTTPException(403, "User is not assigned to a tenant")
-    carrier_obj = db.scalar(select(ShippingCarrier).join(Company, Company.id == ShippingCarrier.company_id).where(ShippingCarrier.id == payload.carrier_id, Company.tenant_id == current_user.tenant_id, ShippingCarrier.is_active.is_(True)))
+    tenant_id = _tenant_id(current_user)
+    carrier_obj = db.scalar(select(ShippingCarrier).join(Company, Company.id == ShippingCarrier.company_id).where(ShippingCarrier.id == payload.carrier_id, Company.tenant_id == tenant_id, ShippingCarrier.is_active.is_(True)))
     if carrier_obj is None:
         raise HTTPException(404, "Carrier not found")
     if payload.payment_method not in {"prepaid", "cod", "mixed"}:
@@ -90,9 +93,8 @@ def method(payload: MethodCreate, current_user: User = Depends(get_current_user)
 
 @router.get("/methods", response_model=list[MethodResponse])
 def methods(carrier_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    if current_user.tenant_id is None:
-        raise HTTPException(403, "User is not assigned to a tenant")
-    carrier_obj = db.scalar(select(ShippingCarrier).join(Company, Company.id == ShippingCarrier.company_id).where(ShippingCarrier.id == carrier_id, Company.tenant_id == current_user.tenant_id))
+    tenant_id = _tenant_id(current_user)
+    carrier_obj = db.scalar(select(ShippingCarrier).join(Company, Company.id == ShippingCarrier.company_id).where(ShippingCarrier.id == carrier_id, Company.tenant_id == tenant_id))
     if carrier_obj is None:
         raise HTTPException(404, "Carrier not found")
     return list(db.scalars(select(ShippingMethod).where(ShippingMethod.carrier_id == carrier_id).order_by(ShippingMethod.name)).all())
