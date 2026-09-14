@@ -1,29 +1,27 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from fastapi import HTTPException, status
 
 from app.core.context.manager import get_request_context
 
-if TYPE_CHECKING:
-    from app.modules.identity.models import User
 
-
-def get_effective_tenant_id(user: User) -> int:
+def get_effective_tenant_id(user) -> int:
     """Return the tenant selected for this request.
 
-    Regular users are permanently bound to ``user.tenant_id``.
-    Platform admins may operate on a tenant only after selecting it for
-    the current request (currently through the X-Tenant-ID header, resolved
-    by the authentication dependency). The selected tenant lives only in
-    RequestContext and never mutates the platform-admin database record.
+    A platform administrator has no persisted tenant assignment, so the
+    request context is authoritative for that user. Regular users normally
+    carry their authenticated tenant on ``user.tenant_id``; their request
+    context is populated with the same value by authentication.
+
+    Keeping the resolution based on tenant presence rather than a concrete
+    User ORM attribute also makes the helper safe for lightweight domain
+    objects used by services and tests.
     """
     context = get_request_context()
-    tenant_id = context.tenant_id if user.is_platform_admin else user.tenant_id
+    tenant_id = user.tenant_id if user.tenant_id is not None else context.tenant_id
 
     if tenant_id is None:
-        if user.is_platform_admin:
+        if getattr(user, "is_platform_admin", False):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Tenant context is required for this operation",
