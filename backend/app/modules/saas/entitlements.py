@@ -2,7 +2,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 
 from fastapi import Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.context import get_effective_tenant_id
@@ -18,12 +18,15 @@ CORE_MODULES = {"dashboard", "users", "companies", "branches"}
 
 
 def _active_subscription(db: Session, tenant_id: int) -> Subscription | None:
+    now = datetime.now(timezone.utc)
     return db.scalar(
         select(Subscription)
         .join(SubscriptionPlan, SubscriptionPlan.id == Subscription.plan_id)
         .where(
             Subscription.tenant_id == tenant_id,
             Subscription.status.in_(("trialing", "active", "past_due")),
+            Subscription.starts_at <= now,
+            or_(Subscription.ends_at.is_(None), Subscription.ends_at > now),
             SubscriptionPlan.is_active.is_(True),
         )
         .order_by(Subscription.ends_at.desc().nullslast(), Subscription.id.desc())
