@@ -1,7 +1,7 @@
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
-from app.modules.commerce.models import PurchaseDocument, SalesDocument
-from .models import TaxSnapshot
+from app.modules.commerce.models import BusinessPartner, PurchaseDocument, SalesDocument
+from .models import PartnerJurisdiction, TaxSnapshot
 from .service import JurisdictionContext
 from .snapshot_service import TaxSnapshotService
 
@@ -21,18 +21,19 @@ def capture_document_tax_snapshot(db: Session, document, *, kind: str) -> TaxSna
     else:
         raise ValueError("Unsupported commerce document kind")
 
+    partner = db.scalar(select(BusinessPartner).where(BusinessPartner.id == document.partner_id, BusinessPartner.company_id == document.company_id, BusinessPartner.is_active.is_(True)))
+    if partner is None:
+        raise ValueError("Partner required for tax jurisdiction resolution")
+    registration = db.scalar(select(PartnerJurisdiction).where(and_(PartnerJurisdiction.partner_id == partner.id, PartnerJurisdiction.effective_from <= document.document_date, PartnerJurisdiction.effective_to.is_(None) | (PartnerJurisdiction.effective_to >= document.document_date), PartnerJurisdiction.is_active.is_(True), PartnerJurisdiction.vat_registered.is_(True))).order_by(PartnerJurisdiction.effective_from.desc()))
+    b2b = bool(registration or partner.tax_number)
     context = JurisdictionContext(
         company_id=document.company_id,
         partner_id=document.partner_id,
         transaction_type=document.document_type,
         transaction_date=document.document_date,
         place_of_supply=getattr(document, "place_of_supply", None),
-        b2b=True,
+        b2b=b2b,
         goods_or_services="goods",
-        facts={"document_total": str(document.total), "tax_total": str(document.tax_total)},
+        facts={"document_total": str(document.total), "tax_total": str(document.tax_total), "partner_tax_number_present": bool(partner.tax_number)},
     )
-    return TaxSnapshotService(db).capture(
-        document_kind="sale" if kind == "sale" else "purchase",
-        document_id=document.id,
-        context=context,
-    )
+    return TaxSnapshotService(db).capture(document_kind=kind, document_id=document.id, context=context)
