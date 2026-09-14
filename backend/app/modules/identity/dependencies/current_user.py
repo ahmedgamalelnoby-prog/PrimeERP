@@ -1,6 +1,7 @@
 from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.config import settings
 from app.core.context import get_request_context
@@ -15,7 +16,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/identity/l
 TENANT_CONTEXT_HEADER = "X-Tenant-ID"
 
 
-def _resolve_platform_tenant(request_context, request_tenant_id: str | None, db: Session) -> int | None:
+def _resolve_platform_tenant(request_context, request_tenant_id: str | None, db: Session) -> Tenant | None:
     """Resolve the tenant selected by a platform administrator for this request."""
     if not request_tenant_id:
         return None
@@ -40,7 +41,7 @@ def _resolve_platform_tenant(request_context, request_tenant_id: str | None, db:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
 
     request_context.tenant_id = tenant.id
-    return tenant.id
+    return tenant
 
 
 def _authenticate_user(
@@ -74,7 +75,13 @@ def _authenticate_user(
     context.username = user.username
 
     if user.is_platform_admin:
-        _resolve_platform_tenant(context, tenant_context_header, db)
+        selected_tenant = _resolve_platform_tenant(context, tenant_context_header, db)
+        if selected_tenant is not None:
+            # Keep the platform-admin database row tenant_id=NULL while making
+            # existing tenant-scoped services see the request's selected tenant.
+            # set_committed_value() changes ORM state without creating UPDATE history.
+            set_committed_value(user, "tenant_id", selected_tenant.id)
+            set_committed_value(user, "tenant", selected_tenant)
     else:
         if user.tenant_id is None:
             raise HTTPException(status_code=403, detail="User is not assigned to a tenant")
