@@ -12,18 +12,15 @@ class InventoryItemRepository:
         return db.scalars(stmt.order_by(InventoryItem.sku)).all()
 
     def get_item(self, db: Session, *, company_id: int, item_id: int):
-        return db.scalar(
-            select(InventoryItem).where(
-                InventoryItem.company_id == company_id,
-                InventoryItem.id == item_id,
-            )
-        )
+        return db.scalar(select(InventoryItem).where(InventoryItem.company_id == company_id, InventoryItem.id == item_id))
 
-    def list_stock(self, db: Session, *, company_id: int, item_id: int | None = None):
+    def list_stock(self, db: Session, *, company_id: int, item_id: int | None = None, variant_id: int | None = None):
         stmt = select(InventoryStock).where(InventoryStock.company_id == company_id)
         if item_id is not None:
             stmt = stmt.where(InventoryStock.item_id == item_id)
-        return db.scalars(stmt.order_by(InventoryStock.item_id, InventoryStock.warehouse_id)).all()
+        if variant_id is not None:
+            stmt = stmt.where(InventoryStock.variant_id == variant_id)
+        return db.scalars(stmt.order_by(InventoryStock.item_id, InventoryStock.variant_id, InventoryStock.warehouse_id)).all()
 
 
 inventory_item_repository = InventoryItemRepository()
