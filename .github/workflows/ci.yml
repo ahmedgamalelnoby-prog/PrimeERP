@@ -30,17 +30,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Install and select Python 3.10 runtime
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          check-latest: true
-
-      - name: Provision isolated Python environment
+      - name: Detect Python 3.10 runtime without PowerShell
         run: |
-          where python
-          python --version
-          python -m venv .ci-venv
+          set "PYTHON_EXE="
+          if exist "C:\Users\Admin\AppData\Local\Programs\Python\Python310\python.exe" set "PYTHON_EXE=C:\Users\Admin\AppData\Local\Programs\Python\Python310\python.exe"
+          if not defined PYTHON_EXE if exist "C:\Program Files\Python310\python.exe" set "PYTHON_EXE=C:\Program Files\Python310\python.exe"
+          if not defined PYTHON_EXE if exist "C:\Python310\python.exe" set "PYTHON_EXE=C:\Python310\python.exe"
+          if not defined PYTHON_EXE if exist "%SystemRoot%\py.exe" set "PYTHON_EXE=%SystemRoot%\py.exe"
+          if not defined PYTHON_EXE (
+            for /f "tokens=2,*" %%A in ('reg query "HKLM\SOFTWARE\Python\PythonCore\3.10\InstallPath" /ve 2^>nul ^| findstr /I "REG_SZ"') do if exist "%%Bpython.exe" set "PYTHON_EXE=%%Bpython.exe"
+          )
+          if not defined PYTHON_EXE (
+            for /f "tokens=2,*" %%A in ('reg query "HKCU\SOFTWARE\Python\PythonCore\3.10\InstallPath" /ve 2^>nul ^| findstr /I "REG_SZ"') do if exist "%%Bpython.exe" set "PYTHON_EXE=%%Bpython.exe"
+          )
+          if not defined PYTHON_EXE (
+            echo Python 3.10 runtime was not found on the self-hosted runner.
+            echo Checked standard installation paths and Windows Python registry entries.
+            exit /b 1
+          )
+          echo Using Python runtime: %PYTHON_EXE%
+          if /I "%PYTHON_EXE%"=="%SystemRoot%\py.exe" (
+            "%PYTHON_EXE%" -3.10 --version
+            "%PYTHON_EXE%" -3.10 -m venv .ci-venv
+          ) else (
+            "%PYTHON_EXE%" --version
+            "%PYTHON_EXE%" -m venv .ci-venv
+          )
           .ci-venv\Scripts\python.exe --version
 
       - name: Install dependencies
