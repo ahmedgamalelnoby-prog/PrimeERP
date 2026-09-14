@@ -25,15 +25,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
       - name: Validate Python runtime
         run: |
           python --version
           if errorlevel 1 exit /b 1
-
       - name: Create isolated CI virtual environment
         run: python -m venv .ci-venv
-
       - name: Install dependencies
         run: |
           .\.ci-venv\Scripts\python.exe -m pip install --upgrade pip
@@ -42,22 +39,17 @@ jobs:
           if errorlevel 1 exit /b 1
           .\.ci-venv\Scripts\python.exe -m pip install pytest
           if errorlevel 1 exit /b 1
-
       - name: Compile Python sources
         run: .\.ci-venv\Scripts\python.exe -m compileall -q app
-
       - name: Validate modular architecture
         run: .\.ci-venv\Scripts\python.exe scripts\check_modular_architecture.py
-
       - name: Validate API security boundaries
         run: .\.ci-venv\Scripts\python.exe scripts\check_api_security.py
-
       - name: Import application smoke test
         env:
           DATABASE_URL: sqlite:///./primeerp_ci_smoke.db
           APP_ENV: test
         run: .\.ci-venv\Scripts\python.exe scripts\smoke_import.py
-
       - name: Validate production configuration rejects unsafe defaults
         env:
           APP_ENV: production
@@ -66,18 +58,12 @@ jobs:
           SECRET_KEY: your-secret-key-change-this-in-production
           CORS_ORIGINS: https://erp.example.com
         run: .\.ci-venv\Scripts\python.exe scripts\check_production_config.py
-
       - name: Require a single Alembic head
-        working-directory: backend
         run: |
           .\.ci-venv\Scripts\python.exe -m alembic heads > alembic-heads.txt
           if errorlevel 1 exit /b 1
           type alembic-heads.txt
-          findstr /C:"(head)" alembic-heads.txt >NUL
-          if errorlevel 1 exit /b 1
-          for /F "tokens=*" %%A in ('find /C "(head)" ^< alembic-heads.txt') do set "HEAD_COUNT=%%A"
-          echo %HEAD_COUNT%
-
+          .\.ci-venv\Scripts\python.exe -c "from pathlib import Path; text=Path('alembic-heads.txt').read_text(); n=text.count('(head)'); assert n == 1, f'Expected exactly one Alembic head; found {n}'"
       - name: Run tests
         run: .\.ci-venv\Scripts\python.exe -m pytest -q
 
