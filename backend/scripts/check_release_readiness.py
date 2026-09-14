@@ -27,8 +27,12 @@ REQUIRED_API_MARKERS = (
     "/api/v1/tenants",
     "/api/v1/subscriptions/tenant/{tenant_id}",
     "/api/v1/accounting/tax-rates",
+    "/api/v1/taxes/rates",
     "/api/v1/uom",
     "/api/v1/inventory/items",
+    "/api/v1/inventory/items/{item_id}/stock",
+    "/api/v1/integrations/connections",
+    "/api/v1/shipping/carriers",
 )
 
 
@@ -84,17 +88,34 @@ def main() -> int:
     if "FROM nginx:" not in frontend_dockerfile or "HEALTHCHECK" not in frontend_dockerfile:
         fail("frontend must use a production nginx stage with a healthcheck")
 
-    openapi_hint = (BACKEND / "main.py").read_text(encoding="utf-8")
-    missing = [marker for marker in REQUIRED_API_MARKERS if marker not in openapi_hint and marker.split("{")[0] not in openapi_hint]
-    if missing:
-        # main.py may mount routers rather than contain every concrete path.  This is
-        # intentionally only a weak contract check; runtime Docker CI validates OpenAPI.
-        router_text = "\n".join(p.read_text(encoding="utf-8") for p in (BACKEND / "app").rglob("router.py"))
-        missing = [marker for marker in missing if marker.split("{")[0] not in router_text]
-        if missing:
-            fail(f"required API contract markers are not present: {missing}")
+    router_text = "\n".join(
+        p.read_text(encoding="utf-8") for p in (BACKEND / "app").rglob("router.py")
+    )
+    main_text = (BACKEND / "main.py").read_text(encoding="utf-8")
+    missing_static = [
+        marker for marker in REQUIRED_API_MARKERS
+        if marker not in main_text and marker.split("{")[0] not in router_text
+    ]
+    if missing_static:
+        fail(f"required API contract markers are not present: {missing_static}")
 
-    print("Release readiness static audit passed.")
+    # Stronger contract: verify the actual FastAPI application registers the
+    # routes, rather than relying only on source-text markers.
+    try:
+        import sys
+        sys.path.insert(0, str(BACKEND))
+        from main import create_application
+
+        application = create_application()
+        paths = application.openapi().get("paths", {})
+    except Exception as exc:
+        fail(f"FastAPI application could not be constructed for route audit: {exc}")
+
+    missing_runtime = [marker for marker in REQUIRED_API_MARKERS if marker not in paths]
+    if missing_runtime:
+        fail(f"required registered API routes are missing: {missing_runtime}")
+
+    print("Release readiness static and route audit passed.")
     return 0
 
 
