@@ -86,9 +86,15 @@ class InventoryStockMoveService:
         fifo_allocations: list[tuple[Decimal, Decimal]] = []
 
         if source_balance:
-            if Decimal(source_balance.quantity_on_hand or 0) < Decimal(move.quantity):
+            on_hand = Decimal(source_balance.quantity_on_hand or 0)
+            reserved = Decimal(source_balance.quantity_reserved or 0)
+            if move.movement_type in {"issue", "transfer"} and on_hand - reserved < Decimal(move.quantity):
+                raise ValueError("Insufficient available stock after excluding reserved quantity")
+            if on_hand < Decimal(move.quantity):
                 raise ValueError("Insufficient stock at source location")
             warehouse_source = self._warehouse_stock(db, company_id, move.item_id, source_warehouse_id)
+            if move.movement_type in {"issue", "transfer"} and Decimal(warehouse_source.quantity_on_hand or 0) - Decimal(warehouse_source.quantity_reserved or 0) < Decimal(move.quantity):
+                raise ValueError("Insufficient available warehouse stock after excluding reserved quantity")
             if item.costing_method == "fifo":
                 fifo_allocations = self._consume_fifo_layers(
                     db,
