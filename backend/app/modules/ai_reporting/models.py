@@ -8,7 +8,7 @@ class ReportSchedule(Base):
     __tablename__ = "report_schedules"
 
     id = Column(Integer, primary_key=True)
-    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(160), nullable=False)
     report_key = Column(String(80), nullable=False)
     frequency = Column(String(20), nullable=False, server_default="monthly")
@@ -17,7 +17,7 @@ class ReportSchedule(Base):
     channels = Column(Text, nullable=False, server_default='["email"]')
     recipients = Column(Text, nullable=False, server_default="[]")
     filters = Column(Text, nullable=False, server_default="{}")
-    format = Column(String(20), nullable=False, server_default="pdf")
+    format = Column(String(20), nullable=False, server_default="csv")
     include_ai = Column(Boolean, nullable=False, server_default="true")
     is_active = Column(Boolean, nullable=False, server_default="true")
     next_run_at = Column(DateTime(timezone=True), nullable=True, index=True)
@@ -30,7 +30,7 @@ class ReportDeliveryLog(Base):
     __tablename__ = "report_delivery_logs"
 
     id = Column(Integer, primary_key=True)
-    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     schedule_id = Column(Integer, ForeignKey("report_schedules.id", ondelete="SET NULL"), nullable=True, index=True)
     report_key = Column(String(80), nullable=False)
     channel = Column(String(20), nullable=False)
@@ -38,4 +38,4 @@ class ReportDeliveryLog(Base):
     status = Column(String(20), nullable=False)
     provider_message_id = Column(String(200), nullable=True)
     error = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
