@@ -35,7 +35,9 @@ jobs:
           docker compose version
 
       - name: Prepare Docker environment
-        run: cp .env.docker.example .env.docker
+        run: |
+          cp .env.docker.example .env.docker
+          printf '\nAPP_ENV=ci\nDEBUG=true\n' >> .env.docker
 
       - name: Validate Docker Compose
         run: docker compose --env-file .env.docker config -q
