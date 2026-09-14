@@ -31,8 +31,16 @@ class CommerceService:
         return list(db.scalars(q.order_by(BusinessPartner.name)).all())
 
     def _resolve_line_variant(self, db: Session, *, company_id: int, item: InventoryItem, variant_id: int | None):
+        active_variants = db.scalar(
+            select(ProductVariant.id)
+            .where(
+                ProductVariant.company_id == company_id,
+                ProductVariant.product_id == item.id,
+                ProductVariant.is_active.is_(True),
+            )
+            .limit(1)
+        )
         if variant_id is None:
-            active_variants = db.scalar(select(ProductVariant.id).where(ProductVariant.company_id == company_id, ProductVariant.product_id == item.id, ProductVariant.active.is_(True)).limit(1))
             if active_variants is not None:
                 raise ValueError("This item has active variants; document lines must identify the variant")
             return None
@@ -40,7 +48,7 @@ class CommerceService:
             ProductVariant.id == variant_id,
             ProductVariant.company_id == company_id,
             ProductVariant.product_id == item.id,
-            ProductVariant.active.is_(True),
+            ProductVariant.is_active.is_(True),
         ))
         if variant is None:
             raise ValueError("Variant does not belong to the item/company or is inactive")
