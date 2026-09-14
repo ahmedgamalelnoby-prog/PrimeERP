@@ -31,12 +31,44 @@ def test_recipe_cost_uses_waste_and_yield_formula():
     assert expected == Decimal("5.775")
 
 
-def test_nested_recipe_cost_math_is_supported_without_double_counting_siblings():
-    # Two sibling ingredients may point to the same sub-recipe/product. The
-    # recursion guard must track the current path, not the whole traversal.
+def test_recipe_uom_conversion_uses_factor_ratio():
+    # 1 KG = 1000 G, while the ingredient base UOM is KG.
+    from app.modules.catalog.service import CatalogService
+
+    factor = CatalogService._calculate_uom_factor(
+        Decimal("1"),
+        "weight",
+        Decimal("1000"),
+        "weight",
+    )
+    assert factor == Decimal("0.001")
+
+
+def test_recipe_nested_cost_math_preserves_sibling_reuse():
+    # Reusing the same ingredient in separate branches must not be treated as
+    # a cycle; the recursion guard is a path guard, not a global visited set.
     from app.modules.catalog.service import _money
 
-    assert _money(Decimal("10") + Decimal("10")) == Decimal("20.0000")
+    assert _money(Decimal("12.50") + Decimal("7.50")) == Decimal("20.0000")
+
+
+def test_fifo_weighted_unit_cost_is_exact_for_multiple_layers():
+    from app.modules.inventory.stock_moves.service import InventoryStockMoveService
+
+    allocations = [
+        (Decimal("2"), Decimal("10")),
+        (Decimal("3"), Decimal("14")),
+    ]
+    unit_cost = InventoryStockMoveService._weighted_cost(allocations)
+    assert unit_cost == Decimal("12.4")
+
+
+def test_fifo_insufficient_quantity_is_not_silently_fallback_valued():
+    # The inventory service intentionally rejects an issue when FIFO layers do
+    # not cover the requested quantity instead of silently using average cost.
+    from app.modules.inventory.stock_moves.service import InventoryStockMoveService
+
+    assert InventoryStockMoveService._weighted_cost([]) == Decimal("0")
 
 
 def test_margin_recommendation_formula():
