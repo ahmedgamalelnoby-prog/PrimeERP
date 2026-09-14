@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import configure_mappers
 
 from app.core.context import RequestContext, clear_request_context, reset_request_context, set_request_context
@@ -61,6 +62,12 @@ def test_system_health_and_openapi_routes_exist() -> None:
     paths = _openapi_paths(app)
     assert "/health" in paths
     assert app.openapi_url == "/api/v1/openapi.json"
+
+
+def test_cors_allows_platform_tenant_context_header() -> None:
+    cors = next(m for m in app.user_middleware if m.cls is CORSMiddleware)
+    allow_headers = {str(header).lower() for header in cors.kwargs["allow_headers"]}
+    assert "x-tenant-id" in allow_headers
 
 
 def test_platform_admin_uses_request_tenant_without_mutating_user_tenant() -> None:
