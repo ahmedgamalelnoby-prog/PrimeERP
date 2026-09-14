@@ -39,15 +39,15 @@ class CatalogService:
         self._company(db, payload.company_id)
         if payload.parent_id:
             parent = db.scalar(select(ProductCategory).where(ProductCategory.id == payload.parent_id, ProductCategory.company_id == payload.company_id))
-            if parent is None:
-                raise ValueError("Parent category does not belong to this company")
+            if parent is None or parent.id == payload.parent_id and parent.parent_id == parent.id:
+                raise ValueError("Parent category is invalid")
         category = ProductCategory(**payload.model_dump())
         db.add(category)
         try:
             db.commit()
-        except Exception:
+        except Exception as exc:
             db.rollback()
-            raise ValueError("Category code already exists for this company")
+            raise ValueError("Category code already exists for this company") from exc
         db.refresh(category)
         return category
 
@@ -65,15 +65,15 @@ class CatalogService:
         db.add(price_list)
         try:
             db.commit()
-        except Exception:
+        except Exception as exc:
             db.rollback()
-            raise ValueError("Price list code already exists or another default price list was created concurrently")
+            raise ValueError("Price list code already exists or another default price list was created concurrently") from exc
         db.refresh(price_list)
         return price_list
 
     def list_price_lists(self, db: Session, company_id: int):
         self._company(db, company_id)
-        return list(db.scalars(select(ProductPriceList).where(ProductPriceList.company_id == company_id, ProductPriceList.is_active.is_(True)).order_by(ProductPriceList.name)).all())
+        return list(db.scalars(select(ProductPriceList).where(ProductPriceList.company_id == company_id).order_by(ProductPriceList.name)).all())
 
     def set_base_price(self, db: Session, company_id: int, product_id: int, sale_price: Decimal, source: str = "manual"):
         product = self._product(db, company_id, product_id)
@@ -83,8 +83,7 @@ class CatalogService:
         for row in previous:
             row.valid_to = now
         product.sales_price = _money(sale_price)
-        history = ProductPrice(company_id=company_id, price_list_id=price_list.id, product_id=product_id, sale_price=product.sales_price, min_quantity=1, source=source, valid_from=now)
-        db.add(history)
+        db.add(ProductPrice(company_id=company_id, price_list_id=price_list.id, product_id=product_id, sale_price=product.sales_price, min_quantity=1, source=source, valid_from=now))
         db.commit()
         db.refresh(product)
         return product
@@ -114,6 +113,16 @@ class CatalogService:
         db.refresh(price)
         return price
 
+    def list_prices(self, db: Session, company_id: int, product_id: int | None = None, price_list_id: int | None = None):
+        self._company(db, company_id)
+        query = select(ProductPrice).where(ProductPrice.company_id == company_id)
+        if product_id is not None:
+            self._product(db, company_id, product_id)
+            query = query.where(ProductPrice.product_id == product_id)
+        if price_list_id is not None:
+            query = query.where(ProductPrice.price_list_id == price_list_id)
+        return list(db.scalars(query.order_by(ProductPrice.product_id, ProductPrice.valid_from.desc())).all())
+
     def record_cost(self, db: Session, company_id: int, payload):
         self._product(db, company_id, payload.product_id)
         row = ProductCostHistory(company_id=company_id, **payload.model_dump(exclude={"effective_at"}), effective_at=payload.effective_at or _now())
@@ -122,11 +131,13 @@ class CatalogService:
         db.refresh(row)
         return row
 
+    def list_cost_history(self, db: Session, company_id: int, product_id: int):
+        self._product(db, company_id, product_id)
+        return list(db.scalars(select(ProductCostHistory).where(ProductCostHistory.company_id == company_id, ProductCostHistory.product_id == product_id).order_by(ProductCostHistory.effective_at.desc())).all())
+
     def create_recipe(self, db: Session, payload):
         self._product(db, payload.company_id, payload.product_id)
         ingredient_ids = [line.ingredient_product_id for line in payload.lines]
-        if not ingredient_ids:
-            raise ValueError("Recipe must contain at least one ingredient")
         if len(ingredient_ids) != len(set(ingredient_ids)):
             raise ValueError("Duplicate ingredient products are not allowed in one recipe")
         if payload.product_id in ingredient_ids:
@@ -134,6 +145,12 @@ class CatalogService:
         ingredients = list(db.scalars(select(InventoryItem).where(InventoryItem.company_id == payload.company_id, InventoryItem.id.in_(ingredient_ids), InventoryItem.is_active.is_(True))).all())
         if len(ingredients) != len(set(ingredient_ids)):
             raise ValueError("One or more recipe ingredients are invalid or inactive")
+        for line in payload.lines:
+            if line.uom_id is not None:
+                from app.modules.uom.models import UnitOfMeasure
+                uom = db.scalar(select(UnitOfMeasure).where(UnitOfMeasure.id == line.uom_id, UnitOfMeasure.company_id == payload.company_id, UnitOfMeasure.is_active.is_(True)))
+                if uom is None:
+                    raise ValueError("Recipe line UOM does not belong to this company")
         current = db.scalar(select(Recipe).where(Recipe.company_id == payload.company_id, Recipe.product_id == payload.product_id, Recipe.is_active.is_(True)).order_by(Recipe.version.desc()).limit(1).with_for_update())
         version = (current.version + 1) if current else 1
         if current:
@@ -167,23 +184,26 @@ class CatalogService:
         recipe = self.get_recipe(db, company_id, recipe_id)
         total = Decimal("0")
         for line in recipe.lines:
-            unit_cost = self.ingredient_unit_cost(db, company_id, line.ingredient_product_id)
-            factor = Decimal("1") + (Decimal(line.waste_percentage or 0) / Decimal("100"))
-            total += Decimal(line.quantity) * factor * unit_cost
-        recipe_factor = Decimal("1") + (Decimal(recipe.waste_percentage or 0) / Decimal("100"))
-        return _money((total * recipe_factor) / Decimal(recipe.yield_quantity))
+            total += Decimal(line.quantity) * (Decimal("1") + Decimal(line.waste_percentage or 0) / 100) * self.ingredient_unit_cost(db, company_id, line.ingredient_product_id)
+        return _money((total * (Decimal("1") + Decimal(recipe.waste_percentage or 0) / 100)) / Decimal(recipe.yield_quantity))
 
     def create_menu(self, db: Session, payload):
         self._company(db, payload.company_id)
-        if payload.branch_id:
-            branch = db.scalar(select(Branch).where(Branch.id == payload.branch_id, Branch.company_id == payload.company_id, Branch.is_active.is_(True)))
-            if branch is None:
-                raise ValueError("Branch does not belong to this company")
+        if payload.branch_id and db.scalar(select(Branch).where(Branch.id == payload.branch_id, Branch.company_id == payload.company_id, Branch.is_active.is_(True))) is None:
+            raise ValueError("Branch does not belong to this company")
         menu = Menu(**payload.model_dump())
         db.add(menu)
-        db.commit()
+        try:
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            raise ValueError("Menu code already exists for this company") from exc
         db.refresh(menu)
         return self.get_menu(db, payload.company_id, menu.id)
+
+    def list_menus(self, db: Session, company_id: int):
+        self._company(db, company_id)
+        return list(db.scalars(select(Menu).options(selectinload(Menu.items)).where(Menu.company_id == company_id).order_by(Menu.name_ar)).all())
 
     def get_menu(self, db: Session, company_id: int, menu_id: int):
         menu = db.scalar(select(Menu).options(selectinload(Menu.items)).where(Menu.id == menu_id, Menu.company_id == company_id))
@@ -194,10 +214,8 @@ class CatalogService:
     def add_menu_item(self, db: Session, company_id: int, menu_id: int, payload):
         menu = self.get_menu(db, company_id, menu_id)
         self._product(db, company_id, payload.product_id)
-        if payload.price_list_id:
-            price_list = db.scalar(select(ProductPriceList).where(ProductPriceList.id == payload.price_list_id, ProductPriceList.company_id == company_id, ProductPriceList.is_active.is_(True)))
-            if price_list is None:
-                raise ValueError("Price list does not belong to this company")
+        if payload.price_list_id and db.scalar(select(ProductPriceList).where(ProductPriceList.id == payload.price_list_id, ProductPriceList.company_id == company_id, ProductPriceList.is_active.is_(True))) is None:
+            raise ValueError("Price list does not belong to this company")
         item = MenuItem(menu_id=menu.id, **payload.model_dump())
         db.add(item)
         try:
@@ -220,21 +238,10 @@ class CatalogService:
         sale_price = _money(price.sale_price if price else product.sales_price)
         margin = _money(sale_price - current_cost)
         margin_pct = _money((margin / sale_price * 100) if sale_price > 0 else 0)
-        recommended = _money(current_cost / (Decimal("1") - target_margin / Decimal("100"))) if target_margin < 100 else None
+        recommended = _money(current_cost / (Decimal("1") - target_margin / 100)) if target_margin < 100 else None
         prices = list(db.scalars(select(ProductPrice).where(ProductPrice.company_id == company_id, ProductPrice.product_id == product_id).order_by(ProductPrice.valid_from.desc()).limit(50)).all())
         costs = list(db.scalars(select(ProductCostHistory).where(ProductCostHistory.company_id == company_id, ProductCostHistory.product_id == product_id).order_by(ProductCostHistory.effective_at.desc()).limit(50)).all())
-        return {
-            "product_id": product.id,
-            "product_name": product.name_en or product.name_ar,
-            "current_cost": current_cost,
-            "sale_price": sale_price,
-            "gross_margin": margin,
-            "gross_margin_percentage": margin_pct,
-            "recommended_price_at_margin": recommended,
-            "recipe_cost": recipe_cost,
-            "price_history": [{"id": p.id, "sale_price": p.sale_price, "valid_from": p.valid_from, "valid_to": p.valid_to, "min_quantity": p.min_quantity, "source": p.source} for p in prices],
-            "cost_history": [{"id": c.id, "cost": c.cost, "cost_type": c.cost_type, "effective_at": c.effective_at, "source": c.source} for c in costs],
-        }
+        return {"product_id": product.id, "product_name": product.name_en or product.name_ar, "current_cost": current_cost, "sale_price": sale_price, "gross_margin": margin, "gross_margin_percentage": margin_pct, "recommended_price_at_margin": recommended, "recipe_cost": recipe_cost, "price_history": [{"id": p.id, "sale_price": p.sale_price, "valid_from": p.valid_from, "valid_to": p.valid_to, "min_quantity": p.min_quantity, "source": p.source} for p in prices], "cost_history": [{"id": c.id, "cost": c.cost, "cost_type": c.cost_type, "effective_at": c.effective_at, "source": c.source} for c in costs]}
 
 
 catalog_service = CatalogService()
