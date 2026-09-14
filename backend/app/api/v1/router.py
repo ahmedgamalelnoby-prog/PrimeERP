@@ -35,6 +35,7 @@ from app.modules.egyptian_einvoice.router import router as egyptian_einvoice_rou
 from app.modules.audit.router import router as audit_router
 from app.modules.roles.router import router as roles_router
 from app.modules.taxes.router import router as taxes_router
+from app.modules.catalog.router import router as catalog_router
 from app.modules.saas.entitlements import require_module
 
 
@@ -49,12 +50,9 @@ def build_router() -> APIRouter:
     api_router.include_router(financial_reports_router, dependencies=[Depends(require_module("accounting"))])
     api_router.include_router(accounting_router, dependencies=[Depends(require_module("accounting"))])
     api_router.include_router(taxes_router)
-    for r in (
-        inventory_items_router, inventory_warehouses_router, inventory_locations_router,
-        inventory_stock_moves_router, inventory_transfers_router, inventory_adjustments_router,
-        inventory_reservations_router, inventory_costing_router,
-    ):
+    for r in (inventory_items_router, inventory_warehouses_router, inventory_locations_router, inventory_stock_moves_router, inventory_transfers_router, inventory_adjustments_router, inventory_reservations_router, inventory_costing_router):
         api_router.include_router(r, dependencies=[Depends(require_module("inventory"))])
+    api_router.include_router(catalog_router, dependencies=[Depends(require_module("inventory"))])
     api_router.include_router(commerce_router, dependencies=[Depends(require_module("sales"))])
     api_router.include_router(enterprise_router, dependencies=[Depends(require_module("enterprise"))])
     api_router.include_router(shipping_router)
