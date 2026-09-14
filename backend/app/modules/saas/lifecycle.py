@@ -21,6 +21,14 @@ def _tenant(db: Session, tenant_id: int) -> Tenant:
     return tenant
 
 
+def _reject_suspended(tenant: Tenant) -> None:
+    if tenant.status == "suspended" or not tenant.is_active:
+        raise HTTPException(
+            status_code=423,
+            detail="Tenant is suspended and requires explicit reactivation",
+        )
+
+
 def _plan(db: Session, plan_id: int) -> SubscriptionPlan:
     plan = db.get(SubscriptionPlan, plan_id)
     if plan is None or not plan.is_active:
@@ -56,6 +64,7 @@ def convert_trial_to_paid(
     auto_renew: bool = True,
 ) -> Subscription:
     tenant = _tenant(db, tenant_id)
+    _reject_suspended(tenant)
     plan = _plan(db, plan_id)
     now = _now()
     if billing_cycle not in BILLING_CYCLES:
@@ -97,6 +106,7 @@ def renew_subscription(
     billing_cycle: str | None = None,
 ) -> Subscription:
     tenant = _tenant(db, tenant_id)
+    _reject_suspended(tenant)
     now = _now()
     current = _active_subscription(db, tenant_id, now)
     if current is None:
@@ -125,8 +135,6 @@ def renew_subscription(
     tenant.status = "active"
     tenant.is_trial = False
     tenant.is_active = True
-    tenant.suspended_at = None
-    tenant.suspension_reason = None
     db.commit()
     db.refresh(current)
     return current
@@ -134,6 +142,7 @@ def renew_subscription(
 
 def cancel_auto_renewal(db: Session, tenant_id: int) -> Subscription:
     tenant = _tenant(db, tenant_id)
+    _reject_suspended(tenant)
     now = _now()
     subscription = _active_subscription(db, tenant_id, now)
     if subscription is None:
