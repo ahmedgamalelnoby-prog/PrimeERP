@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -29,17 +29,15 @@ def _url(value: Any) -> str | None:
 
 
 def _find_local_product(db: Session, company_id: int, salla: SallaProduct) -> InventoryItem | None:
-    candidates = [salla.sku, salla.gtin]
-    for value in candidates:
-        key = _first_text(value)
-        if not key:
+    for value in (_first_text(salla.sku), _first_text(salla.gtin)):
+        if not value:
             continue
         row = db.scalar(
             select(InventoryItem)
             .where(
                 InventoryItem.company_id == company_id,
                 InventoryItem.is_active.is_(True),
-                (InventoryItem.sku == key) | (InventoryItem.barcode == key),
+                or_(InventoryItem.sku == value, InventoryItem.barcode == value),
             )
             .with_for_update()
         )
@@ -59,7 +57,7 @@ def _find_local_variant(db: Session, company_id: int, product_id: int, salla: Sa
                 ProductVariant.company_id == company_id,
                 ProductVariant.product_id == product_id,
                 ProductVariant.is_active.is_(True),
-                ProductVariant.sku == key,
+                or_(ProductVariant.sku == key, ProductVariant.name == key),
             )
             .with_for_update()
         )
@@ -96,23 +94,39 @@ def _upsert_mapping(
         mapping.sync_status = "active"
         return mapping
 
-    mapping = IntegrationProductMapping(
-        company_id=company_id,
-        connection_id=connection_id,
-        product_id=product_id,
-        variant_id=variant_id,
-        external_id=external_id,
-        external_sku=external_sku,
-        external_url=external_url,
-        sync_direction="bidirectional",
-        sync_status="active",
-    )
-    db.add(mapping)
     try:
-        db.flush()
+        with db.begin_nested():
+            mapping = IntegrationProductMapping(
+                company_id=company_id,
+                connection_id=connection_id,
+                product_id=product_id,
+                variant_id=variant_id,
+                external_id=external_id,
+                external_sku=external_sku,
+                external_url=external_url,
+                sync_direction="bidirectional",
+                sync_status="active",
+            )
+            db.add(mapping)
+            db.flush()
     except IntegrityError as exc:
-        db.rollback()
-        raise ValueError("Concurrent Salla mapping conflict; retry reconciliation") from exc
+        existing = db.scalar(
+            select(IntegrationProductMapping)
+            .where(
+                IntegrationProductMapping.company_id == company_id,
+                IntegrationProductMapping.connection_id == connection_id,
+                IntegrationProductMapping.external_id == external_id,
+            )
+            .with_for_update()
+        )
+        if existing is None:
+            raise ValueError("Concurrent Salla mapping conflict; retry reconciliation") from exc
+        if existing.product_id != product_id or existing.variant_id != variant_id:
+            raise ValueError("Salla external product is already mapped to another ERP product or variant") from exc
+        existing.external_sku = external_sku
+        existing.external_url = external_url
+        existing.sync_status = "active"
+        mapping = existing
     return mapping
 
 
