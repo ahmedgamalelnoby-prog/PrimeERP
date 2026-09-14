@@ -13,10 +13,13 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  CI_POSTGRES_PORT: 55432
+
 jobs:
   backend:
     name: Backend - compile, architecture, security, smoke, tests and migrations
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     defaults:
       run:
@@ -24,20 +27,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Set up Python 3.10
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-          cache: pip
-          cache-dependency-path: backend/requirements.txt
-      - name: Validate runner toolchain
-        working-directory: .
+      - name: Validate runtime
         run: |
-          python --version
+          python3.10 --version
           docker --version
           docker compose version
       - name: Create isolated CI virtual environment
-        run: python -m venv .ci-venv
+        run: python3.10 -m venv .ci-venv
       - name: Install dependencies
         run: |
           .ci-venv/bin/python -m pip install --upgrade pip
@@ -57,7 +53,7 @@ jobs:
       - name: Validate production configuration rejects unsafe defaults
         env:
           APP_ENV: production
-          DEBUG: "false"
+          DEBUG: 'false'
           DATABASE_URL: sqlite:///./unsafe.db
           SECRET_KEY: your-secret-key-change-this-in-production
           CORS_ORIGINS: https://erp.example.com
@@ -66,13 +62,13 @@ jobs:
         working-directory: .
         run: |
           docker rm -f primeerp-ci-postgres >/dev/null 2>&1 || true
-          docker run -d --name primeerp-ci-postgres -e POSTGRES_USER=primeerp -e POSTGRES_PASSWORD=primeerp -e POSTGRES_DB=primeerp_ci -p 55432:5432 postgres:17
+          docker run -d --name primeerp-ci-postgres -e POSTGRES_USER=primeerp -e POSTGRES_PASSWORD=primeerp -e POSTGRES_DB=primeerp_ci -p ${CI_POSTGRES_PORT}:5432 postgres:17
           ready=false
-          for i in {1..30}; do
+          for i in $(seq 1 30); do
             if docker exec primeerp-ci-postgres pg_isready -U primeerp -d primeerp_ci >/dev/null 2>&1; then ready=true; break; fi
             sleep 2
           done
-          if [ "$ready" != "true" ]; then docker logs primeerp-ci-postgres; exit 1; fi
+          if [ "$ready" != true ]; then docker logs primeerp-ci-postgres; exit 1; fi
       - name: Run Alembic migrations
         env:
           DATABASE_URL: postgresql+psycopg://primeerp:primeerp@127.0.0.1:55432/primeerp_ci
@@ -81,15 +77,19 @@ jobs:
         run: |
           heads="$(.ci-venv/bin/alembic heads)"
           printf '%s\n' "$heads"
-          count="$(printf '%s\n' "$heads" | grep -c '(head)' || true)"
-          if [ "$count" -ne 1 ]; then echo "Expected exactly one Alembic head; found $count."; exit 1; fi
+          count=$(printf '%s\n' "$heads" | grep -c '(head)' || true)
+          test "$count" -eq 1 || { echo "Expected exactly one Alembic head; found $count"; exit 1; }
       - name: Check Alembic configuration
         env:
           DATABASE_URL: postgresql+psycopg://primeerp:primeerp@127.0.0.1:55432/primeerp_ci
         run: .ci-venv/bin/alembic check
       - name: Run tests
         run: |
-          if find tests -maxdepth 1 -type f -name 'test_*.py' -print -quit | grep -q .; then .ci-venv/bin/python -m pytest -q; else echo 'No backend tests found; structural and migration checks passed.'; fi
+          if find tests -maxdepth 1 -type f -name 'test_*.py' -print -quit 2>/dev/null | grep -q .; then
+            .ci-venv/bin/python -m pytest -q
+          else
+            echo 'No backend tests found; static, import and migration checks passed.'
+          fi
       - name: Cleanup CI database
         if: always()
         working-directory: .
@@ -97,7 +97,7 @@ jobs:
 
   frontend:
     name: Frontend - typecheck, lint and build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:
       run:
@@ -105,12 +105,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Set up Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+      - name: Validate Node.js runtime
+        run: |
+          node --version
+          npm --version
+          major=$(node -p "process.versions.node.split('.')[0]")
+          test "$major" -ge 20 || { echo "PrimeERP CI requires Node.js 20+; found $major"; exit 1; }
       - name: Install dependencies
         run: npm ci
       - name: Typecheck
@@ -122,8 +122,7 @@ jobs:
 
   repository:
     name: Repository boundaries and hygiene
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -133,12 +132,15 @@ jobs:
           set -euo pipefail
           bad=0
           while IFS= read -r file; do
-            if [[ "$file" =~ (^|/)(\.env($|/)|__pycache__/|node_modules/|dist/)|\.pyc$|\.backup$|\.bak$ ]]; then echo "Forbidden tracked/generated file: $file"; bad=1; fi
+            if [[ "$file" =~ (^|/)(\.env($|/)|__pycache__/|node_modules/|dist/)|\.pyc$|\.backup$|\.bak$ ]]; then
+              echo "Forbidden tracked/generated file: $file"
+              bad=1
+            fi
           done < <(git ls-files)
           if matches=$(git grep -n -I -E 'CommercialERP|ContentAI|commercialERP|contentai|D:\\(commercialERP|ContentAI)' -- ':!docs/SYSTEM_BOUNDARIES.md' ':!.github/workflows/ci.yml'); then
             printf '%s\n' "$matches"
             echo 'Cross-system reference detected in PrimeERP.'
             bad=1
           fi
-          if [ "$bad" -ne 0 ]; then exit 1; fi
+          test "$bad" -eq 0
           echo 'PrimeERP repository boundary check passed.'
