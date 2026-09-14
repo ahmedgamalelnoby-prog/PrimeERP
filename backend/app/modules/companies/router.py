@@ -3,6 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
@@ -15,11 +16,7 @@ router = APIRouter(prefix="/companies", tags=["Companies"])
 
 
 def _tenant_id(user: User) -> int:
-    if user.tenant_id is None and not user.is_platform_admin:
-        raise HTTPException(status_code=403, detail="User is not assigned to a tenant")
-    if user.tenant_id is None:
-        raise HTTPException(status_code=400, detail="Platform admin must operate in a tenant context")
-    return user.tenant_id
+    return get_effective_tenant_id(user)
 
 
 def _get_company(db: Session, company_id: int, user: User) -> Company:
