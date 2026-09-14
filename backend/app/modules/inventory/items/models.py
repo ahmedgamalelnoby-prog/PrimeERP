@@ -9,17 +9,14 @@ class InventoryItem(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
-    category_id = Column(Integer, nullable=True, index=True)
+    category_id = Column(Integer, ForeignKey("product_categories.id", ondelete="SET NULL"), nullable=True, index=True)
     sku = Column(String(80), nullable=False)
     barcode = Column(String(80), nullable=True, index=True)
     name_ar = Column(String(200), nullable=False)
     name_en = Column(String(200), nullable=True)
     item_type = Column(String(30), nullable=False, default="stockable")
-    # Legacy code kept for backward compatibility with existing integrations.
     uom = Column(String(30), nullable=False, default="unit")
-    # Canonical UOM master reference used by new flows and conversions.
     uom_id = Column(Integer, ForeignKey("units_of_measure.id", ondelete="RESTRICT"), nullable=True, index=True)
-    # Product-level tax defaults. IDs are validated against the same company's Tax Master.
     sales_tax_ids = Column(JSON, nullable=False, default=list)
     purchase_tax_ids = Column(JSON, nullable=False, default=list)
     costing_method = Column(String(20), nullable=False, default="weighted_average")
@@ -43,6 +40,7 @@ class InventoryItem(Base):
 
     stocks = relationship("InventoryStock", back_populates="item", cascade="all, delete-orphan")
     uom_master = relationship("UnitOfMeasure", foreign_keys=[uom_id])
+    category = relationship("ProductCategory", foreign_keys=[category_id])
 
 
 class InventoryStock(Base):
