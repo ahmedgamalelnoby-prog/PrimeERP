@@ -34,11 +34,22 @@ def test_salla_mapping_reconciliation_is_tenant_and_conflict_safe():
     service = (ROOT / "app/modules/integrations/salla_product_mapping_service.py").read_text(encoding="utf-8")
     assert "SallaProduct.company_id == company_id" in service
     assert "SallaProduct.connection_id == connection_id" in service
+    assert "IntegrationConnection.company_id == company_id" in service
+    assert "IntegrationConnection.provider == \"salla\"" in service
     assert "InventoryItem.company_id == company_id" in service
     assert "ProductVariant.company_id == company_id" in service
+    assert "ProductBarcode.company_id == company_id" in service
     assert "already mapped to another ERP product or variant" in service
     assert "with_for_update()" in service
+    assert "begin_nested" in service
     assert "db.flush()" in service
+
+
+def test_salla_normalization_invokes_mapping_reconciliation():
+    service = (ROOT / "app/modules/integrations/salla_service.py").read_text(encoding="utf-8")
+    assert "reconcile_salla_product_mapping" in service
+    assert '"product_mapped"' in service
+    assert '"variants_mapped"' in service
 
 
 def test_mapping_router_requires_integration_access_and_write():
