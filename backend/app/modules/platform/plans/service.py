@@ -177,9 +177,9 @@ class PlanService:
 
         if data.get("is_default") is True:
             default_plan = self.repository.get_default(db=self.db)
-            if default_plan is not None and default_plan.id != source.id:
-                # Default is a catalog flag. The old version remains valid for
-                # existing subscriptions but is no longer the catalog default.
+            if default_plan is not None:
+                # Default is a catalog flag. Existing subscriptions continue
+                # to reference their original plan/version row.
                 default_plan.is_default = False
 
         version = self.repository.create(
