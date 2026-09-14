@@ -16,11 +16,11 @@ permissions:
 jobs:
   backend:
     name: Backend - compile, architecture, security, smoke and tests
-    runs-on: [self-hosted, PrimeERP]
+    runs-on: windows-latest
     timeout-minutes: 30
     defaults:
       run:
-        shell: cmd
+        shell: pwsh
         working-directory: backend
     steps:
       - name: Checkout
@@ -28,17 +28,17 @@ jobs:
       - name: Validate Python runtime
         run: |
           python --version
-          if errorlevel 1 exit /b 1
+          if ($LASTEXITCODE -ne 0) { throw 'Python is unavailable.' }
       - name: Create isolated CI virtual environment
         run: python -m venv .ci-venv
       - name: Install dependencies
         run: |
           .\.ci-venv\Scripts\python.exe -m pip install --upgrade pip
-          if errorlevel 1 exit /b 1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           .\.ci-venv\Scripts\python.exe -m pip install -r requirements.txt
-          if errorlevel 1 exit /b 1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           .\.ci-venv\Scripts\python.exe -m pip install pytest
-          if errorlevel 1 exit /b 1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Compile Python sources
         run: .\.ci-venv\Scripts\python.exe -m compileall -q app
       - name: Validate modular architecture
@@ -60,20 +60,21 @@ jobs:
         run: .\.ci-venv\Scripts\python.exe scripts\check_production_config.py
       - name: Require a single Alembic head
         run: |
-          .\.ci-venv\Scripts\python.exe -m alembic heads > alembic-heads.txt
-          if errorlevel 1 exit /b 1
-          type alembic-heads.txt
-          .\.ci-venv\Scripts\python.exe -c "from pathlib import Path; text=Path('alembic-heads.txt').read_text(); n=text.count('(head)'); assert n == 1, f'Expected exactly one Alembic head; found {n}'"
+          .\.ci-venv\Scripts\python.exe -m alembic heads | Tee-Object alembic-heads.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $heads = Get-Content alembic-heads.txt -Raw
+          $count = ([regex]::Matches($heads, '\(head\)')).Count
+          if ($count -ne 1) { throw "Expected exactly one Alembic head; found $count" }
       - name: Run tests
         run: .\.ci-venv\Scripts\python.exe -m pytest -q
 
   frontend:
     name: Frontend - typecheck, lint and build
-    runs-on: [self-hosted, PrimeERP]
+    runs-on: windows-latest
     timeout-minutes: 20
     defaults:
       run:
-        shell: cmd
+        shell: pwsh
         working-directory: frontend
     steps:
       - name: Checkout
@@ -81,10 +82,9 @@ jobs:
       - name: Validate Node.js runtime
         run: |
           node --version
-          if errorlevel 1 exit /b 1
           npm --version
-          if errorlevel 1 exit /b 1
-          node -e "if(Number(process.versions.node.split('.')[0])<20) process.exit(1)"
+          $major = [int](node -p "process.versions.node.split('.')[0]")
+          if ($major -lt 20) { throw "Node.js 20+ is required; found $major" }
       - name: Install dependencies
         run: npm ci
       - name: Typecheck
@@ -96,22 +96,25 @@ jobs:
 
   repository:
     name: Repository boundaries and hygiene
-    runs-on: [self-hosted, PrimeERP]
+    runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v5
       - name: Reject cross-system references and generated files
-        shell: cmd
+        shell: pwsh
         run: |
-          git ls-files | findstr /R /C:"^\.env$" /C:"__pycache__" /C:"node_modules" /C:"dist/" /C:"\.pyc$" /C:"\.backup$" /C:"\.bak$" >NUL 2>&1
-          if not errorlevel 1 (
-            echo Forbidden tracked/generated file detected.
-            exit /b 1
-          )
-          git grep -n -I -E "CommercialERP|ContentAI|commercialERP|contentai|D:\\(commercialERP|ContentAI)" -- ":!docs/SYSTEM_BOUNDARIES.md" ":!.github/workflows/ci.yml" >NUL 2>&1
-          if not errorlevel 1 (
-            echo Cross-system reference detected in PrimeERP.
-            exit /b 1
-          )
-          echo PrimeERP repository boundary check passed.
-          exit /b 0
+          $tracked = git ls-files
+          $forbidden = $tracked | Where-Object {
+            $_ -match '(^|/)\.env$|(^|/)__pycache__(/|$)|(^|/)node_modules(/|$)|(^|/)dist(/|$)|\.pyc$|\.backup$|\.bak$'
+          }
+          if ($forbidden) {
+            $forbidden | ForEach-Object { Write-Error "Forbidden tracked/generated file: $_" }
+            exit 1
+          }
+          $matches = git grep -n -I -E 'CommercialERP|ContentAI|commercialERP|contentai|D:\\(commercialERP|ContentAI)' -- ':!docs/SYSTEM_BOUNDARIES.md' ':!.github/workflows/ci.yml'
+          if ($LASTEXITCODE -eq 0 -and $matches) {
+            Write-Error 'Cross-system reference detected in PrimeERP.'
+            $matches
+            exit 1
+          }
+          Write-Host 'PrimeERP repository boundary check passed.'
