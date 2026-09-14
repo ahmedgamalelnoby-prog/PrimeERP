@@ -9,7 +9,8 @@ def test_mapping_model_and_migration_exist():
     fix = (ROOT / "alembic/versions/20260914_fix_integration_product_mapping_local_unique.py").read_text(encoding="utf-8")
     assert "class IntegrationProductMapping" in model
     assert "uq_integration_product_mapping_external" in model
-    assert "uq_integration_product_mapping_local" in model
+    assert "uq_integration_product_mapping_local_variant" in model
+    assert "uq_integration_product_mapping_local_product" in model
     assert "20260914_product_bundles" in migration
     assert "product_variants" in migration
     assert "sync_direction IN ('inbound','outbound','bidirectional')" in migration
@@ -29,17 +30,28 @@ def test_mapping_service_enforces_company_and_variant_relationship():
     assert "def find_by_product" in service
 
 
+def test_salla_mapping_reconciliation_is_tenant_and_conflict_safe():
+    service = (ROOT / "app/modules/integrations/salla_product_mapping_service.py").read_text(encoding="utf-8")
+    assert "SallaProduct.company_id == company_id" in service
+    assert "SallaProduct.connection_id == connection_id" in service
+    assert "InventoryItem.company_id == company_id" in service
+    assert "ProductVariant.company_id == company_id" in service
+    assert "already mapped to another ERP product or variant" in service
+    assert "with_for_update()" in service
+    assert "db.flush()" in service
+
+
 def test_mapping_router_requires_integration_access_and_write():
     router = (ROOT / "app/modules/integrations/product_mapping_router.py").read_text(encoding="utf-8")
     assert 'require_permission("integrations.access")' in router
     assert 'require_permission("integrations.write")' in router
     assert 'require_module("integrations")' in router
-    assert 'router = APIRouter(' in router
     assert "Company.tenant_id == user.tenant_id" in router
     assert "Company.is_active.is_(True)" in router
     assert "last_synced_at: datetime | None" in router
     assert '"/by-external"' in router
     assert '"/by-product"' in router
+    assert '"/salla/{salla_product_id}/reconcile"' in router
 
 
 def test_api_router_registers_mapping_router():
