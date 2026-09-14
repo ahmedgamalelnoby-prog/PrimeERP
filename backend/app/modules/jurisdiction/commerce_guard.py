@@ -4,6 +4,7 @@ from app.modules.commerce.models import BusinessPartner, PurchaseDocument, Sales
 from .models import PartnerJurisdiction, TaxSnapshot
 from .service import JurisdictionContext
 from .snapshot_service import TaxSnapshotService
+from .tax_posting_guard import validate_snapshot_tax
 
 
 POSTABLE_SALES = {"invoice", "credit_note"}
@@ -33,7 +34,12 @@ def capture_document_tax_snapshot(db: Session, document, *, kind: str) -> TaxSna
         transaction_date=document.document_date,
         place_of_supply=getattr(document, "place_of_supply", None),
         b2b=b2b,
-        goods_or_services="goods",
+        goods_or_services=getattr(document, "goods_or_services", "goods"),
+        import_export=getattr(document, "import_export", False),
         facts={"document_total": str(document.total), "tax_total": str(document.tax_total), "partner_tax_number_present": bool(partner.tax_number)},
     )
     return TaxSnapshotService(db).capture(document_kind=kind, document_id=document.id, context=context)
+
+
+def validate_document_tax_snapshot(document, snapshot: TaxSnapshot) -> None:
+    validate_snapshot_tax(document, snapshot)
