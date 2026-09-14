@@ -16,6 +16,7 @@ permissions:
 env:
   CI_POSTGRES_PORT: 55432
   DOCKER_DIR: C:\Users\Admin\AppData\Local\Programs\DockerDesktop\resources\bin
+  DOCKER_HOST: npipe:////./pipe/docker_engine
 
 jobs:
   backend:
@@ -32,12 +33,16 @@ jobs:
       - name: Configure Docker CLI
         working-directory: .
         run: |
-          if not exist "%DOCKER_DIR%\docker.exe" exit /b 1
+          if not exist "%DOCKER_DIR%\docker.exe" (
+            echo Docker CLI not found at %DOCKER_DIR%\docker.exe
+            exit /b 1
+          )
           echo %DOCKER_DIR%>>%GITHUB_PATH%
           set "PATH=%DOCKER_DIR%;%PATH%"
-          docker version
+          set "DOCKER_HOST=npipe:////./pipe/docker_engine"
+          "%DOCKER_DIR%\docker.exe" version
           if errorlevel 1 exit /b 1
-          docker compose version
+          "%DOCKER_DIR%\docker.exe" compose version
           if errorlevel 1 exit /b 1
       - name: Validate runtime
         run: |
@@ -145,14 +150,15 @@ jobs:
       - name: Reject cross-system references and generated files
         shell: cmd
         run: |
-          git ls-files | findstr /R /C:"^\.env$" /C:"__pycache__" /C:"node_modules" /C:"dist/" /C:"\.pyc$" /C:"\.backup$" /C:"\.bak$"
+          git ls-files | findstr /R /C:"^\.env$" /C:"__pycache__" /C:"node_modules" /C:"dist/" /C:"\.pyc$" /C:"\.backup$" /C:"\.bak$" >NUL 2>&1
           if not errorlevel 1 (
             echo Forbidden tracked/generated file detected.
             exit /b 1
           )
-          git grep -n -I -E "CommercialERP|ContentAI|commercialERP|contentai|D:\\(commercialERP|ContentAI)" -- ":!docs/SYSTEM_BOUNDARIES.md" ":!.github/workflows/ci.yml"
+          git grep -n -I -E "CommercialERP|ContentAI|commercialERP|contentai|D:\\(commercialERP|ContentAI)" -- ":!docs/SYSTEM_BOUNDARIES.md" ":!.github/workflows/ci.yml" >NUL 2>&1
           if not errorlevel 1 (
             echo Cross-system reference detected in PrimeERP.
             exit /b 1
           )
           echo PrimeERP repository boundary check passed.
+          exit /b 0
