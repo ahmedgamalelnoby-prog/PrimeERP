@@ -146,7 +146,6 @@ class CatalogService:
         return list(db.scalars(select(ProductCostHistory).where(ProductCostHistory.company_id == company_id, ProductCostHistory.product_id == product_id).order_by(ProductCostHistory.effective_at.desc())).all())
 
     def _recipe_would_cycle(self, db: Session, company_id: int, product_id: int, ingredient_ids: list[int]) -> bool:
-        """Reject indirect active-recipe cycles before the new recipe is activated."""
         memo: dict[int, bool] = {}
         visiting: set[int] = set()
 
@@ -156,17 +155,9 @@ class CatalogService:
             if node_id in memo:
                 return memo[node_id]
             if node_id in visiting:
-                # A pre-existing cycle is already invalid for costing; do not
-                # allow the new recipe to compound it.
                 return True
             visiting.add(node_id)
-            recipe = db.scalar(
-                select(Recipe).options(selectinload(Recipe.lines)).where(
-                    Recipe.company_id == company_id,
-                    Recipe.product_id == node_id,
-                    Recipe.is_active.is_(True),
-                ).order_by(Recipe.version.desc())
-            )
+            recipe = db.scalar(select(Recipe).options(selectinload(Recipe.lines)).where(Recipe.company_id == company_id, Recipe.product_id == node_id, Recipe.is_active.is_(True)).order_by(Recipe.version.desc()))
             result = False
             if recipe is not None:
                 result = any(reaches_target(line.ingredient_product_id) for line in recipe.lines)
@@ -179,21 +170,12 @@ class CatalogService:
     def _recipe_line_conversion(self, db: Session, company_id: int, ingredient: InventoryItem, line_uom_id: int | None) -> Decimal:
         ingredient_uom = None
         if ingredient.uom_id is not None:
-            ingredient_uom = db.scalar(select(UnitOfMeasure).where(
-                UnitOfMeasure.id == ingredient.uom_id,
-                UnitOfMeasure.company_id == company_id,
-                UnitOfMeasure.is_active.is_(True),
-            ))
+            ingredient_uom = db.scalar(select(UnitOfMeasure).where(UnitOfMeasure.id == ingredient.uom_id, UnitOfMeasure.company_id == company_id, UnitOfMeasure.is_active.is_(True)))
             if ingredient_uom is None:
                 raise ValueError("Ingredient base UOM is invalid or inactive")
-
         if line_uom_id is None:
             return Decimal("1")
-        line_uom = db.scalar(select(UnitOfMeasure).where(
-            UnitOfMeasure.id == line_uom_id,
-            UnitOfMeasure.company_id == company_id,
-            UnitOfMeasure.is_active.is_(True),
-        ))
+        line_uom = db.scalar(select(UnitOfMeasure).where(UnitOfMeasure.id == line_uom_id, UnitOfMeasure.company_id == company_id, UnitOfMeasure.is_active.is_(True)))
         if line_uom is None:
             raise ValueError("Recipe line UOM does not belong to this company")
         if ingredient_uom is None:
@@ -219,7 +201,6 @@ class CatalogService:
         ingredient_by_id = {item.id: item for item in ingredients}
         if self._recipe_would_cycle(db, payload.company_id, payload.product_id, ingredient_ids):
             raise ValueError("Recipe would create an indirect product recipe cycle")
-
         current = db.scalar(select(Recipe).where(Recipe.company_id == payload.company_id, Recipe.product_id == payload.product_id, Recipe.is_active.is_(True)).order_by(Recipe.version.desc()).limit(1).with_for_update())
         version = (current.version + 1) if current else 1
         if current:
@@ -246,6 +227,23 @@ class CatalogService:
     def _active_recipe_for_product(self, db: Session, company_id: int, product_id: int):
         return db.scalar(select(Recipe).options(selectinload(Recipe.lines)).where(Recipe.company_id == company_id, Recipe.product_id == product_id, Recipe.is_active.is_(True)).order_by(Recipe.version.desc()))
 
+    def _fifo_cost_for_quantity(self, db: Session, company_id: int, product_id: int, quantity: Decimal) -> Decimal:
+        if quantity <= 0:
+            return Decimal("0")
+        from app.modules.inventory.stock_moves.models import InventoryCostLayer
+        layers = db.scalars(select(InventoryCostLayer).where(InventoryCostLayer.company_id == company_id, InventoryCostLayer.item_id == product_id, InventoryCostLayer.quantity_remaining > 0).order_by(InventoryCostLayer.id)).all()
+        remaining = quantity
+        total = Decimal("0")
+        for layer in layers:
+            if remaining <= 0:
+                break
+            take = min(remaining, Decimal(layer.quantity_remaining))
+            total += take * Decimal(layer.unit_cost)
+            remaining -= take
+        if remaining > 0:
+            raise ValueError("FIFO cost layers are insufficient for the required recipe quantity")
+        return total
+
     def ingredient_unit_cost(self, db: Session, company_id: int, product_id: int, _visited: set[int] | None = None) -> Decimal:
         product = self._product(db, company_id, product_id)
         visited = set(_visited or ())
@@ -259,7 +257,7 @@ class CatalogService:
         if costing_method == "standard":
             return _money(Decimal(product.standard_cost or 0))
         if costing_method == "fifo":
-            raise ValueError("FIFO product cost requires a quantity-aware stock valuation context")
+            return _money(self._fifo_cost_for_quantity(db, company_id, product_id, Decimal("1")))
         average = db.scalar(select(func.avg(InventoryStock.average_cost)).where(InventoryStock.company_id == company_id, InventoryStock.item_id == product_id))
         if average is not None and Decimal(average) > 0:
             return _money(Decimal(average))
@@ -271,9 +269,14 @@ class CatalogService:
     def _recipe_cost_recursive(self, db: Session, company_id: int, recipe: Recipe, visited: set[int]) -> Decimal:
         total = Decimal("0")
         for line in recipe.lines:
-            ingredient_cost = self.ingredient_unit_cost(db, company_id, line.ingredient_product_id, set(visited))
+            ingredient = self._product(db, company_id, line.ingredient_product_id)
             quantity_in_product_uom = Decimal(line.quantity) * Decimal(line.conversion_factor_to_product_uom or 1)
-            total += quantity_in_product_uom * (Decimal("1") + Decimal(line.waste_percentage or 0) / 100) * ingredient_cost
+            nested = self._active_recipe_for_product(db, company_id, ingredient.id)
+            if nested is None and (ingredient.costing_method or "weighted_average").lower() == "fifo":
+                line_cost = self._fifo_cost_for_quantity(db, company_id, ingredient.id, quantity_in_product_uom)
+            else:
+                line_cost = quantity_in_product_uom * self.ingredient_unit_cost(db, company_id, ingredient.id, set(visited))
+            total += line_cost * (Decimal("1") + Decimal(line.waste_percentage or 0) / 100)
         return _money((total * (Decimal("1") + Decimal(recipe.waste_percentage or 0) / 100)) / Decimal(recipe.yield_quantity))
 
     def recipe_cost(self, db: Session, company_id: int, recipe_id: int) -> Decimal:
