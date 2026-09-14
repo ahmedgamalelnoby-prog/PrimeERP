@@ -16,6 +16,7 @@ permissions:
 env:
   COMPOSE_PROJECT_NAME: primeerp-ci
   DOCKER_DIR: C:\Users\Admin\AppData\Local\Programs\DockerDesktop\resources\bin
+  DOCKER_HOST: npipe:////./pipe/docker_engine
 
 jobs:
   docker:
@@ -37,9 +38,10 @@ jobs:
           )
           echo %DOCKER_DIR%>>%GITHUB_PATH%
           set "PATH=%DOCKER_DIR%;%PATH%"
-          docker version
+          set "DOCKER_HOST=npipe:////./pipe/docker_engine"
+          "%DOCKER_DIR%\docker.exe" version
           if errorlevel 1 exit /b 1
-          docker compose version
+          "%DOCKER_DIR%\docker.exe" compose version
           if errorlevel 1 exit /b 1
 
       - name: Prepare Docker environment
