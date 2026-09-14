@@ -72,8 +72,11 @@ class CommerceAccountingService:
         lines.append({"account_combination_id": settings.ar_account_id, "debit": 0, "credit": Decimal(document.total), "description": f"AR reduction {document.number}"})
         return self._post(db, company_id=document.company_id, user_id=user_id, entry_date=document.document_date, journal_id=settings.sales_journal_id, entry_number=f"SCN-{document.id}", description=f"Sales credit note {document.number}", lines=lines, source_entity="sales_credit_note", source_id=document.id)
 
-    def post_purchase_bill(self, db, document, user_id: int):
-        settings = self._settings(db, document.company_id)
+    @staticmethod
+    def _purchase_net(document):
+        return sum((Decimal(line.quantity) * Decimal(line.unit_price) * (Decimal("100") - Decimal(line.discount_percent or 0)) / Decimal("100") for line in document.lines), Decimal("0"))
+
+    def _purchase_stock_expense_totals(self, db, document):
         stock_total = Decimal("0")
         expense_total = Decimal("0")
         for line in document.lines:
@@ -83,9 +86,55 @@ class CommerceAccountingService:
                 stock_total += net
             else:
                 expense_total += net
+        return stock_total, expense_total
+
+    def _has_posted_receipt(self, db, document) -> bool:
+        return db.scalar(select(InventoryStockMove.id).where(
+            InventoryStockMove.company_id == document.company_id,
+            InventoryStockMove.source_module == "commerce",
+            InventoryStockMove.source_entity == "purchase_receipt",
+            InventoryStockMove.source_id.like(f"{document.id}:%"),
+            InventoryStockMove.status == "posted",
+        ).limit(1)) is not None
+
+    def post_purchase_receipt(self, db, document, user_id: int):
+        settings = self._settings(db, document.company_id)
+        moves = list(db.scalars(select(InventoryStockMove).where(
+            InventoryStockMove.company_id == document.company_id,
+            InventoryStockMove.source_module == "commerce",
+            InventoryStockMove.source_entity == "purchase_receipt",
+            InventoryStockMove.source_id.like(f"{document.id}:%"),
+            InventoryStockMove.status == "posted",
+        )))
+        if not moves:
+            return None
+        inventory_value = sum((Decimal(move.quantity) * Decimal(move.unit_cost or 0) for move in moves), Decimal("0"))
+        if inventory_value <= 0:
+            return None
+        return self._post(
+            db,
+            company_id=document.company_id,
+            user_id=user_id,
+            entry_date=document.document_date,
+            journal_id=settings.purchase_journal_id,
+            entry_number=f"GRN-{document.id}",
+            description=f"Goods receipt {document.number}",
+            lines=[
+                {"account_combination_id": settings.inventory_account_id, "debit": inventory_value, "credit": 0, "description": f"Inventory receipt {document.number}"},
+                {"account_combination_id": settings.grni_account_id, "debit": 0, "credit": inventory_value, "description": f"GRNI {document.number}"},
+            ],
+            source_entity="purchase_receipt_accounting",
+            source_id=document.id,
+        )
+
+    def post_purchase_bill(self, db, document, user_id: int):
+        settings = self._settings(db, document.company_id)
+        stock_total, expense_total = self._purchase_stock_expense_totals(db, document)
+        has_receipt = self._has_posted_receipt(db, document)
         lines = []
         if stock_total:
-            lines.append({"account_combination_id": settings.inventory_account_id, "debit": stock_total, "credit": 0, "description": f"Inventory {document.number}"})
+            account = settings.grni_account_id if has_receipt else settings.inventory_account_id
+            lines.append({"account_combination_id": account, "debit": stock_total, "credit": 0, "description": f"GRNI clearing {document.number}" if has_receipt else f"Inventory {document.number}"})
         if expense_total:
             lines.append({"account_combination_id": settings.purchase_account_id, "debit": expense_total, "credit": 0, "description": f"Purchase expense {document.number}"})
         if Decimal(document.tax_total or 0):
@@ -95,15 +144,7 @@ class CommerceAccountingService:
 
     def post_purchase_debit_note(self, db, document, user_id: int):
         settings = self._settings(db, document.company_id)
-        stock_total = Decimal("0")
-        expense_total = Decimal("0")
-        for line in document.lines:
-            item = db.scalar(select(InventoryItem).where(InventoryItem.id == line.item_id, InventoryItem.company_id == document.company_id))
-            net = Decimal(line.quantity) * Decimal(line.unit_price) * (Decimal("100") - Decimal(line.discount_percent or 0)) / Decimal("100")
-            if item and item.item_type in {"stockable", "consumable"}:
-                stock_total += net
-            else:
-                expense_total += net
+        stock_total, expense_total = self._purchase_stock_expense_totals(db, document)
         lines = []
         if stock_total:
             lines.append({"account_combination_id": settings.inventory_account_id, "debit": 0, "credit": stock_total, "description": f"Inventory reduction {document.number}"})
