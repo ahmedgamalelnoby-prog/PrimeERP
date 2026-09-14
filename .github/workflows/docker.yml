@@ -15,6 +15,7 @@ permissions:
 
 env:
   COMPOSE_PROJECT_NAME: primeerp-ci
+  DOCKER_CLI_PATH: 'C:\Users\Admin\AppData\Local\Programs\DockerDesktop\resources\bin'
 
 defaults:
   run:
@@ -30,7 +31,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Verify Docker
-        run: docker version
+        run: |
+          if (-not (Test-Path "$env:DOCKER_CLI_PATH\docker.exe")) {
+            throw "Docker CLI not found at $env:DOCKER_CLI_PATH\docker.exe"
+          }
+          $env:Path = "$env:DOCKER_CLI_PATH;$env:Path"
+          & "$env:DOCKER_CLI_PATH\docker.exe" version
+          if ($LASTEXITCODE -ne 0) { throw "Docker CLI is installed but Docker Desktop/engine is unavailable" }
+          "$env:DOCKER_CLI_PATH" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - name: Prepare Docker environment
         run: Copy-Item .env.docker.example .env.docker -Force
       - name: Validate Docker Compose
@@ -87,11 +95,13 @@ jobs:
       - name: Docker runtime diagnostics
         if: always()
         run: |
+          $env:Path = "$env:DOCKER_CLI_PATH;$env:Path"
           docker compose --env-file .env.docker ps
           docker compose --env-file .env.docker logs --tail=100 migrate
           docker compose --env-file .env.docker logs --tail=100 backend
       - name: Cleanup Docker stack
         if: always()
         run: |
+          $env:Path = "$env:DOCKER_CLI_PATH;$env:Path"
           docker compose --env-file .env.docker down -v --remove-orphans
           docker image rm primeerp-backend:ci primeerp-frontend:ci 2>$null
