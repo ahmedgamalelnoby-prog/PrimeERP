@@ -69,9 +69,38 @@ jobs:
             echo 'Backend did not become healthy within 8 minutes'
             exit 1
           fi
-      - name: Runtime API smoke test
+      - name: Runtime API readiness smoke test
         run: |
-          docker exec primeerp-backend python -c "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8001/ready', timeout=15); print(r.status); print(r.read().decode())"
+          docker exec primeerp-backend python -c "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8001/ready', timeout=15); assert r.status == 200; print(r.read().decode())"
+      - name: Runtime API contract smoke test
+        run: |
+          docker exec primeerp-backend python - <<'PY'
+          import json
+          import urllib.request
+
+          with urllib.request.urlopen('http://127.0.0.1:8001/api/v1/openapi.json', timeout=15) as response:
+              assert response.status == 200
+              spec = json.load(response)
+
+          paths = spec.get('paths', {})
+          required = [
+              '/api/v1/identity/login',
+              '/api/v1/identity/me',
+              '/api/v1/companies',
+              '/api/v1/tenants',
+              '/api/v1/subscriptions/tenant/{tenant_id}',
+              '/api/v1/inventory/items',
+              '/api/v1/inventory/items/{item_id}/stock',
+          ]
+          missing = [path for path in required if path not in paths]
+          assert not missing, f'Missing required API routes: {missing}'
+
+          assert 'post' in paths['/api/v1/identity/login']
+          assert 'get' in paths['/api/v1/companies']
+          assert 'get' in paths['/api/v1/inventory/items']
+          assert 'get' in paths['/api/v1/inventory/items/{item_id}/stock']
+          print(f'Runtime OpenAPI contract passed: {len(paths)} paths registered')
+          PY
       - name: Runtime frontend smoke test
         run: |
           response=$(curl -fsS -o /tmp/primeerp-index.html -w '%{http_code}' http://127.0.0.1:3000/)
