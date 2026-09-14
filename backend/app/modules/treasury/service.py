@@ -46,23 +46,31 @@ def create_cheque(db: Session, payload, user_id: int):
 
 
 def transition_cheque(db: Session, cheque: Cheque, new_status: str, action_date: date, user_id: int, event_type: str, reference: str | None, notes: str | None):
-    if new_status not in ALLOWED_TRANSITIONS.get(cheque.status, set()):
-        raise ValueError(f"Cannot move cheque from {cheque.status} to {new_status}")
-    _record_event(db, cheque, cheque.status, new_status, event_type, action_date, user_id, reference, notes)
-    return cheque
+    locked = db.scalar(select(Cheque).where(Cheque.id == cheque.id, Cheque.company_id == cheque.company_id).with_for_update())
+    if locked is None:
+        raise ValueError("Cheque not found")
+    if new_status not in ALLOWED_TRANSITIONS.get(locked.status, set()):
+        raise ValueError(f"Cannot move cheque from {locked.status} to {new_status}")
+    _record_event(db, locked, locked.status, new_status, event_type, action_date, user_id, reference, notes)
+    return locked
 
 
 def withdraw_cheque(db: Session, cheque: Cheque, action_date: date, user_id: int, reference: str | None, notes: str | None):
-    # Withdrawal is intentionally restricted to instruments whose cheque date OR due date is today/future.
-    if cheque.cheque_date < action_date and cheque.due_date < action_date:
+    locked = db.scalar(select(Cheque).where(Cheque.id == cheque.id, Cheque.company_id == cheque.company_id).with_for_update())
+    if locked is None:
+        raise ValueError("Cheque not found")
+    if locked.cheque_date < action_date and locked.due_date < action_date:
         raise ValueError("Cheque cannot be withdrawn after both cheque date and due date have passed")
-    return transition_cheque(db, cheque, "withdrawn", action_date, user_id, "withdrawn", reference, notes)
+    return transition_cheque(db, locked, "withdrawn", action_date, user_id, "withdrawn", reference, notes)
 
 
 def resubmit_returned_cheque(db: Session, cheque: Cheque, action_date: date, user_id: int, reference: str | None, notes: str | None):
-    if cheque.status != "returned":
+    locked = db.scalar(select(Cheque).where(Cheque.id == cheque.id, Cheque.company_id == cheque.company_id).with_for_update())
+    if locked is None:
+        raise ValueError("Cheque not found")
+    if locked.status != "returned":
         raise ValueError("Only returned cheques can be resubmitted")
-    return transition_cheque(db, cheque, "resubmitted", action_date, user_id, "resubmitted", reference, notes)
+    return transition_cheque(db, locked, "resubmitted", action_date, user_id, "resubmitted", reference, notes)
 
 
 def list_cheques(db: Session, company_id: int, status: str | None = None, direction: str | None = None):
