@@ -2,9 +2,10 @@ name: PrimeERP Docker Validation
 
 on:
   push:
-    branches: ["**"]
-  pull_request:
-  workflow_dispatch:
+    branches:
+      - "**"
+  pull_request: {}
+  workflow_dispatch: {}
 
 concurrency:
   group: primeerp-docker-${{ github.workflow }}-${{ github.ref }}
@@ -85,7 +86,34 @@ jobs:
         run: docker exec primeerp-backend python -c "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8001/ready', timeout=15); assert r.status == 200; print(r.read().decode())"
 
       - name: Runtime API contract smoke test
-        run: docker exec primeerp-backend python -c "import json,urllib.request; s=json.load(urllib.request.urlopen('http://127.0.0.1:8001/api/v1/openapi.json',timeout=15)); p=s.get('paths',{}); required=['/api/v1/identity/login','/api/v1/identity/me','/api/v1/platform/tenants','/api/v1/subscriptions/tenant/{tenant_id}','/api/v1/accounting/tax-rates','/api/v1/taxes/rates','/api/v1/uom','/api/v1/inventory/items','/api/v1/inventory/items/{item_id}/stock','/api/v1/integrations/connections','/api/v1/shipping/carriers']; missing=[x for x in required if x not in p]; assert not missing, f'Missing required API routes: {missing}'; print(f'Runtime OpenAPI contract passed: {len(p)} paths registered')"
+        run: |
+          docker exec primeerp-backend python - <<'PY'
+          import json
+          import urllib.request
+
+          spec = json.load(
+              urllib.request.urlopen(
+                  'http://127.0.0.1:8001/api/v1/openapi.json', timeout=15
+              )
+          )
+          paths = spec.get('paths', {})
+          required = [
+              '/api/v1/identity/login',
+              '/api/v1/identity/me',
+              '/api/v1/platform/tenants',
+              '/api/v1/subscriptions/tenant/{tenant_id}',
+              '/api/v1/accounting/tax-rates',
+              '/api/v1/taxes/rates',
+              '/api/v1/uom',
+              '/api/v1/inventory/items',
+              '/api/v1/inventory/items/{item_id}/stock',
+              '/api/v1/integrations/connections',
+              '/api/v1/shipping/carriers',
+          ]
+          missing = [path for path in required if path not in paths]
+          assert not missing, f'Missing required API routes: {missing}'
+          print(f'Runtime OpenAPI contract passed: {len(paths)} paths registered')
+          PY
 
       - name: Runtime frontend smoke test
         run: curl -fsS http://127.0.0.1:3000/ >/dev/null
