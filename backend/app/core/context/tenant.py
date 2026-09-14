@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from fastapi import HTTPException, status
 
 from app.core.context.manager import get_request_context
-from app.modules.identity.models import User
+
+if TYPE_CHECKING:
+    from app.modules.identity.models import User
 
 
 def get_effective_tenant_id(user: User) -> int:
