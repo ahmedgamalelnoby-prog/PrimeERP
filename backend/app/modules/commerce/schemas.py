@@ -29,7 +29,6 @@ class PartnerResponse(PartnerCreate):
 class DocumentLineCreate(BaseModel):
     item_id: int = Field(gt=0)
     variant_id: int | None = Field(default=None, gt=0)
-    # Legacy single-tax field remains supported. tax_rate_ids is authoritative when supplied.
     tax_rate_id: int | None = Field(default=None, gt=0)
     tax_rate_ids: list[int] | None = None
     description: str | None = None
@@ -64,6 +63,17 @@ class DocumentCreate(BaseModel):
     warehouse_id: int | None = Field(default=None, gt=0)
     notes: str | None = None
     lines: list[DocumentLineCreate] = Field(min_length=1)
+    receipt_ids: list[int] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_receipt_links(self):
+        if len(self.receipt_ids) != len(set(self.receipt_ids)):
+            raise ValueError("Duplicate receipt ids are not allowed")
+        if any(receipt_id <= 0 for receipt_id in self.receipt_ids):
+            raise ValueError("Receipt ids must be positive")
+        if self.receipt_ids and self.document_type != "bill":
+            raise ValueError("receipt_ids are allowed only for purchase bills")
+        return self
 
 
 class DocumentResponse(BaseModel):
@@ -79,8 +89,8 @@ class DocumentResponse(BaseModel):
     subtotal: Decimal
     tax_total: Decimal
     discount_total: Decimal
-    total: Decimal
     paid_total: Decimal
+    total: Decimal
 
 
 class PaymentCreate(BaseModel):
