@@ -1,10 +1,26 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String, Text, func
 
 from app.database.base import Base
 
 
 class AuditEvent(Base):
     __tablename__ = "audit_events"
+
+    __table_args__ = (
+        Index(
+            "ix_audit_login_failure_account",
+            "action",
+            "entity_type",
+            "entity_id",
+            "created_at",
+        ),
+        Index(
+            "ix_audit_login_failure_ip",
+            "action",
+            "ip_address",
+            "created_at",
+        ),
+    )
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
