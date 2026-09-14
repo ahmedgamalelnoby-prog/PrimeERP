@@ -12,7 +12,7 @@ POSTABLE_PURCHASES = {"bill", "debit_note"}
 
 
 def capture_document_tax_snapshot(db: Session, document, *, kind: str) -> TaxSnapshot | None:
-    """Capture jurisdiction/tax facts before a commercial document is confirmed."""
+    """Capture and validate jurisdiction/tax facts before a financial document is confirmed."""
     if kind == "sale":
         if not isinstance(document, SalesDocument) or document.document_type not in POSTABLE_SALES:
             return None
@@ -35,10 +35,17 @@ def capture_document_tax_snapshot(db: Session, document, *, kind: str) -> TaxSna
         place_of_supply=getattr(document, "place_of_supply", None),
         b2b=b2b,
         goods_or_services=getattr(document, "goods_or_services", "goods"),
-        import_export=getattr(document, "import_export", False),
-        facts={"document_total": str(document.total), "tax_total": str(document.tax_total), "partner_tax_number_present": bool(partner.tax_number)},
+        import_export=getattr(document, "import_export", None),
+        facts={
+            "document_subtotal": str(document.subtotal),
+            "document_total": str(document.total),
+            "tax_total": str(document.tax_total),
+            "partner_tax_number_present": bool(partner.tax_number),
+        },
     )
-    return TaxSnapshotService(db).capture(document_kind=kind, document_id=document.id, context=context)
+    snapshot = TaxSnapshotService(db).capture(document_kind=kind, document_id=document.id, ctx=context)
+    validate_snapshot_tax(document, snapshot)
+    return snapshot
 
 
 def validate_document_tax_snapshot(document, snapshot: TaxSnapshot) -> None:
