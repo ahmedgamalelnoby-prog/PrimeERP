@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -68,6 +70,21 @@ def post_stock_move(move_id: int, company_id: int = Query(..., gt=0), db: Sessio
     _company_for_user(db, company_id, user)
     try:
         move = inventory_stock_move_service.post(db, tenant_id=user.tenant_id, company_id=company_id, move_id=move_id, user_id=user.id)
+        db.commit()
+        db.refresh(move)
+        return move
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/{move_id}/reverse", response_model=StockMoveResponse, dependencies=[Depends(require_permission("inventory.post"))])
+def reverse_stock_move(move_id: int, company_id: int = Query(..., gt=0), reversal_date: date | None = Query(default=None), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    _company_for_user(db, company_id, user)
+    try:
+        move = inventory_stock_move_service.reverse(db, tenant_id=user.tenant_id, company_id=company_id, move_id=move_id, user_id=user.id, reversal_date=reversal_date)
+        # journal_service.reverse commits as part of its atomic reversal. For
+        # transfer movements there is no GL entry, so commit the physical reversal here.
         db.commit()
         db.refresh(move)
         return move
