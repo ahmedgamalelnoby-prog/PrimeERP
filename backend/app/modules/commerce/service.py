@@ -21,10 +21,8 @@ PURCHASE_TYPES = {"requisition", "rfq", "order", "receipt", "bill", "debit_note"
 
 class CommerceService:
     def create_partner(self, db: Session, payload):
-        if db.scalar(select(BusinessPartner).where(BusinessPartner.company_id == payload.company_id, BusinessPartner.code == payload.code)):
-            raise ValueError("Partner code already exists")
-        obj = BusinessPartner(**payload.model_dump())
-        db.add(obj); db.flush(); return obj
+        if db.scalar(select(BusinessPartner).where(BusinessPartner.company_id == payload.company_id, BusinessPartner.code == payload.code)): raise ValueError("Partner code already exists")
+        obj = BusinessPartner(**payload.model_dump()); db.add(obj); db.flush(); return obj
 
     def list_partners(self, db, company_id, partner_type=None):
         q = select(BusinessPartner).where(BusinessPartner.company_id == company_id, BusinessPartner.is_active.is_(True))
@@ -43,8 +41,7 @@ class CommerceService:
     def _resolve_line_tax_ids(self, db: Session, *, company_id: int, item: InventoryItem, explicit_tax_ids: list[int] | None, is_sale: bool) -> list[int]:
         tax_ids = list(explicit_tax_ids) if explicit_tax_ids is not None else list((item.sales_tax_ids if is_sale else item.purchase_tax_ids) or [])
         if not tax_ids: return []
-        taxes = list(db.scalars(select(TaxRate).where(TaxRate.company_id == company_id, TaxRate.id.in_(tax_ids), TaxRate.is_active.is_(True))).all())
-        found = {tax.id for tax in taxes}; missing = [tax_id for tax_id in tax_ids if tax_id not in found]
+        taxes = list(db.scalars(select(TaxRate).where(TaxRate.company_id == company_id, TaxRate.id.in_(tax_ids), TaxRate.is_active.is_(True))).all()); found = {tax.id for tax in taxes}; missing = [tax_id for tax_id in tax_ids if tax_id not in found]
         if missing: raise ValueError(f"Tax rate(s) not found or inactive: {missing}")
         return tax_ids
 
@@ -55,8 +52,7 @@ class CommerceService:
             if not tax_ids and getattr(line, "tax_rate_id", None): tax_ids = [line.tax_rate_id]
             if not tax_ids: continue
             taxes = list(db.scalars(select(TaxRate).where(TaxRate.company_id == company_id, TaxRate.id.in_(tax_ids), TaxRate.is_active.is_(True))).all())
-            gross = Decimal(line.quantity) * Decimal(line.unit_price)
-            net = gross - gross * Decimal(line.discount_percent or 0) / Decimal("100")
+            gross = Decimal(line.quantity) * Decimal(line.unit_price); net = gross - gross * Decimal(line.discount_percent or 0) / Decimal("100")
             for rate in [Decimal(tax.rate) for tax in taxes if tax.is_withholding]: total += net * rate / Decimal("100")
         return total.quantize(Decimal("0.01"))
 
@@ -79,9 +75,7 @@ class CommerceService:
         model = SalesDocument if is_sale else PurchaseDocument; line_model = SalesLine if is_sale else PurchaseLine
         if db.scalar(select(model).where(model.company_id == payload.company_id, model.number == payload.number)): raise ValueError("Document number already exists")
         if payload.receipt_ids:
-            receipts = list(db.scalars(select(PurchaseDocument).where(PurchaseDocument.id.in_(payload.receipt_ids), PurchaseDocument.company_id == payload.company_id, PurchaseDocument.partner_id == payload.partner_id, PurchaseDocument.document_type == "receipt", PurchaseDocument.status.in_(["received", "partially_received"]))).all())
-            found = {r.id for r in receipts}
-            missing = [r for r in payload.receipt_ids if r not in found]
+            receipts = list(db.scalars(select(PurchaseDocument).where(PurchaseDocument.id.in_(payload.receipt_ids), PurchaseDocument.company_id == payload.company_id, PurchaseDocument.partner_id == payload.partner_id, PurchaseDocument.document_type == "receipt", PurchaseDocument.status.in_(["received", "partially_received"]))).all()); found = {r.id for r in receipts}; missing = [r for r in payload.receipt_ids if r not in found]
             if missing: raise ValueError(f"Receipt(s) not found, not received, or not owned by the vendor/company: {missing}")
         obj = model(company_id=payload.company_id, partner_id=payload.partner_id, document_type=payload.document_type, number=payload.number, document_date=payload.document_date, warehouse_id=payload.warehouse_id, notes=payload.notes)
         subtotal = Decimal("0"); tax = Decimal("0"); discount = Decimal("0")
@@ -96,10 +90,8 @@ class CommerceService:
             tax_result = calculate_taxes(db, company_id=payload.company_id, amount=net, tax_ids=tax_ids, inclusive=False); tax_amount = Decimal(tax_result["tax_total"]); line_total = net + tax_amount
             tax_rows = list(db.scalars(select(TaxRate).where(TaxRate.id.in_(tax_ids), TaxRate.company_id == payload.company_id)).all()) if tax_ids else []
             non_wht_ids = [tax.id for tax in tax_rows if not tax.is_withholding]; primary_tax_id = non_wht_ids[0] if non_wht_ids else (tax_ids[0] if tax_ids else None); primary_tax_percent = Decimal(next((tax.rate for tax in tax_rows if tax.id == primary_tax_id), 0))
-            obj.lines.append(line_model(item_id=p.item_id, variant_id=variant_id, tax_rate_id=primary_tax_id, tax_rate_ids=tax_ids, description=p.description, quantity=p.quantity, unit_price=p.unit_price, discount_percent=p.discount_percent, tax_percent=primary_tax_percent, line_total=line_total))
-            subtotal += net; discount += disc; tax += tax_amount
-        obj.subtotal = subtotal; obj.discount_total = discount; obj.tax_total = tax; obj.total = subtotal + tax
-        db.add(obj); db.flush()
+            obj.lines.append(line_model(item_id=p.item_id, variant_id=variant_id, tax_rate_id=primary_tax_id, tax_rate_ids=tax_ids, description=p.description, quantity=p.quantity, unit_price=p.unit_price, discount_percent=p.discount_percent, tax_percent=primary_tax_percent, line_total=line_total)); subtotal += net; discount += disc; tax += tax_amount
+        obj.subtotal = subtotal; obj.discount_total = discount; obj.tax_total = tax; obj.total = subtotal + tax; db.add(obj); db.flush()
         if payload.receipt_ids:
             for receipt_id in payload.receipt_ids: db.add(PurchaseBillReceiptLink(company_id=payload.company_id, bill_id=obj.id, receipt_id=receipt_id))
             db.flush()
@@ -110,8 +102,7 @@ class CommerceService:
         return list(db.scalars(select(model).where(model.company_id == company_id).order_by(model.document_date.desc(), model.id.desc())).all())
 
     def confirm(self, db, company_id, document_id, kind, user_id: int | None = None):
-        model = SalesDocument if kind == "sale" else PurchaseDocument
-        obj = db.scalar(select(model).where(model.id == document_id, model.company_id == company_id).with_for_update())
+        model = SalesDocument if kind == "sale" else PurchaseDocument; obj = db.scalar(select(model).where(model.id == document_id, model.company_id == company_id).with_for_update())
         if not obj: raise ValueError("Document not found")
         if obj.status != "draft": raise ValueError("Only draft documents can be confirmed")
         if not obj.lines: raise ValueError("A document must contain at least one line before confirmation")
@@ -126,8 +117,7 @@ class CommerceService:
         return obj
 
     def post_inventory(self, db, company_id, document_id, kind, user_id: int | None = None):
-        model = SalesDocument if kind == "sale" else PurchaseDocument
-        obj = db.scalar(select(model).where(model.id == document_id, model.company_id == company_id).with_for_update())
+        model = SalesDocument if kind == "sale" else PurchaseDocument; obj = db.scalar(select(model).where(model.id == document_id, model.company_id == company_id).with_for_update())
         if not obj: raise ValueError("Document not found")
         allowed = {"delivery"} if kind == "sale" else {"receipt"}
         if obj.document_type not in allowed: raise ValueError("Only delivery documents and purchase receipts post inventory; invoices/bills are accounting documents")
@@ -142,8 +132,7 @@ class CommerceService:
             source_id = f"{obj.id}:{line.id}"
             existing = db.scalar(select(InventoryStockMove).where(InventoryStockMove.company_id == company_id, InventoryStockMove.source_module == "commerce", InventoryStockMove.source_entity == source_entity, InventoryStockMove.source_id == source_id, InventoryStockMove.status.in_(["draft", "posted"])))
             if existing: continue
-            if kind == "sale":
-                payload = StockMoveCreate(company_id=company_id, item_id=line.item_id, variant_id=line.variant_id, movement_type="issue", source_location_id=loc.id, destination_location_id=None, quantity=line.quantity, unit_cost=0, reference=obj.number, source_module="commerce", source_entity=source_entity, source_id=source_id, notes="Sales delivery")
+            if kind == "sale": payload = StockMoveCreate(company_id=company_id, item_id=line.item_id, variant_id=line.variant_id, movement_type="issue", source_location_id=loc.id, destination_location_id=None, quantity=line.quantity, unit_cost=0, reference=obj.number, source_module="commerce", source_entity=source_entity, source_id=source_id, notes="Sales delivery")
             else:
                 net_unit_cost = Decimal(line.unit_price) * (Decimal("100") - Decimal(line.discount_percent or 0)) / Decimal("100")
                 payload = StockMoveCreate(company_id=company_id, item_id=line.item_id, variant_id=getattr(line, "variant_id", None), movement_type="receipt", source_location_id=None, destination_location_id=loc.id, quantity=line.quantity, unit_cost=net_unit_cost, reference=obj.number, source_module="commerce", source_entity=source_entity, source_id=source_id, notes="Purchase receipt")
@@ -157,8 +146,10 @@ class CommerceService:
         model = SalesDocument if kind == "sale" else PurchaseDocument; allowed_types = {"invoice"} if kind == "sale" else {"bill"}
         document = db.scalar(select(model).where(model.id == payload.document_id, model.company_id == payload.company_id).with_for_update())
         if document is None: raise ValueError("Document not found")
-        if document.document_type not in allowed_types: raise ValueError("Payments are allowed only for invoices and bills")
-        if document.status not in {"confirmed", "posted"}: raise ValueError("Document must be confirmed or posted before payment")
+        document_type = getattr(document, "document_type", "invoice" if kind == "sale" else "bill")
+        document_status = getattr(document, "status", "confirmed")
+        if document_type not in allowed_types: raise ValueError("Payments are allowed only for invoices and bills")
+        if document_status not in {"confirmed", "posted"}: raise ValueError("Document must be confirmed or posted before payment")
         wht_amount = Decimal(payload.wht_amount or 0)
         if wht_amount == 0 and getattr(payload, "auto_wht", True): wht_amount = self._auto_payment_wht(db, document=document, company_id=payload.company_id, amount=Decimal(payload.amount), document_kind=kind)
         document, payment = post_payment(db, company_id=payload.company_id, document_kind=kind, document_id=payload.document_id, amount=payload.amount, payment_date=payload.payment_date, method=payload.method, wht_amount=wht_amount, reference=payload.reference, notes=payload.notes, idempotency_key=payload.idempotency_key)
