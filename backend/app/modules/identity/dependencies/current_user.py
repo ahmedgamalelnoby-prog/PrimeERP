@@ -25,16 +25,10 @@ def _resolve_platform_tenant(request_context, request_tenant_id: str | None, db:
     try:
         tenant_id = int(raw)
     except (TypeError, ValueError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="X-Tenant-ID must be a valid tenant ID",
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="X-Tenant-ID must be a valid tenant ID") from exc
 
     if tenant_id <= 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="X-Tenant-ID must be a positive tenant ID",
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="X-Tenant-ID must be a positive tenant ID")
 
     tenant = db.get(Tenant, tenant_id)
     if tenant is None:
@@ -44,11 +38,7 @@ def _resolve_platform_tenant(request_context, request_tenant_id: str | None, db:
     return tenant
 
 
-def _authenticate_user(
-    token: str,
-    db: Session,
-    tenant_context_header: str | None = None,
-) -> User:
+def _authenticate_user(token: str, db: Session, tenant_context_header: str | None = None) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -62,9 +52,20 @@ def _authenticate_user(
     if not user_id:
         raise credentials_exception
 
-    user = user_repository.get_by_id(db=db, user_id=int(user_id))
+    try:
+        user = user_repository.get_by_id(db=db, user_id=int(user_id))
+    except (TypeError, ValueError):
+        raise credentials_exception
     if user is None or user.is_deleted or not user.is_active:
         raise credentials_exception
+
+    # Role state is security state: an already-issued JWT must not keep an
+    # inactive role authorized until the token expires.
+    if not user.is_platform_admin and user.role_id is not None:
+        from app.modules.roles.models import Role
+        role = db.get(Role, user.role_id)
+        if role is None or not role.is_active:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User role is inactive or unavailable")
 
     token_tenant_id = payload.get("tenant_id")
     if not user.is_platform_admin and user.tenant_id != token_tenant_id:
@@ -77,9 +78,6 @@ def _authenticate_user(
     if user.is_platform_admin:
         selected_tenant = _resolve_platform_tenant(context, tenant_context_header, db)
         if selected_tenant is not None:
-            # Keep the platform-admin database row tenant_id=NULL while making
-            # existing tenant-scoped services see the request's selected tenant.
-            # set_committed_value() changes ORM state without creating UPDATE history.
             set_committed_value(user, "tenant_id", selected_tenant.id)
             set_committed_value(user, "tenant", selected_tenant)
     else:
@@ -89,15 +87,9 @@ def _authenticate_user(
             try:
                 requested_tenant_id = int(tenant_context_header.strip())
             except (TypeError, ValueError) as exc:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="X-Tenant-ID must be a valid tenant ID",
-                ) from exc
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="X-Tenant-ID must be a valid tenant ID") from exc
             if requested_tenant_id != user.tenant_id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Tenant context does not match the authenticated user",
-                )
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant context does not match the authenticated user")
         context.tenant_id = user.tenant_id
 
     return user
@@ -115,11 +107,8 @@ def get_current_user(
             raise HTTPException(status_code=403, detail="User is not assigned to a tenant")
 
         tenant = db.get(Tenant, tenant_id)
-        if tenant is None or not tenant.is_active or tenant.status in {"suspended", "cancelled", "expired"}:
-            raise HTTPException(
-                status_code=402,
-                detail="Tenant is suspended, cancelled, expired, or inactive",
-            )
+        if tenant is None or not tenant.is_active or tenant.status in {"suspended", "disabled", "cancelled", "expired"}:
+            raise HTTPException(status_code=402, detail="Tenant is suspended, cancelled, expired, or inactive")
 
         if not subscription_service(db).is_tenant_access_allowed(tenant_id):
             raise HTTPException(status_code=402, detail="Tenant subscription is expired or inactive")
