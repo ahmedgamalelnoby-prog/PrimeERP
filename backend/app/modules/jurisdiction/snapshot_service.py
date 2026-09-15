@@ -19,7 +19,7 @@ class TaxSnapshotService:
             TaxSnapshot.document_id == document_id,
         ).with_for_update())
         if existing is not None:
-            return existing
+            raise ValueError("Tax snapshot already exists for this document")
         decision = JurisdictionEngine(self.db).resolve(ctx)
         self.db.flush()
         jurisdiction = self.db.get(Jurisdiction, decision.jurisdiction_id)
