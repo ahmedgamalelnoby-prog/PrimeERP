@@ -1,0 +1,76 @@
+name: PrimeERP Windows Runner Infrastructure
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/runner-infrastructure-smoke.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  runner-smoke:
+    name: Windows runner + Docker smoke
+    runs-on: [self-hosted, Windows, X64, PrimeERP]
+    timeout-minutes: 15
+    steps:
+      - name: Runner identity
+        shell: powershell
+        run: |
+          Write-Host "Runner=$env:RUNNER_NAME"
+          Write-Host "OS=$env:RUNNER_OS"
+          Write-Host "Arch=$env:RUNNER_ARCH"
+          Write-Host "Workspace=$env:GITHUB_WORKSPACE"
+          whoami
+          $PSVersionTable
+
+      - name: Git
+        shell: powershell
+        run: |
+          git --version
+          git rev-parse --show-toplevel
+
+      - name: Python
+        shell: powershell
+        run: python --version
+
+      - name: Node
+        shell: powershell
+        run: node --version
+
+      - name: Docker CLI and engine
+        shell: powershell
+        run: |
+          docker version
+          docker context show
+          docker info --format 'Server={{.ServerVersion}} OS={{.OperatingSystem}} Arch={{.Architecture}}'
+
+      - name: Docker Compose
+        shell: powershell
+        run: docker compose version
+
+      - name: Docker execution smoke
+        shell: powershell
+        run: |
+          docker run --rm hello-world
+
+      - name: PostgreSQL container smoke
+        shell: powershell
+        run: |
+          $name = "primeerp-runner-smoke-postgres"
+          docker rm -f $name 2>$null
+          docker run -d --name $name -e POSTGRES_PASSWORD=runner_smoke -p 55432:5432 postgres:17-alpine
+          try {
+            $ready = $false
+            for ($i = 1; $i -le 30; $i++) {
+              docker exec $name pg_isready -U postgres
+              if ($LASTEXITCODE -eq 0) { $ready = $true; break }
+              Start-Sleep -Seconds 2
+            }
+            if (-not $ready) { throw 'PostgreSQL did not become ready on the self-hosted runner.' }
+            Write-Host 'PostgreSQL runner smoke: PASS'
+          }
+          finally {
+            docker rm -f $name
+          }
