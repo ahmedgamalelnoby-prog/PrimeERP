@@ -1,0 +1,88 @@
+name: PrimeERP Release Gate
+
+on:
+  push:
+    branches:
+      - "feature/**"
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend release gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+      - name: Compile
+        run: python -m compileall -q app
+      - name: Architecture
+        run: python scripts/check_modular_architecture.py
+      - name: Security
+        run: python scripts/check_api_security.py
+      - name: Import smoke
+        env:
+          DATABASE_URL: sqlite:///./primeerp_release_gate.db
+          APP_ENV: test
+        run: python scripts/smoke_import.py
+      - name: Production config safety
+        env:
+          APP_ENV: production
+          DEBUG: "false"
+          DATABASE_URL: sqlite:///./unsafe.db
+          SECRET_KEY: release-gate-unsafe-placeholder
+          CORS_ORIGINS: https://erp.example.com
+        run: python scripts/check_production_config.py
+      - name: Release readiness
+        run: python scripts/check_release_readiness.py
+      - name: Alembic single head
+        run: |
+          python -m alembic heads > alembic-heads.txt
+          cat alembic-heads.txt
+          python -c "from pathlib import Path; n=sum('(head)' in x for x in Path('alembic-heads.txt').read_text().splitlines()); assert n == 1, f'Expected exactly one Alembic head; found {n}'"
+      - name: Tests
+        run: python -m pytest -q
+
+  frontend:
+    name: Frontend release gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Build
+        run: npm run build
