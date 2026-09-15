@@ -1,0 +1,35 @@
+name: PrimeERP Hosted Runner Isolation
+
+on:
+  push:
+    paths:
+      - '.github/workflows/runner-hosted-isolation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hosted-runner:
+    name: Hosted runner provisioning smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Runner identity
+        run: |
+          echo "runner=$RUNNER_NAME"
+          echo "os=$RUNNER_OS"
+          echo "arch=$RUNNER_ARCH"
+          uname -a
+      - name: Toolchain
+        run: |
+          git --version
+          python3 --version
+          node --version
+          npm --version
+      - name: Docker availability
+        run: |
+          docker --version
+          docker info
+      - name: Execution smoke
+        run: echo "HOSTED_RUNNER_EXECUTION=PASS"
