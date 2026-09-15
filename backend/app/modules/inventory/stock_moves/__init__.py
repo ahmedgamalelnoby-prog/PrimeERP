@@ -1,4 +1,4 @@
 from .location_stock import InventoryLocationStock
-from .models import InventoryCostLayer, InventoryStockMove
+from .models import InventoryAccountingConfig, InventoryCostLayer, InventoryStockMove
 
-__all__ = ["InventoryLocationStock", "InventoryStockMove", "InventoryCostLayer"]
+__all__ = ["InventoryLocationStock", "InventoryStockMove", "InventoryCostLayer", "InventoryAccountingConfig"]
