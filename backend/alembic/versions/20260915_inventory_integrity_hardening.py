@@ -22,6 +22,11 @@ def upgrade():
 
     _assert_clean(
         conn,
+        "SELECT EXISTS (SELECT 1 FROM inventory_warehouses w JOIN companies c ON c.id = w.company_id WHERE w.tenant_id <> c.tenant_id)",
+        "Cannot harden inventory_warehouses: warehouse tenant does not own its company.",
+    )
+    _assert_clean(
+        conn,
         "SELECT EXISTS (SELECT 1 FROM inventory_warehouses w JOIN branches b ON b.id = w.branch_id WHERE w.branch_id IS NOT NULL AND (w.company_id <> b.company_id OR w.tenant_id <> b.tenant_id))",
         "Cannot harden inventory_warehouses: cross-company/tenant branch references exist.",
     )
@@ -52,11 +57,20 @@ def upgrade():
     )
 
     # Composite targets required by PostgreSQL for company-scoped foreign keys.
+    op.create_unique_constraint("uq_companies_tenant_id", "companies", ["tenant_id", "id"])
     op.create_unique_constraint("uq_inventory_warehouses_company_id", "inventory_warehouses", ["company_id", "id"])
     op.create_unique_constraint("uq_inventory_locations_company_id", "inventory_locations", ["company_id", "id"])
     op.create_unique_constraint("uq_inventory_items_company_id", "inventory_items", ["company_id", "id"])
     op.create_unique_constraint("uq_product_variants_company_product_id", "product_variants", ["company_id", "product_id", "id"])
 
+    op.create_foreign_key(
+        "fk_inventory_warehouse_company_same_tenant",
+        "inventory_warehouses",
+        "companies",
+        ["tenant_id", "company_id"],
+        ["tenant_id", "id"],
+        ondelete="CASCADE",
+    )
     op.create_foreign_key(
         "fk_inventory_warehouse_branch_same_company",
         "inventory_warehouses",
@@ -150,7 +164,9 @@ def downgrade():
     op.drop_constraint("fk_inventory_location_parent_same_company", "inventory_locations", type_="foreignkey")
     op.drop_constraint("fk_inventory_location_warehouse_same_company", "inventory_locations", type_="foreignkey")
     op.drop_constraint("fk_inventory_warehouse_branch_same_company", "inventory_warehouses", type_="foreignkey")
+    op.drop_constraint("fk_inventory_warehouse_company_same_tenant", "inventory_warehouses", type_="foreignkey")
     op.drop_constraint("uq_product_variants_company_product_id", "product_variants", type_="unique")
     op.drop_constraint("uq_inventory_items_company_id", "inventory_items", type_="unique")
     op.drop_constraint("uq_inventory_locations_company_id", "inventory_locations", type_="unique")
     op.drop_constraint("uq_inventory_warehouses_company_id", "inventory_warehouses", type_="unique")
+    op.drop_constraint("uq_companies_tenant_id", "companies", type_="unique")
