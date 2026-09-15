@@ -1,0 +1,19 @@
+name: Runner Dispatch Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  dispatch-test:
+    name: PrimeERP runner dispatch
+    runs-on: [self-hosted, Windows, PrimeERP-Windows]
+    steps:
+      - name: Runner dispatch proof
+        shell: powershell
+        run: |
+          Write-Host "RUNNER DISPATCH PASS"
+          Write-Host "Runner: $env:RUNNER_NAME"
+          Write-Host "OS: $env:RUNNER_OS"
+          Write-Host "Arch: $env:RUNNER_ARCH"
+          if ($env:RUNNER_NAME -ne "PrimeERP-Windows") { throw "Unexpected runner: $env:RUNNER_NAME" }
+          if ($env:RUNNER_OS -ne "Windows") { throw "Unexpected runner OS: $env:RUNNER_OS" }
