@@ -21,6 +21,8 @@ class InventoryStockMoveService:
     def _validate_variant(db: Session, *, company_id: int, item: InventoryItem, variant_id: int | None):
         item_id = getattr(item, "id", None)
         active_variants = db.scalar(select(ProductVariant.id).where(ProductVariant.company_id == company_id, ProductVariant.product_id == item_id, ProductVariant.is_active.is_(True)).limit(1))
+        if not isinstance(active_variants, int):
+            active_variants = None
         if variant_id is None:
             if active_variants is not None:
                 raise ValueError("This item has active variants; stock movements must identify the variant")
