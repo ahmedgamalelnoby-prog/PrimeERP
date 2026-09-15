@@ -27,12 +27,28 @@ class UserService(BaseService[UserRepository]):
             return
         enforce_user_limit(self.require_db(), tenant_id)
 
-    def _validate_role(self, role_id: int | None) -> None:
+    def _load_role(self, role_id: int | None) -> Role | None:
         if role_id is None:
-            return
+            return None
         role = self.require_db().execute(select(Role).where(Role.id == role_id)).scalar_one_or_none()
         if role is None or not role.is_active:
             raise ValueError("Selected role is inactive or unavailable.")
+        return role
+
+    def _validate_role_assignment(self, role_id: int | None) -> None:
+        """Prevent a non-platform user from granting permissions they do not possess."""
+        if role_id is None or getattr(self.current_user, "is_platform_admin", False):
+            return
+        target_role = self._load_role(role_id)
+        if target_role is None:
+            return
+        current_role = getattr(self.current_user, "role", None)
+        if current_role is None or not getattr(current_role, "is_active", False):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="An active role is required to assign roles.")
+        current_permissions = {p.name for p in getattr(current_role, "permissions", []) if getattr(p, "is_active", False)}
+        target_permissions = {p.name for p in getattr(target_role, "permissions", []) if getattr(p, "is_active", False)}
+        if not target_permissions.issubset(current_permissions):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You cannot assign a role with permissions beyond your own authority.")
 
     def _resolve_write_tenant_id(self, tenant_id: int | None) -> int | None:
         current_user = self.current_user
@@ -53,30 +69,16 @@ class UserService(BaseService[UserRepository]):
         if not getattr(current_user, "is_platform_admin", False):
             is_superuser = False
             extra_data["is_platform_admin"] = False
-        self._validate_role(role_id)
+        self._validate_role_assignment(role_id)
         self._enforce_user_limit(effective_tenant_id)
-
         normalized_username = username.strip().lower()
         normalized_email = email.strip().lower()
         if repository.get_by_username(db, normalized_username, tenant_id=effective_tenant_id, include_deleted=True):
             raise ValueError("Username already exists for this tenant.")
         if repository.get_by_email(db, normalized_email, tenant_id=effective_tenant_id, include_deleted=True):
             raise ValueError("Email already exists for this tenant.")
-
-        user_data: dict[str, Any] = {
-            "username": normalized_username,
-            "email": normalized_email,
-            "hashed_password": password_service.hash_password(password),
-            "full_name": full_name,
-            "phone": phone,
-            "role_id": role_id,
-            "tenant_id": effective_tenant_id,
-            "is_active": is_active,
-            "is_superuser": is_superuser,
-            **extra_data,
-        }
+        user_data: dict[str, Any] = {"username": normalized_username, "email": normalized_email, "hashed_password": password_service.hash_password(password), "full_name": full_name, "phone": phone, "role_id": role_id, "tenant_id": effective_tenant_id, "is_active": is_active, "is_superuser": is_superuser, **extra_data}
         user_data = {key: value for key, value in user_data.items() if value is not None}
-
         with self.uow as uow:
             user = repository.create(db, data=user_data)
             record_audit_event(db, action="user.create", entity_type="user", entity_id=user.id, user_id=getattr(current_user, "id", None), tenant_id=effective_tenant_id, metadata={"username": user.username, "role_id": user.role_id, "is_active": user.is_active})
@@ -94,7 +96,7 @@ class UserService(BaseService[UserRepository]):
                 raise LookupError("User was not found.")
             update_data = dict(data)
             if "role_id" in update_data:
-                self._validate_role(update_data["role_id"])
+                self._validate_role_assignment(update_data["role_id"])
             if "username" in update_data:
                 new_username = str(update_data["username"]).strip().lower()
                 existing_user = repository.get_by_username(db, new_username, tenant_id=effective_tenant_id, include_deleted=True)
