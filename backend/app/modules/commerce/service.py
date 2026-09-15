@@ -120,7 +120,7 @@ class CommerceService:
             if kind == "sale":
                 if obj.document_type == "invoice": commerce_accounting_service.post_sales_invoice(db, obj, user_id)
                 elif obj.document_type == "credit_note": commerce_accounting_service.post_sales_credit_note(db, obj, user_id)
-            else:
+            if kind == "purchase":
                 if obj.document_type == "bill": commerce_accounting_service.post_purchase_bill(db, obj, user_id)
                 elif obj.document_type == "debit_note": commerce_accounting_service.post_purchase_debit_note(db, obj, user_id)
         return obj
@@ -150,6 +150,7 @@ class CommerceService:
             move = inventory_stock_move_service.create_draft(db, payload); inventory_stock_move_service.post(db, company_id=company_id, move_id=move.id)
         obj.status = "fulfilled" if kind == "sale" else "received"; db.flush()
         if kind == "sale" and user_id is not None: commerce_accounting_service.post_sales_delivery_cogs(db, obj, user_id)
+        if kind == "purchase" and user_id is not None and obj.document_type == "receipt": commerce_accounting_service.post_purchase_receipt(db, obj, user_id)
         return obj
 
     def pay(self, db, payload, kind, user_id: int | None = None):
