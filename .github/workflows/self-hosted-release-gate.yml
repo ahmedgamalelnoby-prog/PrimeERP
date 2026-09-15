@@ -1,0 +1,80 @@
+name: PrimeERP Self-Hosted Release Gate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: primeerp-self-hosted-release-gate
+  cancel-in-progress: false
+
+jobs:
+  runner-and-docker:
+    name: Windows self-hosted runner + Docker validation
+    runs-on: [self-hosted, Windows, X64, PrimeERP]
+    timeout-minutes: 45
+    steps:
+      - name: Verify runner identity
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Write-Host "RUNNER_NAME=$env:RUNNER_NAME"
+          Write-Host "RUNNER_OS=$env:RUNNER_OS"
+          Write-Host "RUNNER_ARCH=$env:RUNNER_ARCH"
+          Write-Host "GITHUB_RUN_ID=$env:GITHUB_RUN_ID"
+          Get-ComputerInfo -Property CsName,WindowsProductName,WindowsVersion,OsBuildNumber | Format-List
+
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Verify Git Python Node Docker
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git --version
+          python --version
+          node --version
+          npm --version
+          docker version
+          docker compose version
+
+      - name: Verify Docker engine
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          docker info
+          docker run --rm hello-world
+
+      - name: Backend compile and architecture checks
+        shell: powershell
+        working-directory: backend
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m compileall -q app
+          python scripts/check_modular_architecture.py
+          python scripts/check_api_security.py
+          python scripts/check_release_readiness.py
+
+      - name: Frontend install and build
+        shell: powershell
+        working-directory: frontend
+        run: |
+          $ErrorActionPreference = 'Stop'
+          npm ci
+          npm run typecheck
+          npm run lint
+          npm run build
+
+      - name: Validate Compose configuration
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          docker compose config
+
+      - name: Cleanup
+        if: always()
+        shell: powershell
+        run: |
+          docker compose down -v --remove-orphans 2>$null
