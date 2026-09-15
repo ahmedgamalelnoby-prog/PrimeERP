@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.database.session import get_db
 from app.modules.identity.dependencies.current_user import get_current_user
 from app.modules.identity.models import User
-from app.modules.roles.models import Permission, role_permissions
+from app.modules.roles.models import Permission, Role, role_permissions
 
 
 def extract_permission_codes(current_user: Any) -> set[str]:
@@ -35,7 +35,9 @@ def user_has_permission(current_user: Any, permission_code: str, db: Session | N
         return True
 
     if permission_code in extract_permission_codes(current_user):
-        return True
+        role = getattr(current_user, "role", None)
+        if role is None or getattr(role, "is_active", True):
+            return True
 
     if db is None or not getattr(current_user, "role_id", None):
         return False
@@ -43,8 +45,10 @@ def user_has_permission(current_user: Any, permission_code: str, db: Session | N
     statement = (
         select(Permission.id)
         .join(role_permissions, role_permissions.c.permission_id == Permission.id)
+        .join(Role, Role.id == role_permissions.c.role_id)
         .where(
             role_permissions.c.role_id == current_user.role_id,
+            Role.is_active.is_(True),
             Permission.is_active.is_(True),
             Permission.name == permission_code,
         )
@@ -53,7 +57,7 @@ def user_has_permission(current_user: Any, permission_code: str, db: Session | N
 
 
 def require_permission(permission_code: str) -> Callable[..., None]:
-    """FastAPI dependency that enforces a role permission at the API boundary."""
+    """FastAPI dependency that enforces an active role permission at the API boundary."""
 
     def dependency(
         current_user: User = Depends(get_current_user),
