@@ -20,7 +20,8 @@ def test_bill_uses_receipt_valuation_and_posts_only_the_difference_to_ppv():
     assert "settings.purchase_price_variance_account_id" in ACCOUNTING_SOURCE
     assert "variance = stock_total - receipt_value" in ACCOUNTING_SOURCE
     assert "Receipt quantity is insufficient" in ACCOUNTING_SOURCE
-    assert "lines.append({\"account_combination_id\": settings.grni_account_id, \"debit\": receipt_value" in ACCOUNTING_SOURCE
+    assert '"account_combination_id": account, "debit": receipt_value' in ACCOUNTING_SOURCE
+    assert "account = settings.grni_account_id if has_receipt else settings.inventory_account_id" in ACCOUNTING_SOURCE
 
 
 def test_ppv_journal_math_is_balanced_for_both_price_directions():
