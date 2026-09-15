@@ -1,9 +1,15 @@
-from datetime import date
 from decimal import Decimal
 
+from app.modules.accounting.chart_of_accounts.models import AccountingCostCenter
 from app.modules.accounting.ifrs_cma_models import (
-    AccountingPolicy, ChartOfAccount, CostCenter, FiscalPeriod, JournalEntry,
-    JournalLine, ManagementBudget, ManagementBudgetLine,
+    AccountingPolicy,
+    ChartOfAccount,
+    CostCenter,
+    FiscalPeriod,
+    JournalEntry,
+    JournalLine,
+    ManagementBudget,
+    ManagementBudgetLine,
 )
 from app.modules.accounting.ifrs_cma_service import IFRSCMAService
 
@@ -17,6 +23,11 @@ def test_ifrs_cma_models_and_controls_exist():
     assert CostCenter.__tablename__ == "accounting_cost_centers"
     assert ManagementBudget.__tablename__ == "accounting_management_budgets"
     assert ManagementBudgetLine.__tablename__ == "accounting_management_budget_lines"
+
+
+def test_ifrs_cma_cost_center_uses_canonical_accounting_mapping():
+    assert CostCenter is AccountingCostCenter
+    assert CostCenter.__table__ is AccountingCostCenter.__table__
 
 
 def test_journal_is_strictly_balanced():
