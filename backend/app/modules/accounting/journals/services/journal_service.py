@@ -115,8 +115,6 @@ class JournalService:
         if not (period.start_date <= entry.entry_date <= period.end_date):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Entry date is outside the posting period")
 
-        # Recompute from locked lines at posting time. Stored header totals are
-        # treated as cached values, not as the source of truth for GL posting.
         debit, credit = db.execute(
             select(
                 func.coalesce(func.sum(JournalEntryLine.debit), 0),
@@ -140,6 +138,93 @@ class JournalService:
         if commit:
             db.commit(); db.refresh(entry)
         return entry
+
+    def reverse(self, db: Session, *, tenant_id: int, entry_id: int, user_id: int, reversal_date: date | None = None, description: str | None = None) -> JournalEntry:
+        """Create and atomically post a balanced reversal for a posted entry."""
+        original = self._locked_entry(db, tenant_id, entry_id)
+        if original.status != "posted":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only posted entries can be reversed")
+        if original.reversal_entry_id is not None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Journal entry has already been reversed")
+
+        target_date = reversal_date or date.today()
+        period = fiscal_year_repository.get_period_by_id(db, original.period_id, tenant_id, for_update=True)
+        if period is None or period.status != "open" or not period.allow_posting:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Accounting period is not open for reversal posting")
+        if not (period.start_date <= target_date <= period.end_date):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Reversal date is outside the open accounting period")
+
+        lines = db.scalars(
+            select(JournalEntryLine)
+            .where(
+                JournalEntryLine.tenant_id == tenant_id,
+                JournalEntryLine.company_id == original.company_id,
+                JournalEntryLine.entry_id == original.id,
+            )
+            .order_by(JournalEntryLine.line_number)
+            .with_for_update()
+        ).all()
+        if not lines:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Posted journal entry has no lines to reverse")
+
+        reversal = JournalEntry(
+            tenant_id=tenant_id,
+            company_id=original.company_id,
+            branch_id=original.branch_id,
+            journal_id=original.journal_id,
+            fiscal_year_id=original.fiscal_year_id,
+            period_id=original.period_id,
+            reversal_of_id=original.id,
+            entry_number=f"REV-{original.entry_number}",
+            entry_date=target_date,
+            posting_date=target_date,
+            reference=original.entry_number,
+            description=description or f"Reversal of {original.entry_number}",
+            currency_code=original.currency_code,
+            exchange_rate=original.exchange_rate,
+            source_module="journal_reversal",
+            source_entity="journal_entry",
+            source_id=original.id,
+            created_by=user_id,
+            approved_by=user_id,
+            approved_at=datetime.now(timezone.utc),
+            posted_by=user_id,
+            posted_at=datetime.now(timezone.utc),
+            status="posted",
+        )
+        debit = Decimal("0")
+        credit = Decimal("0")
+        for number, line in enumerate(lines, start=1):
+            debit += Decimal(str(line.credit or 0))
+            credit += Decimal(str(line.debit or 0))
+            reversal.lines.append(JournalEntryLine(
+                tenant_id=tenant_id,
+                company_id=original.company_id,
+                line_number=number,
+                account_combination_id=line.account_combination_id,
+                department_id=line.department_id,
+                cost_center_id=line.cost_center_id,
+                description=f"Reversal: {line.description}" if line.description else "Reversal",
+                reference=original.entry_number,
+                debit=Decimal(str(line.credit or 0)),
+                credit=Decimal(str(line.debit or 0)),
+                currency_code=line.currency_code,
+                exchange_rate=line.exchange_rate,
+                base_debit=Decimal(str(line.base_credit or 0)),
+                base_credit=Decimal(str(line.base_debit or 0)),
+            ))
+        if debit != credit:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Reversal entry is not balanced")
+        reversal.total_debit = debit
+        reversal.total_credit = credit
+        db.add(reversal)
+        db.flush()
+        original.reversal_entry_id = reversal.id
+        original.status = "reversed"
+        db.flush()
+        db.commit()
+        db.refresh(reversal)
+        return reversal
 
     def cancel(self, db: Session, *, tenant_id: int, entry_id: int, user_id: int, commit: bool = True) -> JournalEntry:
         entry = self._locked_entry(db, tenant_id, entry_id)
