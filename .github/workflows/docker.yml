@@ -36,13 +36,14 @@ jobs:
         shell: cmd
         run: |
           set "DOCKER_DIR=C:\Users\Admin\AppData\Local\Programs\DockerDesktop\resources\bin"
-          if not exist "%DOCKER_DIR%\docker.exe" set "DOCKER_DIR=C:\Program Files\Docker\Docker\resources\bin"
-          if not exist "%DOCKER_DIR%\docker.exe" set "DOCKER_DIR=C:\ProgramData\DockerDesktop\version-bin"
-          if not exist "%DOCKER_DIR%\docker.exe" (
-            echo Docker CLI not found in known Docker Desktop locations.
-            echo PATH=%PATH%
-            exit /b 1
-          )
+          if exist "%DOCKER_DIR%\docker.exe" goto docker_ready
+          set "DOCKER_DIR=C:\Program Files\Docker\Docker\resources\bin"
+          if exist "%DOCKER_DIR%\docker.exe" goto docker_ready
+          set "DOCKER_DIR=C:\ProgramData\DockerDesktop\version-bin"
+          if exist "%DOCKER_DIR%\docker.exe" goto docker_ready
+          echo Docker CLI not found in known Docker Desktop locations.
+          exit /b 1
+          :docker_ready
           echo Docker CLI directory: %DOCKER_DIR%
           echo %DOCKER_DIR%>>"%GITHUB_PATH%"
           "%DOCKER_DIR%\docker.exe" --version
