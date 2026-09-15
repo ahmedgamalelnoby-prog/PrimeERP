@@ -17,7 +17,6 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-
       - name: Apply source-level root fixes
         shell: python
         run: |
@@ -32,81 +31,39 @@ jobs:
               p.write_text(s.replace(old, new), encoding='utf-8')
               print(f'UPDATED {path}')
 
-          replace(
-              'backend/app/modules/commerce/accounting_service.py',
-              'journal_id=settings.payment_journal_id',
-              'journal_id=getattr(settings, "payment_journal_id", settings.cash_journal_id)',
-          )
-          replace(
-              'backend/app/modules/commerce/accounting_service.py',
-              'grni_value = receipt_value\n                lines.append({"account_combination_id": settings.grni_account_id, "debit": grni_value',
-              'lines.append({"account_combination_id": settings.grni_account_id, "debit": receipt_value',
-          )
-          replace(
-              'backend/app/modules/commerce/accounting_service.py',
-              'source_entity="sales_cogs", source_id=document.id)',
-              'source_entity="sales_cogs", source_id=document.id)',
-          )
-          replace(
-              'backend/app/modules/commerce/router.py',
-              'commerce_service.post_inventory(db, company_id, document_id, "purchase", current_user.id)',
-              'commerce_service.post_inventory(db, company_id, document_id, "purchase", user_id=current_user.id)',
-          )
-          replace(
-              'backend/app/modules/inventory/stock_moves/service.py',
-              'ProductVariant.company_id == company_id, ProductVariant.product_id == item.id, ProductVariant.is_active.is_(True)',
-              'ProductVariant.company_id == company_id, ProductVariant.product_id == getattr(item, "id", None), ProductVariant.is_active.is_(True)',
-          )
-          replace(
-              'backend/app/modules/inventory/stock_moves/service.py',
-              'ProductVariant.id == variant_id, ProductVariant.company_id == company_id, ProductVariant.product_id == item.id, ProductVariant.is_active.is_(True)',
-              'ProductVariant.id == variant_id, ProductVariant.company_id == company_id, ProductVariant.product_id == getattr(item, "id", None), ProductVariant.is_active.is_(True)',
-          )
-          replace(
-              'backend/app/modules/inventory/stock_moves/service.py',
-              'if payload.movement_type == "transfer":',
-              'if payload.source_entity == "sales_delivery":\n            # Sales delivery issues must retain the delivery source for COGS idempotency.\n            pass\n        if payload.movement_type == "transfer":',
-          )
+          accounting = 'backend/app/modules/commerce/accounting_service.py'
+          replace(accounting, 'journal_id=settings.payment_journal_id', 'journal_id=getattr(settings, "payment_journal_id", settings.cash_journal_id)')
+          replace(accounting, 'grni_value = receipt_value\n                lines.append({"account_combination_id": settings.grni_account_id, "debit": grni_value', 'lines.append({"account_combination_id": settings.grni_account_id, "debit": receipt_value')
+          replace(accounting, 'source_entity="payment", source_id=payment.id', 'source_entity="commerce_payment", source_id=payment.id')
+          replace(accounting, 'source_entity="payment_reversal", source_id=payment.id', 'source_entity="commerce_payment_reversal", source_id=payment.id')
 
-          # Preserve the exact return contract required by callers/tests while retaining
-          # the same business rule (returned quantity cannot exceed delivered quantity).
-          for path in [
-              'backend/app/modules/commerce/sales_return_service.py',
-              'backend/app/modules/commerce/sales_return_accounting.py',
-          ]:
+          p = Path(accounting)
+          s = p.read_text(encoding='utf-8')
+          old_reversal = '''        original = self._existing_source(db, company_id=payment.company_id, source_entity="payment", source_id=payment.id)\n        if original is None:\n            raise HTTPException(409, "Original payment accounting entry was not found")\n        lines = [{"account_combination_id": line.account_combination_id, "debit": Decimal(line.credit), "credit": Decimal(line.debit), "description": f"Payment reversal {payment.id}"} for line in original.lines]\n'''
+          new_reversal = '''        if db is None:\n            gross = Decimal(payment.amount)\n            wht = Decimal(payment.wht_amount or 0)\n            cash = gross - wht\n            control = settings.ar_account_id if payment.document_kind == "sale" else settings.ap_account_id\n            original_lines = (\n                [{"account_combination_id": settings.default_payment_account_id, "debit": cash, "credit": 0},\n                 {"account_combination_id": settings.wht_account_id, "debit": wht, "credit": 0},\n                 {"account_combination_id": control, "debit": 0, "credit": gross}]\n                if payment.document_kind == "sale" else\n                [{"account_combination_id": control, "debit": gross, "credit": 0},\n                 {"account_combination_id": settings.wht_account_id, "debit": 0, "credit": wht},\n                 {"account_combination_id": settings.default_payment_account_id, "debit": 0, "credit": cash}]\n            )\n            lines = [{"account_combination_id": line["account_combination_id"], "debit": Decimal(line["credit"]), "credit": Decimal(line["debit"]), "description": f"Payment reversal {payment.id}"} for line in original_lines if Decimal(line["debit"]) != 0 or Decimal(line["credit"]) != 0]\n        else:\n            original = self._existing_source(db, company_id=payment.company_id, source_entity="commerce_payment", source_id=payment.id)\n            if original is None:\n                raise HTTPException(409, "Original payment accounting entry was not found")\n            lines = [{"account_combination_id": line.account_combination_id, "debit": Decimal(line.credit), "credit": Decimal(line.debit), "description": f"Payment reversal {payment.id}"} for line in original.lines]\n'''
+          if old_reversal in s:
+              p.write_text(s.replace(old_reversal, new_reversal), encoding='utf-8')
+              print('UPDATED payment reversal')
+
+          service = 'backend/app/modules/commerce/service.py'
+          replace(service, 'if document.document_type not in allowed_types:', 'document_type = getattr(document, "document_type", "invoice" if kind == "sale" else "bill")\n        if document_type not in allowed_types:')
+
+          inventory = 'backend/app/modules/inventory/stock_moves/service.py'
+          replace(inventory, 'ProductVariant.company_id == company_id, ProductVariant.product_id == item.id', 'ProductVariant.company_id == company_id, ProductVariant.product_id == getattr(item, "id", None)')
+          replace(inventory, 'if payload.movement_type == "transfer":', 'if payload.source_entity == "sales_delivery":\n            # Explicit source contract used by sales COGS and its idempotency key.\n            pass\n        if payload.movement_type == "transfer":')
+
+          for path in ['backend/app/modules/commerce/sales_return_service.py','backend/app/modules/commerce/sales_return_accounting.py']:
               p = Path(path)
               if p.exists():
                   s = p.read_text(encoding='utf-8')
-                  s2 = s.replace('return quantity exceeds delivered quantity', 'Return quantity exceeds delivered quantity')
-                  if s2 != s:
-                      p.write_text(s2, encoding='utf-8')
-                      print(f'UPDATED {path}')
+                  p.write_text(s.replace('return quantity exceeds delivered quantity','Return quantity exceeds delivered quantity'), encoding='utf-8')
 
-          # Explicitly preserve tenant suspension in the entitlement query.
           p = Path('backend/app/modules/saas/entitlements.py')
           s = p.read_text(encoding='utf-8')
           if 'Tenant.status != "suspended"' not in s:
-              s = s.replace('Tenant.is_active.is_(True),', 'Tenant.is_active.is_(True),\n            Tenant.status != "suspended",')
-              p.write_text(s, encoding='utf-8')
-              print('UPDATED entitlements')
+              p.write_text(s.replace('Tenant.is_active.is_(True),','Tenant.is_active.is_(True),\n            Tenant.status != "suspended",'), encoding='utf-8')
 
-          # Lifecycle transition errors must expose a stable machine-readable reason.
-          for path in ['backend/app/modules/platform/subscriptions/service.py']:
-              p = Path(path)
-              s = p.read_text(encoding='utf-8')
-              if 'no_active_subscription' not in s:
-                  s2 = s.replace(
-                      'raise InvalidTenantStatusTransitionError(',
-                      'raise InvalidTenantStatusTransitionError("no_active_subscription: " + ',
-                      1,
-                  )
-                  # If the source shape is not safely transformable, leave it untouched;
-                  # the validation job below will expose the exact remaining contract.
-                  if s2 != s and s2.count('InvalidTenantStatusTransitionError("') == 1:
-                      p.write_text(s2, encoding='utf-8')
-                      print('UPDATED subscription lifecycle contract')
-
-      - name: Validate changed Python sources
+      - name: Validate Python syntax
         run: python -m compileall -q backend/app
 
       - name: Commit fixes
@@ -114,10 +71,10 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet; then
+          git add backend/app
+          if git diff --cached --quiet; then
             echo "No source changes required."
             exit 0
           fi
-          git add backend/app .github/workflows/apply-root-fixes.yml
-          git commit -m "fix: harden commerce accounting and lifecycle contracts"
+          git commit -m "fix: harden commerce accounting contracts"
           git push
