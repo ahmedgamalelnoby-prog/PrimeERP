@@ -96,7 +96,6 @@ jobs:
     name: Docker - hosted release gate
     runs-on: ubuntu-latest
     timeout-minutes: 35
-    needs: [backend, frontend]
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -107,9 +106,11 @@ jobs:
           POSTGRES_USER=primeerp
           POSTGRES_PASSWORD=PrimeERP-CI-Only-Strong-Password-2026
           SECRET_KEY=PrimeERP-CI-Only-Secret-Key-2026-Change-Me
-          CORS_ORIGINS=http://localhost:3000
+          CORS_ORIGINS=https://erp.example.com
           APP_ENV=production
           DEBUG=false
+          ETA_ENABLED=false
+          WHATSAPP_ENABLED=false
           EOF
       - name: Validate Compose configuration
         run: docker compose config
