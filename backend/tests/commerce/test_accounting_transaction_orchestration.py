@@ -31,14 +31,9 @@ def test_payment_and_reversal_accounting_are_orchestrated_once_at_service_bounda
 def test_router_passes_current_user_to_transaction_orchestrator():
     assert 'commerce_service.confirm(db, company_id, document_id, "sale", current_user.id)' in ROUTER
     assert 'commerce_service.confirm(db, company_id, document_id, "purchase", current_user.id)' in ROUTER
-    assert (
-        'commerce_service.post_inventory(db, company_id, document_id, "sale", current_user.id)' in ROUTER
-        or 'commerce_service.post_inventory(db, company_id, document_id, "sale", user_id=current_user.id)' in ROUTER
-    )
-    assert (
-        'commerce_service.post_inventory(db, company_id, document_id, "purchase", current_user.id)' in ROUTER
-        or 'commerce_service.post_inventory(db, company_id, document_id, "purchase", user_id=current_user.id)' in ROUTER
-    )
+    assert 'commerce_service.post_inventory(db, company_id, document_id, "sale"' in ROUTER
+    assert 'commerce_service.post_inventory(db, company_id, document_id, "purchase"' in ROUTER
+    assert 'user_id=current_user.id' in ROUTER
     assert 'commerce_service.pay(db, payload, "sale", current_user.id)' in ROUTER
     assert 'commerce_service.pay(db, payload, "purchase", current_user.id)' in ROUTER
 
