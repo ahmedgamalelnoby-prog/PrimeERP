@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.services.base_service import BaseService
@@ -12,9 +13,7 @@ from app.modules.identity.repositories.user_repository import (
     UserRepository,
     user_repository,
 )
-from app.modules.identity.services.password_service import (
-    password_service,
-)
+from app.modules.roles.models import Role
 from app.modules.saas.entitlements import enforce_user_limit
 
 
@@ -58,6 +57,33 @@ class UserService(BaseService[UserRepository]):
         db = self.require_db()
         enforce_user_limit(db, tenant_id)
 
+    def _validate_role(self, role_id: int | None) -> None:
+        if role_id is None:
+            return
+        role = self.require_db().execute(
+            select(Role).where(Role.id == role_id)
+        ).scalar_one_or_none()
+        if role is None or not role.is_active:
+            raise ValueError("Selected role is inactive or unavailable.")
+
+    def _resolve_write_tenant_id(self, tenant_id: int | None) -> int | None:
+        """Never allow a tenant user to write another tenant's identity data."""
+        current_user = self.current_user
+        if getattr(current_user, "is_platform_admin", False):
+            return tenant_id
+        current_tenant_id = getattr(current_user, "tenant_id", None)
+        if current_tenant_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Current user is not assigned to a tenant.",
+            )
+        if tenant_id is not None and tenant_id != current_tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cross-tenant identity access is not allowed.",
+            )
+        return current_tenant_id
+
     def create_user(
         self,
         *,
@@ -74,11 +100,12 @@ class UserService(BaseService[UserRepository]):
     ) -> User:
         db = self.require_db()
         repository = self.require_repository()
-        effective_tenant_id = self._resolve_tenant_id(tenant_id)
+        effective_tenant_id = self._resolve_write_tenant_id(tenant_id)
         current_user = self.current_user
         if not getattr(current_user, "is_platform_admin", False):
             is_superuser = False
             extra_data["is_platform_admin"] = False
+        self._validate_role(role_id)
         self._enforce_user_limit(effective_tenant_id)
 
         normalized_username = username.strip().lower()
@@ -120,12 +147,14 @@ class UserService(BaseService[UserRepository]):
     def update_user(self, user_id: int, *, data: dict[str, Any], tenant_id: int | None = None) -> User:
         db = self.require_db()
         repository = self.require_repository()
-        effective_tenant_id = self._resolve_tenant_id(tenant_id)
+        effective_tenant_id = self._resolve_write_tenant_id(tenant_id)
         with self.uow as uow:
             user = repository.get_by_id(db, user_id, tenant_id=effective_tenant_id, for_update=True)
             if user is None:
                 raise LookupError("User was not found.")
             update_data = dict(data)
+            if "role_id" in update_data:
+                self._validate_role(update_data["role_id"])
             if "username" in update_data:
                 new_username = str(update_data["username"]).strip().lower()
                 existing_user = repository.get_by_username(db, new_username, tenant_id=effective_tenant_id, include_deleted=True)
@@ -168,7 +197,7 @@ class UserService(BaseService[UserRepository]):
     def reset_password(self, user_id: int, *, new_password: str, tenant_id: int | None = None, must_change_password: bool = True) -> User:
         db = self.require_db()
         repository = self.require_repository()
-        effective_tenant_id = self._resolve_tenant_id(tenant_id)
+        effective_tenant_id = self._resolve_write_tenant_id(tenant_id)
         with self.uow as uow:
             user = repository.get_by_id(db, user_id, tenant_id=effective_tenant_id, for_update=True)
             if user is None:
@@ -190,7 +219,7 @@ class UserService(BaseService[UserRepository]):
     def soft_delete_user(self, user_id: int, *, tenant_id: int | None = None, deleted_by: int | None = None) -> User:
         db = self.require_db()
         repository = self.require_repository()
-        effective_tenant_id = self._resolve_tenant_id(tenant_id)
+        effective_tenant_id = self._resolve_write_tenant_id(tenant_id)
         with self.uow as uow:
             user = repository.get_by_id(db, user_id, tenant_id=effective_tenant_id, for_update=True)
             if user is None:
