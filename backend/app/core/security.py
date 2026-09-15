@@ -1,12 +1,12 @@
 import bcrypt
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
-from sqlalchemy import or_
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -15,6 +15,7 @@ from app.modules.identity.models import User
 from app.modules.identity.repositories.user_repository import (
     user_repository,
 )
+from app.modules.saas.models import Subscription, Tenant
 
 
 oauth2_scheme = OAuth2PasswordBearer(
@@ -59,16 +60,12 @@ def get_password_hash(
     password: str,
 ) -> str:
     if not isinstance(password, str):
-        raise TypeError(
-            "Password must be a string"
-        )
+        raise TypeError("Password must be a string")
 
     password_bytes = password.encode("utf-8")
 
     if len(password_bytes) > 72:
-        raise ValueError(
-            "Password cannot be longer than 72 bytes"
-        )
+        raise ValueError("Password cannot be longer than 72 bytes")
 
     hashed_password = bcrypt.hashpw(
         password_bytes,
@@ -99,20 +96,13 @@ def authenticate_user(
     if user is None:
         return None
 
-    if getattr(
-        user,
-        "is_deleted",
-        False,
-    ):
+    if getattr(user, "is_deleted", False):
         return None
 
     if not user.is_active:
         return None
 
-    if not verify_password(
-        password,
-        user.hashed_password,
-    ):
+    if not verify_password(password, user.hashed_password):
         return None
 
     return user
@@ -124,21 +114,12 @@ def create_access_token(
 ) -> str:
     to_encode = data.copy()
 
-    expire = datetime.utcnow() + (
+    expire = datetime.now(timezone.utc) + (
         expires_delta
-        or timedelta(
-            minutes=int(
-                settings.ACCESS_TOKEN_EXPIRE_MINUTES
-            )
-        )
+        or timedelta(minutes=int(settings.ACCESS_TOKEN_EXPIRE_MINUTES))
     )
 
-    to_encode.update(
-        {
-            "exp": expire,
-            "token_type": "access",
-        }
-    )
+    to_encode.update({"exp": expire, "token_type": "access"})
 
     return jwt.encode(
         to_encode,
@@ -147,23 +128,14 @@ def create_access_token(
     )
 
 
-def create_refresh_token(
-    data: dict,
-) -> str:
+def create_refresh_token(data: dict) -> str:
     to_encode = data.copy()
 
-    expire = datetime.utcnow() + timedelta(
-        days=int(
-            settings.REFRESH_TOKEN_EXPIRE_DAYS
-        )
+    expire = datetime.now(timezone.utc) + timedelta(
+        days=int(settings.REFRESH_TOKEN_EXPIRE_DAYS)
     )
 
-    to_encode.update(
-        {
-            "exp": expire,
-            "token_type": "refresh",
-        }
-    )
+    to_encode.update({"exp": expire, "token_type": "refresh"})
 
     return jwt.encode(
         to_encode,
@@ -172,20 +144,86 @@ def create_refresh_token(
     )
 
 
-def verify_token(
-    token: str,
-) -> Optional[dict]:
+def verify_token(token: str) -> Optional[dict]:
     try:
         return jwt.decode(
             token,
             settings.SECRET_KEY,
-            algorithms=[
-                settings.ALGORITHM
-            ],
+            algorithms=[settings.ALGORITHM],
         )
-
     except JWTError:
         return None
+
+
+def _enforce_tenant_access(db: Session, user: User) -> None:
+    """Apply server-side tenant lifecycle and subscription locks.
+
+    Platform administrators remain available for billing/support operations.
+    Tenant users are denied access when the tenant is suspended/inactive or
+    when its current subscription/trial has expired.
+    """
+    if user.is_platform_admin:
+        return
+
+    if user.tenant_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User is not assigned to an active tenant",
+        )
+
+    tenant = db.execute(
+        select(Tenant).where(Tenant.id == user.tenant_id)
+    ).scalar_one_or_none()
+
+    if tenant is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant is not available",
+        )
+
+    if not tenant.is_active or tenant.status in {"suspended", "disabled", "cancelled", "expired"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant account is inactive or suspended",
+        )
+
+    now = datetime.now(timezone.utc)
+
+    if tenant.is_trial and tenant.trial_ends_at is not None:
+        trial_end = tenant.trial_ends_at
+        if trial_end.tzinfo is None:
+            trial_end = trial_end.replace(tzinfo=timezone.utc)
+        if trial_end <= now:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Trial period has expired. Please activate a subscription to continue.",
+            )
+
+    subscription = db.execute(
+        select(Subscription)
+        .where(Subscription.tenant_id == tenant.id)
+        .order_by(Subscription.starts_at.desc(), Subscription.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+    if subscription is None:
+        return
+
+    if subscription.status in {"cancelled", "canceled", "expired", "suspended", "past_due"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Subscription is not active. Please renew your subscription to continue.",
+        )
+
+    if subscription.ends_at is not None:
+        subscription_end = subscription.ends_at
+        if subscription_end.tzinfo is None:
+            subscription_end = subscription_end.replace(tzinfo=timezone.utc)
+        if subscription_end <= now:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Subscription has expired. Please renew your subscription to continue.",
+            )
 
 
 def get_current_user(
@@ -195,9 +233,7 @@ def get_current_user(
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
-        headers={
-            "WWW-Authenticate": "Bearer"
-        },
+        headers={"WWW-Authenticate": "Bearer"},
     )
 
     payload = verify_token(token)
@@ -212,10 +248,8 @@ def get_current_user(
             db=db,
             user_id=int(user_id),
         )
-
     else:
         subject = payload.get("sub")
-
         if not subject:
             raise credentials_exception
 
@@ -223,12 +257,8 @@ def get_current_user(
             db.query(User)
             .filter(
                 or_(
-                    User.email.ilike(
-                        str(subject)
-                    ),
-                    User.username.ilike(
-                        str(subject)
-                    ),
+                    User.email.ilike(str(subject)),
+                    User.username.ilike(str(subject)),
                 )
             )
             .first()
@@ -237,11 +267,7 @@ def get_current_user(
     if user is None:
         raise credentials_exception
 
-    if getattr(
-        user,
-        "is_deleted",
-        False,
-    ):
+    if getattr(user, "is_deleted", False):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User account has been deleted",
@@ -253,9 +279,7 @@ def get_current_user(
             detail="User account is inactive",
         )
 
-    token_tenant_id = payload.get(
-        "tenant_id"
-    )
+    token_tenant_id = payload.get("tenant_id")
 
     if (
         token_tenant_id is not None
@@ -263,5 +287,7 @@ def get_current_user(
         and user.tenant_id != token_tenant_id
     ):
         raise credentials_exception
+
+    _enforce_tenant_access(db, user)
 
     return user
