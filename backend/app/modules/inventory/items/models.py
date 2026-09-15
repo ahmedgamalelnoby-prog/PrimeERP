@@ -2,6 +2,7 @@ from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Index, Inte
 from sqlalchemy.orm import relationship
 
 from app.database.base import Base
+from app.modules.uom.models import UnitOfMeasure
 
 
 class InventoryItem(Base):
