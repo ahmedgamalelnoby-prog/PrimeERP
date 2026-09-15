@@ -10,6 +10,7 @@ from app.modules.accounting.chart_of_accounts.models import AccountCombination
 from app.modules.accounting.fiscal_years.repositories.fiscal_year_repository import fiscal_year_repository
 from app.modules.accounting.journals.models import AccountingJournal
 from app.modules.accounting.journals.services.journal_service import journal_service
+from app.modules.branches.models import Branch
 from app.modules.catalog.models import ProductVariant
 from app.modules.companies.models import Company
 from app.modules.inventory.items.models import InventoryItem, InventoryStock
@@ -22,6 +23,33 @@ from app.modules.inventory.stock_moves.repository import inventory_stock_move_re
 class InventoryStockMoveService:
     def list(self, db: Session, company_id: int, item_id: int | None = None, variant_id: int | None = None):
         return inventory_stock_move_repository.list(db, company_id, item_id, variant_id)
+
+    def get_accounting_config(self, db: Session, *, tenant_id: int, company_id: int):
+        return db.scalar(select(InventoryAccountingConfig).where(InventoryAccountingConfig.tenant_id == tenant_id, InventoryAccountingConfig.company_id == company_id))
+
+    def save_accounting_config(self, db: Session, *, tenant_id: int, payload):
+        company = db.scalar(select(Company).where(Company.id == payload.company_id, Company.tenant_id == tenant_id))
+        if company is None:
+            raise ValueError("Company is outside the current tenant")
+        branch = db.scalar(select(Branch).where(Branch.id == payload.branch_id, Branch.company_id == payload.company_id, Branch.tenant_id == tenant_id, Branch.is_active.is_(True)))
+        if branch is None:
+            raise ValueError("Branch does not belong to the selected company and tenant")
+        journal = db.scalar(select(AccountingJournal).where(AccountingJournal.id == payload.journal_id, AccountingJournal.tenant_id == tenant_id, AccountingJournal.company_id == payload.company_id, AccountingJournal.journal_type == "inventory", AccountingJournal.is_active.is_(True)))
+        if journal is None:
+            raise ValueError("Journal must be an active inventory journal belonging to the company")
+        ids = {payload.inventory_account_id, payload.cogs_account_id, payload.adjustment_account_id, payload.clearing_account_id}
+        accounts = db.scalars(select(AccountCombination).where(AccountCombination.id.in_(ids), AccountCombination.company_id == payload.company_id, AccountCombination.is_active.is_(True))).all()
+        if len(accounts) != 4:
+            raise ValueError("All inventory accounting accounts must belong to the company and be active")
+        config = self.get_accounting_config(db, tenant_id=tenant_id, company_id=payload.company_id)
+        if config is None:
+            config = InventoryAccountingConfig(tenant_id=tenant_id, company_id=payload.company_id)
+            db.add(config)
+        for field in ("journal_id", "branch_id", "inventory_account_id", "cogs_account_id", "adjustment_account_id", "clearing_account_id"):
+            setattr(config, field, getattr(payload, field))
+        config.is_active = "Y"
+        db.flush()
+        return config
 
     @staticmethod
     def _validate_variant(db: Session, *, company_id: int, item: InventoryItem, variant_id: int | None):
@@ -162,39 +190,20 @@ class InventoryStockMoveService:
     def _post_accounting(self, db: Session, *, tenant_id: int, company_id: int, move: InventoryStockMove, user_id: int):
         if move.unit_cost <= 0:
             raise ValueError("A positive inventory valuation is required before accounting can be posted")
-        config = db.scalar(select(InventoryAccountingConfig).where(InventoryAccountingConfig.tenant_id == tenant_id, InventoryAccountingConfig.company_id == company_id, InventoryAccountingConfig.is_active == "Y").with_for_update())
-        if config is None:
+        config = self.get_accounting_config(db, tenant_id=tenant_id, company_id=company_id)
+        if config is None or config.is_active != "Y":
             raise ValueError("Inventory accounting configuration is missing for this company")
         journal = db.scalar(select(AccountingJournal).where(AccountingJournal.id == config.journal_id, AccountingJournal.tenant_id == tenant_id, AccountingJournal.company_id == company_id, AccountingJournal.journal_type == "inventory", AccountingJournal.is_active.is_(True)))
         if journal is None:
             raise ValueError("Configured inventory journal is missing, inactive, or outside the company")
-        accounts = db.scalars(select(AccountCombination).where(AccountCombination.id.in_({config.inventory_account_id, config.cogs_account_id, config.adjustment_account_id, config.clearing_account_id}), AccountCombination.company_id == company_id, AccountCombination.is_active.is_(True))).all()
-        if len(accounts) != 4:
-            raise ValueError("Inventory accounting configuration contains an account outside the company or an inactive account")
         period = fiscal_year_repository.get_period_for_date(db, tenant_id, company_id, move.transaction_date or date.today())
         if period is None:
             raise ValueError("No open accounting period exists for the inventory transaction date")
         amount = (Decimal(move.quantity) * Decimal(move.unit_cost)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+        if amount <= 0:
+            raise ValueError("Inventory accounting amount must be positive")
         lines = self._accounting_lines(move, config, amount)
-        entry = journal_service.create_draft(
-            db,
-            tenant_id=tenant_id,
-            company_id=company_id,
-            branch_id=config.branch_id,
-            journal_id=config.journal_id,
-            fiscal_year_id=period.fiscal_year_id,
-            period_id=period.id,
-            entry_number=f"INV-{move.id}",
-            entry_date=move.transaction_date or date.today(),
-            description=f"Inventory {move.movement_type} #{move.id}",
-            lines=lines,
-            user_id=user_id,
-            reference=move.reference,
-            source_module="inventory",
-            source_entity="stock_move",
-            source_id=move.id,
-            commit=False,
-        )
+        entry = journal_service.create_draft(db, tenant_id=tenant_id, company_id=company_id, branch_id=config.branch_id, journal_id=config.journal_id, fiscal_year_id=period.fiscal_year_id, period_id=period.id, entry_number=f"INV-{move.id}", entry_date=move.transaction_date or date.today(), description=f"Inventory {move.movement_type} #{move.id}", lines=lines, user_id=user_id, reference=move.reference, source_module="inventory", source_entity="stock_move", source_id=move.id, commit=False)
         journal_service.submit(db, tenant_id=tenant_id, entry_id=entry.id, user_id=user_id, commit=False)
         if journal.requires_approval:
             journal_service.approve(db, tenant_id=tenant_id, entry_id=entry.id, user_id=user_id, commit=False)
@@ -214,10 +223,7 @@ class InventoryStockMoveService:
             debit, credit = (inv, adjustment) if move.destination_location_id else (adjustment, inv)
         else:
             raise ValueError("Unsupported inventory accounting movement")
-        return [
-            {"account_combination_id": debit, "debit": amount, "credit": Decimal("0"), "description": f"Inventory {move.movement_type}"},
-            {"account_combination_id": credit, "debit": Decimal("0"), "credit": amount, "description": f"Inventory {move.movement_type}"},
-        ]
+        return [{"account_combination_id": debit, "debit": amount, "credit": Decimal("0"), "description": f"Inventory {move.movement_type}"}, {"account_combination_id": credit, "debit": Decimal("0"), "credit": amount, "description": f"Inventory {move.movement_type}"}]
 
     @staticmethod
     def _location_balance(db: Session, company_id: int, item_id: int, variant_id: int | None, location_id: int, *, lock: bool):
