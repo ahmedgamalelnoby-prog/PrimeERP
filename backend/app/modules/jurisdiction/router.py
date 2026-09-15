@@ -75,9 +75,7 @@ def _commit_version(db: Session, obj):
 
 
 @router.post("", status_code=201, dependencies=[Depends(require_permission("commerce.write")), Depends(require_platform_admin())])
-def create_jurisdiction(payload: JurisdictionCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    if current_user.tenant_id is None:
-        raise HTTPException(403, "Tenant context is required")
+def create_jurisdiction(payload: JurisdictionCreate, db: Session = Depends(get_db)):
     obj = Jurisdiction(**payload.model_dump())
     db.add(obj); db.commit(); db.refresh(obj)
     return obj
@@ -100,9 +98,7 @@ def assign_partner(payload: PartnerJurisdictionCreate, current_user: User = Depe
 
 
 @router.post("/tax-rules", status_code=201, dependencies=[Depends(require_permission("commerce.write")), Depends(require_platform_admin())])
-def create_tax_rule(payload: TaxRuleCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    if current_user.tenant_id is None:
-        raise HTTPException(403, "Tenant context is required")
+def create_tax_rule(payload: TaxRuleCreate, db: Session = Depends(get_db)):
     jurisdiction_for_user(db, payload.jurisdiction_id)
     _reject_overlap(db, TaxRule, [TaxRule.jurisdiction_id == payload.jurisdiction_id, TaxRule.code == payload.code], payload.effective_from, payload.effective_to, _OVERLAP_CONSTRAINTS["jurisdiction_tax_rule_effective_no_overlap"])
     return _commit_version(db, TaxRule(**payload.model_dump()))
