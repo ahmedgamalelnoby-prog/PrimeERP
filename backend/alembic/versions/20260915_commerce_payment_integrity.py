@@ -12,7 +12,24 @@ branch_labels = None
 depends_on = None
 
 
+def _assert_clean(conn, sql: str, message: str) -> None:
+    if conn.execute(sa.text(sql)).scalar():
+        raise RuntimeError(message)
+
+
 def upgrade():
+    conn = op.get_bind()
+    _assert_clean(
+        conn,
+        "SELECT EXISTS (SELECT 1 FROM commerce_payments WHERE (status = 'posted' AND reversed_at IS NOT NULL) OR (status = 'reversed' AND reversed_at IS NULL))",
+        "Cannot harden commerce_payments: reversal state is inconsistent with reversed_at.",
+    )
+    _assert_clean(
+        conn,
+        "SELECT EXISTS (SELECT 1 FROM commerce_payments p JOIN commerce_payments r ON r.id = p.reversed_of_id WHERE p.reversed_of_id IS NOT NULL AND p.company_id <> r.company_id)",
+        "Cannot harden commerce_payments: cross-company reversal references exist.",
+    )
+
     op.create_unique_constraint(
         "uq_commerce_payments_company_id",
         "commerce_payments",
