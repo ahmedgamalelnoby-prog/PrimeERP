@@ -27,6 +27,25 @@ class AccountingPolicy(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
+    def __init__(self, **kwargs):
+        """Apply application defaults when constructing an object in Python.
+
+        SQLAlchemy Column(default=...) values are applied at INSERT time, not
+        when an ORM instance is constructed. The IFRS/CMA foundation exposes
+        these defaults as part of its domain contract, so they must also be
+        present before persistence.
+        """
+        kwargs.setdefault("jurisdiction", "EG")
+        kwargs.setdefault("accounting_framework", "IFRS")
+        kwargs.setdefault("management_framework", "CMA")
+        kwargs.setdefault("functional_currency", "EGP")
+        kwargs.setdefault("presentation_currency", "EGP")
+        kwargs.setdefault("tax_authority", "EGYPT_ETA")
+        kwargs.setdefault("tax_inclusive", False)
+        kwargs.setdefault("require_period_close", True)
+        kwargs.setdefault("require_posting_approval", True)
+        super().__init__(**kwargs)
+
     __table_args__ = (
         UniqueConstraint("company_id", name="uq_accounting_policy_company"),
         CheckConstraint("accounting_framework IN ('IFRS','IFRS_SME','LOCAL')", name="ck_accounting_policy_framework"),
