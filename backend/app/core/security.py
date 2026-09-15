@@ -6,7 +6,7 @@ from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -15,9 +15,7 @@ from app.modules.identity.models import User
 from app.modules.identity.repositories.user_repository import user_repository
 
 
-oauth2_scheme = OAuth2PasswordBearer(
-    tokenUrl=f"{settings.API_V1_STR}/auth/login"
-)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -44,15 +42,36 @@ def get_password_hash(password: str) -> str:
     return bcrypt.hashpw(password_bytes, bcrypt.gensalt(rounds=12)).decode("utf-8")
 
 
-def authenticate_user(db: Session, username: str, password: str) -> Optional[User]:
-    login_value = username.strip()
-    user = (
-        db.query(User)
-        .filter(or_(User.email.ilike(login_value), User.username.ilike(login_value)))
-        .first()
-    )
-    if user is None or getattr(user, "is_deleted", False) or not user.is_active:
+def authenticate_user(
+    db: Session,
+    username: str,
+    password: str,
+    *,
+    tenant_slug: str | None = None,
+) -> Optional[User]:
+    """Authenticate only when the login identifies exactly one active user.
+
+    tenant_slug is optional for backwards compatibility, but should be supplied
+    by tenant login flows when the same email/username can exist across tenants.
+    """
+    if not isinstance(username, str) or not username.strip():
         return None
+    if not isinstance(password, str):
+        return None
+
+    matches = user_repository.find_for_login(
+        db,
+        username,
+        tenant_slug=tenant_slug,
+    )
+    active_matches = [
+        user for user in matches
+        if not getattr(user, "is_deleted", False) and user.is_active
+    ]
+    if len(active_matches) != 1:
+        return None
+
+    user = active_matches[0]
     if not verify_password(password, user.hashed_password):
         return None
     return user
@@ -76,7 +95,10 @@ def create_refresh_token(data: dict) -> str:
 
 def verify_token(token: str) -> Optional[dict]:
     try:
-        return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        if payload.get("token_type") != "access":
+            return None
+        return payload
     except JWTError:
         return None
 
@@ -92,8 +114,6 @@ def _enforce_tenant_access(db: Session, user: User) -> None:
             detail="User is not assigned to an active tenant",
         )
 
-    # Local imports deliberately keep core.security independent from the SaaS service,
-    # because SaaS registration imports get_password_hash from this module.
     from app.modules.roles.models import Role
     from app.modules.saas.models import Subscription, Tenant
 
@@ -107,16 +127,10 @@ def _enforce_tenant_access(db: Session, user: User) -> None:
 
     tenant = db.execute(select(Tenant).where(Tenant.id == user.tenant_id)).scalar_one_or_none()
     if tenant is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Tenant is not available",
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant is not available")
 
     if not tenant.is_active or tenant.status in {"suspended", "disabled", "cancelled", "expired"}:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Tenant account is inactive or suspended",
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant account is inactive or suspended")
 
     now = datetime.now(timezone.utc)
 
@@ -172,20 +186,32 @@ def get_current_user(
         raise credentials_exception
 
     user_id = payload.get("user_id")
-    if user_id:
-        try:
-            user = user_repository.get_by_id(db=db, user_id=int(user_id))
-        except (TypeError, ValueError):
-            raise credentials_exception
+    try:
+        user_id_int = int(user_id) if user_id is not None else None
+    except (TypeError, ValueError):
+        raise credentials_exception
+
+    if user_id_int is not None:
+        user = user_repository.get_by_id(db=db, user_id=user_id_int)
     else:
         subject = payload.get("sub")
-        if not subject:
+        if not subject or not isinstance(subject, str):
             raise credentials_exception
-        user = (
-            db.query(User)
-            .filter(or_(User.email.ilike(str(subject)), User.username.ilike(str(subject))))
-            .first()
+        token_tenant_id = payload.get("tenant_id")
+        try:
+            tenant_id = int(token_tenant_id) if token_tenant_id is not None else None
+        except (TypeError, ValueError):
+            raise credentials_exception
+        matches = user_repository.find_for_login(
+            db,
+            subject,
+            tenant_slug=None,
         )
+        user = None
+        if tenant_id is not None:
+            matches = [u for u in matches if u.tenant_id == tenant_id]
+        if len(matches) == 1:
+            user = matches[0]
 
     if user is None:
         raise credentials_exception
@@ -195,12 +221,11 @@ def get_current_user(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User account is inactive")
 
     token_tenant_id = payload.get("tenant_id")
-    if (
-        token_tenant_id is not None
-        and not user.is_platform_admin
-        and user.tenant_id != token_tenant_id
-    ):
-        raise credentials_exception
+    if not user.is_platform_admin:
+        if user.tenant_id is None:
+            raise credentials_exception
+        if token_tenant_id is None or str(user.tenant_id) != str(token_tenant_id):
+            raise credentials_exception
 
     _enforce_tenant_access(db, user)
     return user
