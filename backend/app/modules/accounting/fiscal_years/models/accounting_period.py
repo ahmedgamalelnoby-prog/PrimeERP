@@ -64,6 +64,7 @@ class AccountingPeriod(Base):
         CheckConstraint("end_date >= start_date", name="ck_accounting_period_valid_dates"),
         CheckConstraint("period_number > 0", name="ck_accounting_period_number_positive"),
         CheckConstraint("status IN ('draft', 'open', 'closing', 'closed', 'locked')", name="ck_accounting_period_status"),
+        CheckConstraint("NOT allow_posting OR status IN ('open', 'closing')", name="ck_accounting_period_allow_posting_state"),
         Index("ix_accounting_period_scope_dates", "tenant_id", "company_id", "start_date", "end_date"),
     )
 
