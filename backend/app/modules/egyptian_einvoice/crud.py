@@ -1,5 +1,4 @@
 import json
-from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any
 
@@ -10,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.modules.audit.service import record_audit_event
 from app.modules.commerce.models import SalesDocument
+from app.modules.companies.models import Company
 from .constants import ETA_DOCUMENT_SUBMISSION_PATH, ETA_DOCUMENT_PATH_TEMPLATE, ETA_SUBMISSION_PATH_TEMPLATE, SUPPORTED_STATUSES
 from .models import EgyptianEInvoiceDocument
 
@@ -83,11 +83,13 @@ def create_document(db: Session, *, tenant_id: int, company_id: int, source_type
     normalized_document_type = document_type.strip().lower()
     if normalized_source_type not in {"sales_document", "sale", "sales_invoice"}:
         raise ValueError("Unsupported ETA source type")
+
+    company_tenant_id = db.scalar(select(Company.tenant_id).where(Company.id == company_id))
+    if company_tenant_id is None or company_tenant_id != tenant_id:
+        raise ValueError("ETA company does not belong to the tenant")
+
     source = db.scalar(select(SalesDocument).where(SalesDocument.id == source_id, SalesDocument.company_id == company_id))
     if source is None:
-        raise ValueError("ETA source sales document does not belong to the company")
-    company_tenant_id = db.scalar(select(SalesDocument.company_id).where(SalesDocument.id == source_id))
-    if company_tenant_id != company_id:
         raise ValueError("ETA source sales document does not belong to the company")
     if source.document_type not in {"invoice", "credit_note"}:
         raise ValueError("Only sales invoices and credit notes can be submitted to ETA")
