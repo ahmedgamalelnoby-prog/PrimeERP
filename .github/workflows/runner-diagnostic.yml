@@ -1,0 +1,38 @@
+name: PrimeERP Runner Diagnostic
+
+on:
+  push:
+    branches:
+      - 'feature/product-completion-final-tax2'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runner-diagnostic:
+    name: Runner startup diagnostic
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Runner identity
+        run: |
+          echo "runner.name=${RUNNER_NAME}"
+          echo "runner.os=${RUNNER_OS}"
+          echo "runner.arch=${RUNNER_ARCH}"
+          echo "runner.temp=${RUNNER_TEMP}"
+      - name: Basic environment
+        run: |
+          uname -a
+          python3 --version
+          node --version
+          docker --version
+      - name: GitHub context
+        env:
+          SHA: ${{ github.sha }}
+          REF: ${{ github.ref }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          echo "sha=$SHA"
+          echo "ref=$REF"
+          echo "event=$EVENT"
