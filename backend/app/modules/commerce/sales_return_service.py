@@ -47,7 +47,6 @@ class SalesReturnService:
             raise ValueError("Document number already exists")
         if len({line.original_delivery_line_id for line in payload.lines}) != len(payload.lines):
             raise ValueError("Each original delivery line may appear only once in a return")
-
         source_rows = []
         destination_warehouse_id = payload.warehouse_id
         for request_line in payload.lines:
@@ -60,7 +59,6 @@ class SalesReturnService:
             if destination_warehouse_id is not None and delivery.warehouse_id is None:
                 raise ValueError("Original delivery has no warehouse")
             source_rows.append((request_line, source_line, delivery))
-
         if destination_warehouse_id is None:
             raise ValueError("Return warehouse is required")
         warehouse = db.scalar(select(InventoryWarehouse).where(InventoryWarehouse.id == destination_warehouse_id, InventoryWarehouse.company_id == payload.company_id, InventoryWarehouse.is_active.is_(True)))
@@ -70,11 +68,8 @@ class SalesReturnService:
         if not locations:
             raise ValueError("Return warehouse has no active location")
         destination_location_id = locations[0].id
-
         document = SalesDocument(company_id=payload.company_id, partner_id=payload.partner_id, document_type="credit_note", number=payload.number, document_date=payload.document_date, status="draft", warehouse_id=destination_warehouse_id, notes=payload.notes)
-        db.add(document)
-        db.flush()
-
+        db.add(document); db.flush()
         for request_line, source_line, _delivery in source_rows:
             tax_ids = list(source_line.tax_rate_ids or [])
             if not tax_ids and source_line.tax_rate_id:
@@ -95,10 +90,7 @@ class SalesReturnService:
             document.subtotal = Decimal(document.subtotal or 0) + net
             document.discount_total = Decimal(document.discount_total or 0) + discount
             document.tax_total = Decimal(document.tax_total or 0) + tax_amount
-
-        document.total = Decimal(document.subtotal) + Decimal(document.tax_total)
-        db.flush()
-
+        document.total = Decimal(document.subtotal) + Decimal(document.tax_total); db.flush()
         for index, (request_line, source_line, delivery) in enumerate(source_rows):
             credit_line = document.lines[index]
             delivery_move = db.scalar(select(InventoryStockMove).where(InventoryStockMove.company_id == payload.company_id, InventoryStockMove.source_module == "commerce", InventoryStockMove.source_entity == "sales_delivery", InventoryStockMove.source_id == f"{delivery.id}:{source_line.id}", InventoryStockMove.status == "posted", InventoryStockMove.item_id == source_line.item_id, InventoryStockMove.variant_id == source_line.variant_id).with_for_update())
@@ -107,13 +99,11 @@ class SalesReturnService:
             returned_qty = db.scalar(select(func.coalesce(func.sum(SalesReturnAllocation.quantity), 0)).where(SalesReturnAllocation.company_id == payload.company_id, SalesReturnAllocation.original_delivery_line_id == source_line.id)) or Decimal("0")
             available = Decimal(delivery_move.quantity) - Decimal(returned_qty)
             if Decimal(request_line.quantity) > available:
-                raise ValueError(f"Return quantity exceeds delivered quantity for line {source_line.id}; available {available}")
+                raise ValueError(f"return quantity exceeds delivered quantity for line {source_line.id}; available {available}")
             move = inventory_stock_move_service.create_draft(db, StockMoveCreate(company_id=payload.company_id, item_id=source_line.item_id, variant_id=source_line.variant_id, movement_type="receipt", source_location_id=None, destination_location_id=destination_location_id, quantity=request_line.quantity, unit_cost=Decimal(delivery_move.unit_cost or 0), reference=document.number, source_module="commerce", source_entity="sales_return", source_id=f"{document.id}:{credit_line.id}", notes=f"Return against delivery {delivery.number}"))
             inventory_stock_move_service.post(db, company_id=payload.company_id, move_id=move.id)
             db.add(SalesReturnAllocation(company_id=payload.company_id, credit_note_line_id=credit_line.id, original_delivery_line_id=source_line.id, quantity=request_line.quantity, unit_cost=Decimal(delivery_move.unit_cost or 0)))
-
-        document.status = "fulfilled"
-        db.flush()
+        document.status = "fulfilled"; db.flush()
         commerce_accounting_service.post_sales_credit_note(db, document, user_id)
         post_sales_return_cogs(db, document, user_id)
         return document
