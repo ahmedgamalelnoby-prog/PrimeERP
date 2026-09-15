@@ -1,4 +1,4 @@
-"""Harden enterprise module tenant/company integrity and business invariants.
+"""Harden enterprise module business invariants.
 
 Revision ID: 20260916_enterprise_module_integrity
 Revises: 20260916_release_graph_final_merge
@@ -13,25 +13,34 @@ branch_labels = None
 depends_on = None
 
 
+def _assert_clean(bind, sql: str, message: str) -> None:
+    if bind.execute(sa.text(sql)).first() is not None:
+        raise RuntimeError(message)
+
+
 def upgrade():
     bind = op.get_bind()
 
-    # Enterprise tables currently carry company_id but not tenant_id. The
-    # company FK is therefore the authoritative scope boundary; add composite
-    # targets so child rows cannot point across companies.
-    checks = [
-        ("fixed_assets", "company_id", "companies", "id", "enterprise_asset_company"),
-        ("employees", "company_id", "companies", "id", "enterprise_employee_company"),
-        ("payroll_runs", "company_id", "companies", "id", "enterprise_payroll_company"),
-        ("budgets", "company_id", "companies", "id", "enterprise_budget_company"),
-        ("projects", "company_id", "companies", "id", "enterprise_project_company"),
-        ("project_contracts", "company_id", "companies", "id", "enterprise_contract_company"),
-    ]
-    for table, col, parent, pcol, _ in checks:
-        bind.execute(sa.text(f"SELECT 1 FROM {table} x LEFT JOIN {parent} p ON p.{pcol}=x.{col} WHERE p.{pcol} IS NULL LIMIT 1"))
+    _assert_clean(bind, "SELECT 1 FROM fixed_assets WHERE residual_value > cost OR accumulated_depreciation < 0 OR accumulated_depreciation > cost - residual_value LIMIT 1", "Cannot harden fixed assets: invalid depreciation state exists")
+    _assert_clean(bind, "SELECT 1 FROM projects WHERE end_date IS NOT NULL AND start_date IS NOT NULL AND end_date < start_date LIMIT 1", "Cannot harden projects: invalid date range exists")
+    _assert_clean(bind, "SELECT 1 FROM project_contracts WHERE end_date IS NOT NULL AND start_date IS NOT NULL AND end_date < start_date LIMIT 1", "Cannot harden project contracts: invalid date range exists")
+    _assert_clean(bind, "SELECT 1 FROM payroll_runs WHERE total_gross < 0 OR total_deductions < 0 OR total_net < 0 OR total_net <> total_gross - total_deductions LIMIT 1", "Cannot harden payroll: invalid run totals exist")
+    _assert_clean(bind, "SELECT 1 FROM payroll_lines WHERE gross < 0 OR deductions < 0 OR net <> gross - deductions LIMIT 1", "Cannot harden payroll: invalid line totals exist")
+    _assert_clean(bind, "SELECT 1 FROM budget_lines WHERE period < 1 OR period > 12 OR amount < 0 OR actual_amount < 0 LIMIT 1", "Cannot harden budgets: invalid line exists")
 
-    # Business invariants.
-    op.create_check_constraint("ck_asset_depr_not_over_cost", "fixed_assets", "accumulated_depreciation >= 0 AND accumulated_depreciation <= cost - residual_value")
+    for table, column, parent in [
+        ("fixed_assets", "company_id", "companies"),
+        ("employees", "company_id", "companies"),
+        ("payroll_runs", "company_id", "companies"),
+        ("budgets", "company_id", "companies"),
+        ("projects", "company_id", "companies"),
+        ("project_contracts", "company_id", "companies"),
+    ]:
+        _assert_clean(bind, f"SELECT 1 FROM {table} x LEFT JOIN {parent} p ON p.id=x.{column} WHERE p.id IS NULL LIMIT 1", f"Cannot harden {table}: orphan company reference exists")
+
+    # Child tables already have single-column foreign keys. The following
+    # constraints enforce domain invariants without duplicating those FKs.
+    op.create_check_constraint("ck_asset_depr_not_over_cost", "fixed_assets", "residual_value <= cost AND accumulated_depreciation >= 0 AND accumulated_depreciation <= cost - residual_value")
     op.create_check_constraint("ck_project_dates", "projects", "end_date IS NULL OR start_date IS NULL OR end_date >= start_date")
     op.create_check_constraint("ck_contract_dates", "project_contracts", "end_date IS NULL OR start_date IS NULL OR end_date >= start_date")
     op.create_check_constraint("ck_contract_retention", "project_contracts", "retention_percent >= 0 AND retention_percent <= 100")
@@ -40,18 +49,7 @@ def upgrade():
     op.create_check_constraint("ck_budget_line_period", "budget_lines", "period BETWEEN 1 AND 12")
     op.create_check_constraint("ck_budget_line_amount", "budget_lines", "amount >= 0 AND actual_amount >= 0")
 
-    # Scope child rows to their parent company through composite foreign keys.
-    op.create_unique_constraint("uq_budget_company_id", "budgets", ["company_id", "id"])
-    op.create_unique_constraint("uq_project_company_id", "projects", ["company_id", "id"])
-    op.create_unique_constraint("uq_payroll_run_company_id", "payroll_runs", ["company_id", "id"])
-    op.create_unique_constraint("uq_employee_company_id", "employees", ["company_id", "id"])
-
-    op.create_foreign_key("fk_budget_line_budget_company", "budget_lines", "budgets", ["budget_id"], ["id"], ondelete="CASCADE")
-    op.create_foreign_key("fk_payroll_line_run", "payroll_lines", "payroll_runs", ["payroll_run_id"], ["id"], ondelete="CASCADE")
-    op.create_foreign_key("fk_payroll_line_employee", "payroll_lines", "employees", ["employee_id"], ["id"], ondelete="RESTRICT")
-    op.create_foreign_key("fk_contract_project_company", "project_contracts", "projects", ["project_id"], ["id"], ondelete="CASCADE")
-
-    # Business uniqueness within a company.
+    # Prevent duplicate business identities within a company.
     op.create_unique_constraint("uq_asset_company_code", "fixed_assets", ["company_id", "code"])
     op.create_unique_constraint("uq_employee_company_no", "employees", ["company_id", "employee_no"])
     op.create_unique_constraint("uq_project_company_code", "projects", ["company_id", "code"])
@@ -70,19 +68,8 @@ def downgrade():
         ("uq_project_company_code", "projects"),
         ("uq_employee_company_no", "employees"),
         ("uq_asset_company_code", "fixed_assets"),
-        ("fk_contract_project_company", "project_contracts"),
-        ("fk_payroll_line_employee", "payroll_lines"),
-        ("fk_payroll_line_run", "payroll_lines"),
-        ("fk_budget_line_budget_company", "budget_lines"),
-        ("uq_employee_company_id", "employees"),
-        ("uq_payroll_run_company_id", "payroll_runs"),
-        ("uq_project_company_id", "projects"),
-        ("uq_budget_company_id", "budgets"),
     ]:
-        try:
-            op.drop_constraint(name, table, type_="foreignkey" if name.startswith("fk_") else "unique")
-        except Exception:
-            pass
+        op.drop_constraint(name, table, type_="unique")
     for name, table in [
         ("ck_budget_line_amount", "budget_lines"),
         ("ck_budget_line_period", "budget_lines"),
