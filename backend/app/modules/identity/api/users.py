@@ -20,6 +20,7 @@ from app.modules.identity.schemas.user import (
 )
 from app.modules.identity.services.user_service import UserService
 from app.core.schemas.pagination import PaginatedResponse
+from app.modules.saas.entitlements import enforce_user_limit
 
 router = APIRouter(
     prefix="/users",
@@ -96,6 +97,8 @@ def create_user(payload: UserCreate, service: UserService = Depends(get_user_ser
     if not user_has_permission(current_user, "users.write", service.require_db()) and not current_user.is_platform_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User write permission is required.")
     tenant_id = payload.tenant_id if current_user.is_platform_admin else current_user.tenant_id
+    if tenant_id is not None and not current_user.is_platform_admin:
+        enforce_user_limit(service.require_db(), tenant_id)
     try:
         user = service.create_user(
             username=payload.username,
