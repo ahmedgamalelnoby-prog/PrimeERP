@@ -1,8 +1,30 @@
-from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, Column, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.database.base import Base
+
+
+class InventoryAccountingConfig(Base):
+    __tablename__ = "inventory_accounting_configs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    journal_id = Column(Integer, ForeignKey("accounting_journals.id", ondelete="RESTRICT"), nullable=False)
+    branch_id = Column(Integer, ForeignKey("branches.id", ondelete="RESTRICT"), nullable=False)
+    inventory_account_id = Column(Integer, ForeignKey("account_combinations.id", ondelete="RESTRICT"), nullable=False)
+    cogs_account_id = Column(Integer, ForeignKey("account_combinations.id", ondelete="RESTRICT"), nullable=False)
+    adjustment_account_id = Column(Integer, ForeignKey("account_combinations.id", ondelete="RESTRICT"), nullable=False)
+    clearing_account_id = Column(Integer, ForeignKey("account_combinations.id", ondelete="RESTRICT"), nullable=False)
+    is_active = Column(String(1), nullable=False, default="Y")
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "company_id", name="uq_inventory_accounting_config_scope"),
+        CheckConstraint("is_active IN ('Y','N')", name="ck_inventory_accounting_config_active"),
+    )
 
 
 class InventoryStockMove(Base):
@@ -23,6 +45,7 @@ class InventoryStockMove(Base):
     source_entity = Column(String(80), nullable=True)
     source_id = Column(String(80), nullable=True)
     notes = Column(Text, nullable=True)
+    transaction_date = Column(Date, nullable=False, server_default=func.current_date(), index=True)
     posted_at = Column(DateTime(timezone=True), nullable=True, index=True)
     accounting_entry_id = Column(Integer, ForeignKey("journal_entries.id", ondelete="RESTRICT"), nullable=True, index=True)
 
@@ -39,6 +62,7 @@ class InventoryStockMove(Base):
         CheckConstraint("status IN ('draft','posted','cancelled','reversed')", name="ck_inventory_stock_move_status"),
         CheckConstraint("source_location_id IS NOT NULL OR destination_location_id IS NOT NULL", name="ck_inventory_stock_move_endpoint"),
         CheckConstraint("source_location_id IS NULL OR destination_location_id IS NULL OR source_location_id <> destination_location_id", name="ck_inventory_stock_move_distinct_endpoints"),
+        CheckConstraint("status <> 'posted' OR movement_type = 'transfer' OR accounting_entry_id IS NOT NULL", name="ck_inventory_stock_move_posted_accounting"),
         UniqueConstraint("company_id", "source_module", "source_entity", "source_id", name="uq_inventory_stock_move_source", postgresql_nulls_not_distinct=True),
     )
 
