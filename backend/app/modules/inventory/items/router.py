@@ -10,7 +10,7 @@ from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.inventory.items.schemas import InventoryItemCreate, InventoryItemResponse, InventoryItemUpdate
 from app.modules.inventory.items.service import inventory_item_service
-from app.modules.saas.entitlements import require_module
+from app.modules.saas.entitlements import enforce_product_limit, require_module
 
 router = APIRouter(prefix="/inventory/items", tags=["Inventory - Items"])
 
@@ -52,6 +52,7 @@ def get_item_stock(item_id: int, company_id: int = Query(..., gt=0), variant_id:
 @router.post("", response_model=InventoryItemResponse, status_code=201, dependencies=[Depends(require_permission("inventory.write")), Depends(require_module("inventory"))])
 def create_item(payload: InventoryItemCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     company = _company_for_user(db, payload.company_id, current_user)
+    enforce_product_limit(db, company.tenant_id, company.id)
     try:
         return inventory_item_service.create(db, payload, tenant_id=company.tenant_id)
     except ValueError as exc:
