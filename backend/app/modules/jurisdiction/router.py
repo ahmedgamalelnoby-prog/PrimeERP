@@ -28,6 +28,17 @@ def company_for_user(db: Session, company_id: int, user: User):
     return obj
 
 
+def partner_for_user(db: Session, partner_id: int, user: User):
+    obj = db.scalar(
+        select(BusinessPartner)
+        .join(Company, Company.id == BusinessPartner.company_id)
+        .where(BusinessPartner.id == partner_id, Company.tenant_id == user.tenant_id)
+    )
+    if obj is None:
+        raise HTTPException(403, "Partner is outside the current tenant")
+    return obj
+
+
 def jurisdiction_for_user(db: Session, jurisdiction_id: int):
     obj = db.get(Jurisdiction, jurisdiction_id)
     if obj is None or not obj.is_active:
@@ -82,9 +93,7 @@ def assign_company(payload: CompanyJurisdictionCreate, current_user: User = Depe
 
 @router.post("/partner", status_code=201, dependencies=[Depends(require_permission("commerce.write"))])
 def assign_partner(payload: PartnerJurisdictionCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    partner = db.scalar(select(BusinessPartner).join(Company, Company.id == BusinessPartner.company_id).where(BusinessPartner.id == payload.partner_id, Company.tenant_id == current_user.tenant_id))
-    if partner is None:
-        raise HTTPException(403, "Partner is outside the current tenant")
+    partner_for_user(db, payload.partner_id, current_user)
     jurisdiction_for_user(db, payload.jurisdiction_id)
     _reject_overlap(db, PartnerJurisdiction, [PartnerJurisdiction.partner_id == payload.partner_id, PartnerJurisdiction.jurisdiction_id == payload.jurisdiction_id, PartnerJurisdiction.role == payload.role], payload.effective_from, payload.effective_to, _OVERLAP_CONSTRAINTS["partner_jurisdiction_effective_no_overlap"])
     return _commit_version(db, PartnerJurisdiction(**payload.model_dump()))
@@ -102,6 +111,8 @@ def create_tax_rule(payload: TaxRuleCreate, current_user: User = Depends(get_cur
 @router.post("/resolve", response_model=JurisdictionDecisionResponse)
 def resolve(payload: JurisdictionResolveRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     company_for_user(db, payload.company_id, current_user)
+    if payload.partner_id is not None:
+        partner_for_user(db, payload.partner_id, current_user)
     ctx = JurisdictionContext(**payload.model_dump())
     try:
         return JurisdictionEngine(db).resolve(ctx)
