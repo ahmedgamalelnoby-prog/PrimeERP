@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -20,11 +21,9 @@ class InventoryStockMoveService:
     @staticmethod
     def _validate_variant(db: Session, *, company_id: int, item: InventoryItem, variant_id: int | None):
         item_id = getattr(item, "id", None)
-        active_variants = db.scalar(select(ProductVariant.id).where(ProductVariant.company_id == company_id, ProductVariant.product_id == item_id, ProductVariant.is_active.is_(True)).limit(1))
-        if not isinstance(active_variants, int):
-            active_variants = None
+        active_variant = db.scalar(select(ProductVariant.id).where(ProductVariant.company_id == company_id, ProductVariant.product_id == item_id, ProductVariant.is_active.is_(True)).limit(1))
         if variant_id is None:
-            if active_variants is not None:
+            if active_variant is not None:
                 raise ValueError("This item has active variants; stock movements must identify the variant")
             return None
         variant = db.scalar(select(ProductVariant).where(ProductVariant.id == variant_id, ProductVariant.company_id == company_id, ProductVariant.product_id == item_id, ProductVariant.is_active.is_(True)))
@@ -33,6 +32,26 @@ class InventoryStockMoveService:
         return variant
 
     def create_draft(self, db: Session, payload):
+        if payload.source_module and payload.source_entity and payload.source_id:
+            existing = db.scalar(select(InventoryStockMove).where(
+                InventoryStockMove.company_id == payload.company_id,
+                InventoryStockMove.source_module == payload.source_module,
+                InventoryStockMove.source_entity == payload.source_entity,
+                InventoryStockMove.source_id == payload.source_id,
+            ).with_for_update())
+            if existing is not None:
+                same = all([
+                    existing.item_id == payload.item_id,
+                    existing.variant_id == payload.variant_id,
+                    existing.source_location_id == payload.source_location_id,
+                    existing.destination_location_id == payload.destination_location_id,
+                    Decimal(str(existing.quantity)) == Decimal(str(payload.quantity)),
+                    existing.movement_type == payload.movement_type,
+                ])
+                if same:
+                    return existing
+                raise ValueError("A stock movement already exists for this source reference with different data")
+
         item = db.scalar(select(InventoryItem).where(InventoryItem.id == payload.item_id, InventoryItem.company_id == payload.company_id, InventoryItem.is_active.is_(True)))
         if item is None:
             raise ValueError("Item does not belong to the company or is inactive")
@@ -68,6 +87,8 @@ class InventoryStockMoveService:
         move = db.scalar(select(InventoryStockMove).where(InventoryStockMove.id == move_id, InventoryStockMove.company_id == company_id).with_for_update())
         if move is None:
             raise ValueError("Stock move not found")
+        if move.status == "posted":
+            return move
         if move.status != "draft":
             raise ValueError("Only draft stock moves can be posted")
         source_entity = getattr(move, "source_entity", None)
@@ -123,6 +144,7 @@ class InventoryStockMoveService:
             raise ValueError("FIFO valuation could not determine a cost layer")
         move.unit_cost = unit_cost
         move.status = "posted"
+        move.posted_at = datetime.now(timezone.utc)
         db.flush()
         return move
 
@@ -160,10 +182,15 @@ class InventoryStockMoveService:
         available = sum((Decimal(layer.quantity_remaining) for layer in layers), Decimal("0"))
         if available < quantity:
             raise ValueError("FIFO cost layers are insufficient for the selected item/variant")
-        remaining = quantity; allocations = []
+        remaining = quantity
+        allocations = []
         for layer in layers:
-            if remaining <= 0: break
-            take = min(remaining, Decimal(layer.quantity_remaining)); layer.quantity_remaining -= take; allocations.append((take, Decimal(layer.unit_cost))); remaining -= take
+            if remaining <= 0:
+                break
+            take = min(remaining, Decimal(layer.quantity_remaining))
+            layer.quantity_remaining -= take
+            allocations.append((take, Decimal(layer.unit_cost)))
+            remaining -= take
         return allocations
 
     @staticmethod
@@ -174,7 +201,8 @@ class InventoryStockMoveService:
     @staticmethod
     def _add_fifo_layers(db, company_id, item_id, variant_id, warehouse_id, move_id, allocations):
         for quantity, unit_cost in allocations:
-            if quantity > 0: db.add(InventoryCostLayer(company_id=company_id, item_id=item_id, variant_id=variant_id, warehouse_id=warehouse_id, receipt_move_id=move_id, quantity_remaining=quantity, unit_cost=unit_cost))
+            if quantity > 0:
+                db.add(InventoryCostLayer(company_id=company_id, item_id=item_id, variant_id=variant_id, warehouse_id=warehouse_id, receipt_move_id=move_id, quantity_remaining=quantity, unit_cost=unit_cost))
         db.flush()
 
 
