@@ -1,5 +1,5 @@
 import json
-import os
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any
 
@@ -16,6 +16,13 @@ from .models import EgyptianEInvoiceDocument
 
 class ETAIntegrationError(RuntimeError):
     pass
+
+
+_TERMINAL_STATUSES = {"valid", "rejected", "cancelled"}
+
+
+def _terminal_status_cannot_regress(current: str, incoming: str) -> bool:
+    return current in _TERMINAL_STATUSES and incoming != current
 
 
 class ETAClient:
@@ -79,6 +86,9 @@ def create_document(db: Session, *, tenant_id: int, company_id: int, source_type
     source = db.scalar(select(SalesDocument).where(SalesDocument.id == source_id, SalesDocument.company_id == company_id))
     if source is None:
         raise ValueError("ETA source sales document does not belong to the company")
+    company_tenant_id = db.scalar(select(SalesDocument.company_id).where(SalesDocument.id == source_id))
+    if company_tenant_id != company_id:
+        raise ValueError("ETA source sales document does not belong to the company")
     if source.document_type not in {"invoice", "credit_note"}:
         raise ValueError("Only sales invoices and credit notes can be submitted to ETA")
     if normalized_document_type not in {"invoice", "credit_note"} or normalized_document_type != source.document_type:
@@ -138,7 +148,7 @@ def submit_document(db: Session, obj: EgyptianEInvoiceDocument, *, user_id: int 
         obj.retry_count += 1
         obj.error_code = "ETA_CLIENT_ERROR"
         obj.error_message = str(exc)[:4000]
-        record_audit_event(db, action="einvoice.submit_error", entity_type="egyptian_einvoice", entity_id=obj.id, user_id=user_id, tenant_id=tenant_id, metadata={"error": str(exc)[:1000], "retry_count": obj.retry_count})
+        record_audit_event(db, action="einvoice.submit_error", entity_type="egyptian_einvoice", entity_id=obj.id, user_id=user_id, tenant_id=tenant_id, company_id=obj.company_id, metadata={"error": str(exc)[:1000], "retry_count": obj.retry_count})
         raise
 
 
@@ -152,7 +162,9 @@ def sync_status(db: Session, obj: EgyptianEInvoiceDocument, *, user_id: int | No
     obj.eta_response = json.dumps(result, ensure_ascii=False, default=str)
     status_value = str(result.get("status") or result.get("Status") or "submitted").lower()
     mapping = {"valid": "valid", "issued": "valid", "rejected": "rejected", "cancelled": "cancelled", "invalid": "rejected"}
-    obj.status = mapping.get(status_value, "submitted")
+    incoming_status = mapping.get(status_value, "submitted")
+    if not _terminal_status_cannot_regress(obj.status, incoming_status):
+        obj.status = incoming_status
     if obj.status == "valid":
         obj.validated_at = datetime.now(timezone.utc)
     errors = result.get("validationResults") or result.get("error") or result.get("errors")
