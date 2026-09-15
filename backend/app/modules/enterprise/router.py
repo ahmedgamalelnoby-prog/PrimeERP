@@ -215,4 +215,4 @@ def contract(p: ContractCreate, db: Session = Depends(get_db), current_user: Use
 @router.get("/contracts", response_model=list[ContractResponse], dependencies=[Depends(require_permission("enterprise.access"))])
 def contracts(company_id: int = Query(..., gt=0), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     company_for_user(db, company_id, current_user)
-    return list(db.scalars(select(ProjectContract).where(ProjectContract.company_id == company_id).order_by(ProjectContract.contract_no)).all()
+    return list(db.scalars(select(ProjectContract).where(ProjectContract.company_id == company_id).order_by(ProjectContract.contract_no)).all())
