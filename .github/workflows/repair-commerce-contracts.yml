@@ -20,6 +20,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $accounting = 'backend/app/modules/commerce/accounting_service.py'
           $returns = 'backend/app/modules/commerce/sales_return_service.py'
+          $router = 'backend/app/modules/commerce/router.py'
 
           $a = Get-Content $accounting -Raw
           $oldA = 'lines.append({"account_combination_id": account, "debit": receipt_value'
@@ -33,13 +34,16 @@ jobs:
           if ($r.Contains($oldR)) { $r = $r.Replace($oldR, $newR) }
           Set-Content -Path $returns -Value $r -Encoding utf8
 
-          Remove-Item '.github/workflows/repair-commerce-contracts.yml' -Force
+          $rt = Get-Content $router -Raw
+          $rt = $rt.Replace('commerce_service.post_inventory(db, company_id, document_id, "sale", current_user.id)', 'commerce_service.post_inventory(db, company_id, document_id, "sale", current_user.id)')
+          $rt = $rt.Replace('commerce_service.post_inventory(db, company_id, document_id, "purchase", current_user.id)', 'commerce_service.post_inventory(db, company_id, document_id, "purchase", current_user.id)')
+          Set-Content -Path $router -Value $rt -Encoding utf8
 
           python -m pytest backend/tests/commerce/test_accounting_transaction_orchestration.py backend/tests/commerce/test_purchase_ppv_contract.py backend/tests/commerce/test_sales_return_contract.py backend/tests/commerce/test_sales_returns_contract.py -q
           if ($LASTEXITCODE -ne 0) { throw 'Targeted commerce contract tests failed' }
 
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add backend/app/modules/commerce/accounting_service.py backend/app/modules/commerce/sales_return_service.py .github/workflows/repair-commerce-contracts.yml
+          git add backend/app/modules/commerce/accounting_service.py backend/app/modules/commerce/sales_return_service.py backend/app/modules/commerce/router.py .github/workflows/repair-commerce-contracts.yml
           git commit -m 'fix: enforce commerce accounting and sales return contracts'
           git push origin HEAD:feature/product-completion-final-tax2
