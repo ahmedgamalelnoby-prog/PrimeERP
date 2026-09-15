@@ -68,6 +68,9 @@ class InventoryStockMoveService:
             raise ValueError("Stock move not found")
         if move.status != "draft":
             raise ValueError("Only draft stock moves can be posted")
+        source_entity = getattr(move, "source_entity", None)
+        if source_entity == "sales_delivery" and move.movement_type != "issue":
+            raise ValueError("Sales delivery stock moves must be issue movements")
         item = db.scalar(select(InventoryItem).where(InventoryItem.id == move.item_id, InventoryItem.company_id == company_id, InventoryItem.is_active.is_(True)))
         if item is None:
             raise ValueError("Item is unavailable for posting")
