@@ -48,12 +48,15 @@ class InventoryStockMove(Base):
     transaction_date = Column(Date, nullable=False, server_default=func.current_date(), index=True)
     posted_at = Column(DateTime(timezone=True), nullable=True, index=True)
     accounting_entry_id = Column(Integer, ForeignKey("journal_entries.id", ondelete="RESTRICT"), nullable=True, index=True)
+    reversed_by_move_id = Column(Integer, ForeignKey("inventory_stock_moves.id", ondelete="RESTRICT"), nullable=True, index=True)
 
     item = relationship("InventoryItem")
     variant = relationship("ProductVariant")
     source_location = relationship("InventoryLocation", foreign_keys=[source_location_id])
     destination_location = relationship("InventoryLocation", foreign_keys=[destination_location_id])
     accounting_entry = relationship("JournalEntry", foreign_keys=[accounting_entry_id])
+    reversed_by_move = relationship("InventoryStockMove", remote_side=[id], foreign_keys=[reversed_by_move_id], uselist=False)
+    valuation_allocations = relationship("InventoryValuationAllocation", back_populates="stock_move", cascade="all, delete-orphan")
 
     __table_args__ = (
         CheckConstraint("quantity > 0", name="ck_inventory_stock_move_quantity"),
@@ -63,19 +66,7 @@ class InventoryStockMove(Base):
         CheckConstraint("source_location_id IS NOT NULL OR destination_location_id IS NOT NULL", name="ck_inventory_stock_move_endpoint"),
         CheckConstraint("source_location_id IS NULL OR destination_location_id IS NULL OR source_location_id <> destination_location_id", name="ck_inventory_stock_move_distinct_endpoints"),
         CheckConstraint("status <> 'posted' OR movement_type = 'transfer' OR accounting_entry_id IS NOT NULL", name="ck_inventory_stock_move_posted_accounting"),
-        Index(
-            "uq_inventory_stock_move_source_nonnull",
-            "company_id",
-            "source_module",
-            "source_entity",
-            "source_id",
-            unique=True,
-            postgresql_where=(
-                source_module.is_not(None)
-                & source_entity.is_not(None)
-                & source_id.is_not(None)
-            ),
-        ),
+        Index("uq_inventory_stock_move_source_nonnull", "company_id", "source_module", "source_entity", "source_id", unique=True, postgresql_where=(source_module.is_not(None) & source_entity.is_not(None) & source_id.is_not(None))),
     )
 
 
@@ -97,4 +88,26 @@ class InventoryCostLayer(Base):
     __table_args__ = (
         CheckConstraint("quantity_remaining >= 0", name="ck_inventory_cost_layer_quantity"),
         CheckConstraint("unit_cost >= 0", name="ck_inventory_cost_layer_unit_cost"),
+    )
+
+
+class InventoryValuationAllocation(Base):
+    __tablename__ = "inventory_valuation_allocations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    stock_move_id = Column(Integer, ForeignKey("inventory_stock_moves.id", ondelete="CASCADE"), nullable=False, index=True)
+    cost_layer_id = Column(Integer, ForeignKey("inventory_cost_layers.id", ondelete="RESTRICT"), nullable=True, index=True)
+    quantity = Column(Numeric(18, 4), nullable=False)
+    unit_cost = Column(Numeric(18, 4), nullable=False)
+    allocation_role = Column(String(30), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    stock_move = relationship("InventoryStockMove", back_populates="valuation_allocations")
+    cost_layer = relationship("InventoryCostLayer")
+
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_inventory_valuation_allocation_quantity"),
+        CheckConstraint("unit_cost >= 0", name="ck_inventory_valuation_allocation_unit_cost"),
+        CheckConstraint("allocation_role IN ('source_consumed','destination_added')", name="ck_inventory_valuation_allocation_role"),
     )
