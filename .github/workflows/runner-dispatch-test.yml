@@ -2,6 +2,9 @@ name: Runner Dispatch Test
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - feature/product-completion-final-tax2
 
 jobs:
   dispatch-test:
