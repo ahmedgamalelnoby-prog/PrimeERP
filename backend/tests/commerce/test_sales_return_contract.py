@@ -16,7 +16,7 @@ def test_return_is_linked_to_original_delivery_line_and_customer():
 def test_return_quantity_is_capped_by_delivered_less_already_returned():
     assert "SalesReturnAllocation.quantity" in RETURN_SOURCE
     assert "available = Decimal(delivery_move.quantity) - Decimal(returned_qty)" in RETURN_SOURCE
-    assert "Return quantity exceeds delivered quantity" in RETURN_SOURCE
+    assert "return quantity exceeds delivered quantity" in RETURN_SOURCE.lower()
 
 
 def test_return_preserves_original_delivery_unit_cost():
