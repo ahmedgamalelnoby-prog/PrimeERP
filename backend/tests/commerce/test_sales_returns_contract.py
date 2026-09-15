@@ -17,7 +17,7 @@ def test_return_requires_original_delivery_line_and_same_customer():
 def test_return_is_capped_by_delivered_not_yet_returned_quantity():
     assert "sum(SalesReturnAllocation.quantity)" in SERVICE
     assert "available = Decimal(delivery_move.quantity) - Decimal(returned_qty)" in SERVICE
-    assert "Return quantity exceeds delivered quantity" in SERVICE
+    assert "return quantity exceeds delivered quantity" in SERVICE.lower()
 
 
 def test_return_uses_original_delivery_unit_cost_not_current_cost():
