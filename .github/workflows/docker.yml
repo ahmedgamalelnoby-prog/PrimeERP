@@ -17,8 +17,8 @@ permissions:
 env:
   POSTGRES_DB: primeerp_ci
   POSTGRES_USER: primeerp
-  POSTGRES_PASSWORD: PrimeERP-CI-Only-Strong-Password-2026
-  SECRET_KEY: PrimeERP-CI-Only-Secret-Key-2026-Change-Me
+  POSTGRES_PASSWORD: ci-password-for-local-test-only
+  SECRET_KEY: ci-secret-key-for-local-test-only-1234567890
   CORS_ORIGINS: http://localhost:3000
   APP_ENV: ci
   DEBUG: "true"
@@ -32,30 +32,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Add Docker Desktop to runner PATH
+      - name: Configure Docker CLI
         shell: cmd
         run: |
-          setlocal EnableExtensions EnableDelayedExpansion
-          set "DOCKER_EXE="
-          for /f "delims=" %%F in ('where docker.exe 2^>nul') do if not defined DOCKER_EXE set "DOCKER_EXE=%%F"
-          if not defined DOCKER_EXE if exist "C:\Program Files\Docker\Docker\resources\bin\docker.exe" set "DOCKER_EXE=C:\Program Files\Docker\Docker\resources\bin\docker.exe"
-          if not defined DOCKER_EXE if exist "C:\ProgramData\DockerDesktop\version-bin\docker.exe" set "DOCKER_EXE=C:\ProgramData\DockerDesktop\version-bin\docker.exe"
-          if not defined DOCKER_EXE if exist "C:\Users\Admin\AppData\Local\Programs\DockerDesktop\resources\bin\docker.exe" set "DOCKER_EXE=C:\Users\Admin\AppData\Local\Programs\DockerDesktop\resources\bin\docker.exe"
-          if not defined DOCKER_EXE (
-            for /f "delims=" %%F in ('where /r C:\Users docker.exe 2^>nul') do if not defined DOCKER_EXE set "DOCKER_EXE=%%F"
-          )
-          if not defined DOCKER_EXE (
-            echo Docker CLI was not found on the self-hosted runner.
+          set "DOCKER_DIR=C:\Users\Admin\AppData\Local\Programs\DockerDesktop\resources\bin"
+          if not exist "%DOCKER_DIR%\docker.exe" set "DOCKER_DIR=C:\Program Files\Docker\Docker\resources\bin"
+          if not exist "%DOCKER_DIR%\docker.exe" set "DOCKER_DIR=C:\ProgramData\DockerDesktop\version-bin"
+          if not exist "%DOCKER_DIR%\docker.exe" (
+            echo Docker CLI not found in known Docker Desktop locations.
             echo PATH=%PATH%
             exit /b 1
           )
-          for %%F in ("!DOCKER_EXE!") do set "DOCKER_DIR=%%~dpF"
-          echo Docker CLI: !DOCKER_EXE!
-          echo Docker CLI directory: !DOCKER_DIR!
-          echo !DOCKER_DIR!>>"%GITHUB_PATH%"
-          set "PATH=!DOCKER_DIR!;%PATH%"
-          "!DOCKER_EXE!" --version
-          "!DOCKER_DIR!docker.exe" compose version
+          echo Docker CLI directory: %DOCKER_DIR%
+          echo %DOCKER_DIR%>>"%GITHUB_PATH%"
+          "%DOCKER_DIR%\docker.exe" --version
+          "%DOCKER_DIR%\docker.exe" compose version
 
       - name: Validate local runtimes
         shell: cmd
@@ -86,7 +77,7 @@ jobs:
           set APP_ENV=production
           set DEBUG=false
           set DATABASE_URL=sqlite:///./unsafe.db
-          set SECRET_KEY=your-secret-key-change-this-in-production
+          set SECRET_KEY=unsafe-production-test-key
           set CORS_ORIGINS=https://erp.example.com
           .ci-venv\Scripts\python.exe scripts\check_production_config.py
           set APP_ENV=ci
@@ -113,6 +104,8 @@ jobs:
           copy /y .env.docker.example .env.docker
           >>.env.docker echo APP_ENV=ci
           >>.env.docker echo DEBUG=true
+          >>.env.docker echo POSTGRES_PASSWORD=ci-password-for-local-test-only
+          >>.env.docker echo SECRET_KEY=ci-secret-key-for-local-test-only-1234567890
           docker compose --env-file .env.docker config -q
 
       - name: Clean previous CI stack
@@ -155,11 +148,11 @@ jobs:
         shell: cmd
         working-directory: backend
         run: |
-          set TEST_DATABASE_URL=postgresql://primeerp:PrimeERP-CI-Only-Strong-Password-2026@db:5432/primeerp_ci
-          set DATABASE_URL=postgresql+psycopg://primeerp:PrimeERP-CI-Only-Strong-Password-2026@db:5432/primeerp_ci
+          set TEST_DATABASE_URL=postgresql://primeerp:ci-password-for-local-test-only@db:5432/primeerp_ci
+          set DATABASE_URL=postgresql+psycopg://primeerp:ci-password-for-local-test-only@db:5432/primeerp_ci
           set APP_ENV=test
           set DEBUG=false
-          set SECRET_KEY=PrimeERP-CI-Only-Secret-Key-2026-Change-Me
+          set SECRET_KEY=ci-secret-key-for-local-test-only-1234567890
           set CORS_ORIGINS=http://localhost:3000
           .ci-venv\Scripts\python.exe -m pytest -q tests/jurisdiction/test_effective_date_db_guard.py
 
