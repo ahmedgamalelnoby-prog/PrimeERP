@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from app.core.permissions import require_permission
+from app.core.permissions import require_permission, require_platform_admin
 from app.database.session import get_db
 from app.modules.commerce.models import BusinessPartner
 from app.modules.companies.models import Company
@@ -74,7 +74,7 @@ def _commit_version(db: Session, obj):
         raise
 
 
-@router.post("", status_code=201, dependencies=[Depends(require_permission("commerce.write"))])
+@router.post("", status_code=201, dependencies=[Depends(require_permission("commerce.write")), Depends(require_platform_admin())])
 def create_jurisdiction(payload: JurisdictionCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if current_user.tenant_id is None:
         raise HTTPException(403, "Tenant context is required")
@@ -99,7 +99,7 @@ def assign_partner(payload: PartnerJurisdictionCreate, current_user: User = Depe
     return _commit_version(db, PartnerJurisdiction(**payload.model_dump()))
 
 
-@router.post("/tax-rules", status_code=201, dependencies=[Depends(require_permission("commerce.write"))])
+@router.post("/tax-rules", status_code=201, dependencies=[Depends(require_permission("commerce.write")), Depends(require_platform_admin())])
 def create_tax_rule(payload: TaxRuleCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if current_user.tenant_id is None:
         raise HTTPException(403, "Tenant context is required")
