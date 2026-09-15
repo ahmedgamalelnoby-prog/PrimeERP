@@ -11,9 +11,10 @@ on:
 permissions:
   contents: read
 
+# Keep exactly one canonical hosted validation run per ref.
 concurrency:
-  group: primeerp-validation-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: primeerp-hosted-validation-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   backend:
