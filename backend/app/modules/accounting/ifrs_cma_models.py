@@ -2,6 +2,12 @@ from sqlalchemy import Boolean, CheckConstraint, Column, Date, DateTime, Foreign
 from sqlalchemy.sql import func
 
 from app.database.base import Base
+from app.modules.accounting.chart_of_accounts.models import AccountingCostCenter
+
+# Backward-compatible public name for the IFRS/CMA foundation.
+# The canonical ORM mapping lives in chart_of_accounts.models so the same
+# physical table is represented by exactly one SQLAlchemy declarative class.
+CostCenter = AccountingCostCenter
 
 
 class AccountingPolicy(Base):
@@ -68,19 +74,6 @@ class ChartOfAccount(Base):
         CheckConstraint("account_type IN ('asset','liability','equity','revenue','expense','contra_asset','contra_revenue','contra_liability')", name="ck_accounting_account_type"),
         CheckConstraint("normal_balance IN ('debit','credit')", name="ck_accounting_account_normal_balance"),
     )
-
-
-class CostCenter(Base):
-    __tablename__ = "accounting_cost_centers"
-
-    id = Column(Integer, primary_key=True)
-    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
-    code = Column(String(30), nullable=False)
-    name = Column(String(160), nullable=False)
-    parent_id = Column(Integer, ForeignKey("accounting_cost_centers.id", ondelete="RESTRICT"), nullable=True)
-    is_active = Column(Boolean, nullable=False, default=True)
-
-    __table_args__ = (UniqueConstraint("company_id", "code", name="uq_cost_center_company_code"),)
 
 
 class JournalEntry(Base):
