@@ -18,6 +18,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.database.base import Base
+from app.modules.transactions.models import BusinessTransaction
 
 
 class JournalEntry(Base):
