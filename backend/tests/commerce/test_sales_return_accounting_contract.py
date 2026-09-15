@@ -10,7 +10,7 @@ MODELS = (ROOT / "app/modules/commerce/sales_return_models.py").read_text(encodi
 def test_return_is_linked_to_original_delivery_line():
     assert "original_delivery_line_id" in SERVICE
     assert "SalesReturnAllocation" in SERVICE
-    assert "return quantity exceeds delivered quantity" in SERVICE
+    assert "return quantity exceeds delivered quantity" in SERVICE.lower()
 
 
 def test_return_uses_original_delivery_cost_snapshot():
