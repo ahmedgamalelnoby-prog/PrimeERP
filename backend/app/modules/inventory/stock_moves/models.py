@@ -1,4 +1,4 @@
-from sqlalchemy import CheckConstraint, Column, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, Column, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -63,7 +63,19 @@ class InventoryStockMove(Base):
         CheckConstraint("source_location_id IS NOT NULL OR destination_location_id IS NOT NULL", name="ck_inventory_stock_move_endpoint"),
         CheckConstraint("source_location_id IS NULL OR destination_location_id IS NULL OR source_location_id <> destination_location_id", name="ck_inventory_stock_move_distinct_endpoints"),
         CheckConstraint("status <> 'posted' OR movement_type = 'transfer' OR accounting_entry_id IS NOT NULL", name="ck_inventory_stock_move_posted_accounting"),
-        UniqueConstraint("company_id", "source_module", "source_entity", "source_id", name="uq_inventory_stock_move_source", postgresql_nulls_not_distinct=True),
+        Index(
+            "uq_inventory_stock_move_source_nonnull",
+            "company_id",
+            "source_module",
+            "source_entity",
+            "source_id",
+            unique=True,
+            postgresql_where=(
+                source_module.is_not(None)
+                & source_entity.is_not(None)
+                & source_id.is_not(None)
+            ),
+        ),
     )
 
 
