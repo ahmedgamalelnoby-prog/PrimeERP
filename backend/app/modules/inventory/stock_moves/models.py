@@ -1,5 +1,6 @@
-from sqlalchemy import CheckConstraint, Column, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 
 from app.database.base import Base
 
@@ -22,11 +23,14 @@ class InventoryStockMove(Base):
     source_entity = Column(String(80), nullable=True)
     source_id = Column(String(80), nullable=True)
     notes = Column(Text, nullable=True)
+    posted_at = Column(DateTime(timezone=True), nullable=True)
+    accounting_entry_id = Column(Integer, ForeignKey("journal_entries.id", ondelete="RESTRICT"), nullable=True, index=True)
 
     item = relationship("InventoryItem")
     variant = relationship("ProductVariant")
     source_location = relationship("InventoryLocation", foreign_keys=[source_location_id])
     destination_location = relationship("InventoryLocation", foreign_keys=[destination_location_id])
+    accounting_entry = relationship("JournalEntry", foreign_keys=[accounting_entry_id])
 
     __table_args__ = (
         CheckConstraint("quantity > 0", name="ck_inventory_stock_move_quantity"),
@@ -35,6 +39,7 @@ class InventoryStockMove(Base):
         CheckConstraint("status IN ('draft','posted','cancelled','reversed')", name="ck_inventory_stock_move_status"),
         CheckConstraint("source_location_id IS NOT NULL OR destination_location_id IS NOT NULL", name="ck_inventory_stock_move_endpoint"),
         CheckConstraint("source_location_id IS NULL OR destination_location_id IS NULL OR source_location_id <> destination_location_id", name="ck_inventory_stock_move_distinct_endpoints"),
+        CheckConstraint("status <> 'posted' OR accounting_entry_id IS NOT NULL", name="ck_inventory_stock_move_posted_accounting"),
     )
 
 
