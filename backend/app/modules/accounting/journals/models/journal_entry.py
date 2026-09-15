@@ -6,6 +6,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     Numeric,
@@ -70,6 +71,18 @@ class JournalEntry(Base):
 
     __table_args__ = (
         UniqueConstraint("tenant_id", "entry_number", name="uq_journal_entry_tenant_number"),
+        ForeignKeyConstraint(
+            ["tenant_id", "company_id", "fiscal_year_id"],
+            ["fiscal_years.tenant_id", "fiscal_years.company_id", "fiscal_years.id"],
+            name="fk_journal_entry_fiscal_year_scope",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "company_id", "period_id"],
+            ["accounting_periods.tenant_id", "accounting_periods.company_id", "accounting_periods.id"],
+            name="fk_journal_entry_period_scope",
+            ondelete="RESTRICT",
+        ),
         CheckConstraint("total_debit >= 0", name="ck_journal_entry_debit_positive"),
         CheckConstraint("total_credit >= 0", name="ck_journal_entry_credit_positive"),
         CheckConstraint("exchange_rate > 0", name="ck_journal_entry_exchange_rate"),
