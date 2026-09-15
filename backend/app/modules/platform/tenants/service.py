@@ -8,28 +8,14 @@ from sqlalchemy.orm import Session
 from app.core.services.base_crud_service import BaseCRUDService
 from app.modules.saas.models import Subscription, Tenant
 
-from .constants import (
-    DEFAULT_TRIAL_DAYS,
-    TenantStatus,
-)
-from .exceptions import (
-    InvalidTenantStatusTransitionError,
-    TenantAlreadySuspendedError,
-    TenantNotFoundError,
-    TenantNotSuspendedError,
-    TenantSlugAlreadyExistsError,
-)
+from .constants import DEFAULT_TRIAL_DAYS, TenantStatus
+from .exceptions import InvalidTenantStatusTransitionError, TenantAlreadySuspendedError, TenantNotFoundError, TenantNotSuspendedError, TenantSlugAlreadyExistsError
 from .repository import TenantRepository
-from .schemas import (
-    TenantCreate,
-    TenantUpdate,
-)
+from .schemas import TenantCreate, TenantUpdate
 from .validators import utc_now
 
 
-class TenantService(
-    BaseCRUDService[Tenant, TenantRepository]
-):
+class TenantService(BaseCRUDService[Tenant, TenantRepository]):
     def __init__(self, repository: TenantRepository | None = None) -> None:
         super().__init__(repository or TenantRepository())
 
@@ -47,6 +33,8 @@ class TenantService(
 
     @staticmethod
     def _subscription_is_current(subscription: Subscription | None) -> bool:
+        if isinstance(subscription, list):
+            subscription = subscription[0] if subscription else None
         if subscription is None or subscription.status not in {"trialing", "active", "past_due"}:
             return False
         now = datetime.now(timezone.utc)
@@ -85,6 +73,8 @@ class TenantService(
         if for_update:
             query = query.with_for_update()
         subscription = query.first()
+        if isinstance(subscription, list):
+            subscription = subscription[0] if subscription else None
         return subscription if self._subscription_is_current(subscription) else None
 
     def _require_current_subscription(self, db: Session, tenant_id: int) -> Subscription:
@@ -172,15 +162,7 @@ class TenantService(
         if tenant.status == TenantStatus.CANCELLED.value:
             return tenant
         now = utc_now()
-        subscriptions = (
-            db.query(Subscription)
-            .filter(
-                Subscription.tenant_id == tenant.id,
-                Subscription.status.in_(("trialing", "active", "past_due")),
-            )
-            .with_for_update()
-            .all()
-        )
+        subscriptions = db.query(Subscription).filter(Subscription.tenant_id == tenant.id, Subscription.status.in_(("trialing", "active", "past_due"))).with_for_update().all()
         for subscription in subscriptions:
             subscription.status = "cancelled"
             subscription.cancelled_at = now
@@ -212,22 +194,6 @@ class TenantService(
         db.flush()
         return tenant
 
-    def list_tenants(
-        self,
-        db: Session,
-        *,
-        search: str | None = None,
-        tenant_status: str | None = None,
-        is_active: bool | None = None,
-        page: int = 1,
-        page_size: int = 20,
-    ) -> tuple[list[Tenant], int]:
+    def list_tenants(self, db: Session, *, search: str | None = None, tenant_status: str | None = None, is_active: bool | None = None, page: int = 1, page_size: int = 20) -> tuple[list[Tenant], int]:
         offset = (page - 1) * page_size
-        return self.repository.list_tenants(
-            db,
-            search=search,
-            status=tenant_status,
-            is_active=is_active,
-            offset=offset,
-            limit=page_size,
-        )
+        return self.repository.list_tenants(db, search=search, status=tenant_status, is_active=is_active, offset=offset, limit=page_size)
