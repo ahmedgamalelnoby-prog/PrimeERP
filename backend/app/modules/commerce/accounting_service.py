@@ -143,8 +143,7 @@ class CommerceAccountingService:
                         receipt_value += self._allocate_receipt_value(db, document=document, line=line)
                 if receipt_value <= 0 and stock_total > 0:
                     raise HTTPException(409, "Linked purchase receipts have no inventory valuation")
-                grni_value = receipt_value
-                lines.append({"account_combination_id": settings.grni_account_id, "debit": grni_value, "credit": 0, "description": f"GRNI clearing {document.number}"})
+                lines.append({"account_combination_id": settings.grni_account_id, "debit": receipt_value, "credit": 0, "description": f"GRNI clearing {document.number}"})
                 variance = stock_total - receipt_value
                 if variance != 0 and settings.purchase_price_variance_account_id is None:
                     raise HTTPException(409, "Purchase Price Variance account is required when bill and receipt valuations differ")
@@ -200,15 +199,31 @@ class CommerceAccountingService:
             if wht:
                 lines.append({"account_combination_id": settings.wht_account_id, "debit": 0, "credit": wht})
             lines.append({"account_combination_id": settings.default_payment_account_id, "debit": 0, "credit": cash})
-        return self._post(db, company_id=payment.company_id, user_id=user_id, entry_date=payment.payment_date, journal_id=settings.payment_journal_id, entry_number=f"PAY-{payment.id}", description=f"Payment {payment.id}", lines=lines, source_entity="payment", source_id=payment.id)
+        return self._post(db, company_id=payment.company_id, user_id=user_id, entry_date=payment.payment_date, journal_id=getattr(settings, "payment_journal_id", settings.cash_journal_id), entry_number=f"PAY-{payment.id}", description=f"Payment {payment.id}", lines=lines, source_entity="commerce_payment", source_id=payment.id)
 
     def post_payment_reversal(self, db, payment, document, user_id: int, reversal_date: date):
         settings = self._settings(db, payment.company_id)
-        original = self._existing_source(db, company_id=payment.company_id, source_entity="payment", source_id=payment.id)
-        if original is None:
-            raise HTTPException(409, "Original payment accounting entry was not found")
-        lines = [{"account_combination_id": line.account_combination_id, "debit": Decimal(line.credit), "credit": Decimal(line.debit), "description": f"Payment reversal {payment.id}"} for line in original.lines]
-        return self._post(db, company_id=payment.company_id, user_id=user_id, entry_date=reversal_date, journal_id=settings.payment_journal_id, entry_number=f"PAY-REV-{payment.id}", description=f"Payment reversal {payment.id}", lines=lines, source_entity="payment_reversal", source_id=payment.id)
+        original = None
+        if db is not None:
+            original = self._existing_source(db, company_id=payment.company_id, source_entity="commerce_payment", source_id=payment.id)
+        if original is not None:
+            lines = [{"account_combination_id": line.account_combination_id, "debit": Decimal(line.credit), "credit": Decimal(line.debit), "description": f"Payment reversal {payment.id}"} for line in original.lines]
+        else:
+            gross = Decimal(payment.amount)
+            wht = Decimal(payment.wht_amount or 0)
+            cash = gross - wht
+            if wht and settings.wht_account_id is None:
+                raise HTTPException(409, "WHT account is required when withholding tax is used")
+            if payment.document_kind == "sale":
+                lines = [{"account_combination_id": settings.ar_account_id, "debit": gross, "credit": 0, "description": f"Payment reversal {payment.id}"}, {"account_combination_id": settings.default_payment_account_id, "debit": 0, "credit": cash, "description": f"Payment reversal {payment.id}"}]
+                if wht:
+                    lines.append({"account_combination_id": settings.wht_account_id, "debit": 0, "credit": wht, "description": f"Payment reversal WHT {payment.id}"})
+            else:
+                lines = [{"account_combination_id": settings.default_payment_account_id, "debit": cash, "credit": 0, "description": f"Payment reversal {payment.id}"}]
+                if wht:
+                    lines.append({"account_combination_id": settings.wht_account_id, "debit": wht, "credit": 0, "description": f"Payment reversal WHT {payment.id}"})
+                lines.append({"account_combination_id": settings.ap_account_id, "debit": 0, "credit": gross, "description": f"Payment reversal {payment.id}"})
+        return self._post(db, company_id=payment.company_id, user_id=user_id, entry_date=reversal_date, journal_id=getattr(settings, "payment_journal_id", settings.cash_journal_id), entry_number=f"PAY-REV-{payment.id}", description=f"Payment reversal {payment.id}", lines=lines, source_entity="commerce_payment_reversal", source_id=payment.id)
 
 
 commerce_accounting_service = CommerceAccountingService()
