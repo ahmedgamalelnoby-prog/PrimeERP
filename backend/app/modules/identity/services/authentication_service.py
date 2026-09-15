@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, or_
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.context import get_optional_request_context
@@ -19,6 +19,7 @@ from app.modules.saas.models import Subscription, SystemModule, Tenant, TenantMo
 class AuthenticationService:
     LOGIN_WINDOW_MINUTES = 10
     LOGIN_FAILURE_LIMIT = 5
+    BLOCKED_SUBSCRIPTION_STATUSES = {"cancelled", "canceled", "expired", "suspended", "past_due"}
 
     def login(self, db: Session, payload: LoginRequest) -> dict:
         login_key = self._login_key(payload)
@@ -40,10 +41,7 @@ class AuthenticationService:
         if not user.is_platform_admin:
             tenant = self._get_auth_tenant(db, user.tenant_id)
             subscription = self._get_latest_subscription(db, tenant.id)
-            if subscription is not None and self._subscription_is_expired(subscription):
-                subscription.status = "expired"
-                tenant.status = "expired"
-                tenant.is_active = False
+            self._ensure_subscription_allows_login(tenant, subscription)
             enabled_modules = self._get_enabled_modules(db, tenant.id)
 
         user.last_login = datetime.now(timezone.utc)
@@ -151,10 +149,7 @@ class AuthenticationService:
         if not user.is_platform_admin:
             tenant = self._get_auth_tenant(db, user.tenant_id)
             subscription = self._get_latest_subscription(db, tenant.id)
-            if subscription is not None and self._subscription_is_expired(subscription):
-                subscription.status = "expired"
-                tenant.status = "expired"
-                tenant.is_active = False
+            self._ensure_subscription_allows_login(tenant, subscription)
 
         access_token, expires_in = token_service.create_access_token(user)
         new_refresh_token = refresh_token_service.issue(db, user.id, family_id=record.family_id)
@@ -190,33 +185,56 @@ class AuthenticationService:
         tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
         if tenant is None:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant is inactive")
-        if tenant.status in {"suspended", "cancelled"}:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Tenant status is {tenant.status}")
-        if not tenant.is_active and tenant.status != "expired":
+        if tenant.status in {"suspended", "cancelled", "canceled", "expired", "disabled"}:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant account is inactive or suspended")
+        if not tenant.is_active:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant is inactive")
+        now = datetime.now(timezone.utc)
+        if tenant.is_trial and tenant.trial_ends_at is not None:
+            trial_end = tenant.trial_ends_at
+            if trial_end.tzinfo is None:
+                trial_end = trial_end.replace(tzinfo=timezone.utc)
+            if trial_end <= now:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Trial period has expired. Please activate a subscription to continue.")
         return tenant
 
     @staticmethod
     def _get_latest_subscription(db: Session, tenant_id: int) -> Subscription | None:
         return db.query(Subscription).filter(
             Subscription.tenant_id == tenant_id,
-        ).order_by(Subscription.id.desc()).first()
+        ).order_by(Subscription.starts_at.desc(), Subscription.id.desc()).first()
 
-    @staticmethod
-    def _subscription_is_expired(subscription: Subscription) -> bool:
+    @classmethod
+    def _subscription_is_expired(cls, subscription: Subscription) -> bool:
         now = datetime.now(timezone.utc)
-        if subscription.status == "trialing" and subscription.trial_ends_at and subscription.trial_ends_at <= now:
+        trial_ends_at = subscription.trial_ends_at
+        ends_at = subscription.ends_at
+        if trial_ends_at is not None and trial_ends_at.tzinfo is None:
+            trial_ends_at = trial_ends_at.replace(tzinfo=timezone.utc)
+        if ends_at is not None and ends_at.tzinfo is None:
+            ends_at = ends_at.replace(tzinfo=timezone.utc)
+        if subscription.status == "trialing" and trial_ends_at and trial_ends_at <= now:
             return True
-        if subscription.status == "active" and subscription.ends_at and subscription.ends_at <= now:
+        if subscription.status == "active" and ends_at and ends_at <= now:
             return True
-        return subscription.status == "expired"
+        return subscription.status in cls.BLOCKED_SUBSCRIPTION_STATUSES
+
+    @classmethod
+    def _ensure_subscription_allows_login(cls, tenant: Tenant, subscription: Subscription | None) -> None:
+        if subscription is None:
+            return
+        if cls._subscription_is_expired(subscription):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Subscription is not active. Please renew your subscription to continue.",
+            )
 
     @staticmethod
     def _get_valid_subscription(db: Session, tenant_id: int) -> Subscription:
         subscription = db.query(Subscription).filter(
             Subscription.tenant_id == tenant_id,
             Subscription.status.in_(["trialing", "active", "past_due"]),
-        ).order_by(Subscription.id.desc()).first()
+        ).order_by(Subscription.starts_at.desc(), Subscription.id.desc()).first()
         if subscription is None:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No active subscription")
         if AuthenticationService._subscription_is_expired(subscription):
