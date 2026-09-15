@@ -38,7 +38,7 @@ def _require_eta_notification_secret(authorization: str | None = Header(default=
 @router.get("/documents", dependencies=[Depends(require_permission(EINVOICE_ACCESS))])
 def list_documents(company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
-    return list(db.scalars(select(EgyptianEInvoiceDocument).where(EgyptianEInvoiceDocument.company_id == company_id).order_by(EgyptianEInvoiceDocument.id.desc()).limit(200)).all())
+    return list(db.scalars(select(EgyptianEInvoiceDocument).where(EgyptianEInvoiceDocument.tenant_id == current_user.tenant_id, EgyptianEInvoiceDocument.company_id == company_id).order_by(EgyptianEInvoiceDocument.id.desc()).limit(200)).all())
 
 
 @router.post("/documents", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission(EINVOICE_WRITE))])
@@ -50,7 +50,7 @@ def create_eta_document(payload: dict, current_user: User = Depends(get_current_
     if missing:
         raise HTTPException(422, f"Missing required fields: {', '.join(missing)}")
     try:
-        obj = create_document(db, company_id=company_id, source_type=str(payload["source_type"]), source_id=int(payload["source_id"]), document_type=str(payload["document_type"]), internal_number=str(payload["internal_number"]), signed_payload=str(payload["signed_payload"]))
+        obj = create_document(db, tenant_id=current_user.tenant_id, company_id=company_id, source_type=str(payload["source_type"]), source_id=int(payload["source_id"]), document_type=str(payload["document_type"]), internal_number=str(payload["internal_number"]), signed_payload=str(payload["signed_payload"]))
         record_audit_event(db, action="einvoice.create", entity_type="egyptian_einvoice", entity_id=obj.id, user_id=current_user.id, tenant_id=current_user.tenant_id, company_id=company_id, metadata={"source_type": obj.source_type, "source_id": obj.source_id, "document_type": obj.document_type})
         db.commit()
         db.refresh(obj)
@@ -63,7 +63,7 @@ def create_eta_document(payload: dict, current_user: User = Depends(get_current_
 @router.post("/documents/{document_id}/submit", dependencies=[Depends(require_permission(EINVOICE_POST))])
 def submit_eta_document(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
-    obj = db.scalar(select(EgyptianEInvoiceDocument).where(EgyptianEInvoiceDocument.id == document_id, EgyptianEInvoiceDocument.company_id == company_id).with_for_update())
+    obj = db.scalar(select(EgyptianEInvoiceDocument).where(EgyptianEInvoiceDocument.id == document_id, EgyptianEInvoiceDocument.tenant_id == current_user.tenant_id, EgyptianEInvoiceDocument.company_id == company_id).with_for_update())
     if obj is None:
         raise HTTPException(404, "Egyptian e-invoice document not found")
     try:
@@ -79,7 +79,7 @@ def submit_eta_document(document_id: int, company_id: int = Query(..., gt=0), cu
 @router.post("/documents/{document_id}/sync", dependencies=[Depends(require_permission(EINVOICE_POST))])
 def sync_eta_document(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
-    obj = db.scalar(select(EgyptianEInvoiceDocument).where(EgyptianEInvoiceDocument.id == document_id, EgyptianEInvoiceDocument.company_id == company_id).with_for_update())
+    obj = db.scalar(select(EgyptianEInvoiceDocument).where(EgyptianEInvoiceDocument.id == document_id, EgyptianEInvoiceDocument.tenant_id == current_user.tenant_id, EgyptianEInvoiceDocument.company_id == company_id).with_for_update())
     if obj is None:
         raise HTTPException(404, "Egyptian e-invoice document not found")
     try:
@@ -93,11 +93,7 @@ def sync_eta_document(document_id: int, company_id: int = Query(..., gt=0), curr
 
 
 @router.put("/notifications/documents", status_code=200, dependencies=[Depends(_require_eta_notification_secret)])
-def receive_eta_document_notification(
-    payload: dict,
-    authorization: str | None = Header(default=None),
-    db: Session = Depends(get_db),
-):
+def receive_eta_document_notification(payload: dict, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
     _require_eta_notification_secret(authorization)
     eta_uuid = payload.get("uuid") or payload.get("documentUUID") or payload.get("documentUuid")
     if not eta_uuid:
