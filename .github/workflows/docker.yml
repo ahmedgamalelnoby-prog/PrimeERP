@@ -33,33 +33,29 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Add Docker Desktop to runner PATH
-        shell: powershell
+        shell: cmd
         run: |
-          $docker = Get-Command docker.exe -ErrorAction SilentlyContinue
-          if ($docker) {
-            $dockerDir = Split-Path -Parent $docker.Source
-          } else {
-            $candidates = @(
-              'C:\Program Files\Docker\Docker\resources\bin\docker.exe',
-              'C:\ProgramData\DockerDesktop\version-bin\docker.exe',
-              'C:\Users\Admin\AppData\Local\Programs\DockerDesktop\resources\bin\docker.exe'
-            )
-            $dockerPath = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-            if (-not $dockerPath) {
-              $dockerPath = Get-ChildItem 'C:\Users' -Filter docker.exe -File -Recurse -ErrorAction SilentlyContinue |
-                Where-Object { $_.FullName -match '\\DockerDesktop\\resources\\bin\\docker\.exe$' } |
-                Select-Object -First 1 -ExpandProperty FullName
-            }
-            if (-not $dockerPath) {
-              throw 'Docker CLI was not found in PATH or known Docker Desktop installation locations.'
-            }
-            $dockerDir = Split-Path -Parent $dockerPath
-          }
-          "Docker CLI directory: $dockerDir"
-          Add-Content -Path $env:GITHUB_PATH -Value $dockerDir
-          $env:PATH = "$dockerDir;$env:PATH"
-          & "$dockerDir\docker.exe" --version
-          & "$dockerDir\docker.exe" compose version
+          setlocal EnableExtensions EnableDelayedExpansion
+          set "DOCKER_EXE="
+          for /f "delims=" %%F in ('where docker.exe 2^>nul') do if not defined DOCKER_EXE set "DOCKER_EXE=%%F"
+          if not defined DOCKER_EXE if exist "C:\Program Files\Docker\Docker\resources\bin\docker.exe" set "DOCKER_EXE=C:\Program Files\Docker\Docker\resources\bin\docker.exe"
+          if not defined DOCKER_EXE if exist "C:\ProgramData\DockerDesktop\version-bin\docker.exe" set "DOCKER_EXE=C:\ProgramData\DockerDesktop\version-bin\docker.exe"
+          if not defined DOCKER_EXE if exist "C:\Users\Admin\AppData\Local\Programs\DockerDesktop\resources\bin\docker.exe" set "DOCKER_EXE=C:\Users\Admin\AppData\Local\Programs\DockerDesktop\resources\bin\docker.exe"
+          if not defined DOCKER_EXE (
+            for /f "delims=" %%F in ('where /r C:\Users docker.exe 2^>nul') do if not defined DOCKER_EXE set "DOCKER_EXE=%%F"
+          )
+          if not defined DOCKER_EXE (
+            echo Docker CLI was not found on the self-hosted runner.
+            echo PATH=%PATH%
+            exit /b 1
+          )
+          for %%F in ("!DOCKER_EXE!") do set "DOCKER_DIR=%%~dpF"
+          echo Docker CLI: !DOCKER_EXE!
+          echo Docker CLI directory: !DOCKER_DIR!
+          echo !DOCKER_DIR!>>"%GITHUB_PATH%"
+          set "PATH=!DOCKER_DIR!;%PATH%"
+          "!DOCKER_EXE!" --version
+          "!DOCKER_DIR!docker.exe" compose version
 
       - name: Validate local runtimes
         shell: cmd
