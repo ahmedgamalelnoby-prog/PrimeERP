@@ -81,3 +81,5 @@ jobs:
           whoami
           docker ps -a --no-trunc
           docker context show
+
+# Runner reset validation trigger: no functional workflow change.
