@@ -1,0 +1,37 @@
+name: PrimeERP Hosted Runner Probe
+
+on:
+  push:
+    branches:
+      - feature/product-completion-final-tax2
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Runner allocation probe
+        run: |
+          set -euxo pipefail
+          echo "HOSTED_RUNNER_PROBE_START"
+          echo "Runner: $RUNNER_NAME"
+          echo "OS: $RUNNER_OS"
+          uname -a
+          nproc
+          df -h
+
+      - name: Checkout probe
+        uses: actions/checkout@v5
+
+      - name: Git and network probe
+        run: |
+          set -euxo pipefail
+          git --version
+          git rev-parse --show-toplevel
+          curl -fsSI https://github.com | head -n 20
+
+      - name: Completion marker
+        run: echo "HOSTED_RUNNER_PROBE_OK"
