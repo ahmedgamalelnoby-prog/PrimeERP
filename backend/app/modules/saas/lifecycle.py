@@ -34,14 +34,12 @@ def _plan(db: Session, plan_id: int) -> SubscriptionPlan:
 
 
 def _active_subscription(db: Session, tenant_id: int, now: datetime) -> Subscription | None:
-    return db.scalar(
-        select(Subscription).where(
-            Subscription.tenant_id == tenant_id,
-            Subscription.status.in_(ACTIVE_STATUSES),
-            Subscription.starts_at <= now,
-            (Subscription.ends_at.is_(None)) | (Subscription.ends_at > now),
-        ).order_by(Subscription.ends_at.desc().nullslast(), Subscription.id.desc())
-    )
+    return db.scalar(select(Subscription).where(
+        Subscription.tenant_id == tenant_id,
+        Subscription.status.in_(ACTIVE_STATUSES),
+        Subscription.starts_at <= now,
+        (Subscription.ends_at.is_(None)) | (Subscription.ends_at > now),
+    ).order_by(Subscription.ends_at.desc().nullslast(), Subscription.id.desc()))
 
 
 def _period_end(start: datetime, billing_cycle: str) -> datetime:
@@ -124,6 +122,7 @@ def cancel_auto_renewal(db: Session, tenant_id: int) -> Subscription:
         raise HTTPException(status_code=404, detail="No active subscription exists for tenant")
     subscription.is_auto_renew = False
     subscription.next_billing_date = None
+    subscription.cancelled_at = now
     db.commit()
     db.refresh(subscription)
     return subscription
