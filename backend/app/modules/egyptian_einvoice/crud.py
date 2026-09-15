@@ -24,11 +24,7 @@ class ETAClient:
             raise ETAIntegrationError("ETA integration is disabled")
         response = requests.post(
             settings.ETA_IDENTITY_URL,
-            data={
-                "grant_type": "client_credentials",
-                "client_id": settings.ETA_CLIENT_ID,
-                "client_secret": settings.ETA_CLIENT_SECRET,
-            },
+            data={"grant_type": "client_credentials", "client_id": settings.ETA_CLIENT_ID, "client_secret": settings.ETA_CLIENT_SECRET},
             headers={"Accept": "application/json"},
             timeout=30,
             verify=True,
@@ -45,24 +41,12 @@ class ETAClient:
         token = self._token()
         headers = dict(kwargs.pop("headers", {}) or {})
         headers.update({"Authorization": f"Bearer {token}", "Accept": "application/json"})
-        return requests.request(
-            method,
-            f"{settings.ETA_API_BASE_URL.rstrip('/')}{path}",
-            headers=headers,
-            timeout=30,
-            verify=True,
-            **kwargs,
-        )
+        return requests.request(method, f"{settings.ETA_API_BASE_URL.rstrip('/')}{path}", headers=headers, timeout=30, verify=True, **kwargs)
 
     def submit(self, signed_documents: list[dict]) -> dict:
         if not signed_documents:
             raise ETAIntegrationError("At least one signed document is required")
-        response = self._request(
-            "POST",
-            ETA_DOCUMENT_SUBMISSION_PATH,
-            json={"documents": signed_documents},
-            headers={"Content-Type": "application/json"},
-        )
+        response = self._request("POST", ETA_DOCUMENT_SUBMISSION_PATH, json={"documents": signed_documents}, headers={"Content-Type": "application/json"})
         try:
             body = response.json()
         except ValueError:
@@ -87,22 +71,17 @@ class ETAClient:
 eta_client = ETAClient()
 
 
-def create_document(db: Session, *, company_id: int, source_type: str, source_id: int, document_type: str, internal_number: str, signed_payload: str) -> EgyptianEInvoiceDocument:
+def create_document(db: Session, *, tenant_id: int, company_id: int, source_type: str, source_id: int, document_type: str, internal_number: str, signed_payload: str) -> EgyptianEInvoiceDocument:
     normalized_source_type = source_type.strip().lower()
     normalized_document_type = document_type.strip().lower()
     if normalized_source_type not in {"sales_document", "sale", "sales_invoice"}:
         raise ValueError("Unsupported ETA source type")
-    source = db.scalar(select(SalesDocument).where(
-        SalesDocument.id == source_id,
-        SalesDocument.company_id == company_id,
-    ))
+    source = db.scalar(select(SalesDocument).where(SalesDocument.id == source_id, SalesDocument.company_id == company_id))
     if source is None:
         raise ValueError("ETA source sales document does not belong to the company")
     if source.document_type not in {"invoice", "credit_note"}:
         raise ValueError("Only sales invoices and credit notes can be submitted to ETA")
-    if normalized_document_type not in {"invoice", "credit_note"}:
-        raise ValueError("Unsupported ETA document type")
-    if normalized_document_type != source.document_type:
+    if normalized_document_type not in {"invoice", "credit_note"} or normalized_document_type != source.document_type:
         raise ValueError("ETA document type does not match the source sales document")
     if not internal_number.strip():
         raise ValueError("ETA internal number is required")
@@ -111,6 +90,7 @@ def create_document(db: Session, *, company_id: int, source_type: str, source_id
     except (TypeError, json.JSONDecodeError) as exc:
         raise ValueError("Signed ETA payload must be valid JSON") from exc
     obj = EgyptianEInvoiceDocument(
+        tenant_id=tenant_id,
         company_id=company_id,
         source_type="sales_document",
         source_id=source_id,
