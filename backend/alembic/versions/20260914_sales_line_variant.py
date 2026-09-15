@@ -13,23 +13,9 @@ depends_on = None
 
 
 def upgrade():
-    op.add_column(
-        "sales_lines",
-        sa.Column("variant_id", sa.Integer(), nullable=True),
-    )
-    op.create_foreign_key(
-        "fk_sales_lines_variant_id",
-        "sales_lines",
-        "product_variants",
-        ["variant_id"],
-        ["id"],
-        ondelete="RESTRICT",
-    )
-    op.create_index(
-        "ix_sales_lines_variant_id",
-        "sales_lines",
-        ["variant_id"],
-    )
+    op.add_column("sales_lines", sa.Column("variant_id", sa.Integer(), nullable=True))
+    op.create_foreign_key("fk_sales_lines_variant_id", "sales_lines", "product_variants", ["variant_id"], ["id"], ondelete="RESTRICT")
+    op.create_index("ix_sales_lines_variant_id", "sales_lines", ["variant_id"])
 
 
 def downgrade():
