@@ -41,6 +41,7 @@ from app.modules.catalog.router import router as catalog_router
 from app.modules.catalog.variant_router import router as catalog_variant_router
 from app.modules.catalog.bundle_router import router as catalog_bundle_router
 from app.modules.catalog.pricing_engine_router import router as pricing_engine_router
+from app.modules.commissions.router import router as commissions_router
 from app.modules.saas.entitlements import require_module
 from app.modules.jurisdiction.router import router as jurisdiction_router
 from app.modules.reports.router import router as reports_router
@@ -66,6 +67,7 @@ def build_router() -> APIRouter:
     api_router.include_router(pricing_engine_router, dependencies=[Depends(require_module("inventory"))])
     api_router.include_router(commerce_router, dependencies=[Depends(require_module("sales"))])
     api_router.include_router(enterprise_router, dependencies=[Depends(require_module("enterprise"))])
+    api_router.include_router(commissions_router, dependencies=[Depends(require_module("enterprise"))])
     api_router.include_router(shipping_router)
     api_router.include_router(shipping_settlement_router)
     api_router.include_router(shipping_accounting_router)
