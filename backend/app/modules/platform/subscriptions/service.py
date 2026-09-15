@@ -30,8 +30,8 @@ class SubscriptionService:
         if instance.status not in {"trialing", "active", "past_due"}:
             return False
         now = cls._now()
-        starts_at = instance.starts_at
-        ends_at = instance.ends_at
+        starts_at = getattr(instance, "starts_at", None)
+        ends_at = getattr(instance, "ends_at", None)
         if starts_at is not None:
             if starts_at.tzinfo is None:
                 starts_at = starts_at.replace(tzinfo=timezone.utc)
@@ -42,11 +42,11 @@ class SubscriptionService:
                 ends_at = ends_at.replace(tzinfo=timezone.utc)
             if ends_at <= now:
                 return False
-        if instance.status == "trialing" and instance.trial_ends_at is not None:
-            trial_end = instance.trial_ends_at
-            if trial_end.tzinfo is None:
-                trial_end = trial_end.replace(tzinfo=timezone.utc)
-            if trial_end <= now:
+        trial_ends_at = getattr(instance, "trial_ends_at", None)
+        if instance.status == "trialing" and trial_ends_at is not None:
+            if trial_ends_at.tzinfo is None:
+                trial_ends_at = trial_ends_at.replace(tzinfo=timezone.utc)
+            if trial_ends_at <= now:
                 return False
         return True
 
@@ -159,11 +159,7 @@ class SubscriptionService:
         self._ensure_legacy_subscription_plan(plan)
         subscription_status = "trialing" if trial_end and trial_end > now else "active"
         data = schema.model_dump()
-        data.update(
-            starts_at=now, trial_ends_at=trial_end, ends_at=ends_at,
-            next_billing_date=ends_at if schema.auto_renew else None,
-            status=subscription_status, is_auto_renew=schema.auto_renew,
-        )
+        data.update(starts_at=now, trial_ends_at=trial_end, ends_at=ends_at, next_billing_date=ends_at if schema.auto_renew else None, status=subscription_status, is_auto_renew=schema.auto_renew)
         data.pop("auto_renew", None)
         instance = self.repository.create(self.db, data)
         self._sync_tenant_state(instance)
