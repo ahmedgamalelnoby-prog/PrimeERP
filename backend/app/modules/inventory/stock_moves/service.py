@@ -16,7 +16,7 @@ from app.modules.companies.models import Company
 from app.modules.inventory.items.models import InventoryItem, InventoryStock
 from app.modules.inventory.locations.models import InventoryLocation
 from app.modules.inventory.stock_moves.location_stock import InventoryLocationStock
-from app.modules.inventory.stock_moves.models import InventoryAccountingConfig, InventoryCostLayer, InventoryStockMove
+from app.modules.inventory.stock_moves.models import InventoryAccountingConfig, InventoryCostLayer, InventoryStockMove, InventoryValuationAllocation
 from app.modules.inventory.stock_moves.repository import inventory_stock_move_repository
 
 
@@ -66,21 +66,9 @@ class InventoryStockMoveService:
 
     def create_draft(self, db: Session, payload):
         if payload.source_module and payload.source_entity and payload.source_id:
-            existing = db.scalar(select(InventoryStockMove).where(
-                InventoryStockMove.company_id == payload.company_id,
-                InventoryStockMove.source_module == payload.source_module,
-                InventoryStockMove.source_entity == payload.source_entity,
-                InventoryStockMove.source_id == payload.source_id,
-            ).with_for_update())
+            existing = db.scalar(select(InventoryStockMove).where(InventoryStockMove.company_id == payload.company_id, InventoryStockMove.source_module == payload.source_module, InventoryStockMove.source_entity == payload.source_entity, InventoryStockMove.source_id == payload.source_id).with_for_update())
             if existing is not None:
-                same = all([
-                    existing.item_id == payload.item_id,
-                    existing.variant_id == payload.variant_id,
-                    existing.source_location_id == payload.source_location_id,
-                    existing.destination_location_id == payload.destination_location_id,
-                    Decimal(str(existing.quantity)) == Decimal(str(payload.quantity)),
-                    existing.movement_type == payload.movement_type,
-                ])
+                same = all([existing.item_id == payload.item_id, existing.variant_id == payload.variant_id, existing.source_location_id == payload.source_location_id, existing.destination_location_id == payload.destination_location_id, Decimal(str(existing.quantity)) == Decimal(str(payload.quantity)), existing.movement_type == payload.movement_type])
                 if same:
                     return existing
                 raise ValueError("A stock movement already exists for this source reference with different data")
@@ -128,8 +116,7 @@ class InventoryStockMoveService:
         company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == tenant_id))
         if company is None:
             raise ValueError("Company is outside the current tenant")
-        source_entity = getattr(move, "source_entity", None)
-        if source_entity == "sales_delivery" and move.movement_type != "issue":
+        if getattr(move, "source_entity", None) == "sales_delivery" and move.movement_type != "issue":
             raise ValueError("Sales delivery stock moves must be issue movements")
         item = db.scalar(select(InventoryItem).where(InventoryItem.id == move.item_id, InventoryItem.company_id == company_id, InventoryItem.is_active.is_(True)))
         if item is None:
@@ -141,10 +128,10 @@ class InventoryStockMoveService:
         source_warehouse_id = source_balance.location.warehouse_id if source_balance else None
         destination_warehouse_id = destination_balance.location.warehouse_id if destination_balance else None
         unit_cost = Decimal(move.unit_cost or 0)
-        fifo_allocations: list[tuple[Decimal, Decimal]] = []
+        fifo_allocations: list[tuple[InventoryCostLayer, Decimal, Decimal]] = []
+        quantity = Decimal(move.quantity)
 
         if source_balance:
-            quantity = Decimal(move.quantity)
             on_hand = Decimal(source_balance.quantity_on_hand or 0)
             reserved = Decimal(source_balance.quantity_reserved or 0)
             if move.movement_type in {"issue", "transfer", "adjustment"} and on_hand - reserved < quantity:
@@ -159,31 +146,80 @@ class InventoryStockMoveService:
                 unit_cost = self._weighted_cost(fifo_allocations)
             elif unit_cost == 0:
                 unit_cost = Decimal(item.standard_cost or item.purchase_price or 0) if item.costing_method == "standard" else Decimal(warehouse_source.average_cost or 0)
+            if unit_cost <= 0:
+                raise ValueError("A positive inventory valuation is required before changing stock")
             source_balance.quantity_on_hand -= quantity
             warehouse_source.quantity_on_hand -= quantity
 
         if destination_balance:
-            quantity = Decimal(move.quantity)
             warehouse_destination = self._warehouse_stock(db, company_id, move.item_id, variant_id, destination_warehouse_id)
             old_qty = Decimal(warehouse_destination.quantity_on_hand or 0)
             old_cost = Decimal(warehouse_destination.average_cost or 0)
             if unit_cost == 0:
                 unit_cost = old_cost if old_qty > 0 else Decimal(item.standard_cost or item.purchase_price or 0)
+            if unit_cost <= 0:
+                raise ValueError("A positive inventory valuation is required before changing stock")
             destination_balance.quantity_on_hand += quantity
             warehouse_destination.quantity_on_hand += quantity
             new_qty = old_qty + quantity
-            if new_qty > 0:
-                warehouse_destination.average_cost = ((old_qty * old_cost) + (quantity * unit_cost)) / new_qty
+            warehouse_destination.average_cost = ((old_qty * old_cost) + (quantity * unit_cost)) / new_qty if new_qty > 0 else 0
             if item.costing_method == "fifo":
-                self._add_fifo_layers(db, company_id, move.item_id, variant_id, destination_warehouse_id, move.id, fifo_allocations or [(quantity, unit_cost)])
+                self._add_fifo_layers(db, company_id, move.item_id, variant_id, destination_warehouse_id, move.id, fifo_allocations or [(None, quantity, unit_cost)])
 
-        if item.costing_method == "fifo" and source_balance and not fifo_allocations:
-            raise ValueError("FIFO valuation could not determine a cost layer")
         move.unit_cost = unit_cost.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+        self._record_valuation_allocations(db, move, fifo_allocations, quantity, item.costing_method, destination_warehouse_id)
         if move.movement_type != "transfer":
             self._post_accounting(db, tenant_id=tenant_id, company_id=company_id, move=move, user_id=user_id)
         move.status = "posted"
         move.posted_at = datetime.now(timezone.utc)
+        db.flush()
+        return move
+
+    def reverse(self, db: Session, *, tenant_id: int, company_id: int, move_id: int, user_id: int, reversal_date: date | None = None):
+        """Reverse a posted inventory movement atomically, including physical stock and its GL entry."""
+        move = db.scalar(select(InventoryStockMove).where(InventoryStockMove.id == move_id, InventoryStockMove.company_id == company_id).with_for_update())
+        if move is None:
+            raise ValueError("Stock move not found")
+        if move.status == "reversed":
+            return move
+        if move.status != "posted":
+            raise ValueError("Only posted stock moves can be reversed")
+        if move.reversed_by_move_id is not None:
+            raise ValueError("Stock move has already been reversed")
+        allocations = db.scalars(select(InventoryValuationAllocation).where(InventoryValuationAllocation.stock_move_id == move.id, InventoryValuationAllocation.company_id == company_id).with_for_update()).all()
+        item = db.scalar(select(InventoryItem).where(InventoryItem.id == move.item_id, InventoryItem.company_id == company_id, InventoryItem.is_active.is_(True)))
+        if item is None:
+            raise ValueError("Item is unavailable for reversal")
+        variant_id = move.variant_id
+        quantity = Decimal(move.quantity)
+        source_balance = self._location_balance(db, company_id, move.item_id, variant_id, move.source_location_id, lock=True) if move.source_location_id else None
+        destination_balance = self._location_balance(db, company_id, move.item_id, variant_id, move.destination_location_id, lock=True) if move.destination_location_id else None
+        source_warehouse_id = source_balance.location.warehouse_id if source_balance else None
+        destination_warehouse_id = destination_balance.location.warehouse_id if destination_balance else None
+
+        # Validate the stock that will be removed before mutating anything.
+        if destination_balance is not None and Decimal(destination_balance.quantity_on_hand or 0) < quantity:
+            raise ValueError("Cannot reverse movement: destination stock has already been consumed")
+
+        if destination_balance is not None:
+            destination_balance.quantity_on_hand -= quantity
+            warehouse_destination = self._warehouse_stock(db, company_id, move.item_id, variant_id, destination_warehouse_id)
+            if Decimal(warehouse_destination.quantity_on_hand or 0) < quantity:
+                raise ValueError("Cannot reverse movement: warehouse stock has already been consumed")
+            warehouse_destination.quantity_on_hand -= quantity
+            self._reverse_fifo_destination_layers(db, allocations, company_id, move.item_id, variant_id, destination_warehouse_id, quantity, item.costing_method)
+            self._recalculate_average_cost(db, company_id, move.item_id, variant_id, destination_warehouse_id, item)
+
+        if source_balance is not None:
+            source_balance.quantity_on_hand += quantity
+            warehouse_source = self._warehouse_stock(db, company_id, move.item_id, variant_id, source_warehouse_id)
+            warehouse_source.quantity_on_hand += quantity
+            self._restore_fifo_source_layers(db, allocations, item.costing_method)
+            self._recalculate_average_cost(db, company_id, move.item_id, variant_id, source_warehouse_id, item)
+
+        if move.accounting_entry_id is not None:
+            journal_service.reverse(db, tenant_id=tenant_id, entry_id=move.accounting_entry_id, user_id=user_id, reversal_date=reversal_date)
+        move.status = "reversed"
         db.flush()
         return move
 
@@ -266,21 +302,80 @@ class InventoryStockMoveService:
                 break
             take = min(remaining, Decimal(layer.quantity_remaining))
             layer.quantity_remaining -= take
-            allocations.append((take, Decimal(layer.unit_cost)))
+            allocations.append((layer, take, Decimal(layer.unit_cost)))
             remaining -= take
         return allocations
 
     @staticmethod
     def _weighted_cost(allocations):
-        quantity = sum((qty for qty, _ in allocations), Decimal("0"))
-        return Decimal("0") if quantity <= 0 else sum((qty * cost for qty, cost in allocations), Decimal("0")) / quantity
+        quantity = sum((qty for _, qty, _ in allocations), Decimal("0"))
+        return Decimal("0") if quantity <= 0 else sum((qty * cost for _, qty, cost in allocations), Decimal("0")) / quantity
 
     @staticmethod
     def _add_fifo_layers(db, company_id, item_id, variant_id, warehouse_id, move_id, allocations):
-        for quantity, unit_cost in allocations:
+        for layer, quantity, unit_cost in allocations:
             if quantity > 0:
                 db.add(InventoryCostLayer(company_id=company_id, item_id=item_id, variant_id=variant_id, warehouse_id=warehouse_id, receipt_move_id=move_id, quantity_remaining=quantity, unit_cost=unit_cost))
         db.flush()
+
+    @staticmethod
+    def _record_valuation_allocations(db, move, fifo_allocations, quantity, costing_method, destination_warehouse_id):
+        if costing_method == "fifo" and fifo_allocations:
+            for layer, qty, cost in fifo_allocations:
+                db.add(InventoryValuationAllocation(company_id=move.company_id, stock_move_id=move.id, cost_layer_id=layer.id, quantity=qty, unit_cost=cost, allocation_role="source_consumed"))
+        if move.destination_location_id is not None:
+            # For FIFO receipts/transfers, the destination layer is created above;
+            # fetch only layers belonging to this move so the audit retains exact IDs.
+            if costing_method == "fifo":
+                layers = db.scalars(select(InventoryCostLayer).where(InventoryCostLayer.company_id == move.company_id, InventoryCostLayer.receipt_move_id == move.id).order_by(InventoryCostLayer.id)).all()
+                for layer in layers:
+                    db.add(InventoryValuationAllocation(company_id=move.company_id, stock_move_id=move.id, cost_layer_id=layer.id, quantity=layer.quantity_remaining, unit_cost=layer.unit_cost, allocation_role="destination_added"))
+            else:
+                db.add(InventoryValuationAllocation(company_id=move.company_id, stock_move_id=move.id, cost_layer_id=None, quantity=quantity, unit_cost=move.unit_cost, allocation_role="destination_added"))
+        elif move.source_location_id is not None and costing_method != "fifo":
+            db.add(InventoryValuationAllocation(company_id=move.company_id, stock_move_id=move.id, cost_layer_id=None, quantity=quantity, unit_cost=move.unit_cost, allocation_role="source_consumed"))
+        db.flush()
+
+    @staticmethod
+    def _reverse_fifo_destination_layers(db, allocations, company_id, item_id, variant_id, warehouse_id, quantity, costing_method):
+        if costing_method != "fifo":
+            return
+        rows = [a for a in allocations if a.allocation_role == "destination_added" and a.cost_layer_id is not None]
+        if not rows:
+            raise ValueError("FIFO valuation audit is missing for this movement")
+        remaining = quantity
+        for allocation in rows:
+            if remaining <= 0:
+                break
+            layer = db.scalar(select(InventoryCostLayer).where(InventoryCostLayer.id == allocation.cost_layer_id, InventoryCostLayer.company_id == company_id, InventoryCostLayer.item_id == item_id, InventoryCostLayer.warehouse_id == warehouse_id).with_for_update())
+            if layer is None or Decimal(layer.quantity_remaining) < Decimal(allocation.quantity):
+                raise ValueError("Cannot reverse FIFO movement because its destination cost layer was consumed")
+            take = min(remaining, Decimal(allocation.quantity))
+            layer.quantity_remaining -= take
+            remaining -= take
+        if remaining > 0:
+            raise ValueError("Cannot reverse FIFO movement because destination layers are no longer available")
+
+    @staticmethod
+    def _restore_fifo_source_layers(db, allocations, costing_method):
+        if costing_method != "fifo":
+            return
+        rows = [a for a in allocations if a.allocation_role == "source_consumed" and a.cost_layer_id is not None]
+        if not rows:
+            raise ValueError("FIFO valuation audit is missing for this movement")
+        for allocation in rows:
+            layer = db.scalar(select(InventoryCostLayer).where(InventoryCostLayer.id == allocation.cost_layer_id).with_for_update())
+            if layer is None:
+                raise ValueError("Original FIFO cost layer is unavailable")
+            layer.quantity_remaining += Decimal(allocation.quantity)
+
+    @staticmethod
+    def _recalculate_average_cost(db, company_id, item_id, variant_id, warehouse_id, item):
+        stock = InventoryStockMoveService._warehouse_stock(db, company_id, item_id, variant_id, warehouse_id)
+        if item.costing_method == "fifo":
+            layers = db.scalars(select(InventoryCostLayer).where(InventoryCostLayer.company_id == company_id, InventoryCostLayer.item_id == item_id, InventoryCostLayer.warehouse_id == warehouse_id, InventoryCostLayer.quantity_remaining > 0).order_by(InventoryCostLayer.id).with_for_update()).all()
+            qty = sum((Decimal(x.quantity_remaining) for x in layers), Decimal("0"))
+            stock.average_cost = (sum((Decimal(x.quantity_remaining) * Decimal(x.unit_cost) for x in layers), Decimal("0")) / qty) if qty > 0 else Decimal("0")
 
 
 inventory_stock_move_service = InventoryStockMoveService()
