@@ -11,15 +11,21 @@ on:
 permissions:
   contents: read
 
-# Keep exactly one canonical hosted validation run per ref.
 concurrency:
   group: primeerp-hosted-validation-${{ github.ref }}
   cancel-in-progress: false
 
+# Explicitly pin the hosted Linux image. This removes the moving ubuntu-latest
+# alias from the canonical validation path. It does NOT bypass a GitHub-side
+# runner provisioning/startup failure.
+
+env:
+  CI: true
+
 jobs:
   backend:
     name: Backend - hosted validation
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     defaults:
       run:
@@ -69,7 +75,7 @@ jobs:
 
   frontend:
     name: Frontend - hosted validation
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
       run:
@@ -94,7 +100,7 @@ jobs:
 
   docker:
     name: Docker - hosted release gate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
       - name: Checkout
