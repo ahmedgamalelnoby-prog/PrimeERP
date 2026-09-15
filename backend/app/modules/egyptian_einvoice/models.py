@@ -13,6 +13,7 @@ class EgyptianEInvoiceDocument(Base):
     )
 
     id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     source_type = Column(String(40), nullable=False)
     source_id = Column(Integer, nullable=False, index=True)
