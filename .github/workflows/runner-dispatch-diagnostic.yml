@@ -2,6 +2,10 @@ name: PrimeERP Runner Dispatch Diagnostic
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - 'feature/**'
+      - main
 
 permissions:
   contents: read
