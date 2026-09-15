@@ -1,4 +1,4 @@
-from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -23,7 +23,7 @@ class InventoryStockMove(Base):
     source_entity = Column(String(80), nullable=True)
     source_id = Column(String(80), nullable=True)
     notes = Column(Text, nullable=True)
-    posted_at = Column(DateTime(timezone=True), nullable=True)
+    posted_at = Column(DateTime(timezone=True), nullable=True, index=True)
     accounting_entry_id = Column(Integer, ForeignKey("journal_entries.id", ondelete="RESTRICT"), nullable=True, index=True)
 
     item = relationship("InventoryItem")
@@ -39,7 +39,7 @@ class InventoryStockMove(Base):
         CheckConstraint("status IN ('draft','posted','cancelled','reversed')", name="ck_inventory_stock_move_status"),
         CheckConstraint("source_location_id IS NOT NULL OR destination_location_id IS NOT NULL", name="ck_inventory_stock_move_endpoint"),
         CheckConstraint("source_location_id IS NULL OR destination_location_id IS NULL OR source_location_id <> destination_location_id", name="ck_inventory_stock_move_distinct_endpoints"),
-        CheckConstraint("status <> 'posted' OR accounting_entry_id IS NOT NULL", name="ck_inventory_stock_move_posted_accounting"),
+        UniqueConstraint("company_id", "source_module", "source_entity", "source_id", name="uq_inventory_stock_move_source", postgresql_nulls_not_distinct=True),
     )
 
 
