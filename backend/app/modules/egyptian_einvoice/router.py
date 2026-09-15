@@ -1,4 +1,6 @@
 import hmac
+import json
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy import select
@@ -98,16 +100,34 @@ def receive_eta_document_notification(payload: dict, authorization: str | None =
     eta_uuid = payload.get("uuid") or payload.get("documentUUID") or payload.get("documentUuid")
     if not eta_uuid:
         raise HTTPException(422, "ETA notification uuid is required")
+
     obj = db.scalar(select(EgyptianEInvoiceDocument).where(EgyptianEInvoiceDocument.eta_uuid == str(eta_uuid)).with_for_update())
     if obj is None:
         return {"received": True, "matched": False}
+
     status_value = str(payload.get("status") or payload.get("Status") or "submitted").lower()
     mapping = {"valid": "valid", "issued": "valid", "rejected": "rejected", "invalid": "rejected", "cancelled": "cancelled", "submitted": "submitted"}
-    obj.status = mapping.get(status_value, "error")
-    obj.eta_response = __import__("json").dumps(payload, ensure_ascii=False, default=str)
+    new_status = mapping.get(status_value, "error")
+
+    # Do not allow a callback/replay to move a terminal document backwards.
+    # ETA resubmission is represented by a new submission/document lifecycle.
+    terminal = {"valid", "rejected", "cancelled"}
+    if obj.status in terminal and new_status not in terminal:
+        return {"received": True, "matched": True, "document_id": obj.id, "status": obj.status, "ignored": True}
+
+    obj.status = new_status
+    obj.eta_response = json.dumps(payload, ensure_ascii=False, default=str)
     if obj.status == "valid":
-        from datetime import datetime, timezone
         obj.validated_at = datetime.now(timezone.utc)
-    record_audit_event(db, action="einvoice.notification", entity_type="egyptian_einvoice", entity_id=obj.id, company_id=obj.company_id, metadata={"eta_uuid": str(eta_uuid), "status": obj.status})
+
+    record_audit_event(
+        db,
+        action="einvoice.notification",
+        entity_type="egyptian_einvoice",
+        entity_id=obj.id,
+        tenant_id=obj.tenant_id,
+        company_id=obj.company_id,
+        metadata={"eta_uuid": str(eta_uuid), "status": obj.status},
+    )
     db.commit()
     return {"received": True, "matched": True, "document_id": obj.id, "status": obj.status}
