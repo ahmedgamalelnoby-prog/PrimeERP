@@ -60,6 +60,7 @@ class FiscalYear(Base):
         CheckConstraint("end_date >= start_date", name="ck_fiscal_year_valid_dates"),
         CheckConstraint("status IN ('draft', 'open', 'closing', 'closed')", name="ck_fiscal_year_status"),
         Index("ix_fiscal_year_scope_dates", "tenant_id", "company_id", "start_date", "end_date"),
+        Index("ux_fiscal_year_current_scope", "tenant_id", "company_id", unique=True, postgresql_where="is_current"),
     )
 
     def __repr__(self) -> str:
