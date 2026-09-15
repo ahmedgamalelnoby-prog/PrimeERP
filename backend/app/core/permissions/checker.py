@@ -66,3 +66,16 @@ def require_permission(permission_code: str) -> Callable[..., None]:
             )
 
     return dependency
+
+
+def require_platform_admin() -> Callable[..., None]:
+    """FastAPI dependency for global platform-owned master data."""
+
+    def dependency(current_user: User = Depends(get_current_user)) -> None:
+        if not getattr(current_user, "is_platform_admin", False):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Platform administrator privileges are required",
+            )
+
+    return dependency
