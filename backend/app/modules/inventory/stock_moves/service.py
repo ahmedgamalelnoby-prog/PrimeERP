@@ -1,16 +1,21 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from decimal import Decimal
+from datetime import date, datetime, timezone
+from decimal import Decimal, ROUND_HALF_UP
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.modules.accounting.chart_of_accounts.models import AccountCombination
+from app.modules.accounting.fiscal_years.repositories.fiscal_year_repository import fiscal_year_repository
+from app.modules.accounting.journals.models import AccountingJournal
+from app.modules.accounting.journals.services.journal_service import journal_service
 from app.modules.catalog.models import ProductVariant
+from app.modules.companies.models import Company
 from app.modules.inventory.items.models import InventoryItem, InventoryStock
 from app.modules.inventory.locations.models import InventoryLocation
 from app.modules.inventory.stock_moves.location_stock import InventoryLocationStock
-from app.modules.inventory.stock_moves.models import InventoryCostLayer, InventoryStockMove
+from app.modules.inventory.stock_moves.models import InventoryAccountingConfig, InventoryCostLayer, InventoryStockMove
 from app.modules.inventory.stock_moves.repository import inventory_stock_move_repository
 
 
@@ -78,12 +83,13 @@ class InventoryStockMoveService:
             destination = locations[payload.destination_location_id]
             if source.warehouse_id == destination.warehouse_id:
                 raise ValueError("Use a direct stock move for an intra-warehouse location transfer")
-        move = InventoryStockMove(**payload.model_dump(), status="draft")
+        values = payload.model_dump(exclude_none=True)
+        move = InventoryStockMove(**values, status="draft")
         db.add(move)
         db.flush()
         return move
 
-    def post(self, db: Session, *, company_id: int, move_id: int):
+    def post(self, db: Session, *, tenant_id: int, company_id: int, move_id: int, user_id: int):
         move = db.scalar(select(InventoryStockMove).where(InventoryStockMove.id == move_id, InventoryStockMove.company_id == company_id).with_for_update())
         if move is None:
             raise ValueError("Stock move not found")
@@ -91,6 +97,9 @@ class InventoryStockMoveService:
             return move
         if move.status != "draft":
             raise ValueError("Only draft stock moves can be posted")
+        company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == tenant_id))
+        if company is None:
+            raise ValueError("Company is outside the current tenant")
         source_entity = getattr(move, "source_entity", None)
         if source_entity == "sales_delivery" and move.movement_type != "issue":
             raise ValueError("Sales delivery stock moves must be issue movements")
@@ -142,11 +151,73 @@ class InventoryStockMoveService:
 
         if item.costing_method == "fifo" and source_balance and not fifo_allocations:
             raise ValueError("FIFO valuation could not determine a cost layer")
-        move.unit_cost = unit_cost
+        move.unit_cost = unit_cost.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+        if move.movement_type != "transfer":
+            self._post_accounting(db, tenant_id=tenant_id, company_id=company_id, move=move, user_id=user_id)
         move.status = "posted"
         move.posted_at = datetime.now(timezone.utc)
         db.flush()
         return move
+
+    def _post_accounting(self, db: Session, *, tenant_id: int, company_id: int, move: InventoryStockMove, user_id: int):
+        if move.unit_cost <= 0:
+            raise ValueError("A positive inventory valuation is required before accounting can be posted")
+        config = db.scalar(select(InventoryAccountingConfig).where(InventoryAccountingConfig.tenant_id == tenant_id, InventoryAccountingConfig.company_id == company_id, InventoryAccountingConfig.is_active == "Y").with_for_update())
+        if config is None:
+            raise ValueError("Inventory accounting configuration is missing for this company")
+        journal = db.scalar(select(AccountingJournal).where(AccountingJournal.id == config.journal_id, AccountingJournal.tenant_id == tenant_id, AccountingJournal.company_id == company_id, AccountingJournal.journal_type == "inventory", AccountingJournal.is_active.is_(True)))
+        if journal is None:
+            raise ValueError("Configured inventory journal is missing, inactive, or outside the company")
+        accounts = db.scalars(select(AccountCombination).where(AccountCombination.id.in_({config.inventory_account_id, config.cogs_account_id, config.adjustment_account_id, config.clearing_account_id}), AccountCombination.company_id == company_id, AccountCombination.is_active.is_(True))).all()
+        if len(accounts) != 4:
+            raise ValueError("Inventory accounting configuration contains an account outside the company or an inactive account")
+        period = fiscal_year_repository.get_period_for_date(db, tenant_id, company_id, move.transaction_date or date.today())
+        if period is None:
+            raise ValueError("No open accounting period exists for the inventory transaction date")
+        amount = (Decimal(move.quantity) * Decimal(move.unit_cost)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+        lines = self._accounting_lines(move, config, amount)
+        entry = journal_service.create_draft(
+            db,
+            tenant_id=tenant_id,
+            company_id=company_id,
+            branch_id=config.branch_id,
+            journal_id=config.journal_id,
+            fiscal_year_id=period.fiscal_year_id,
+            period_id=period.id,
+            entry_number=f"INV-{move.id}",
+            entry_date=move.transaction_date or date.today(),
+            description=f"Inventory {move.movement_type} #{move.id}",
+            lines=lines,
+            user_id=user_id,
+            reference=move.reference,
+            source_module="inventory",
+            source_entity="stock_move",
+            source_id=move.id,
+            commit=False,
+        )
+        journal_service.submit(db, tenant_id=tenant_id, entry_id=entry.id, user_id=user_id, commit=False)
+        if journal.requires_approval:
+            journal_service.approve(db, tenant_id=tenant_id, entry_id=entry.id, user_id=user_id, commit=False)
+        journal_service.post(db, tenant_id=tenant_id, entry_id=entry.id, user_id=user_id, commit=False)
+        move.accounting_entry_id = entry.id
+
+    @staticmethod
+    def _accounting_lines(move, config, amount):
+        inv, cogs, adjustment, clearing = config.inventory_account_id, config.cogs_account_id, config.adjustment_account_id, config.clearing_account_id
+        if move.movement_type in {"receipt", "opening"}:
+            debit, credit = inv, clearing
+        elif move.movement_type == "issue":
+            debit, credit = cogs, inv
+        elif move.movement_type == "return":
+            debit, credit = (inv, cogs) if move.destination_location_id else (clearing, inv)
+        elif move.movement_type == "adjustment":
+            debit, credit = (inv, adjustment) if move.destination_location_id else (adjustment, inv)
+        else:
+            raise ValueError("Unsupported inventory accounting movement")
+        return [
+            {"account_combination_id": debit, "debit": amount, "credit": Decimal("0"), "description": f"Inventory {move.movement_type}"},
+            {"account_combination_id": credit, "debit": Decimal("0"), "credit": amount, "description": f"Inventory {move.movement_type}"},
+        ]
 
     @staticmethod
     def _location_balance(db: Session, company_id: int, item_id: int, variant_id: int | None, location_id: int, *, lock: bool):
