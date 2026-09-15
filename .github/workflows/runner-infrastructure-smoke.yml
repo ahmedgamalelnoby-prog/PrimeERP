@@ -74,3 +74,10 @@ jobs:
           finally {
             docker rm -f $name
           }
+
+      - name: Final runner diagnostics
+        shell: powershell
+        run: |
+          whoami
+          docker ps -a --no-trunc
+          docker context show
