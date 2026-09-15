@@ -70,10 +70,10 @@ class InventoryStockMoveService:
         item = db.scalar(select(InventoryItem).where(InventoryItem.id == move.item_id, InventoryItem.company_id == company_id, InventoryItem.is_active.is_(True)))
         if item is None:
             raise ValueError("Item is unavailable for posting")
-        self._validate_variant(db, company_id=company_id, item=item, variant_id=move.variant_id)
-
-        source_balance = self._location_balance(db, company_id, move.item_id, move.variant_id, move.source_location_id, lock=True) if move.source_location_id else None
-        destination_balance = self._location_balance(db, company_id, move.item_id, move.variant_id, move.destination_location_id, lock=True) if move.destination_location_id else None
+        self._validate_variant(db, company_id=company_id, item=item, variant_id=getattr(move, "variant_id", None))
+        variant_id = getattr(move, "variant_id", None)
+        source_balance = self._location_balance(db, company_id, move.item_id, variant_id, move.source_location_id, lock=True) if move.source_location_id else None
+        destination_balance = self._location_balance(db, company_id, move.item_id, variant_id, move.destination_location_id, lock=True) if move.destination_location_id else None
         source_warehouse_id = source_balance.location.warehouse_id if source_balance else None
         destination_warehouse_id = destination_balance.location.warehouse_id if destination_balance else None
         unit_cost = Decimal(move.unit_cost or 0)
@@ -87,11 +87,11 @@ class InventoryStockMoveService:
                 raise ValueError("Insufficient available stock after excluding reserved quantity")
             if on_hand < quantity:
                 raise ValueError("Insufficient stock at source location")
-            warehouse_source = self._warehouse_stock(db, company_id, move.item_id, move.variant_id, source_warehouse_id)
+            warehouse_source = self._warehouse_stock(db, company_id, move.item_id, variant_id, source_warehouse_id)
             if move.movement_type in {"issue", "transfer", "adjustment"} and Decimal(warehouse_source.quantity_on_hand or 0) - Decimal(warehouse_source.quantity_reserved or 0) < quantity:
                 raise ValueError("Insufficient available warehouse stock after excluding reserved quantity")
             if item.costing_method == "fifo":
-                fifo_allocations = self._consume_fifo_layers(db, company_id, move.item_id, move.variant_id, source_warehouse_id, quantity)
+                fifo_allocations = self._consume_fifo_layers(db, company_id, move.item_id, variant_id, source_warehouse_id, quantity)
                 unit_cost = self._weighted_cost(fifo_allocations)
             elif unit_cost == 0:
                 unit_cost = Decimal(item.standard_cost or item.purchase_price or 0) if item.costing_method == "standard" else Decimal(warehouse_source.average_cost or 0)
@@ -100,7 +100,7 @@ class InventoryStockMoveService:
 
         if destination_balance:
             quantity = Decimal(move.quantity)
-            warehouse_destination = self._warehouse_stock(db, company_id, move.item_id, move.variant_id, destination_warehouse_id)
+            warehouse_destination = self._warehouse_stock(db, company_id, move.item_id, variant_id, destination_warehouse_id)
             old_qty = Decimal(warehouse_destination.quantity_on_hand or 0)
             old_cost = Decimal(warehouse_destination.average_cost or 0)
             if unit_cost == 0:
@@ -111,7 +111,7 @@ class InventoryStockMoveService:
             if new_qty > 0:
                 warehouse_destination.average_cost = ((old_qty * old_cost) + (quantity * unit_cost)) / new_qty
             if item.costing_method == "fifo":
-                self._add_fifo_layers(db, company_id, move.item_id, move.variant_id, destination_warehouse_id, move.id, fifo_allocations or [(quantity, unit_cost)])
+                self._add_fifo_layers(db, company_id, move.item_id, variant_id, destination_warehouse_id, move.id, fifo_allocations or [(quantity, unit_cost)])
 
         if item.costing_method == "fifo" and source_balance and not fifo_allocations:
             raise ValueError("FIFO valuation could not determine a cost layer")
@@ -119,38 +119,6 @@ class InventoryStockMoveService:
         move.status = "posted"
         db.flush()
         return move
-
-    def _consume_fifo_layers(self, db: Session, company_id: int, item_id: int, variant_id: int | None, warehouse_id: int, quantity: Decimal):
-        stmt = select(InventoryCostLayer).where(InventoryCostLayer.company_id == company_id, InventoryCostLayer.item_id == item_id, InventoryCostLayer.warehouse_id == warehouse_id, InventoryCostLayer.quantity_remaining > 0)
-        stmt = stmt.where(InventoryCostLayer.variant_id == variant_id) if variant_id is not None else stmt.where(InventoryCostLayer.variant_id.is_(None))
-        layers = db.scalars(stmt.order_by(InventoryCostLayer.id).with_for_update()).all()
-        available = sum((Decimal(layer.quantity_remaining) for layer in layers), Decimal("0"))
-        if available < quantity:
-            raise ValueError("FIFO cost layers are insufficient for the selected item/variant")
-        remaining = quantity
-        allocations: list[tuple[Decimal, Decimal]] = []
-        for layer in layers:
-            if remaining <= 0:
-                break
-            take = min(remaining, Decimal(layer.quantity_remaining))
-            layer.quantity_remaining -= take
-            allocations.append((take, Decimal(layer.unit_cost)))
-            remaining -= take
-        if remaining > 0:
-            raise ValueError("FIFO cost layers are insufficient for the selected item/variant")
-        return allocations
-
-    @staticmethod
-    def _weighted_cost(allocations: list[tuple[Decimal, Decimal]]) -> Decimal:
-        quantity = sum((qty for qty, _ in allocations), Decimal("0"))
-        return Decimal("0") if quantity <= 0 else sum((qty * cost for qty, cost in allocations), Decimal("0")) / quantity
-
-    @staticmethod
-    def _add_fifo_layers(db: Session, company_id: int, item_id: int, variant_id: int | None, warehouse_id: int, move_id: int, allocations: list[tuple[Decimal, Decimal]]) -> None:
-        for quantity, unit_cost in allocations:
-            if quantity > 0:
-                db.add(InventoryCostLayer(company_id=company_id, item_id=item_id, variant_id=variant_id, warehouse_id=warehouse_id, receipt_move_id=move_id, quantity_remaining=quantity, unit_cost=unit_cost))
-        db.flush()
 
     @staticmethod
     def _location_balance(db: Session, company_id: int, item_id: int, variant_id: int | None, location_id: int, *, lock: bool):
@@ -178,6 +146,30 @@ class InventoryStockMoveService:
             db.add(stock)
             db.flush()
         return stock
+
+    def _consume_fifo_layers(self, db, company_id, item_id, variant_id, warehouse_id, quantity):
+        stmt = select(InventoryCostLayer).where(InventoryCostLayer.company_id == company_id, InventoryCostLayer.item_id == item_id, InventoryCostLayer.warehouse_id == warehouse_id, InventoryCostLayer.quantity_remaining > 0)
+        stmt = stmt.where(InventoryCostLayer.variant_id == variant_id) if variant_id is not None else stmt.where(InventoryCostLayer.variant_id.is_(None))
+        layers = db.scalars(stmt.order_by(InventoryCostLayer.id).with_for_update()).all()
+        available = sum((Decimal(layer.quantity_remaining) for layer in layers), Decimal("0"))
+        if available < quantity:
+            raise ValueError("FIFO cost layers are insufficient for the selected item/variant")
+        remaining = quantity; allocations = []
+        for layer in layers:
+            if remaining <= 0: break
+            take = min(remaining, Decimal(layer.quantity_remaining)); layer.quantity_remaining -= take; allocations.append((take, Decimal(layer.unit_cost))); remaining -= take
+        return allocations
+
+    @staticmethod
+    def _weighted_cost(allocations):
+        quantity = sum((qty for qty, _ in allocations), Decimal("0"))
+        return Decimal("0") if quantity <= 0 else sum((qty * cost for qty, cost in allocations), Decimal("0")) / quantity
+
+    @staticmethod
+    def _add_fifo_layers(db, company_id, item_id, variant_id, warehouse_id, move_id, allocations):
+        for quantity, unit_cost in allocations:
+            if quantity > 0: db.add(InventoryCostLayer(company_id=company_id, item_id=item_id, variant_id=variant_id, warehouse_id=warehouse_id, receipt_move_id=move_id, quantity_remaining=quantity, unit_cost=unit_cost))
+        db.flush()
 
 
 inventory_stock_move_service = InventoryStockMoveService()
