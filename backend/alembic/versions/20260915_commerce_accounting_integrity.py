@@ -54,6 +54,8 @@ def upgrade():
     conn = op.get_bind()
     _preflight(conn)
 
+    # These tables need composite UNIQUE targets for PostgreSQL composite FKs.
+    # Branches already received this target in 20260915_enterprise_integrity_hardening.
     op.create_unique_constraint(
         "uq_accounting_journals_company_id",
         "accounting_journals",
@@ -62,11 +64,6 @@ def upgrade():
     op.create_unique_constraint(
         "uq_account_combinations_company_id",
         "account_combinations",
-        ["company_id", "id"],
-    )
-    op.create_unique_constraint(
-        "uq_branches_company_id",
-        "branches",
         ["company_id", "id"],
     )
 
@@ -139,6 +136,5 @@ def downgrade():
     op.drop_constraint("fk_commerce_settings_cash_journal_company", "commerce_accounting_settings", type_="foreignkey")
     op.drop_constraint("fk_commerce_settings_purchase_journal_company", "commerce_accounting_settings", type_="foreignkey")
     op.drop_constraint("fk_commerce_settings_sales_journal_company", "commerce_accounting_settings", type_="foreignkey")
-    op.drop_constraint("uq_branches_company_id", "branches", type_="unique")
     op.drop_constraint("uq_account_combinations_company_id", "account_combinations", type_="unique")
     op.drop_constraint("uq_accounting_journals_company_id", "accounting_journals", type_="unique")
