@@ -1,6 +1,7 @@
 from datetime import date
 
 from fastapi import APIRouter, Depends, Query, status
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.context import get_effective_tenant_id
@@ -16,6 +17,11 @@ router = APIRouter(
     tags=["Accounting - Journal Entries"],
     dependencies=[Depends(require_permission("accounting.access"))],
 )
+
+
+class JournalReversalRequest(BaseModel):
+    reversal_date: date | None = None
+    description: str | None = Field(default=None, max_length=2000)
 
 
 def _tenant_id(current_user: User) -> int:
@@ -82,6 +88,19 @@ def approve_entry(entry_id: int, current_user: User = Depends(get_current_user),
 @router.post("/{entry_id}/post", response_model=JournalEntryResponse, dependencies=[Depends(require_permission("accounting.post"))])
 def post_entry(entry_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return journal_service.post(db, tenant_id=_tenant_id(current_user), entry_id=entry_id, user_id=current_user.id)
+
+
+@router.post("/{entry_id}/reverse", response_model=JournalEntryResponse, dependencies=[Depends(require_permission("accounting.post"))])
+def reverse_entry(entry_id: int, payload: JournalReversalRequest | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    request = payload or JournalReversalRequest()
+    return journal_service.reverse(
+        db,
+        tenant_id=_tenant_id(current_user),
+        entry_id=entry_id,
+        user_id=current_user.id,
+        reversal_date=request.reversal_date,
+        description=request.description,
+    )
 
 
 @router.post("/{entry_id}/cancel", response_model=JournalEntryResponse, dependencies=[Depends(require_permission("accounting.write"))])
