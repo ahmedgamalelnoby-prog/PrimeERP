@@ -5,14 +5,11 @@ from app.database.base import Base
 from app.modules.accounting.chart_of_accounts.models import AccountingCostCenter
 
 # Backward-compatible public name for the IFRS/CMA foundation.
-# The canonical ORM mapping lives in chart_of_accounts.models so the same
-# physical table is represented by exactly one SQLAlchemy declarative class.
 CostCenter = AccountingCostCenter
 
 
 class AccountingPolicy(Base):
     __tablename__ = "accounting_policies"
-
     id = Column(Integer, primary_key=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     jurisdiction = Column(String(20), nullable=False, default="EG")
@@ -28,13 +25,6 @@ class AccountingPolicy(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     def __init__(self, **kwargs):
-        """Apply application defaults when constructing an object in Python.
-
-        SQLAlchemy Column(default=...) values are applied at INSERT time, not
-        when an ORM instance is constructed. The IFRS/CMA foundation exposes
-        these defaults as part of its domain contract, so they must also be
-        present before persistence.
-        """
         kwargs.setdefault("jurisdiction", "EG")
         kwargs.setdefault("accounting_framework", "IFRS")
         kwargs.setdefault("management_framework", "CMA")
@@ -56,7 +46,6 @@ class AccountingPolicy(Base):
 
 class FiscalPeriod(Base):
     __tablename__ = "accounting_fiscal_periods"
-
     id = Column(Integer, primary_key=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(80), nullable=False)
@@ -65,7 +54,6 @@ class FiscalPeriod(Base):
     status = Column(String(20), nullable=False, default="open")
     closed_at = Column(DateTime(timezone=True), nullable=True)
     closed_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-
     __table_args__ = (
         UniqueConstraint("company_id", "start_date", "end_date", name="uq_fiscal_period_company_dates"),
         CheckConstraint("end_date >= start_date", name="ck_fiscal_period_dates"),
@@ -75,7 +63,6 @@ class FiscalPeriod(Base):
 
 class ChartOfAccount(Base):
     __tablename__ = "accounting_accounts"
-
     id = Column(Integer, primary_key=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     code = Column(String(30), nullable=False)
@@ -87,7 +74,6 @@ class ChartOfAccount(Base):
     is_control_account = Column(Boolean, nullable=False, default=False)
     allow_manual_posting = Column(Boolean, nullable=False, default=True)
     is_active = Column(Boolean, nullable=False, default=True)
-
     __table_args__ = (
         UniqueConstraint("company_id", "code", name="uq_accounting_account_company_code"),
         CheckConstraint("account_type IN ('asset','liability','equity','revenue','expense','contra_asset','contra_revenue','contra_liability')", name="ck_accounting_account_type"),
@@ -95,9 +81,8 @@ class ChartOfAccount(Base):
     )
 
 
-class JournalEntry(Base):
+class IFRSJournalEntry(Base):
     __tablename__ = "accounting_journal_entries"
-
     id = Column(Integer, primary_key=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     fiscal_period_id = Column(Integer, ForeignKey("accounting_fiscal_periods.id", ondelete="RESTRICT"), nullable=False, index=True)
@@ -111,7 +96,6 @@ class JournalEntry(Base):
     approved_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     posted_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
     __table_args__ = (
         UniqueConstraint("company_id", "entry_no", name="uq_journal_entry_company_no"),
         UniqueConstraint("company_id", "source_module", "source_entity", "source_id", name="uq_journal_entry_source"),
@@ -121,7 +105,6 @@ class JournalEntry(Base):
 
 class JournalLine(Base):
     __tablename__ = "accounting_journal_lines"
-
     id = Column(Integer, primary_key=True)
     journal_entry_id = Column(Integer, ForeignKey("accounting_journal_entries.id", ondelete="CASCADE"), nullable=False, index=True)
     account_id = Column(Integer, ForeignKey("accounting_accounts.id", ondelete="RESTRICT"), nullable=False, index=True)
@@ -131,7 +114,6 @@ class JournalLine(Base):
     credit = Column(Numeric(20, 4), nullable=False, default=0)
     currency = Column(String(3), nullable=False, default="EGP")
     exchange_rate = Column(Numeric(20, 8), nullable=False, default=1)
-
     __table_args__ = (
         CheckConstraint("debit >= 0 AND credit >= 0", name="ck_journal_line_nonnegative"),
         CheckConstraint("NOT (debit > 0 AND credit > 0)", name="ck_journal_line_one_side"),
@@ -141,14 +123,12 @@ class JournalLine(Base):
 
 class ManagementBudget(Base):
     __tablename__ = "accounting_management_budgets"
-
     id = Column(Integer, primary_key=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(160), nullable=False)
     fiscal_year = Column(Integer, nullable=False)
     status = Column(String(20), nullable=False, default="draft")
     version = Column(Integer, nullable=False, default=1)
-
     __table_args__ = (
         UniqueConstraint("company_id", "name", "version", name="uq_management_budget_version"),
         CheckConstraint("status IN ('draft','approved','locked')", name="ck_management_budget_status"),
@@ -157,15 +137,17 @@ class ManagementBudget(Base):
 
 class ManagementBudgetLine(Base):
     __tablename__ = "accounting_management_budget_lines"
-
     id = Column(Integer, primary_key=True)
     budget_id = Column(Integer, ForeignKey("accounting_management_budgets.id", ondelete="CASCADE"), nullable=False, index=True)
     cost_center_id = Column(Integer, ForeignKey("accounting_cost_centers.id", ondelete="RESTRICT"), nullable=True, index=True)
     account_id = Column(Integer, ForeignKey("accounting_accounts.id", ondelete="RESTRICT"), nullable=True, index=True)
     period_month = Column(Integer, nullable=False)
     amount = Column(Numeric(20, 4), nullable=False)
-
     __table_args__ = (
         CheckConstraint("period_month BETWEEN 1 AND 12", name="ck_budget_line_month"),
         CheckConstraint("amount >= 0", name="ck_budget_line_amount"),
     )
+
+
+# Public compatibility alias without registering a second ORM class named JournalEntry.
+JournalEntry = IFRSJournalEntry
