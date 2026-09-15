@@ -25,24 +25,15 @@ env:
 
 jobs:
   validation:
-    name: Full validation - self-hosted Windows
-    runs-on: [self-hosted, Windows, X64]
+    name: Full validation - hosted Linux
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Configure Docker CLI
-        shell: cmd
-        run: |
-          set "DOCKER_DIR=C:\Users\Admin\AppData\Local\Programs\DockerDesktop\resources\bin"
-          echo Docker CLI directory: %DOCKER_DIR%
-          echo %DOCKER_DIR%>>"%GITHUB_PATH%"
-          "%DOCKER_DIR%\docker.exe" --version
-          "%DOCKER_DIR%\docker.exe" compose version
-
       - name: Validate local runtimes
-        shell: cmd
+        working-directory: backend
         run: |
           python --version
           node --version
@@ -53,36 +44,24 @@ jobs:
           node -e "if (parseInt(process.versions.node.split('.')[0]) < 20) process.exit(1)"
 
       - name: Backend compile architecture security smoke and tests
-        shell: cmd
         working-directory: backend
         run: |
-          if exist .ci-venv rmdir /S /Q .ci-venv
           python -m venv .ci-venv
-          .ci-venv\Scripts\python.exe -m pip install --upgrade pip
-          .ci-venv\Scripts\python.exe -m pip install -r requirements.txt
-          .ci-venv\Scripts\python.exe -m pip install pytest
-          .ci-venv\Scripts\python.exe -m compileall -q app
-          .ci-venv\Scripts\python.exe scripts\check_modular_architecture.py
-          .ci-venv\Scripts\python.exe scripts\check_api_security.py
-          set DATABASE_URL=sqlite:///./primeerp_ci_smoke.db
-          set APP_ENV=test
-          .ci-venv\Scripts\python.exe scripts\smoke_import.py
-          set APP_ENV=production
-          set DEBUG=false
-          set DATABASE_URL=sqlite:///./unsafe.db
-          set SECRET_KEY=unsafe-production-test-key
-          set CORS_ORIGINS=https://erp.example.com
-          .ci-venv\Scripts\python.exe scripts\check_production_config.py
-          set APP_ENV=ci
-          set DEBUG=true
-          .ci-venv\Scripts\python.exe scripts\check_release_readiness.py
-          .ci-venv\Scripts\python.exe -m alembic heads > alembic-heads.txt
-          type alembic-heads.txt
-          .ci-venv\Scripts\python.exe -c "from pathlib import Path; n=sum('(head)' in x for x in Path('alembic-heads.txt').read_text().splitlines()); assert n == 1, f'Expected exactly one Alembic head; found {n}'"
-          .ci-venv\Scripts\python.exe -m pytest -q
+          .ci-venv/bin/python -m pip install --upgrade pip
+          .ci-venv/bin/python -m pip install -r requirements.txt
+          .ci-venv/bin/python -m pip install pytest
+          .ci-venv/bin/python -m compileall -q app
+          .ci-venv/bin/python scripts/check_modular_architecture.py
+          .ci-venv/bin/python scripts/check_api_security.py
+          DATABASE_URL=sqlite:///./primeerp_ci_smoke.db APP_ENV=test .ci-venv/bin/python scripts/smoke_import.py
+          APP_ENV=production DEBUG=false DATABASE_URL=sqlite:///./unsafe.db SECRET_KEY=unsafe-production-test-key CORS_ORIGINS=https://erp.example.com .ci-venv/bin/python scripts/check_production_config.py
+          APP_ENV=ci DEBUG=true .ci-venv/bin/python scripts/check_release_readiness.py
+          .ci-venv/bin/python -m alembic heads > alembic-heads.txt
+          cat alembic-heads.txt
+          .ci-venv/bin/python -c "from pathlib import Path; n=sum('(head)' in x for x in Path('alembic-heads.txt').read_text().splitlines()); assert n == 1, f'Expected exactly one Alembic head; found {n}'"
+          .ci-venv/bin/python -m pytest -q
 
       - name: Frontend typecheck lint and build
-        shell: cmd
         working-directory: frontend
         run: |
           npm ci
@@ -91,121 +70,94 @@ jobs:
           npm run build
 
       - name: Prepare Docker CI environment
-        shell: cmd
         run: |
-          if exist .env.docker del /f /q .env.docker
-          copy /y .env.docker.example .env.docker
-          >>.env.docker echo APP_ENV=ci
-          >>.env.docker echo DEBUG=true
-          >>.env.docker echo POSTGRES_PASSWORD=ci-password-for-local-test-only
-          >>.env.docker echo SECRET_KEY=ci-secret-key-for-local-test-only-1234567890
+          cat > .env.docker <<'EOF'
+          POSTGRES_DB=primeerp_ci
+          POSTGRES_USER=primeerp
+          POSTGRES_PASSWORD=ci-password-for-local-test-only
+          SECRET_KEY=ci-secret-key-for-local-test-only-1234567890
+          CORS_ORIGINS=http://localhost:3000
+          APP_ENV=ci
+          DEBUG=true
+          EOF
           docker compose --env-file .env.docker config -q
 
       - name: Clean previous CI stack
-        shell: cmd
         run: docker compose --env-file .env.docker down -v --remove-orphans
         continue-on-error: true
 
       - name: Build production images
-        shell: cmd
         run: docker compose --env-file .env.docker build --pull migrate backend frontend
 
       - name: Start database and migration
-        shell: cmd
         run: docker compose --env-file .env.docker up -d db migrate
 
       - name: Wait for migration
-        shell: cmd
         run: |
-          setlocal EnableExtensions EnableDelayedExpansion
-          set STATUS=
-          for /L %%I in (1,1,60) do (
-            set STATUS=
-            for /f %%S in ('docker inspect -f "{{.State.Status}}" primeerp-migrate 2^>nul') do set STATUS=%%S
-            echo migration=!STATUS!
-            if "!STATUS!"=="exited" goto migration_done
-            timeout /t 5 /nobreak >nul
-          )
+          for i in $(seq 1 60); do
+            status=$(docker inspect -f '{{.State.Status}}' primeerp-migrate 2>/dev/null || true)
+            echo "migration=$status"
+            if [ "$status" = "exited" ]; then
+              code=$(docker inspect -f '{{.State.ExitCode}}' primeerp-migrate)
+              echo "migration exit code=$code"
+              if [ "$code" = "0" ]; then exit 0; fi
+              docker compose --env-file .env.docker logs migrate
+              exit "$code"
+            fi
+            sleep 5
+          done
           docker compose --env-file .env.docker logs migrate
-          exit /b 1
-          :migration_done
-          set CODE=
-          for /f %%C in ('docker inspect -f "{{.State.ExitCode}}" primeerp-migrate') do set CODE=%%C
-          echo migration exit code=!CODE!
-          if not "!CODE!"=="0" (
-            docker compose --env-file .env.docker logs migrate
-            exit /b 1
-          )
+          exit 1
 
       - name: Execute real PostgreSQL effective-date guard tests
-        shell: cmd
         working-directory: backend
-        run: |
-          set TEST_DATABASE_URL=postgresql://primeerp:ci-password-for-local-test-only@db:5432/primeerp_ci
-          set DATABASE_URL=postgresql+psycopg://primeerp:ci-password-for-local-test-only@db:5432/primeerp_ci
-          set APP_ENV=test
-          set DEBUG=false
-          set SECRET_KEY=ci-secret-key-for-local-test-only-1234567890
-          set CORS_ORIGINS=http://localhost:3000
-          .ci-venv\Scripts\python.exe -m pytest -q tests/jurisdiction/test_effective_date_db_guard.py
+        env:
+          TEST_DATABASE_URL: postgresql://primeerp:ci-password-for-local-test-only@db:5432/primeerp_ci
+          DATABASE_URL: postgresql+psycopg://primeerp:ci-password-for-local-test-only@db:5432/primeerp_ci
+          APP_ENV: test
+          DEBUG: "false"
+          SECRET_KEY: ci-secret-key-for-local-test-only-1234567890
+          CORS_ORIGINS: http://localhost:3000
+        run: .ci-venv/bin/python -m pytest -q tests/jurisdiction/test_effective_date_db_guard.py
 
       - name: Start full runtime
-        shell: cmd
         run: docker compose --env-file .env.docker up -d backend frontend
 
       - name: Wait for runtime health
-        shell: cmd
         run: |
-          setlocal EnableExtensions EnableDelayedExpansion
-          for /L %%I in (1,1,60) do (
-            set BACKEND=
-            set FRONTEND=
-            for /f %%S in ('docker inspect -f "{{.State.Health.Status}}" primeerp-backend 2^>nul') do set BACKEND=%%S
-            for /f %%S in ('docker inspect -f "{{.State.Health.Status}}" primeerp-frontend 2^>nul') do set FRONTEND=%%S
-            echo backend=!BACKEND! frontend=!FRONTEND!
-            if "!BACKEND!"=="healthy" if "!FRONTEND!"=="healthy" goto healthy
-            if "!BACKEND!"=="unhealthy" goto unhealthy
-            if "!FRONTEND!"=="unhealthy" goto unhealthy
-            timeout /t 5 /nobreak >nul
-          )
+          for i in $(seq 1 60); do
+            backend=$(docker inspect -f '{{.State.Health.Status}}' primeerp-backend 2>/dev/null || true)
+            frontend=$(docker inspect -f '{{.State.Health.Status}}' primeerp-frontend 2>/dev/null || true)
+            echo "backend=$backend frontend=$frontend"
+            if [ "$backend" = "healthy" ] && [ "$frontend" = "healthy" ]; then exit 0; fi
+            if [ "$backend" = "unhealthy" ] || [ "$frontend" = "unhealthy" ]; then break; fi
+            sleep 5
+          done
           docker compose --env-file .env.docker ps
           docker compose --env-file .env.docker logs --tail=200 db migrate backend frontend
-          exit /b 1
-          :unhealthy
-          docker compose --env-file .env.docker logs --tail=200 db migrate backend frontend
-          exit /b 1
-          :healthy
-          exit /b 0
+          exit 1
 
       - name: API readiness smoke test
-        shell: cmd
         run: docker exec primeerp-backend python -c "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8001/ready', timeout=15); assert r.status == 200; print(r.read().decode())"
 
       - name: OpenAPI contract smoke test
-        shell: cmd
-        run: |
-          docker exec primeerp-backend python -c "import json,urllib.request; s=json.load(urllib.request.urlopen('http://127.0.0.1:8001/api/v1/openapi.json',timeout=15)); p=s.get('paths',{}); req=['/api/v1/identity/login','/api/v1/identity/me','/api/v1/platform/tenants','/api/v1/subscriptions/tenant/{tenant_id}','/api/v1/accounting/tax-rates','/api/v1/taxes/rates','/api/v1/uom','/api/v1/inventory/items','/api/v1/inventory/items/{item_id}/stock','/api/v1/catalog/categories','/api/v1/catalog/price-lists','/api/v1/catalog/prices','/api/v1/catalog/recipes','/api/v1/catalog/menus','/api/v1/catalog/products/{product_id}/pricing-analysis','/api/v1/integrations/connections','/api/v1/shipping/carriers']; m=[x for x in req if x not in p]; assert not m, f'Missing required API routes: {m}'; print(f'Runtime OpenAPI contract passed: {len(p)} paths registered')"
+        run: docker exec primeerp-backend python -c "import json,urllib.request; s=json.load(urllib.request.urlopen('http://127.0.0.1:8001/api/v1/openapi.json',timeout=15)); p=s.get('paths',{}); req=['/api/v1/identity/login','/api/v1/identity/me','/api/v1/platform/tenants','/api/v1/subscriptions/tenant/{tenant_id}','/api/v1/accounting/tax-rates','/api/v1/taxes/rates','/api/v1/uom','/api/v1/inventory/items','/api/v1/inventory/items/{item_id}/stock','/api/v1/catalog/categories','/api/v1/catalog/price-lists','/api/v1/catalog/prices','/api/v1/catalog/recipes','/api/v1/catalog/menus','/api/v1/catalog/products/{product_id}/pricing-analysis','/api/v1/integrations/connections','/api/v1/shipping/carriers']; m=[x for x in req if x not in p]; assert not m, f'Missing required API routes: {m}'; print(f'Runtime OpenAPI contract passed: {len(p)} paths registered')"
 
       - name: Frontend smoke test
-        shell: cmd
-        run: curl.exe -fsS http://127.0.0.1:3000/ >nul
+        run: curl -fsS http://127.0.0.1:3000/ >/dev/null
 
       - name: Frontend API proxy smoke test
-        shell: cmd
         run: |
-          curl.exe -s -o api-response.txt -w "%{http_code}" http://127.0.0.1:3000/api/v1/identity/me > api-status.txt
-          set /p STATUS=<api-status.txt
-          if not "%STATUS%"=="401" exit /b 1
-          findstr /I /C:"detail" /C:"Not authenticated" api-response.txt >nul
+          status=$(curl -s -o api-response.txt -w "%{http_code}" http://127.0.0.1:3000/api/v1/identity/me)
+          test "$status" = "401"
+          grep -Eiq 'detail|Not authenticated' api-response.txt
 
       - name: Migration idempotency check
-        shell: cmd
         run: docker compose --env-file .env.docker run --rm migrate
 
       - name: Diagnostics and cleanup
         if: always()
-        shell: cmd
         run: |
-          docker compose --env-file .env.docker ps
-          docker compose --env-file .env.docker logs --tail=150 db migrate backend frontend
-          docker compose --env-file .env.docker down -v --remove-orphans
+          docker compose --env-file .env.docker ps || true
+          docker compose --env-file .env.docker logs --tail=150 db migrate backend frontend || true
+          docker compose --env-file .env.docker down -v --remove-orphans || true
