@@ -41,18 +41,20 @@ def upgrade():
     op.create_foreign_key("fk_cost_center_branch_same_company", "accounting_cost_centers", "branches", ["company_id", "branch_id"], ["company_id", "id"], ondelete="SET NULL")
     op.create_foreign_key("fk_natural_account_parent_same_company", "natural_accounts", "natural_accounts", ["company_id", "parent_id"], ["company_id", "id"], ondelete="RESTRICT")
     op.create_foreign_key("fk_account_combination_department_same_company", "account_combinations", "accounting_departments", ["company_id", "department_id"], ["company_id", "id"], ondelete="RESTRICT")
-    op.create_foreign_key("fk_account_combination_cost_center_same_company", "account_combinations", "accounting_cost_centers", ["company_id", "cost_center_id"], ["company_id", "id"], ondelete="RESTRICT")
+    op.create_foreign_key("fk_account_combination_cost_center_same_company", "accounting_cost_centers", ["company_id", "cost_center_id"], ["company_id", "id"], ondelete="RESTRICT")
     op.create_foreign_key("fk_account_combination_natural_account_same_company", "account_combinations", "natural_accounts", ["company_id", "natural_account_id"], ["company_id", "id"], ondelete="RESTRICT")
     op.create_foreign_key("fk_jurisdiction_decision_partner_same_company", "jurisdiction_decisions", "commerce_partners", ["company_id", "partner_id"], ["company_id", "id"], ondelete="SET NULL")
 
     op.create_check_constraint("ck_company_jurisdiction_effective_range", "company_jurisdictions", "effective_to IS NULL OR effective_to >= effective_from")
     op.create_check_constraint("ck_partner_jurisdiction_effective_range", "partner_jurisdictions", "effective_to IS NULL OR effective_to >= effective_from")
     op.create_check_constraint("ck_tax_rule_effective_range", "jurisdiction_tax_rules", "effective_to IS NULL OR effective_to >= effective_from")
-    op.create_unique_constraint("uq_tax_rate_company_code", "tax_rates", ["company_id", "code"])
+
+    # tax_rates already has the canonical UNIQUE(company_id, code) constraint
+    # uq_tax_rates_company_code created by 20260911_accounting_ledger. Do not
+    # create a second equivalent constraint here.
 
 
 def downgrade():
-    op.drop_constraint("uq_tax_rate_company_code", "tax_rates", type_="unique")
     op.drop_constraint("ck_tax_rule_effective_range", "jurisdiction_tax_rules", type_="check")
     op.drop_constraint("ck_partner_jurisdiction_effective_range", "partner_jurisdictions", type_="check")
     op.drop_constraint("ck_company_jurisdiction_effective_range", "company_jurisdictions", type_="check")
