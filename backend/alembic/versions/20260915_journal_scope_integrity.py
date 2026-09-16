@@ -17,6 +17,109 @@ def _assert_clean(conn, sql: str, message: str) -> None:
         raise RuntimeError(message)
 
 
+def _has_unique_key(conn, table: str, columns: list[str]) -> bool:
+    """Return True when the table already has an exact usable unique key.
+
+    PostgreSQL allows a foreign key to target a primary key, unique constraint,
+    or a non-partial unique index.  Some earlier PrimeERP accounting revisions
+    already establish the company/id key, so recreating it here can collide
+    with the existing relation name.
+    """
+    bind = conn.execute
+    result = bind(
+        sa.text(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_class t ON t.oid = c.conrelid
+                JOIN pg_namespace n ON n.oid = t.relnamespace
+                WHERE n.nspname = current_schema()
+                  AND t.relname = :table_name
+                  AND c.contype IN ('p', 'u')
+                  AND c.conkey = ARRAY[
+                      SELECT a.attnum
+                      FROM unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord)
+                      JOIN pg_attribute a
+                        ON a.attrelid = t.oid
+                       AND a.attnum = k.attnum
+                      ORDER BY k.ord
+                  ]::smallint[]
+                  AND (
+                      SELECT array_agg(a.attname ORDER BY k.ord)
+                      FROM unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord)
+                      JOIN pg_attribute a
+                        ON a.attrelid = t.oid
+                       AND a.attnum = k.attnum
+                  ) = :columns
+            )
+            OR EXISTS (
+                SELECT 1
+                FROM pg_index i
+                JOIN pg_class t ON t.oid = i.indrelid
+                JOIN pg_namespace n ON n.oid = t.relnamespace
+                WHERE n.nspname = current_schema()
+                  AND t.relname = :table_name
+                  AND i.indisunique
+                  AND i.indisvalid
+                  AND i.indpred IS NULL
+                  AND (
+                      SELECT array_agg(a.attname ORDER BY k.ord)
+                      FROM unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord)
+                      JOIN pg_attribute a
+                        ON a.attrelid = t.oid
+                       AND a.attnum = k.attnum
+                  ) = :columns
+            )
+            """
+        ),
+        {"table_name": table, "columns": columns},
+    )
+    return bool(result.scalar())
+
+
+def _relation_exists(conn, name: str) -> bool:
+    return bool(conn.execute(sa.text("SELECT to_regclass(:name) IS NOT NULL"), {"name": name}).scalar())
+
+
+def _ensure_unique_key(conn, table: str, columns: list[str], preferred_name: str) -> str | None:
+    """Ensure a usable unique key exists without colliding with old schema objects."""
+    if _has_unique_key(conn, table, columns):
+        return None
+
+    name = preferred_name
+    if _relation_exists(conn, name):
+        name = f"{preferred_name}_scope"
+        if _relation_exists(conn, name):
+            raise RuntimeError(
+                f"Cannot create required unique key on {table}: relations '{preferred_name}' and '{name}' already exist."
+            )
+
+    op.create_unique_constraint(name, table, columns)
+    return name
+
+
+def _drop_constraint_if_exists(conn, name: str, table: str, type_: str) -> None:
+    exists = conn.execute(
+        sa.text(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_class t ON t.oid = c.conrelid
+                JOIN pg_namespace n ON n.oid = t.relnamespace
+                WHERE n.nspname = current_schema()
+                  AND t.relname = :table_name
+                  AND c.conname = :constraint_name
+            )
+            """
+        ),
+        {"table_name": table, "constraint_name": name},
+    ).scalar()
+    if exists:
+        op.drop_constraint(name, table, type_=type_)
+
+
 def upgrade():
     conn = op.get_bind()
 
@@ -47,8 +150,20 @@ def upgrade():
     op.alter_column("journal_entry_lines", "company_id", nullable=False)
     op.create_index("ix_journal_line_company_entry", "journal_entry_lines", ["company_id", "entry_id"])
 
-    op.create_unique_constraint("uq_journal_entries_tenant_company_id", "journal_entries", ["tenant_id", "company_id", "id"])
-    op.create_unique_constraint("uq_account_combinations_company_id", "account_combinations", ["company_id", "id"])
+    _ensure_unique_key(
+        conn,
+        "journal_entries",
+        ["tenant_id", "company_id", "id"],
+        "uq_journal_entries_tenant_company_id",
+    )
+    # account_combinations already has this company/id key in the canonical
+    # accounting lineage.  Only create it when a usable key is genuinely absent.
+    _ensure_unique_key(
+        conn,
+        "account_combinations",
+        ["company_id", "id"],
+        "uq_account_combinations_company_id",
+    )
 
     op.create_foreign_key(
         "fk_journal_line_entry_same_scope",
@@ -91,12 +206,11 @@ def upgrade():
 
 
 def downgrade():
-    op.drop_constraint("ck_journal_line_base_amounts_nonnegative", "journal_entry_lines", type_="check")
-    op.drop_constraint("fk_journal_line_cost_center_same_company", "journal_entry_lines", type_="foreignkey")
-    op.drop_constraint("fk_journal_line_department_same_company", "journal_entry_lines", type_="foreignkey")
-    op.drop_constraint("fk_journal_line_account_same_company", "journal_entry_lines", type_="foreignkey")
-    op.drop_constraint("fk_journal_line_entry_same_scope", "journal_entry_lines", type_="foreignkey")
-    op.drop_constraint("uq_account_combinations_company_id", "account_combinations", type_="unique")
-    op.drop_constraint("uq_journal_entries_tenant_company_id", "journal_entries", type_="unique")
-    op.drop_index("ix_journal_line_company_entry", table_name="journal_entry_lines")
+    conn = op.get_bind()
+    _drop_constraint_if_exists(conn, "ck_journal_line_base_amounts_nonnegative", "journal_entry_lines", "check")
+    _drop_constraint_if_exists(conn, "fk_journal_line_cost_center_same_company", "journal_entry_lines", "foreignkey")
+    _drop_constraint_if_exists(conn, "fk_journal_line_department_same_company", "journal_entry_lines", "foreignkey")
+    _drop_constraint_if_exists(conn, "fk_journal_line_account_same_company", "journal_entry_lines", "foreignkey")
+    _drop_constraint_if_exists(conn, "fk_journal_line_entry_same_scope", "journal_entry_lines", "foreignkey")
+    op.drop_index("ix_journal_line_company_entry", table_name="journal_entry_lines", if_exists=True)
     op.drop_column("journal_entry_lines", "company_id")
