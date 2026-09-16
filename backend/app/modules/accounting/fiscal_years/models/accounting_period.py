@@ -42,7 +42,15 @@ class AccountingPeriod(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
-    fiscal_year = relationship("FiscalYear", back_populates="periods")
+    fiscal_year = relationship(
+        "FiscalYear",
+        back_populates="periods",
+        foreign_keys=lambda: [
+            AccountingPeriod.tenant_id,
+            AccountingPeriod.company_id,
+            AccountingPeriod.fiscal_year_id,
+        ],
+    )
 
     __table_args__ = (
         UniqueConstraint("fiscal_year_id", "period_number", name="uq_accounting_period_number"),
