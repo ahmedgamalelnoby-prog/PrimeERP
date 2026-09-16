@@ -1,7 +1,12 @@
-"""Add PPV account and receipt allocation tracking for purchase bills.
+"""Add receipt allocation tracking for purchase bills.
 
 Revision ID: 20260914_purchase_ppv
 Revises: 20260914_commerce_grni
+
+The PPV account column and foreign key are owned by
+``20260914_commerce_ppv``. This migration only owns the receipt-to-bill
+allocation structures, avoiding duplicate DDL when both release branches
+converge.
 """
 from alembic import op
 import sqlalchemy as sa
@@ -13,18 +18,6 @@ depends_on = None
 
 
 def upgrade():
-    op.add_column(
-        "commerce_accounting_settings",
-        sa.Column("purchase_price_variance_account_id", sa.Integer(), nullable=True),
-    )
-    op.create_foreign_key(
-        "fk_commerce_accounting_settings_ppv_account",
-        "commerce_accounting_settings",
-        "account_combinations",
-        ["purchase_price_variance_account_id"],
-        ["id"],
-        ondelete="RESTRICT",
-    )
     op.create_table(
         "purchase_bill_receipt_links",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -63,5 +56,3 @@ def downgrade():
     op.drop_index("ix_purchase_bill_receipt_links_bill_id", table_name="purchase_bill_receipt_links")
     op.drop_index("ix_purchase_bill_receipt_links_company_id", table_name="purchase_bill_receipt_links")
     op.drop_table("purchase_bill_receipt_links")
-    op.drop_constraint("fk_commerce_accounting_settings_ppv_account", "commerce_accounting_settings", type_="foreignkey")
-    op.drop_column("commerce_accounting_settings", "purchase_price_variance_account_id")
