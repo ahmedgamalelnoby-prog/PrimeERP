@@ -34,6 +34,37 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Normalize self-hosted tool PATH
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $paths = @(
+            'C:\Program Files\nodejs',
+            'C:\Users\Admin\AppData\Local\Programs\DockerDesktop\resources\bin'
+          )
+          $pythonRoots = @(
+            'C:\Users\Admin\AppData\Local\Programs\Python',
+            'C:\Program Files\Python'
+          )
+          foreach ($root in $pythonRoots) {
+            if (Test-Path $root) {
+              $pythonDir = Get-ChildItem -Path $root -Directory | Sort-Object Name -Descending | Select-Object -First 1
+              if ($pythonDir) {
+                $paths += $pythonDir.FullName
+                $paths += (Join-Path $pythonDir.FullName 'Scripts')
+              }
+            }
+          }
+          $existing = ($env:PATH -split ';') | Where-Object { $_ -and $_.Trim() }
+          foreach ($path in $paths) {
+            if ((Test-Path $path) -and ($existing -notcontains $path)) {
+              $path | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+              Write-Host "Added tool path: $path"
+            }
+          }
+          Write-Host 'Effective PATH entries queued for subsequent steps:'
+          $paths | Where-Object { Test-Path $_ } | ForEach-Object { Write-Host "  $_" }
+
       - name: Verify Git Python Node Docker
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
