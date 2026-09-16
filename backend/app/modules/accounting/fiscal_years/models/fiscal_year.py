@@ -10,11 +10,13 @@ from sqlalchemy import (
     Integer,
     String,
     UniqueConstraint,
+    and_,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import foreign, relationship
 from sqlalchemy.sql import func
 
 from app.database.base import Base
+from app.modules.accounting.fiscal_years.models.accounting_period import AccountingPeriod
 
 
 class FiscalYear(Base):
@@ -43,6 +45,11 @@ class FiscalYear(Base):
     periods = relationship(
         "AccountingPeriod",
         back_populates="fiscal_year",
+        primaryjoin=lambda: and_(
+            FiscalYear.id == foreign(AccountingPeriod.fiscal_year_id),
+            FiscalYear.tenant_id == foreign(AccountingPeriod.tenant_id),
+            FiscalYear.company_id == foreign(AccountingPeriod.company_id),
+        ),
         foreign_keys=lambda: [
             AccountingPeriod.tenant_id,
             AccountingPeriod.company_id,
