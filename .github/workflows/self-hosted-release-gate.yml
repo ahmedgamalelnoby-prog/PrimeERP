@@ -158,7 +158,7 @@ jobs:
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
           $ErrorActionPreference = 'Stop'
-          docker compose build --pull migrate backend frontend
+          docker compose build --pull migrate backend report-worker frontend
 
       - name: Start database and run migrations
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
@@ -220,8 +220,6 @@ jobs:
 
       - name: Cleanup
         if: always()
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
-          docker compose down -v --remove-orphans 2>$null
-
-# Re-trigger release gate on the latest workflow definition.
+          docker compose down -v --remove-orphans
