@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Verify runner identity
-        shell: powershell
+        shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           Write-Host "RUNNER_NAME=$env:RUNNER_NAME"
@@ -35,7 +35,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Verify Git Python Node Docker
-        shell: powershell
+        shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           git --version
@@ -46,30 +46,34 @@ jobs:
           docker compose version
 
       - name: Verify Docker engine
-        shell: powershell
+        shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           docker info
           docker run --rm hello-world
 
       - name: Prepare CI environment
-        shell: powershell
+        shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          @'
-          POSTGRES_DB=primeerp_ci
-          POSTGRES_USER=primeerp
-          POSTGRES_PASSWORD=PrimeERP-CI-Only-Strong-Password-2026
-          SECRET_KEY=PrimeERP-CI-Only-Secret-Key-2026-Change-Me
-          CORS_ORIGINS=https://erp.example.com
-          APP_ENV=production
-          DEBUG=false
-          ETA_ENABLED=false
-          WHATSAPP_ENABLED=false
-          '@ | Set-Content -Encoding utf8 .env
+          $pgPassword = [guid]::NewGuid().ToString('N')
+          $secretKey = ([guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToString('N'))
+          @(
+            'POSTGRES_DB=primeerp_ci'
+            'POSTGRES_USER=primeerp'
+            "POSTGRES_PASSWORD=$pgPassword"
+            "SECRET_KEY=$secretKey"
+            'CORS_ORIGINS=https://erp.example.com'
+            'APP_ENV=production'
+            'DEBUG=false'
+            'ETA_ENABLED=false'
+            'WHATSAPP_ENABLED=false'
+          ) | Set-Content -Encoding utf8 .env
+          "PRIMEERP_CI_POSTGRES_PASSWORD=$pgPassword" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PRIMEERP_CI_SECRET_KEY=$secretKey" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Backend compile and architecture checks
-        shell: powershell
+        shell: pwsh
         working-directory: backend
         run: |
           $ErrorActionPreference = 'Stop'
@@ -80,7 +84,7 @@ jobs:
           python scripts/check_release_readiness.py
 
       - name: Backend dependency install and unit tests
-        shell: powershell
+        shell: pwsh
         working-directory: backend
         run: |
           $ErrorActionPreference = 'Stop'
@@ -90,7 +94,7 @@ jobs:
           python -m pytest -q
 
       - name: Alembic graph and import smoke
-        shell: powershell
+        shell: pwsh
         working-directory: backend
         env:
           DATABASE_URL: sqlite:///./primeerp_ci_smoke.db
@@ -103,7 +107,7 @@ jobs:
           if ($headCount -ne 1) { throw "Expected exactly one Alembic head; found $headCount" }
 
       - name: Frontend install and build
-        shell: powershell
+        shell: pwsh
         working-directory: frontend
         run: |
           $ErrorActionPreference = 'Stop'
@@ -113,19 +117,19 @@ jobs:
           npm run build
 
       - name: Validate Compose configuration
-        shell: powershell
+        shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           docker compose config
 
       - name: Build production images
-        shell: powershell
+        shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           docker compose build --pull migrate backend frontend
 
       - name: Start database and run migrations
-        shell: powershell
+        shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           docker compose up -d db migrate
@@ -144,27 +148,27 @@ jobs:
           throw 'Migration container did not finish within 10 minutes.'
 
       - name: Execute PostgreSQL effective-date guard tests
-        shell: powershell
+        shell: pwsh
         working-directory: backend
         env:
-          TEST_DATABASE_URL: postgresql://primeerp:PrimeERP-CI-Only-Strong-Password-2026@db:5432/primeerp_ci
-          DATABASE_URL: postgresql+psycopg://primeerp:PrimeERP-CI-Only-Strong-Password-2026@db:5432/primeerp_ci
+          TEST_DATABASE_URL: postgresql://primeerp:${{ env.PRIMEERP_CI_POSTGRES_PASSWORD }}@db:5432/primeerp_ci
+          DATABASE_URL: postgresql+psycopg://primeerp:${{ env.PRIMEERP_CI_POSTGRES_PASSWORD }}@db:5432/primeerp_ci
           APP_ENV: test
           DEBUG: 'false'
-          SECRET_KEY: PrimeERP-CI-Only-Secret-Key-2026-Change-Me
+          SECRET_KEY: ${{ env.PRIMEERP_CI_SECRET_KEY }}
           CORS_ORIGINS: http://localhost:3000
         run: |
           $ErrorActionPreference = 'Stop'
           docker compose run --rm backend python -m pytest -q tests/jurisdiction/test_effective_date_db_guard.py
 
       - name: Start backend and frontend
-        shell: powershell
+        shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           docker compose up -d backend frontend
 
       - name: Validate runtime health
-        shell: powershell
+        shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $deadline = (Get-Date).AddMinutes(10)
@@ -184,6 +188,6 @@ jobs:
 
       - name: Cleanup
         if: always()
-        shell: powershell
+        shell: pwsh
         run: |
           docker compose down -v --remove-orphans 2>$null
