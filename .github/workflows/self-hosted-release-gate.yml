@@ -113,6 +113,7 @@ jobs:
           python scripts/check_api_security.py
           python scripts/check_production_config.py
           python scripts/check_release_readiness.py
+          python scripts/check_alembic_graph.py
 
       - name: Backend dependency install and unit tests
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
