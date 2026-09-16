@@ -1,23 +1,16 @@
-"""Converge the remaining independent release migration tails.
+"""Finalize the single release migration head.
 
-The earlier convergence migration already contains the accounting/tax,
-fiscal-lifecycle, inventory-valuation and e-invoice tails.  The enterprise /
-commissions branch is separate and ends at
-``20260916_release_graph_inventory_commissions_merge``.
-
-Only independent heads belong in this merge.  Enterprise-module integrity is
-an ancestor of the inventory/commissions merge and therefore must not also be
-listed as a parent.
+The inventory/commissions merge is already an ancestor of the release
+convergence migration through the enterprise -> inventory transaction /
+accounting chain. It must therefore not be declared as a second parent here;
+Alembic merges must list only independent heads.
 
 Revision ID: 20260916_release_graph_absolute_merge
-Revises: 20260916_release_graph_convergence, 20260916_release_graph_inventory_commissions_merge
+Revises: 20260916_release_graph_convergence
 """
 
 revision = "20260916_release_graph_absolute_merge"
-down_revision = (
-    "20260916_release_graph_convergence",
-    "20260916_release_graph_inventory_commissions_merge",
-)
+down_revision = "20260916_release_graph_convergence"
 branch_labels = None
 depends_on = None
 
