@@ -2,6 +2,9 @@
 
 Revision ID: 20260915_journal_scope_integrity
 Revises: 20260915_tax_rate_domain_hardening
+
+This revision must coexist with the canonical accounting keys created by
+older migrations; upgrade therefore reuses an existing compatible unique key.
 """
 from alembic import op
 import sqlalchemy as sa
@@ -18,15 +21,8 @@ def _assert_clean(conn, sql: str, message: str) -> None:
 
 
 def _has_unique_key(conn, table: str, columns: list[str]) -> bool:
-    """Return True when the table already has an exact usable unique key.
-
-    PostgreSQL allows a foreign key to target a primary key, unique constraint,
-    or a non-partial unique index.  Some earlier PrimeERP accounting revisions
-    already establish the company/id key, so recreating it here can collide
-    with the existing relation name.
-    """
-    bind = conn.execute
-    result = bind(
+    """Return True when the table already has an exact usable unique key."""
+    result = conn.execute(
         sa.text(
             """
             SELECT EXISTS (
@@ -37,21 +33,13 @@ def _has_unique_key(conn, table: str, columns: list[str]) -> bool:
                 WHERE n.nspname = current_schema()
                   AND t.relname = :table_name
                   AND c.contype IN ('p', 'u')
-                  AND c.conkey = ARRAY[
-                      SELECT a.attnum
-                      FROM unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord)
-                      JOIN pg_attribute a
-                        ON a.attrelid = t.oid
-                       AND a.attnum = k.attnum
-                      ORDER BY k.ord
-                  ]::smallint[]
                   AND (
                       SELECT array_agg(a.attname ORDER BY k.ord)
                       FROM unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord)
                       JOIN pg_attribute a
                         ON a.attrelid = t.oid
                        AND a.attnum = k.attnum
-                  ) = :columns
+                  ) = CAST(:columns AS text[])
             )
             OR EXISTS (
                 SELECT 1
@@ -69,7 +57,7 @@ def _has_unique_key(conn, table: str, columns: list[str]) -> bool:
                       JOIN pg_attribute a
                         ON a.attrelid = t.oid
                        AND a.attnum = k.attnum
-                  ) = :columns
+                  ) = CAST(:columns AS text[])
             )
             """
         ),
@@ -79,13 +67,17 @@ def _has_unique_key(conn, table: str, columns: list[str]) -> bool:
 
 
 def _relation_exists(conn, name: str) -> bool:
-    return bool(conn.execute(sa.text("SELECT to_regclass(:name) IS NOT NULL"), {"name": name}).scalar())
+    return bool(
+        conn.execute(
+            sa.text("SELECT to_regclass(:name) IS NOT NULL"),
+            {"name": name},
+        ).scalar()
+    )
 
 
-def _ensure_unique_key(conn, table: str, columns: list[str], preferred_name: str) -> str | None:
-    """Ensure a usable unique key exists without colliding with old schema objects."""
+def _ensure_unique_key(conn, table: str, columns: list[str], preferred_name: str) -> None:
     if _has_unique_key(conn, table, columns):
-        return None
+        return
 
     name = preferred_name
     if _relation_exists(conn, name):
@@ -96,7 +88,6 @@ def _ensure_unique_key(conn, table: str, columns: list[str], preferred_name: str
             )
 
     op.create_unique_constraint(name, table, columns)
-    return name
 
 
 def _drop_constraint_if_exists(conn, name: str, table: str, type_: str) -> None:
@@ -145,10 +136,23 @@ def upgrade():
     )
 
     op.add_column("journal_entry_lines", sa.Column("company_id", sa.Integer(), nullable=True))
-    conn.execute(sa.text("UPDATE journal_entry_lines l SET company_id = e.company_id FROM journal_entries e WHERE e.id = l.entry_id"))
-    _assert_clean(conn, "SELECT EXISTS (SELECT 1 FROM journal_entry_lines WHERE company_id IS NULL)", "Cannot harden journal_entry_lines: company could not be derived from parent entry.")
+    conn.execute(
+        sa.text(
+            "UPDATE journal_entry_lines l SET company_id = e.company_id "
+            "FROM journal_entries e WHERE e.id = l.entry_id"
+        )
+    )
+    _assert_clean(
+        conn,
+        "SELECT EXISTS (SELECT 1 FROM journal_entry_lines WHERE company_id IS NULL)",
+        "Cannot harden journal_entry_lines: company could not be derived from parent entry.",
+    )
     op.alter_column("journal_entry_lines", "company_id", nullable=False)
-    op.create_index("ix_journal_line_company_entry", "journal_entry_lines", ["company_id", "entry_id"])
+    op.create_index(
+        "ix_journal_line_company_entry",
+        "journal_entry_lines",
+        ["company_id", "entry_id"],
+    )
 
     _ensure_unique_key(
         conn,
@@ -156,8 +160,8 @@ def upgrade():
         ["tenant_id", "company_id", "id"],
         "uq_journal_entries_tenant_company_id",
     )
-    # account_combinations already has this company/id key in the canonical
-    # accounting lineage.  Only create it when a usable key is genuinely absent.
+    # Canonical accounting migrations already establish this key on clean
+    # databases. Reuse it instead of recreating the same PostgreSQL relation.
     _ensure_unique_key(
         conn,
         "account_combinations",
@@ -207,10 +211,39 @@ def upgrade():
 
 def downgrade():
     conn = op.get_bind()
-    _drop_constraint_if_exists(conn, "ck_journal_line_base_amounts_nonnegative", "journal_entry_lines", "check")
-    _drop_constraint_if_exists(conn, "fk_journal_line_cost_center_same_company", "journal_entry_lines", "foreignkey")
-    _drop_constraint_if_exists(conn, "fk_journal_line_department_same_company", "journal_entry_lines", "foreignkey")
-    _drop_constraint_if_exists(conn, "fk_journal_line_account_same_company", "journal_entry_lines", "foreignkey")
-    _drop_constraint_if_exists(conn, "fk_journal_line_entry_same_scope", "journal_entry_lines", "foreignkey")
-    op.drop_index("ix_journal_line_company_entry", table_name="journal_entry_lines", if_exists=True)
+    _drop_constraint_if_exists(
+        conn,
+        "ck_journal_line_base_amounts_nonnegative",
+        "journal_entry_lines",
+        "check",
+    )
+    _drop_constraint_if_exists(
+        conn,
+        "fk_journal_line_cost_center_same_company",
+        "journal_entry_lines",
+        "foreignkey",
+    )
+    _drop_constraint_if_exists(
+        conn,
+        "fk_journal_line_department_same_company",
+        "journal_entry_lines",
+        "foreignkey",
+    )
+    _drop_constraint_if_exists(
+        conn,
+        "fk_journal_line_account_same_company",
+        "journal_entry_lines",
+        "foreignkey",
+    )
+    _drop_constraint_if_exists(
+        conn,
+        "fk_journal_line_entry_same_scope",
+        "journal_entry_lines",
+        "foreignkey",
+    )
+    op.drop_index(
+        "ix_journal_line_company_entry",
+        table_name="journal_entry_lines",
+        if_exists=True,
+    )
     op.drop_column("journal_entry_lines", "company_id")
