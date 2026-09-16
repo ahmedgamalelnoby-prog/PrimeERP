@@ -1,13 +1,12 @@
 """Converge all release migration heads into a single Alembic head.
 
-This migration is intentionally schema-neutral. The three revisions listed in
-``down_revision`` are independent release tails that must all be applied before
-runtime startup can be considered migration-complete. Keeping them as explicit
-parents preserves every schema operation while giving Alembic one canonical
-release head for ``upgrade head``.
+This migration is intentionally schema-neutral. The release branch accumulated
+multiple independent tails after the earlier release-head merges. Every tail is
+listed explicitly below so ``upgrade head`` applies every schema operation once
+and leaves exactly one canonical Alembic head.
 
 Revision ID: 20260916_release_graph_convergence
-Revises: 20260916_einvoice_tenant_integrity, 20260916_fiscal_lifecycle_guards, 20260916_inventory_valuation_audit
+Revises: 20260916_einvoice_tenant_integrity, 20260916_fiscal_lifecycle_guards, 20260916_inventory_valuation_audit, 20260915_einvoice_idempotency, 20260916_tax_return_tenant_integrity
 """
 
 from alembic import op  # noqa: F401
@@ -17,6 +16,8 @@ down_revision = (
     "20260916_einvoice_tenant_integrity",
     "20260916_fiscal_lifecycle_guards",
     "20260916_inventory_valuation_audit",
+    "20260915_einvoice_idempotency",
+    "20260916_tax_return_tenant_integrity",
 )
 branch_labels = None
 depends_on = None
