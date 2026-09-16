@@ -21,7 +21,12 @@ def _assert_clean(conn, sql: str, message: str) -> None:
 
 
 def _has_unique_key(conn, table: str, columns: list[str]) -> bool:
-    """Return True when the table already has an exact usable unique key."""
+    """Return True when the table already has an exact usable unique key.
+
+    PostgreSQL catalog attributes use the `name` type. Explicitly cast
+    attname to text before array aggregation so the resulting `text[]` can
+    safely be compared with the supplied `text[]` parameter.
+    """
     result = conn.execute(
         sa.text(
             """
@@ -34,7 +39,7 @@ def _has_unique_key(conn, table: str, columns: list[str]) -> bool:
                   AND t.relname = :table_name
                   AND c.contype IN ('p', 'u')
                   AND (
-                      SELECT array_agg(a.attname ORDER BY k.ord)
+                      SELECT array_agg(a.attname::text ORDER BY k.ord)
                       FROM unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord)
                       JOIN pg_attribute a
                         ON a.attrelid = t.oid
@@ -52,7 +57,7 @@ def _has_unique_key(conn, table: str, columns: list[str]) -> bool:
                   AND i.indisvalid
                   AND i.indpred IS NULL
                   AND (
-                      SELECT array_agg(a.attname ORDER BY k.ord)
+                      SELECT array_agg(a.attname::text ORDER BY k.ord)
                       FROM unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord)
                       JOIN pg_attribute a
                         ON a.attrelid = t.oid
@@ -61,7 +66,7 @@ def _has_unique_key(conn, table: str, columns: list[str]) -> bool:
             )
             """
         ),
-        {"table_name": table, "columns": columns},
+        {"table_name": table, "columns": "{" + ",".join(columns) + "}"},
     )
     return bool(result.scalar())
 
@@ -160,8 +165,6 @@ def upgrade():
         ["tenant_id", "company_id", "id"],
         "uq_journal_entries_tenant_company_id",
     )
-    # Canonical accounting migrations already establish this key on clean
-    # databases. Reuse it instead of recreating the same PostgreSQL relation.
     _ensure_unique_key(
         conn,
         "account_combinations",
