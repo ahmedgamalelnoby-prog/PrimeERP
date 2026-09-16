@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Verify runner identity
-        shell: pwsh
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
           $ErrorActionPreference = 'Stop'
           Write-Host "RUNNER_NAME=$env:RUNNER_NAME"
@@ -35,7 +35,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Verify Git Python Node Docker
-        shell: pwsh
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
           $ErrorActionPreference = 'Stop'
           git --version
@@ -46,14 +46,14 @@ jobs:
           docker compose version
 
       - name: Verify Docker engine
-        shell: pwsh
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
           $ErrorActionPreference = 'Stop'
           docker info
           docker run --rm hello-world
 
       - name: Prepare CI environment
-        shell: pwsh
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
           $ErrorActionPreference = 'Stop'
           $pgPassword = [guid]::NewGuid().ToString('N')
@@ -73,7 +73,7 @@ jobs:
           "PRIMEERP_CI_SECRET_KEY=$secretKey" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Backend compile and architecture checks
-        shell: pwsh
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         working-directory: backend
         run: |
           $ErrorActionPreference = 'Stop'
@@ -84,7 +84,7 @@ jobs:
           python scripts/check_release_readiness.py
 
       - name: Backend dependency install and unit tests
-        shell: pwsh
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         working-directory: backend
         run: |
           $ErrorActionPreference = 'Stop'
@@ -94,7 +94,7 @@ jobs:
           python -m pytest -q
 
       - name: Alembic graph and import smoke
-        shell: pwsh
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         working-directory: backend
         env:
           DATABASE_URL: sqlite:///./primeerp_ci_smoke.db
@@ -107,7 +107,7 @@ jobs:
           if ($headCount -ne 1) { throw "Expected exactly one Alembic head; found $headCount" }
 
       - name: Frontend install and build
-        shell: pwsh
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         working-directory: frontend
         run: |
           $ErrorActionPreference = 'Stop'
@@ -117,19 +117,19 @@ jobs:
           npm run build
 
       - name: Validate Compose configuration
-        shell: pwsh
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
           $ErrorActionPreference = 'Stop'
           docker compose config
 
       - name: Build production images
-        shell: pwsh
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
           $ErrorActionPreference = 'Stop'
           docker compose build --pull migrate backend frontend
 
       - name: Start database and run migrations
-        shell: pwsh
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
           $ErrorActionPreference = 'Stop'
           docker compose up -d db migrate
@@ -148,7 +148,7 @@ jobs:
           throw 'Migration container did not finish within 10 minutes.'
 
       - name: Execute PostgreSQL effective-date guard tests
-        shell: pwsh
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         working-directory: backend
         env:
           TEST_DATABASE_URL: postgresql://primeerp:${{ env.PRIMEERP_CI_POSTGRES_PASSWORD }}@db:5432/primeerp_ci
@@ -162,13 +162,13 @@ jobs:
           docker compose run --rm backend python -m pytest -q tests/jurisdiction/test_effective_date_db_guard.py
 
       - name: Start backend and frontend
-        shell: pwsh
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
           $ErrorActionPreference = 'Stop'
           docker compose up -d backend frontend
 
       - name: Validate runtime health
-        shell: pwsh
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
           $ErrorActionPreference = 'Stop'
           $deadline = (Get-Date).AddMinutes(10)
@@ -188,6 +188,6 @@ jobs:
 
       - name: Cleanup
         if: always()
-        shell: pwsh
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
           docker compose down -v --remove-orphans 2>$null
