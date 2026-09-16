@@ -193,11 +193,11 @@ jobs:
           $ErrorActionPreference = 'Stop'
           docker compose run --rm backend python -m pytest -q tests/jurisdiction/test_effective_date_db_guard.py
 
-      - name: Start backend and frontend
+      - name: Start backend frontend and report worker
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
           $ErrorActionPreference = 'Stop'
-          docker compose up -d backend frontend
+          docker compose up -d backend frontend report-worker
 
       - name: Validate runtime health
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
@@ -207,7 +207,8 @@ jobs:
           while ((Get-Date) -lt $deadline) {
             $backendStatus = docker inspect -f '{{.State.Health.Status}}' primeerp-backend 2>$null
             $frontendStatus = docker inspect -f '{{.State.Health.Status}}' primeerp-frontend 2>$null
-            if ($backendStatus -eq 'healthy' -and $frontendStatus -eq 'healthy') {
+            $workerStatus = docker inspect -f '{{.State.Status}}' primeerp-report-worker 2>$null
+            if ($backendStatus -eq 'healthy' -and $frontendStatus -eq 'healthy' -and $workerStatus -eq 'running') {
               Invoke-WebRequest -UseBasicParsing http://127.0.0.1:3000/ | Out-Null
               Write-Host 'Runtime health: PASS'
               exit 0
@@ -215,8 +216,8 @@ jobs:
             Start-Sleep -Seconds 5
           }
           docker compose ps
-          docker compose logs --tail=200 db migrate backend frontend
-          throw 'Backend/frontend health check failed.'
+          docker compose logs --tail=200 db migrate backend frontend report-worker
+          throw 'Backend/frontend/report-worker runtime health check failed.'
 
       - name: Cleanup
         if: always()
