@@ -146,21 +146,22 @@ jobs:
           SECRET_KEY: PrimeERP-CI-Only-Secret-Key-2026-Change-Me
           CORS_ORIGINS: http://localhost:3000
         run: docker compose run --rm backend python -m pytest -q tests/jurisdiction/test_effective_date_db_guard.py
-      - name: Start backend and frontend
-        run: docker compose up -d backend frontend
+      - name: Start backend frontend and report worker
+        run: docker compose up -d backend frontend report-worker
       - name: Validate runtime health
         run: |
           for i in $(seq 1 120); do
             backend_status=$(docker inspect -f '{{.State.Health.Status}}' primeerp-backend 2>/dev/null || true)
             frontend_status=$(docker inspect -f '{{.State.Health.Status}}' primeerp-frontend 2>/dev/null || true)
-            if [ "$backend_status" = "healthy" ] && [ "$frontend_status" = "healthy" ]; then
+            worker_status=$(docker inspect -f '{{.State.Status}}' primeerp-report-worker 2>/dev/null || true)
+            if [ "$backend_status" = "healthy" ] && [ "$frontend_status" = "healthy" ] && [ "$worker_status" = "running" ]; then
               curl -fsS http://127.0.0.1:3000/ >/dev/null
               exit 0
             fi
             sleep 5
           done
           docker compose ps
-          docker compose logs --tail=200 db migrate backend frontend
+          docker compose logs --tail=200 db migrate backend frontend report-worker
           exit 1
       - name: Cleanup
         if: always()
