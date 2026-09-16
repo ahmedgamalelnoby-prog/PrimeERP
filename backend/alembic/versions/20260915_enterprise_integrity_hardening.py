@@ -41,7 +41,7 @@ def upgrade():
     op.create_foreign_key("fk_cost_center_branch_same_company", "accounting_cost_centers", "branches", ["company_id", "branch_id"], ["company_id", "id"], ondelete="SET NULL")
     op.create_foreign_key("fk_natural_account_parent_same_company", "natural_accounts", "natural_accounts", ["company_id", "parent_id"], ["company_id", "id"], ondelete="RESTRICT")
     op.create_foreign_key("fk_account_combination_department_same_company", "account_combinations", "accounting_departments", ["company_id", "department_id"], ["company_id", "id"], ondelete="RESTRICT")
-    op.create_foreign_key("fk_account_combination_cost_center_same_company", "accounting_cost_centers", ["company_id", "cost_center_id"], ["company_id", "id"], ondelete="RESTRICT")
+    op.create_foreign_key("fk_account_combination_cost_center_same_company", "account_combinations", "accounting_cost_centers", ["company_id", "cost_center_id"], ["company_id", "id"], ondelete="RESTRICT")
     op.create_foreign_key("fk_account_combination_natural_account_same_company", "account_combinations", "natural_accounts", ["company_id", "natural_account_id"], ["company_id", "id"], ondelete="RESTRICT")
     op.create_foreign_key("fk_jurisdiction_decision_partner_same_company", "jurisdiction_decisions", "commerce_partners", ["company_id", "partner_id"], ["company_id", "id"], ondelete="SET NULL")
 
