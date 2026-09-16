@@ -43,6 +43,11 @@ class FiscalYear(Base):
     periods = relationship(
         "AccountingPeriod",
         back_populates="fiscal_year",
+        foreign_keys=lambda: [
+            AccountingPeriod.tenant_id,
+            AccountingPeriod.company_id,
+            AccountingPeriod.fiscal_year_id,
+        ],
         cascade="all, delete-orphan",
         passive_deletes=True,
         order_by="AccountingPeriod.period_number",
