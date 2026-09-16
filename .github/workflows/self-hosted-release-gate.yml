@@ -27,7 +27,9 @@ jobs:
           Write-Host "RUNNER_OS=$env:RUNNER_OS"
           Write-Host "RUNNER_ARCH=$env:RUNNER_ARCH"
           Write-Host "GITHUB_RUN_ID=$env:GITHUB_RUN_ID"
-          Get-ComputerInfo -Property CsName,WindowsProductName,WindowsVersion,OsBuildNumber | Format-List
+          hostname
+          whoami
+          $PSVersionTable
 
       - name: Checkout
         uses: actions/checkout@v5
@@ -184,4 +186,4 @@ jobs:
         if: always()
         shell: powershell
         run: |
-          docker compose down -v --remove-orphans
+          docker compose down -v --remove-orphans 2>$null
