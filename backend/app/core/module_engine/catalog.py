@@ -67,15 +67,19 @@ INVENTORY = (
     CatalogEntry("inventory/serial_numbers", "inventory", ("inventory/inventory_core",), layer="business"),
     CatalogEntry("inventory/costing", "inventory", ("inventory/stock_moves",), layer="finance"),
     CatalogEntry("inventory/valuation", "inventory", ("inventory/costing", "accounting/journal_entries"), layer="finance"),
+    CatalogEntry("inventory/uom", "inventory", ("inventory/inventory_core",), layer="business"),
 )
 
 COMMERCE = (
-    CatalogEntry(
-        "commerce/sales_purchasing",
-        "commerce",
-        ("inventory/inventory_core", "accounting/accounting_core"),
-        layer="business",
-    ),
+    CatalogEntry("commerce/sales_purchasing", "commerce", ("inventory/inventory_core", "accounting/accounting_core"), layer="business"),
+)
+
+OPERATIONS = (
+    CatalogEntry("transactions/core", "transactions", ("core/identity",), layer="business"),
+    CatalogEntry("enterprise/core", "enterprise", ("organization/companies",), layer="business"),
+    CatalogEntry("legal/core", "legal", ("core/identity",), layer="business"),
+    CatalogEntry("jurisdiction/core", "jurisdiction", ("organization/companies",), layer="business"),
+    CatalogEntry("catalog/core", "catalog", ("inventory/inventory_core",), layer="business"),
 )
 
 LOGISTICS = (
@@ -125,7 +129,7 @@ LOCALIZATION = (
     CatalogEntry("localization/egyptian_einvoice", "localization", ("accounting/taxes", "accounting/journal_entries"), layer="localization"),
 )
 
-ALL_CATALOG_ENTRIES = CORE + ORGANIZATION + ACCOUNTING + SALES + INVENTORY + COMMERCE + LOGISTICS + INTEGRATIONS + TREASURY + PLATFORM + CRM + PEOPLE + INDUSTRY + LOCALIZATION
+ALL_CATALOG_ENTRIES = CORE + ORGANIZATION + ACCOUNTING + SALES + INVENTORY + COMMERCE + OPERATIONS + LOGISTICS + INTEGRATIONS + TREASURY + PLATFORM + CRM + PEOPLE + INDUSTRY + LOCALIZATION
 
 
 def catalog() -> Tuple[CatalogEntry, ...]:

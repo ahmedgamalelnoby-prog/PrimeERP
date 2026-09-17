@@ -32,23 +32,14 @@ def _reject_suspended(tenant: Tenant) -> None:
 
 
 def _canonical_plan(db: Session, plan_id: int) -> Plan:
-    plan = db.scalar(select(Plan).where(
-        Plan.id == plan_id,
-        Plan.is_deleted.is_(False),
-        Plan.status == PlanStatus.ACTIVE.value,
-    ))
+    plan = db.scalar(select(Plan).where(Plan.id == plan_id, Plan.is_deleted.is_(False), Plan.status == PlanStatus.ACTIVE.value))
     if plan is None:
         raise HTTPException(status_code=404, detail="Canonical subscription plan is not active")
     return plan
 
 
 def _canonical_plan_by_code(db: Session, code: str, version: int = 1) -> Plan:
-    plan = db.scalar(select(Plan).where(
-        Plan.code == code.strip().lower(),
-        Plan.version == version,
-        Plan.is_deleted.is_(False),
-        Plan.status == PlanStatus.ACTIVE.value,
-    ))
+    plan = db.scalar(select(Plan).where(Plan.code == code.strip().lower(), Plan.version == version, Plan.is_deleted.is_(False), Plan.status == PlanStatus.ACTIVE.value))
     if plan is None:
         raise HTTPException(status_code=503, detail=f"Canonical plan '{code}' is not configured")
     return plan
@@ -60,25 +51,13 @@ def _legacy_plan(db: Session, canonical: Plan) -> SubscriptionPlan:
         raise HTTPException(status_code=500, detail=f"Plan identity mismatch for '{canonical.code}'")
     if legacy is None:
         legacy = SubscriptionPlan(
-            id=canonical.id,
-            name_ar=canonical.name_ar or canonical.name,
-            name_en=canonical.display_name or canonical.name,
-            code=canonical.code,
-            description_ar=canonical.description,
-            description_en=canonical.description,
-            monthly_price=canonical.monthly_price,
-            yearly_price=canonical.yearly_price,
-            currency_code=canonical.currency,
-            trial_days=canonical.trial_days,
-            max_users=canonical.max_users or 5,
-            max_companies=canonical.max_companies or 1,
-            max_branches=canonical.max_branches or 1,
-            max_products=canonical.max_products or 1000,
-            max_integrations=canonical.max_integrations or 0,
-            storage_limit_mb=canonical.storage_limit_mb or 1024,
-            is_public=canonical.is_public,
-            is_active=True,
-            display_order=canonical.sort_order,
+            id=canonical.id, name_ar=canonical.name_ar or canonical.name, name_en=canonical.display_name or canonical.name,
+            code=canonical.code, description_ar=canonical.description, description_en=canonical.description,
+            monthly_price=canonical.monthly_price, yearly_price=canonical.yearly_price, currency_code=canonical.currency,
+            trial_days=canonical.trial_days, max_users=canonical.max_users or 5, max_companies=canonical.max_companies or 1,
+            max_branches=canonical.max_branches or 1, max_products=canonical.max_products or 1000,
+            max_integrations=canonical.max_integrations or 0, storage_limit_mb=canonical.storage_limit_mb or 1024,
+            is_public=canonical.is_public, is_active=True, display_order=canonical.sort_order,
         )
         db.add(legacy)
         db.flush()
@@ -90,12 +69,7 @@ def resolve_legacy_plan(db: Session, code: str, version: int = 1) -> Subscriptio
 
 
 def _active_subscription(db: Session, tenant_id: int, now: datetime) -> Subscription | None:
-    return db.scalar(select(Subscription).where(
-        Subscription.tenant_id == tenant_id,
-        Subscription.status.in_(ACTIVE_STATUSES),
-        Subscription.starts_at <= now,
-        (Subscription.ends_at.is_(None)) | (Subscription.ends_at > now),
-    ).order_by(Subscription.ends_at.desc().nullslast(), Subscription.id.desc()))
+    return db.scalar(select(Subscription).where(Subscription.tenant_id == tenant_id, Subscription.status.in_(ACTIVE_STATUSES), Subscription.starts_at <= now, (Subscription.ends_at.is_(None)) | (Subscription.ends_at > now)).order_by(Subscription.ends_at.desc().nullslast(), Subscription.id.desc()))
 
 
 def _period_end(start: datetime, billing_cycle: str) -> datetime:
@@ -109,27 +83,13 @@ def _period_end(start: datetime, billing_cycle: str) -> datetime:
     return start.replace(year=year, month=month, day=day)
 
 
-def _provision_plan_modules(
-    db: Session,
-    tenant_id: int,
-    legacy_plan: SubscriptionPlan,
-    starts_at: datetime,
-    ends_at: datetime | None,
-    allowed_module_codes: set[str] | None = None,
-) -> list[SystemModule]:
-    modules = list(db.scalars(select(SystemModule).join(PlanModule, PlanModule.module_id == SystemModule.id).where(
-        PlanModule.plan_id == legacy_plan.id,
-        PlanModule.is_enabled.is_(True),
-        SystemModule.is_active.is_(True),
-    )).all())
+def _provision_plan_modules(db: Session, tenant_id: int, legacy_plan: SubscriptionPlan, starts_at: datetime, ends_at: datetime | None, allowed_module_codes: set[str] | None = None) -> list[SystemModule]:
+    modules = list(db.scalars(select(SystemModule).join(PlanModule, PlanModule.module_id == SystemModule.id).where(PlanModule.plan_id == legacy_plan.id, PlanModule.is_enabled.is_(True), SystemModule.is_active.is_(True))).all())
     if allowed_module_codes is not None:
         modules = [module for module in modules if module.is_core or module.code in allowed_module_codes]
 
     selected_module_ids = {module.id for module in modules}
-    plan_grants = db.scalars(select(TenantModule).where(
-        TenantModule.tenant_id == tenant_id,
-        TenantModule.source == "plan",
-    )).all()
+    plan_grants = db.scalars(select(TenantModule).where(TenantModule.tenant_id == tenant_id, TenantModule.source == "plan")).all()
     for grant in plan_grants:
         if grant.module_id not in selected_module_ids:
             grant.is_enabled = False
@@ -137,36 +97,18 @@ def _provision_plan_modules(
             grant.ends_at = ends_at
 
     for module in modules:
-        grant = db.scalar(select(TenantModule).where(
-            TenantModule.tenant_id == tenant_id,
-            TenantModule.module_id == module.id,
-        ))
+        grant = db.scalar(select(TenantModule).where(TenantModule.tenant_id == tenant_id, TenantModule.module_id == module.id))
         if grant is None:
-            db.add(TenantModule(
-                tenant_id=tenant_id,
-                module_id=module.id,
-                is_enabled=True,
-                source="plan",
-                starts_at=starts_at,
-                ends_at=ends_at,
-            ))
+            db.add(TenantModule(tenant_id=tenant_id, module_id=module.id, is_enabled=True, source="plan", starts_at=starts_at, ends_at=ends_at))
         elif grant.source == "plan":
             grant.is_enabled = True
             grant.starts_at = starts_at
             grant.ends_at = ends_at
-        # Explicit overrides are intentionally authoritative and are never
-        # rewritten by a plan transition.
+        # Explicit overrides are intentionally authoritative and are never rewritten by a plan transition.
     return modules
 
 
-def create_trial(
-    db: Session,
-    tenant_id: int,
-    plan_code: str = "trial",
-    plan_version: int = 1,
-    starts_at: datetime | None = None,
-    allowed_module_codes: set[str] | None = None,
-) -> tuple[Subscription, Plan, list[SystemModule]]:
+def create_trial(db: Session, tenant_id: int, plan_code: str = "trial", plan_version: int = 1, starts_at: datetime | None = None, allowed_module_codes: set[str] | None = None) -> tuple[Subscription, Plan, list[SystemModule]]:
     tenant = _tenant(db, tenant_id)
     _reject_suspended(tenant)
     canonical = _canonical_plan_by_code(db, plan_code, plan_version)
@@ -176,17 +118,7 @@ def create_trial(
     existing = _active_subscription(db, tenant_id, start)
     if existing is not None:
         raise HTTPException(status_code=409, detail="Tenant already has an active subscription")
-    subscription = Subscription(
-        tenant_id=tenant_id,
-        plan_id=legacy.id,
-        status="trialing",
-        billing_cycle=canonical.billing_cycle,
-        starts_at=start,
-        ends_at=end,
-        trial_ends_at=end,
-        next_billing_date=None,
-        is_auto_renew=False,
-    )
+    subscription = Subscription(tenant_id=tenant_id, plan_id=legacy.id, status="trialing", billing_cycle=canonical.billing_cycle, starts_at=start, ends_at=end, trial_ends_at=end, next_billing_date=None, is_auto_renew=False)
     db.add(subscription)
     db.flush()
     modules = _provision_plan_modules(db, tenant_id, legacy, start, end, allowed_module_codes=allowed_module_codes)
@@ -209,7 +141,7 @@ def convert_trial_to_paid(db: Session, tenant_id: int, plan_id: int, billing_cyc
         raise HTTPException(status_code=409, detail="Tenant already has this paid plan")
     if current is not None and current.status == "active":
         raise HTTPException(status_code=409, detail="Tenant already has an active paid subscription")
-    subscription = current if current is not None and current.status == "trialing" else None
+    subscription = current if current is not None and current.status in {"trialing", "grace"} else None
     if subscription is None:
         subscription = Subscription(tenant_id=tenant.id)
         db.add(subscription)
@@ -258,6 +190,7 @@ def renew_subscription(db: Session, tenant_id: int, plan_id: int | None = None, 
     tenant.status = "active"
     tenant.is_trial = False
     tenant.is_active = True
+    tenant.trial_ends_at = None
     _provision_plan_modules(db, tenant_id, legacy, start, current.ends_at)
     db.commit()
     db.refresh(current)
@@ -297,7 +230,7 @@ def unsuspend_tenant(db: Session, tenant_id: int) -> Tenant:
     subscription = _active_subscription(db, tenant_id, _now())
     if subscription is None:
         raise HTTPException(status_code=409, detail="Tenant has no valid subscription for reactivation")
-    tenant.status = "trial" if subscription.status == "trialing" else "active"
+    tenant.status = "trial" if subscription.status == "trialing" else ("grace" if subscription.status == "grace" else "active")
     tenant.is_active = True
     tenant.is_trial = subscription.status == "trialing"
     tenant.trial_ends_at = subscription.trial_ends_at if subscription.status == "trialing" else None
@@ -310,28 +243,35 @@ def unsuspend_tenant(db: Session, tenant_id: int) -> Tenant:
 
 def expire_due_subscriptions(db: Session, now: datetime | None = None) -> int:
     current = now or _now()
-    subscriptions = db.scalars(select(Subscription).where(
-        Subscription.status.in_(("trialing", "active", "past_due", "grace")),
-        Subscription.ends_at.is_not(None),
-        Subscription.ends_at <= current,
-    ).with_for_update()).all()
+    subscriptions = db.scalars(select(Subscription).where(Subscription.status.in_(("trialing", "active", "past_due", "grace")), Subscription.ends_at.is_not(None), Subscription.ends_at <= current).with_for_update()).all()
     changed = 0
     for subscription in subscriptions:
-        canonical = db.get(Plan, subscription.plan_id)
-        grace_days = canonical.grace_period_days if canonical is not None else 0
         tenant = db.get(Tenant, subscription.tenant_id)
-        grace_end = subscription.ends_at + timedelta(days=grace_days)
-        if current < grace_end:
-            subscription.status = "grace"
-            if tenant is not None:
-                tenant.status = "grace"
-                tenant.is_active = True
-        else:
+        if subscription.status == "trialing":
             subscription.status = "expired"
             subscription.next_billing_date = None
             if tenant is not None:
                 tenant.status = "expired"
                 tenant.is_active = False
+                tenant.is_trial = False
+                tenant.trial_ends_at = None
+        else:
+            canonical = db.get(Plan, subscription.plan_id)
+            grace_days = canonical.grace_period_days if canonical is not None else 0
+            grace_end = subscription.ends_at + timedelta(days=grace_days)
+            if current < grace_end:
+                subscription.status = "grace"
+                if tenant is not None:
+                    tenant.status = "grace"
+                    tenant.is_active = True
+                    tenant.is_trial = False
+            else:
+                subscription.status = "expired"
+                subscription.next_billing_date = None
+                if tenant is not None:
+                    tenant.status = "expired"
+                    tenant.is_active = False
+                    tenant.is_trial = False
         changed += 1
     db.commit()
     return changed

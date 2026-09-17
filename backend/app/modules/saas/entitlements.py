@@ -18,6 +18,7 @@ from app.modules.platform.plans.models import Plan
 from app.modules.saas.models import PlanModule, Subscription, SystemModule, Tenant, TenantModule
 
 CORE_MODULES = {"dashboard", "users", "companies", "branches"}
+ACTIVE_SUBSCRIPTION_STATUSES = ("trialing", "active", "past_due", "grace")
 
 
 def _active_subscription(db: Session, tenant_id: int) -> Subscription | None:
@@ -30,7 +31,7 @@ def _active_subscription(db: Session, tenant_id: int) -> Subscription | None:
             Subscription.tenant_id == tenant_id,
             Tenant.is_active.is_(True),
             text("tenants.status <> 'suspended'"),
-            Subscription.status.in_(("trialing", "active", "past_due")),
+            Subscription.status.in_(ACTIVE_SUBSCRIPTION_STATUSES),
             Subscription.starts_at <= now,
             or_(Subscription.ends_at.is_(None), Subscription.ends_at > now),
             Plan.is_deleted.is_(False),
