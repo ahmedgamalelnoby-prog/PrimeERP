@@ -118,6 +118,8 @@ services:
       PRIMEERP_REPORT_WORKER_POLL_SECONDS: ${PRIMEERP_REPORT_WORKER_POLL_SECONDS:-10}
       PRIMEERP_REPORT_MAX_ATTEMPTS: ${PRIMEERP_REPORT_MAX_ATTEMPTS:-5}
     command: ["python", "-m", "scripts.run_report_worker"]
+    healthcheck:
+      disable: true
     depends_on:
       migrate:
         condition: service_completed_successfully
