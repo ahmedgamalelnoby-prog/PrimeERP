@@ -1,3 +1,5 @@
+import inspect
+
 from main import create_application
 from app.modules.documents.router import router as documents_router
 from app.modules.helpdesk.router import router as helpdesk_router
@@ -19,6 +21,16 @@ def test_application_module_routes_are_registered():
 
 
 def test_application_module_routers_require_module_entitlements():
-    for router in (helpdesk_router, project_router, documents_router):
+    expected_modules = (
+        (helpdesk_router, "helpdesk"),
+        (project_router, "project"),
+        (documents_router, "documents"),
+    )
+
+    for router, module_code in expected_modules:
         assert router.dependencies
-        assert any(getattr(dependency.dependency, "__name__", "") == "require_module" for dependency in router.dependencies)
+        dependency_bindings = [
+            inspect.getclosurevars(dependency.dependency).nonlocals.get("canonical_code")
+            for dependency in router.dependencies
+        ]
+        assert module_code in dependency_bindings
