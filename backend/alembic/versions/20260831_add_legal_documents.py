@@ -1,8 +1,12 @@
 """add editable legal documents and acceptance tracking
 
 Revision ID: 20260831legal
-Revises: 3e705e622f62, 23a89dc7f2a4
+Revises: 23a89dc7f2a4
 Create Date: 2026-08-31
+
+The previous merge listed 3e705e622f62 together with its descendant
+23a89dc7f2a4. Keeping the descendant alone preserves the complete lineage
+without declaring an ancestor and descendant as parallel merge parents.
 
 """
 from typing import Sequence, Union
@@ -11,10 +15,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision: str = "20260831legal"
-down_revision: Union[str, Sequence[str], None] = (
-    "3e705e622f62",
-    "23a89dc7f2a4",
-)
+down_revision: Union[str, Sequence[str], None] = "23a89dc7f2a4"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
