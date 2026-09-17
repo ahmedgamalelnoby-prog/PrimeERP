@@ -13,9 +13,10 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    and_,
 )
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import foreign, relationship
 from sqlalchemy.sql import func
 
 from app.database.base import Base
@@ -62,8 +63,32 @@ class JournalEntry(Base):
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
     journal = relationship("AccountingJournal", back_populates="entries")
-    fiscal_year = relationship("FiscalYear")
-    period = relationship("AccountingPeriod")
+    fiscal_year = relationship(
+        "FiscalYear",
+        primaryjoin=lambda: and_(
+            foreign(JournalEntry.fiscal_year_id) == FiscalYear.id,
+            foreign(JournalEntry.tenant_id) == FiscalYear.tenant_id,
+            foreign(JournalEntry.company_id) == FiscalYear.company_id,
+        ),
+        foreign_keys=lambda: [
+            JournalEntry.fiscal_year_id,
+            JournalEntry.tenant_id,
+            JournalEntry.company_id,
+        ],
+    )
+    period = relationship(
+        "AccountingPeriod",
+        primaryjoin=lambda: and_(
+            foreign(JournalEntry.period_id) == AccountingPeriod.id,
+            foreign(JournalEntry.tenant_id) == AccountingPeriod.tenant_id,
+            foreign(JournalEntry.company_id) == AccountingPeriod.company_id,
+        ),
+        foreign_keys=lambda: [
+            JournalEntry.period_id,
+            JournalEntry.tenant_id,
+            JournalEntry.company_id,
+        ],
+    )
     business_transaction = relationship("BusinessTransaction")
     lines = relationship("JournalEntryLine", back_populates="entry", cascade="all, delete-orphan", passive_deletes=True, order_by="JournalEntryLine.line_number")
     reversal_of = relationship("JournalEntry", remote_side=[id], foreign_keys=[reversal_of_id], post_update=True)
