@@ -1,10 +1,9 @@
 name: PrimeERP Windows Runner Infrastructure
 
+# Infrastructure smoke is an explicit/manual diagnostic only.
+# The automatic release gate is PrimeERP Self-Hosted Release Gate.
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/runner-infrastructure-smoke.yml'
 
 permissions:
   contents: read
@@ -52,8 +51,7 @@ jobs:
 
       - name: Docker execution smoke
         shell: powershell
-        run: |
-          docker run --rm hello-world
+        run: docker run --rm hello-world
 
       - name: PostgreSQL container smoke
         shell: powershell
@@ -81,5 +79,3 @@ jobs:
           whoami
           docker ps -a --no-trunc
           docker context show
-
-# Runner reset validation trigger: no functional workflow change.
