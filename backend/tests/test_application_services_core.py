@@ -1,17 +1,8 @@
-from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
 
-from app.services.application_services import ApplicationServiceError, add_task_dependency, assign_helpdesk_ticket, complete_task, create_helpdesk_ticket
-
-
-class _ScalarResult:
-    def __init__(self, value):
-        self.value = value
-
-    def scalar(self):
-        return self.value
+from app.services.application_services import ApplicationServiceError, assign_helpdesk_ticket, create_helpdesk_ticket
 
 
 class _DB:
@@ -50,7 +41,9 @@ def test_create_helpdesk_ticket_accepts_active_assignee():
     team = SimpleNamespace(id=1, company_id=10)
     stage = SimpleNamespace(id=2, team_id=1)
     member = SimpleNamespace(team_id=1, member_ref="u1", active=True)
-    db = _DB([team, stage, member])
+    # create_helpdesk_ticket performs four scalar lookups:
+    # team, stage, duplicate ticket, then active assignee.
+    db = _DB([team, stage, None, member])
 
     ticket = create_helpdesk_ticket(db, company_id=10, team_id=1, stage_id=2, ticket_no="HD-1", subject="Test", assignee_ref="u1")
     assert ticket.company_id == 10
