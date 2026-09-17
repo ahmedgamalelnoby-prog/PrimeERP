@@ -13,7 +13,9 @@ from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.inventory.items.models import InventoryItem
-from app.modules.saas.models import PlanModule, Subscription, SubscriptionPlan, SystemModule, Tenant, TenantModule
+from app.modules.platform.plans.constants import PlanStatus
+from app.modules.platform.plans.models import Plan
+from app.modules.saas.models import PlanModule, Subscription, SystemModule, Tenant, TenantModule
 
 CORE_MODULES = {"dashboard", "users", "companies", "branches"}
 
@@ -22,7 +24,7 @@ def _active_subscription(db: Session, tenant_id: int) -> Subscription | None:
     now = datetime.now(timezone.utc)
     return db.scalar(
         select(Subscription)
-        .join(SubscriptionPlan, SubscriptionPlan.id == Subscription.plan_id)
+        .join(Plan, Plan.id == Subscription.plan_id)
         .join(Tenant, Tenant.id == Subscription.tenant_id)
         .where(
             Subscription.tenant_id == tenant_id,
@@ -31,7 +33,8 @@ def _active_subscription(db: Session, tenant_id: int) -> Subscription | None:
             Subscription.status.in_(("trialing", "active", "past_due")),
             Subscription.starts_at <= now,
             or_(Subscription.ends_at.is_(None), Subscription.ends_at > now),
-            SubscriptionPlan.is_active.is_(True),
+            Plan.is_deleted.is_(False),
+            Plan.status == PlanStatus.ACTIVE.value,
         )
         .order_by(Subscription.ends_at.desc().nullslast(), Subscription.id.desc())
     )
@@ -109,7 +112,7 @@ def _limit_for(db: Session, tenant_id: int, resource: str) -> int | None:
     custom = getattr(subscription, f"custom_max_{resource}", None)
     if custom is not None:
         return custom
-    plan = db.get(SubscriptionPlan, subscription.plan_id)
+    plan = db.get(Plan, subscription.plan_id)
     return getattr(plan, f"max_{resource}", None) if plan else None
 
 
