@@ -1,10 +1,12 @@
-"""merge report delivery migration heads
+"""Merge report delivery migration tails.
 
-Revision ID: 20260915_merge_reporting_heads
-Revises: 20260915_report_attempt_locking, 20260915_reporting_delivery
+The report-attempt locking migration already descends from the tax-return draft
+and reporting delivery revisions, so those revisions must not be repeated as
+second parents here.
 """
+
 revision = "20260915_merge_reporting_heads"
-down_revision = ("20260915_report_attempt_locking", "20260915_reporting_delivery")
+down_revision = "20260915_report_attempt_locking"
 branch_labels = None
 depends_on = None
 
