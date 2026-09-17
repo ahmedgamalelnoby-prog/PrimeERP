@@ -19,6 +19,11 @@ def create_helpdesk_ticket(db: Session, *, company_id: int, team_id: int, stage_
     stage = db.scalar(select(HelpdeskStage).where(HelpdeskStage.id == stage_id, HelpdeskStage.team_id == team_id))
     if not team or not stage:
         raise ApplicationServiceError("Team and stage must belong to the same company/team")
+    if db.scalar(select(HelpdeskTicket.id).where(
+        HelpdeskTicket.company_id == company_id,
+        HelpdeskTicket.ticket_no == ticket_no,
+    )) is not None:
+        raise ApplicationServiceError("Ticket number already exists for this company")
     if assignee_ref and not db.scalar(select(HelpdeskTeamMember).where(
         HelpdeskTeamMember.team_id == team_id,
         HelpdeskTeamMember.member_ref == assignee_ref,
@@ -76,6 +81,11 @@ def add_task_dependency(db: Session, *, predecessor_id: int, successor_id: int, 
     successor = db.scalar(select(ProjectTask).where(ProjectTask.id == successor_id, ProjectTask.project_id == project_id))
     if not predecessor or not successor:
         raise ApplicationServiceError("Dependency tasks must belong to the same project")
+    if db.scalar(select(ProjectTaskDependency.predecessor_task_id).where(
+        ProjectTaskDependency.predecessor_task_id == predecessor_id,
+        ProjectTaskDependency.successor_task_id == successor_id,
+    )) is not None:
+        raise ApplicationServiceError("Task dependency already exists")
     stack = [successor_id]
     seen: set[int] = set()
     while stack:
