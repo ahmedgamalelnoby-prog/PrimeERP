@@ -169,6 +169,8 @@ jobs:
           }
           npm install --package-lock-only --ignore-scripts --no-audit
           if ($LASTEXITCODE -ne 0) { throw "npm package-lock regeneration failed with exit code $LASTEXITCODE" }
+          npm ci --ignore-scripts --no-audit
+          if ($LASTEXITCODE -ne 0) { throw "npm ci from regenerated lockfile failed with exit code $LASTEXITCODE" }
           npm ls --depth=0
           if ($LASTEXITCODE -ne 0) { throw "npm dependency graph is invalid with exit code $LASTEXITCODE" }
 
@@ -190,8 +192,8 @@ jobs:
         working-directory: frontend
         run: |
           $ErrorActionPreference = 'Stop'
-          npm install --no-audit
-          if ($LASTEXITCODE -ne 0) { throw "npm install failed with exit code $LASTEXITCODE" }
+          npm ci --no-audit
+          if ($LASTEXITCODE -ne 0) { throw "npm ci failed with exit code $LASTEXITCODE" }
 
       - name: Frontend dependency security audit
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
