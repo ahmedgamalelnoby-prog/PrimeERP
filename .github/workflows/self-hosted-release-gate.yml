@@ -11,8 +11,6 @@ on:
 permissions:
   contents: read
 
-# One Windows runner is the canonical CI executor. If another commit arrives
-# while validation is running, the older run is obsolete and is cancelled.
 concurrency:
   group: primeerp-self-hosted-release-gate-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -91,6 +89,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $pgPassword = [guid]::NewGuid().ToString('N')
           $secretKey = ([guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToString('N'))
+          $composeProject = "primeerp-ci-$env:GITHUB_RUN_ID"
           @(
             'POSTGRES_DB=primeerp_ci'
             'POSTGRES_USER=primeerp'
@@ -101,9 +100,14 @@ jobs:
             'DEBUG=false'
             'ETA_ENABLED=false'
             'WHATSAPP_ENABLED=false'
+            'PRIMEERP_FRONTEND_PORT=3100'
+            "COMPOSE_PROJECT_NAME=$composeProject"
           ) | Set-Content -Encoding utf8 .env
           "PRIMEERP_CI_POSTGRES_PASSWORD=$pgPassword" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "PRIMEERP_CI_SECRET_KEY=$secretKey" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "COMPOSE_PROJECT_NAME=$composeProject" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PRIMEERP_FRONTEND_PORT=3100" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "CI Compose project: $composeProject"
 
       - name: Backend compile and architecture checks
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
@@ -218,11 +222,13 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           docker compose up -d db migrate
+          $migrateId = docker compose ps -q migrate
+          if (-not $migrateId) { throw 'Migration container was not created.' }
           $deadline = (Get-Date).AddMinutes(10)
           while ((Get-Date) -lt $deadline) {
-            $status = docker inspect -f '{{.State.Status}}' primeerp-migrate 2>$null
+            $status = docker inspect -f '{{.State.Status}}' $migrateId 2>$null
             if ($status -eq 'exited') {
-              $code = docker inspect -f '{{.State.ExitCode}}' primeerp-migrate
+              $code = docker inspect -f '{{.State.ExitCode}}' $migrateId
               if ($code -eq '0') { Write-Host 'Alembic migration: PASS'; exit 0 }
               docker compose logs migrate
               throw "Migration container exited with code $code"
@@ -248,13 +254,19 @@ jobs:
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
           $ErrorActionPreference = 'Stop'
+          $backendId = docker compose ps -q backend
+          $frontendId = docker compose ps -q frontend
+          $workerId = docker compose ps -q report-worker
+          if (-not $backendId -or -not $frontendId -or -not $workerId) { throw 'Runtime containers were not created.' }
           $deadline = (Get-Date).AddMinutes(10)
           while ((Get-Date) -lt $deadline) {
-            $backendStatus = docker inspect -f '{{.State.Health.Status}}' primeerp-backend 2>$null
-            $frontendStatus = docker inspect -f '{{.State.Health.Status}}' primeerp-frontend 2>$null
-            $workerStatus = docker inspect -f '{{.State.Status}}' primeerp-report-worker 2>$null
-            if ($backendStatus -eq 'healthy' -and $frontendStatus -eq 'healthy' -and $workerStatus -eq 'running') {
-              Invoke-WebRequest -UseBasicParsing http://127.0.0.1:3000/ | Out-Null
+            $backendStatus = docker inspect -f '{{.State.Health.Status}}' $backendId 2>$null
+            $frontendStatus = docker inspect -f '{{.State.Health.Status}}' $frontendId 2>$null
+            $workerStatus = docker inspect -f '{{.State.Status}}' $workerId 2>$null
+            if ($backendStatus -eq 'healthy' -and $workerStatus -eq 'running') {
+              Invoke-WebRequest -UseBasicParsing http://127.0.0.1:3100/ | Out-Null
+              Write-Host "Backend health: $backendStatus"
+              Write-Host "Worker status: $workerStatus"
               Write-Host 'Runtime health: PASS'
               exit 0
             }
