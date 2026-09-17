@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.modules.documents.models import Document, DocumentRequest, DocumentShare, DocumentVersion
-from app.modules.helpdesk.models import HelpdeskFollower, HelpdeskStage, HelpdeskTeam, HelpdeskTicket
+from app.modules.helpdesk.models import HelpdeskFollower, HelpdeskStage, HelpdeskTeam, HelpdeskTeamMember, HelpdeskTicket
 from app.modules.project.models import ProjectTask, ProjectTaskDependency
 
 
@@ -44,14 +44,12 @@ def assign_helpdesk_ticket(db: Session, *, ticket_id: int, company_id: int, memb
     ticket = db.scalar(select(HelpdeskTicket).where(HelpdeskTicket.id == ticket_id, HelpdeskTicket.company_id == company_id))
     if not ticket:
         raise ApplicationServiceError("Ticket not found")
-    allowed = db.scalar(select(HelpdeskFollower).where(False))  # keep query construction detached from user tables
-    member = db.execute(select(HelpdeskTicket).where(False)).scalar_one_or_none() if allowed is not None else None
-    del member
-    # Team membership is intentionally checked by a direct table query to keep identity refs decoupled.
-    from app.modules.helpdesk.models import HelpdeskTeamMember
-    if not db.scalar(select(HelpdeskTeamMember).where(HelpdeskTeamMember.team_id == ticket.team_id,
-                                                       HelpdeskTeamMember.member_ref == member_ref,
-                                                       HelpdeskTeamMember.active.is_(True))):
+    member = db.scalar(select(HelpdeskTeamMember).where(
+        HelpdeskTeamMember.team_id == ticket.team_id,
+        HelpdeskTeamMember.member_ref == member_ref,
+        HelpdeskTeamMember.active.is_(True),
+    ))
+    if not member:
         raise ApplicationServiceError("Assignee is not an active member of the helpdesk team")
     ticket.assignee_ref = member_ref
     ticket.updated_at = datetime.now(timezone.utc)
@@ -73,7 +71,6 @@ def add_task_dependency(db: Session, *, predecessor_id: int, successor_id: int, 
     successor = db.scalar(select(ProjectTask).where(ProjectTask.id == successor_id, ProjectTask.project_id == project_id))
     if not predecessor or not successor:
         raise ApplicationServiceError("Dependency tasks must belong to the same project")
-    # Prevent indirect cycles by walking successors from the proposed successor.
     stack = [successor_id]
     seen: set[int] = set()
     while stack:
@@ -83,9 +80,8 @@ def add_task_dependency(db: Session, *, predecessor_id: int, successor_id: int, 
         seen.add(current)
         if current == predecessor_id:
             raise ApplicationServiceError("Task dependency would create a cycle")
-        rows = db.execute(select(ProjectTaskDependency.successor_task_id).where(
-            ProjectTaskDependency.predecessor_task_id == current)).scalars().all()
-        stack.extend(rows)
+        stack.extend(db.execute(select(ProjectTaskDependency.successor_task_id).where(
+            ProjectTaskDependency.predecessor_task_id == current)).scalars().all())
     db.add(ProjectTaskDependency(predecessor_task_id=predecessor_id, successor_task_id=successor_id))
 
 
@@ -119,8 +115,7 @@ def create_document_version(db: Session, *, document_id: int, storage_uri: str,
     return version
 
 
-def share_document(db: Session, *, document_id: int, grantee_ref: str, role: str,
-                   expires_at=None) -> DocumentShare:
+def share_document(db: Session, *, document_id: int, grantee_ref: str, role: str, expires_at=None) -> DocumentShare:
     if role not in {"viewer", "editor"}:
         raise ApplicationServiceError("Document role must be viewer or editor")
     document = db.get(Document, document_id)
