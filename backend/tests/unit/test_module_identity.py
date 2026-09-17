@@ -8,7 +8,7 @@ from app.core.module_engine.identity import (
 def test_einvoice_aliases_share_one_business_identity():
     assert canonical_business_code("egyptian_einvoice") == "einvoice"
     assert canonical_business_code("einvoice") == "einvoice"
-    assert business_code_for_technical("localization/egypt_einvoice") == "einvoice"
+    assert business_code_for_technical("localization/egyptian_einvoice") == "einvoice"
 
 
 def test_accounting_has_one_business_identity_for_all_technical_parts():
