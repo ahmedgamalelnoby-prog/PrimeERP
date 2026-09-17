@@ -3,8 +3,9 @@ name: PrimeERP Self-Hosted Release Gate
 on:
   workflow_dispatch:
   push:
-    paths:
-      - '.github/workflows/self-hosted-release-gate.yml'
+    branches:
+      - main
+      - 'feature/**'
 
 permissions:
   contents: read
@@ -115,15 +116,59 @@ jobs:
           python scripts/check_release_readiness.py
           python scripts/check_alembic_graph.py
 
-      - name: Backend dependency install and unit tests
+      - name: Backend environment diagnostics
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         working-directory: backend
         run: |
           $ErrorActionPreference = 'Stop'
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest
-          python -m pytest -q
+          python --version
+          python -c "import sys,platform; print('Python executable:', sys.executable); print('Python implementation:', platform.python_implementation()); print('Platform:', platform.platform()); print('Architecture:', platform.architecture()[0])"
+          python -m pip --version
+          python -m pip list --format=columns
+
+      - name: Backend dependency install
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+        working-directory: backend
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install --upgrade pip --disable-pip-version-check --no-input 2>&1 | Tee-Object pip-upgrade.log
+          $code = $LASTEXITCODE
+          if ($code -ne 0) { throw "pip upgrade failed with exit code $code" }
+
+          python -m pip install -r requirements.txt --disable-pip-version-check --no-input 2>&1 | Tee-Object requirements-install.log
+          $code = $LASTEXITCODE
+          if ($code -ne 0) { throw "requirements installation failed with exit code $code" }
+
+          python -m pip install pytest --disable-pip-version-check --no-input 2>&1 | Tee-Object pytest-install.log
+          $code = $LASTEXITCODE
+          if ($code -ne 0) { throw "pytest installation failed with exit code $code" }
+
+          python -m pip check 2>&1 | Tee-Object pip-check.log
+          $code = $LASTEXITCODE
+          if ($code -ne 0) { throw "pip check failed with exit code $code" }
+
+      - name: Backend unit tests
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+        working-directory: backend
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pytest -q 2>&1 | Tee-Object pytest.log
+          $code = $LASTEXITCODE
+          if ($code -ne 0) { throw "pytest failed with exit code $code" }
+
+      - name: Backend diagnostics after failure
+        if: always()
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+        working-directory: backend
+        run: |
+          $ErrorActionPreference = 'Continue'
+          Write-Host '===== Backend diagnostic files ====='
+          Get-ChildItem -File -Filter '*.log' -ErrorAction SilentlyContinue | Sort-Object Name | ForEach-Object {
+            Write-Host "===== $($_.Name) ====="
+            Get-Content -Path $_.FullName -ErrorAction SilentlyContinue
+          }
+          Write-Host '===== Installed package snapshot ====='
+          python -m pip list --format=freeze 2>&1
 
       - name: Alembic graph and import smoke
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
@@ -224,5 +269,3 @@ jobs:
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
           docker compose down -v --remove-orphans
-
-# Self-hosted release gate trigger validation: workflow content intentionally unchanged.
