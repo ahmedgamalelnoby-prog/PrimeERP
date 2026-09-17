@@ -45,6 +45,9 @@ from app.modules.commissions.router import router as commissions_router
 from app.modules.saas.entitlements import require_module
 from app.modules.jurisdiction.router import router as jurisdiction_router
 from app.modules.reports.router import router as reports_router
+from app.modules.helpdesk.router import router as helpdesk_router
+from app.modules.project.router import router as project_router
+from app.modules.documents.router import router as documents_router
 
 
 def build_router() -> APIRouter:
@@ -88,4 +91,7 @@ def build_router() -> APIRouter:
     api_router.include_router(entitlements_router)
     api_router.include_router(roles_router, dependencies=[Depends(require_module("roles"))])
     api_router.include_router(legal_router, dependencies=[Depends(require_module("legal"))])
+    api_router.include_router(helpdesk_router)
+    api_router.include_router(project_router)
+    api_router.include_router(documents_router)
     return api_router

@@ -125,11 +125,17 @@ INDUSTRY = (
     CatalogEntry("industry/manufacturing_core", "industry", ("inventory/inventory_core", "accounting/accounting_core"), layer="industry"),
 )
 
+APPLICATION = (
+    CatalogEntry("application/helpdesk", "application", ("organization/companies", "core/identity", "core/security", "crm/crm_core"), layer="application"),
+    CatalogEntry("application/project", "application", ("organization/companies", "core/identity", "accounting/accounting_core"), layer="application"),
+    CatalogEntry("application/documents", "application", ("organization/companies", "core/identity", "core/audit"), layer="application"),
+)
+
 LOCALIZATION = (
     CatalogEntry("localization/egyptian_einvoice", "localization", ("accounting/taxes", "accounting/journal_entries"), layer="localization"),
 )
 
-ALL_CATALOG_ENTRIES = CORE + ORGANIZATION + ACCOUNTING + SALES + INVENTORY + COMMERCE + OPERATIONS + LOGISTICS + INTEGRATIONS + TREASURY + PLATFORM + CRM + PEOPLE + INDUSTRY + LOCALIZATION
+ALL_CATALOG_ENTRIES = CORE + ORGANIZATION + ACCOUNTING + SALES + INVENTORY + COMMERCE + OPERATIONS + LOGISTICS + INTEGRATIONS + TREASURY + PLATFORM + CRM + PEOPLE + INDUSTRY + APPLICATION + LOCALIZATION
 
 
 def catalog() -> Tuple[CatalogEntry, ...]:
