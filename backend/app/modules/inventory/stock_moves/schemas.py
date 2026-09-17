@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 MovementType = Literal["receipt", "issue", "transfer", "adjustment", "opening", "return"]
 
@@ -25,13 +25,12 @@ class StockMoveCreate(BaseModel):
 
 
 class StockMoveResponse(StockMoveCreate):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     status: str
     posted_at: object | None = None
     accounting_entry_id: int | None = None
-
-    class Config:
-        from_attributes = True
 
 
 class InventoryAccountingConfigCreate(BaseModel):
@@ -45,9 +44,8 @@ class InventoryAccountingConfigCreate(BaseModel):
 
 
 class InventoryAccountingConfigResponse(InventoryAccountingConfigCreate):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     tenant_id: int
     is_active: str
-
-    class Config:
-        from_attributes = True
