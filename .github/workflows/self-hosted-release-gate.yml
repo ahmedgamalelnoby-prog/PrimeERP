@@ -162,7 +162,7 @@ jobs:
         working-directory: frontend
         run: |
           $ErrorActionPreference = 'Stop'
-          npm ci
+          npm install --no-audit
 
       - name: Frontend dependency security audit
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
@@ -189,7 +189,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: primeerp-frontend-npm-audit-${{ github.run_id }}
-          path: frontend/npm-audit.json
+          path: |
+            frontend/npm-audit.json
+            frontend/package-lock.json
           if-no-files-found: warn
           retention-days: 7
 
