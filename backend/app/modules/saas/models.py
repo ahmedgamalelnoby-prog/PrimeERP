@@ -18,178 +18,36 @@ from app.database.base import Base
 class Tenant(Base):
     __tablename__ = "tenants"
 
-    id = Column(
-        Integer,
-        primary_key=True,
-        index=True,
-    )
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False, index=True)
+    slug = Column(String(100), unique=True, nullable=False, index=True)
+    business_type = Column(String(50), nullable=False, default="general", index=True)
+    owner_name = Column(String(150), nullable=False)
+    email = Column(String(255), nullable=False, index=True)
+    phone = Column(String(30), nullable=True)
+    country_code = Column(String(2), nullable=False, default="EG")
+    default_language = Column(String(5), nullable=False, default="ar")
+    default_locale = Column(String(10), nullable=False, default="ar-EG")
+    timezone = Column(String(50), nullable=False, default="Africa/Cairo")
+    currency_code = Column(String(3), nullable=False, default="EGP")
+    status = Column(String(30), nullable=False, default="trial", index=True)
+    is_trial = Column(Boolean, nullable=False, default=True)
+    trial_started_at = Column(DateTime(timezone=True), nullable=True)
+    trial_ends_at = Column(DateTime(timezone=True), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    suspended_at = Column(DateTime(timezone=True), nullable=True)
+    suspension_reason = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
-    name = Column(
-        String(200),
-        nullable=False,
-        index=True,
-    )
-
-    slug = Column(
-        String(100),
-        unique=True,
-        nullable=False,
-        index=True,
-    )
-
-    business_type = Column(
-        String(50),
-        nullable=False,
-        default="general",
-        index=True,
-    )
-
-    owner_name = Column(
-        String(150),
-        nullable=False,
-    )
-
-    email = Column(
-        String(255),
-        nullable=False,
-        index=True,
-    )
-
-    phone = Column(
-        String(30),
-        nullable=True,
-    )
-
-    country_code = Column(
-        String(2),
-        nullable=False,
-        default="EG",
-    )
-
-    default_language = Column(
-        String(5),
-        nullable=False,
-        default="ar",
-    )
-
-    default_locale = Column(
-        String(10),
-        nullable=False,
-        default="ar-EG",
-    )
-
-    timezone = Column(
-        String(50),
-        nullable=False,
-        default="Africa/Cairo",
-    )
-
-    currency_code = Column(
-        String(3),
-        nullable=False,
-        default="EGP",
-    )
-
-    status = Column(
-        String(30),
-        nullable=False,
-        default="trial",
-        index=True,
-    )
-
-    is_trial = Column(
-        Boolean,
-        nullable=False,
-        default=True,
-    )
-
-    trial_started_at = Column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-
-    trial_ends_at = Column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-
-    is_active = Column(
-        Boolean,
-        nullable=False,
-        default=True,
-    )
-
-    suspended_at = Column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-
-    suspension_reason = Column(
-        Text,
-        nullable=True,
-    )
-
-    created_at = Column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-    )
-
-    updated_at = Column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-        onupdate=func.now(),
-    )
-
-    # Do not reference User.tenant_id here as a string expression.
-    # User imports Tenant directly, so using "User.tenant_id" here can
-    # fail when this module is imported on its own before the User mapper
-    # has been registered. SQLAlchemy can infer the join from User.tenant_id.
-    users = relationship(
-        "User",
-        back_populates="tenant",
-        cascade="all, delete-orphan",
-        passive_deletes=True,
-    )
-
-    companies = relationship(
-        "Company",
-        back_populates="tenant",
-        foreign_keys="Company.tenant_id",
-        cascade="all, delete-orphan",
-        passive_deletes=True,
-    )
-
-    branches = relationship(
-        "Branch",
-        back_populates="tenant",
-        foreign_keys="Branch.tenant_id",
-        cascade="all, delete-orphan",
-        passive_deletes=True,
-    )
-
-    subscriptions = relationship(
-        "Subscription",
-        back_populates="tenant",
-        cascade="all, delete-orphan",
-        passive_deletes=True,
-    )
-
-    enabled_modules = relationship(
-        "TenantModule",
-        back_populates="tenant",
-        cascade="all, delete-orphan",
-        passive_deletes=True,
-    )
+    users = relationship("User", back_populates="tenant", cascade="all, delete-orphan", passive_deletes=True)
+    companies = relationship("Company", back_populates="tenant", foreign_keys="Company.tenant_id", cascade="all, delete-orphan", passive_deletes=True)
+    branches = relationship("Branch", back_populates="tenant", foreign_keys="Branch.tenant_id", cascade="all, delete-orphan", passive_deletes=True)
+    subscriptions = relationship("Subscription", back_populates="tenant", cascade="all, delete-orphan", passive_deletes=True)
+    enabled_modules = relationship("TenantModule", back_populates="tenant", cascade="all, delete-orphan", passive_deletes=True)
 
     def __repr__(self) -> str:
-        return (
-            f"<Tenant "
-            f"id={self.id} "
-            f"slug={self.slug!r} "
-            f"status={self.status!r}>"
-        )
+        return f"<Tenant id={self.id} slug={self.slug!r} status={self.status!r}>"
 
 
 class SubscriptionPlan(Base):
@@ -297,6 +155,7 @@ class TenantModule(Base):
     tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     module_id = Column(Integer, ForeignKey("system_modules.id", ondelete="CASCADE"), nullable=False, index=True)
     is_enabled = Column(Boolean, nullable=False, default=True)
+    source = Column(String(20), nullable=False, default="plan", server_default="plan")
     starts_at = Column(DateTime(timezone=True), nullable=True)
     ends_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
@@ -307,4 +166,4 @@ class TenantModule(Base):
     __table_args__ = (UniqueConstraint("tenant_id", "module_id", name="uq_tenant_module"),)
 
     def __repr__(self) -> str:
-        return f"<TenantModule tenant_id={self.tenant_id} module_id={self.module_id}>"
+        return f"<TenantModule tenant_id={self.tenant_id} module_id={self.module_id} source={self.source!r}>"
