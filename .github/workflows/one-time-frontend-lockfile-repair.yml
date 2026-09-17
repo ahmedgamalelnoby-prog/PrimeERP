@@ -15,7 +15,7 @@ jobs:
   repair:
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository || github.ref == 'refs/heads/repair/module-entitlement-architecture-20260917'
     runs-on: [self-hosted, Windows, X64, PrimeERP]
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -26,24 +26,64 @@ jobs:
           $ErrorActionPreference = 'Stop'
           npm install --global npm@10.9.3 --no-audit --no-fund
           if ($LASTEXITCODE -ne 0) { throw "npm 10.9.3 installation failed with exit code $LASTEXITCODE" }
-          npm --version
-          if ((npm --version) -ne '10.9.3') { throw "Expected npm 10.9.3 but found $(npm --version)" }
+          $npmVersion = npm --version
+          Write-Host "npm version: $npmVersion"
+          if ($npmVersion -ne '10.9.3') { throw "Expected npm 10.9.3 but found $npmVersion" }
 
-      - name: Regenerate committed frontend lockfile from package manifest
+      - name: Rebuild frontend lockfile in clean npm workspace
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
-        working-directory: frontend
         run: |
           $ErrorActionPreference = 'Stop'
-          if (-not (Test-Path package.json)) { throw 'frontend/package.json is missing.' }
-          if (Test-Path package-lock.json) { Remove-Item package-lock.json -Force }
-          npm install --ignore-scripts --no-audit --no-fund
-          if ($LASTEXITCODE -ne 0) { throw "npm dependency installation and lockfile generation failed with exit code $LASTEXITCODE" }
-          if (-not (Test-Path package-lock.json)) { throw 'npm did not generate frontend/package-lock.json.' }
-          node -e "const p=require('./package.json'),l=require('./package-lock.json'); const root=l.packages?.['']; const want=p.devDependencies?.['@vitejs/plugin-react']; const declared=root?.devDependencies?.['@vitejs/plugin-react']; const resolved=l.packages?.['node_modules/@vitejs/plugin-react']?.version; const babel=l.packages?.['node_modules/@rolldown/plugin-babel']; console.log({want,declared,resolved,hasRolldownPluginBabel:!!babel}); if(want!=='6.0.5'||declared!=='6.0.5'||resolved!=='6.0.5'||babel) process.exit(1)"
-          npm ci --ignore-scripts --no-audit --no-fund
-          if ($LASTEXITCODE -ne 0) { throw "npm ci validation failed with exit code $LASTEXITCODE" }
-          npm ls --depth=0
-          if ($LASTEXITCODE -ne 0) { throw "npm ls validation failed with exit code $LASTEXITCODE" }
+          $frontend = Join-Path $env:GITHUB_WORKSPACE 'frontend'
+          $temp = Join-Path $env:RUNNER_TEMP 'primeerp-frontend-lock-rebuild'
+
+          if (-not (Test-Path (Join-Path $frontend 'package.json'))) {
+            throw 'frontend/package.json is missing.'
+          }
+
+          if (Test-Path $temp) {
+            Remove-Item $temp -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $temp -Force | Out-Null
+          Copy-Item (Join-Path $frontend 'package.json') (Join-Path $temp 'package.json') -Force
+          if (Test-Path (Join-Path $frontend '.npmrc')) {
+            Copy-Item (Join-Path $frontend '.npmrc') (Join-Path $temp '.npmrc') -Force
+          }
+
+          Push-Location $temp
+          try {
+            npm install --ignore-scripts --include=dev --no-audit --no-fund
+            if ($LASTEXITCODE -ne 0) { throw "Clean npm install failed with exit code $LASTEXITCODE" }
+            if (-not (Test-Path (Join-Path $temp 'package-lock.json'))) {
+              throw 'Clean npm install did not generate package-lock.json.'
+            }
+
+            node -e "const p=require('./package.json'),l=require('./package-lock.json'); const root=l.packages?.['']; const checks=[['@vitejs/plugin-react',p.devDependencies?.['@vitejs/plugin-react'],root?.devDependencies?.['@vitejs/plugin-react'],l.packages?.['node_modules/@vitejs/plugin-react']?.version],['vite',p.devDependencies?.vite,root?.devDependencies?.vite,l.packages?.['node_modules/vite']?.version],['eslint',p.devDependencies?.eslint,root?.devDependencies?.eslint,l.packages?.['node_modules/eslint']?.version],['@typescript-eslint/eslint-plugin',p.devDependencies?.['@typescript-eslint/eslint-plugin'],root?.devDependencies?.['@typescript-eslint/eslint-plugin'],l.packages?.['node_modules/@typescript-eslint/eslint-plugin']?.version],['react-router-dom',p.dependencies?.['react-router-dom'],root?.dependencies?.['react-router-dom'],l.packages?.['node_modules/react-router-dom']?.version]]; console.log(checks); const bad=checks.filter(([,want,declared,resolved])=>!want||declared!==want||!resolved); if(bad.length){console.error('Manifest/lockfile checks failed:',bad);process.exit(1)}; if(l.packages?.['node_modules/@rolldown/plugin-babel']){console.error('Unused @rolldown/plugin-babel is present in lockfile');process.exit(1)}; console.log('Clean lockfile manifest checks: PASS')"
+
+            npm ci --ignore-scripts --include=dev --no-audit --no-fund
+            if ($LASTEXITCODE -ne 0) { throw "Clean lockfile npm ci validation failed with exit code $LASTEXITCODE" }
+
+            npm ls --depth=0
+            if ($LASTEXITCODE -ne 0) { throw "Clean lockfile npm ls validation failed with exit code $LASTEXITCODE" }
+          }
+          finally {
+            Pop-Location
+          }
+
+          Copy-Item (Join-Path $temp 'package-lock.json') (Join-Path $frontend 'package-lock.json') -Force
+
+          Push-Location $frontend
+          try {
+            node -e "const p=require('./package.json'),l=require('./package-lock.json'); const root=l.packages?.['']; const deps={...(p.dependencies||{}),...(p.devDependencies||{})}; const rootDeps={...(root?.dependencies||{}),...(root?.devDependencies||{})}; const bad=Object.entries(deps).filter(([n,v])=>rootDeps[n]!==v).map(([n,v])=>n+': package='+v+' lock='+rootDeps[n]); if(bad.length){console.error(bad.join('\n'));process.exit(1)}; console.log('Committed lockfile root consistency: PASS')"
+            npm ci --ignore-scripts --include=dev --no-audit --no-fund
+            if ($LASTEXITCODE -ne 0) { throw "Final frontend npm ci validation failed with exit code $LASTEXITCODE" }
+            npm ls --depth=0
+            if ($LASTEXITCODE -ne 0) { throw "Final frontend npm ls validation failed with exit code $LASTEXITCODE" }
+          }
+          finally {
+            Pop-Location
+          }
+
           git config --global --add safe.directory "$env:GITHUB_WORKSPACE"
           if (git status --short -- frontend/package-lock.json) {
             git add frontend/package-lock.json
