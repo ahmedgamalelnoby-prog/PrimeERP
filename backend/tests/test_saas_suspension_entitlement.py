@@ -1,13 +1,21 @@
 from app.modules.saas import entitlements
 
 
+class _CaptureResult:
+    def __init__(self, statement):
+        self.statement = statement
+
+    def all(self):
+        return []
+
+
 class _CaptureDB:
     def __init__(self):
         self.statements = []
 
-    def scalar(self, statement):
+    def scalars(self, statement):
         self.statements.append(statement)
-        return None
+        return _CaptureResult(statement)
 
 
 def test_active_subscription_query_requires_active_unsuspended_tenant():
