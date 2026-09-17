@@ -61,6 +61,9 @@ BUSINESS_TO_TECHNICAL: Final[dict[str, tuple[str, ...]]] = {
     # Purchasing is implemented as the commerce sales/purchasing boundary;
     # entitlement identity must therefore point at the real technical add-on.
     "purchasing": ("commerce/sales_purchasing",),
+    "shipping": ("logistics/shipping",),
+    "integrations": ("integrations/core",),
+    "treasury": ("treasury/core",),
     "crm": ("crm/crm_core", "crm/leads", "crm/opportunities", "crm/activities"),
     "hr": ("people/hr_core", "people/employees", "people/attendance", "people/payroll"),
     "restaurant": ("industry/restaurant_core", "industry/restaurant_pos"),
