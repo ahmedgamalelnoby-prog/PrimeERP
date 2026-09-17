@@ -36,6 +36,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@rolldown/plugin-babel": "0.2.3",
     "@tailwindcss/vite": "^4.3.2",
     "@types/node": "^26.1.1",
     "@types/react": "^18.2.43",
