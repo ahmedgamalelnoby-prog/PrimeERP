@@ -11,16 +11,11 @@ if str(ROOT) not in sys.path:
 
 from sqlalchemy import create_engine, inspect, text
 
+from app.core.module_engine.catalog import catalog_keys
 from app.core.module_engine.identity import ALIASES, BUSINESS_TO_TECHNICAL
 
 MODULE_ROOT = ROOT / "app" / "modules"
-
-CANONICAL_CODES = {
-    "dashboard", "users", "companies", "branches", "accounting", "taxes",
-    "sales", "purchasing", "inventory", "shipping", "uom", "integrations",
-    "enterprise", "commissions", "treasury", "einvoice", "audit", "roles",
-    "catalog", "reports", "legal", "jurisdiction", "transactions", "commerce",
-}
+BUSINESS_CODES = frozenset(BUSINESS_TO_TECHNICAL)
 PLAN_CODES = ("trial", "starter", "professional")
 
 
@@ -34,21 +29,29 @@ def literal_string(node: ast.AST) -> str | None:
     return None
 
 
+def call_name(node: ast.Call) -> str | None:
+    if isinstance(node.func, ast.Name):
+        return node.func.id
+    if isinstance(node.func, ast.Attribute):
+        return node.func.attr
+    return None
+
+
 def scan_guard_calls() -> list[tuple[str, int, str, str]]:
     findings: list[tuple[str, int, str, str]] = []
     guard_names = {"require_module", "tenant_has_module", "require_entitlement"}
     for path in MODULE_ROOT.rglob("*.py"):
-        if "/__pycache__/" in path.as_posix():
+        if "__pycache__" in path.parts:
             continue
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         except SyntaxError as exc:
             fail(f"cannot parse {path.relative_to(ROOT)}: {exc}")
         for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
+            if not isinstance(node, ast.Call) or not node.args:
                 continue
-            name = node.func.id if isinstance(node.func, ast.Name) else None
-            if name not in guard_names or not node.args:
+            name = call_name(node)
+            if name not in guard_names:
                 continue
             code = literal_string(node.args[0])
             if code is not None:
@@ -57,13 +60,19 @@ def scan_guard_calls() -> list[tuple[str, int, str, str]]:
 
 
 def audit_static_contract() -> None:
-    outside = set(BUSINESS_TO_TECHNICAL) - CANONICAL_CODES
-    if outside:
-        fail(f"identity contains business codes outside release catalog: {sorted(outside)}")
+    technical_catalog = catalog_keys()
+    missing_technical = sorted(
+        {technical for modules in BUSINESS_TO_TECHNICAL.values() for technical in modules}
+        - technical_catalog
+    )
+    if missing_technical:
+        fail(f"identity references technical modules absent from module catalog: {missing_technical}")
+
     for alias, target in ALIASES.items():
-        if target not in CANONICAL_CODES:
-            fail(f"alias {alias!r} points to non-canonical code {target!r}")
-    allowed = CANONICAL_CODES | set(ALIASES)
+        if target not in BUSINESS_CODES:
+            fail(f"alias {alias!r} points to non-canonical business code {target!r}")
+
+    allowed = BUSINESS_CODES | set(ALIASES)
     unknown = [
         f"{path}:{line}: {guard}({code!r})"
         for path, line, guard, code in scan_guard_calls()
@@ -83,16 +92,21 @@ def audit_database_contract() -> None:
     missing_tables = sorted(required_tables - set(inspector.get_table_names()))
     if missing_tables:
         fail(f"required entitlement tables are missing: {missing_tables}")
+
     with engine.begin() as conn:
         modules = dict(conn.execute(text("SELECT code, id FROM system_modules WHERE is_active = true")).all())
-        missing_modules = sorted(CANONICAL_CODES - modules.keys())
-        if missing_modules:
-            fail(f"canonical modules missing from system_modules: {missing_modules}")
+        missing_identity_modules = sorted(BUSINESS_CODES - modules.keys())
+        if missing_identity_modules:
+            fail(f"business modules from identity are missing from system_modules: {missing_identity_modules}")
+
         duplicates = conn.execute(text("SELECT code, COUNT(*) FROM system_modules GROUP BY code HAVING COUNT(*) > 1")).all()
         if duplicates:
             fail(f"duplicate system module codes: {duplicates}")
-        if conn.execute(text("SELECT COUNT(*) FROM system_modules WHERE code IN ('einvoice', 'egyptian_einvoice')")).scalar_one() != 1:
+
+        einvoice_count = conn.execute(text("SELECT COUNT(*) FROM system_modules WHERE code IN ('einvoice', 'egyptian_einvoice')")).scalar_one()
+        if einvoice_count != 1:
             fail("e-invoice must have exactly one canonical system_modules row")
+
         plans = dict(conn.execute(text("SELECT code, id FROM plans WHERE is_deleted = false")).all())
         legacy = dict(conn.execute(text("SELECT code, id FROM subscription_plans")).all())
         missing_plans = sorted(set(PLAN_CODES) - plans.keys())
@@ -101,30 +115,49 @@ def audit_database_contract() -> None:
         for code in PLAN_CODES:
             if legacy.get(code) != plans.get(code):
                 fail(f"plan identity mismatch for {code}: plans.id={plans.get(code)}, subscription_plans.id={legacy.get(code)}")
+
         dangling = conn.execute(text("""
-            SELECT pm.id FROM plan_modules pm
+            SELECT pm.id
+            FROM plan_modules pm
             LEFT JOIN subscription_plans p ON p.id = pm.plan_id
             LEFT JOIN system_modules m ON m.id = pm.module_id
             WHERE p.id IS NULL OR m.id IS NULL
         """)).all()
         if dangling:
             fail(f"dangling plan_modules rows: {len(dangling)}")
+
         for plan_code in PLAN_CODES:
             count = conn.execute(text("""
-                SELECT COUNT(*) FROM plan_modules pm
+                SELECT COUNT(*)
+                FROM plan_modules pm
                 JOIN subscription_plans p ON p.id = pm.plan_id
                 JOIN system_modules m ON m.id = pm.module_id
-                WHERE p.code = :code AND m.code = ANY(:codes) AND pm.is_enabled = true
-            """), {"code": plan_code, "codes": list(CANONICAL_CODES)}).scalar_one()
+                WHERE p.code = :code AND m.is_active = true AND pm.is_enabled = true
+            """), {"code": plan_code}).scalar_one()
             if count == 0:
-                fail(f"plan {plan_code} has no enabled canonical modules")
+                fail(f"plan {plan_code} has no enabled active modules")
+
+        missing_for_professional = conn.execute(text("""
+            SELECT m.code
+            FROM system_modules m
+            WHERE m.is_active = true
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM plan_modules pm
+                  JOIN subscription_plans p ON p.id = pm.plan_id
+                  WHERE p.code = 'professional' AND pm.module_id = m.id AND pm.is_enabled = true
+              )
+        """)).scalars().all()
+        if missing_for_professional:
+            fail(f"professional plan is missing active modules: {sorted(missing_for_professional)}")
+
     engine.dispose()
 
 
 def main() -> int:
     audit_static_contract()
     audit_database_contract()
-    print("Module entitlement contract audit passed: canonical identity, guards, plans and DB relationships are consistent.")
+    print("Module entitlement contract audit passed: identity, technical catalog, guards, plans and DB relationships are consistent.")
     return 0
 
 
