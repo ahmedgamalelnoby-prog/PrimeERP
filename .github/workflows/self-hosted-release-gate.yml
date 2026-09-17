@@ -9,7 +9,7 @@ on:
       - 'feature/**'
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: primeerp-self-hosted-release-gate-${{ github.event.pull_request.number || github.ref }}
@@ -156,6 +156,21 @@ jobs:
           python -m alembic heads | Tee-Object alembic-heads.txt
           $headCount = (Select-String -Path alembic-heads.txt -Pattern '\(head\)' -AllMatches).Matches.Count
           if ($headCount -ne 1) { throw "Expected exactly one Alembic head; found $headCount" }
+
+      - name: Frontend dependency graph refresh
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+        working-directory: frontend
+        run: |
+          $ErrorActionPreference = 'Stop'
+          npm install --package-lock-only --ignore-scripts --no-audit
+          npm audit --audit-level=moderate
+          if (git status --short -- frontend/package-lock.json) {
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add frontend/package-lock.json
+            git commit -m "chore(frontend): persist resolved secure dependency graph"
+            git push origin HEAD:${{ github.head_ref || github.ref_name }}
+          }
 
       - name: Frontend install and build
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
