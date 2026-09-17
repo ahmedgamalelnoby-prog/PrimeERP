@@ -5,7 +5,7 @@ import toast from "react-hot-toast";
 import { useTranslation } from "react-i18next";
 import {
   ArrowRight, BarChart3, Bot, Building2, Eye, EyeOff, Globe2, Layers3,
-  Loader2, LockKeyhole, Package, ReceiptText, ShieldCheck, Sparkles, Users2,
+  Loader2, LockKeyhole, Package, FileText, ShieldCheck, Sparkles, Users2,
   WalletCards, Workflow
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -112,7 +112,7 @@ export default function LoginPage() {
               ))}
             </div>
             <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {[[text("مالية", "Finance"), ReceiptText], [text("مبيعات", "Sales"), Package], [text("موارد بشرية", "HR"), Users2], [text("ذكاء اصطناعي", "AI"), Bot]].map(([label, Icon]) => <div key={String(label)} className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3 text-center text-xs text-slate-300"><Icon className="mx-auto mb-2 size-4 text-cyan-300" /><span>{String(label)}</span></div>)}
+              {[[text("مالية", "Finance"), FileText], [text("مبيعات", "Sales"), Package], [text("موارد بشرية", "HR"), Users2], [text("ذكاء اصطناعي", "AI"), Bot]].map(([label, Icon]) => <div key={String(label)} className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3 text-center text-xs text-slate-300"><Icon className="mx-auto mb-2 size-4 text-cyan-300" /><span>{String(label)}</span></div>)}
             </div>
           </div>
           <div className="relative z-10 flex items-center justify-between border-t border-white/10 pt-5 text-xs text-slate-500"><span>© {new Date().getFullYear()} PrimeERP</span><span>{text("منصة أعمال سحابية متعددة الشركات", "Multi-company cloud ERP")}</span></div>
