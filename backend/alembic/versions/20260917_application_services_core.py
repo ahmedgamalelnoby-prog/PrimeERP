@@ -4,7 +4,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "20260917_application_services_core"
-down_revision = "20260917_tenant_module_sources"
+down_revision = "20260917_saas_functional_hardening"
 branch_labels = None
 depends_on = None
 
