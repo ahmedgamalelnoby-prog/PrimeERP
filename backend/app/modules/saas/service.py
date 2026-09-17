@@ -17,6 +17,7 @@ from app.modules.identity.models import User
 from app.modules.branches.models import Branch
 from app.modules.companies.models import Company
 from app.modules.roles.models import Role
+from app.modules.saas.lifecycle import SubscriptionLifecycleService
 from app.modules.saas.models import (
     PlanModule,
     Subscription,
@@ -52,13 +53,13 @@ def generate_slug(db: Session, business_name: str) -> str:
 
 
 def get_trial_plan(db: Session) -> SubscriptionPlan:
-    plan = db.query(SubscriptionPlan).filter(
-        SubscriptionPlan.code == "trial",
-        SubscriptionPlan.is_active.is_(True),
-    ).first()
-    if plan is None:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Trial subscription plan is not configured")
-    return plan
+    try:
+        return SubscriptionLifecycleService(db).resolve_legacy_plan("trial")
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Trial subscription plan is not configured",
+        ) from exc
 
 
 def get_tenant_owner_role(db: Session) -> Role:
@@ -96,6 +97,7 @@ def register_trial_tenant(db: Session, payload: TenantRegistrationRequest) -> di
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Password is too long. It must not exceed 72 bytes.")
 
     validate_registration_uniqueness(db, payload)
+    lifecycle = SubscriptionLifecycleService(db)
     trial_plan = get_trial_plan(db)
     owner_role = get_tenant_owner_role(db)
     now = datetime.now(timezone.utc)
@@ -143,20 +145,11 @@ def register_trial_tenant(db: Session, payload: TenantRegistrationRequest) -> di
         db.add(owner_user)
         db.flush()
 
-        subscription = Subscription(
-            tenant_id=tenant.id, plan_id=trial_plan.id, status="trialing", billing_cycle="monthly",
-            starts_at=now, ends_at=trial_ends_at, trial_ends_at=trial_ends_at,
-            next_billing_date=None, is_auto_renew=False,
+        subscription, canonical_plan, modules = lifecycle.create_trial(
+            tenant.id,
+            plan_code="trial",
+            starts_at=now,
         )
-        db.add(subscription)
-        db.flush()
-
-        modules = resolve_enabled_modules(db, trial_plan, payload.business_type)
-        for module in modules:
-            db.add(TenantModule(
-                tenant_id=tenant.id, module_id=module.id, is_enabled=True,
-                starts_at=now, ends_at=trial_ends_at,
-            ))
 
         db.commit()
         db.refresh(tenant)
@@ -167,8 +160,8 @@ def register_trial_tenant(db: Session, payload: TenantRegistrationRequest) -> di
         return {
             "message": "Trial account created successfully", "tenant": tenant, "company": company,
             "branch": branch, "user": owner_user, "subscription_status": subscription.status,
-            "plan_code": trial_plan.code, "enabled_modules": [module.code for module in modules],
-            "trial_ends_at": trial_ends_at,
+            "plan_code": canonical_plan.code, "enabled_modules": [module.code for module in modules],
+            "trial_ends_at": subscription.trial_ends_at,
         }
     except HTTPException:
         db.rollback()
