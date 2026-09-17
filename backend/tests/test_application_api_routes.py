@@ -1,8 +1,16 @@
+from fastapi import FastAPI
+
 from app.api.v1.router import build_router
 
 
+def _application_routes():
+    app = FastAPI()
+    app.include_router(build_router())
+    return [route for route in app.routes if hasattr(route, "path")]
+
+
 def _paths(prefix: str) -> set[str]:
-    return {route.path for route in build_router().routes if route.path.startswith(prefix)}
+    return {route.path for route in _application_routes() if route.path.startswith(prefix)}
 
 
 def test_application_module_routes_are_registered():
@@ -15,9 +23,10 @@ def test_application_module_routes_are_registered():
 
 
 def test_application_routes_have_module_entitlement_dependencies():
-    router = build_router()
-    module_paths = {
-        route.path: route for route in router.routes
+    module_routes = [
+        route
+        for route in _application_routes()
         if route.path.startswith(("/helpdesk", "/projects", "/documents"))
-    }
-    assert all(route.dependant.dependencies for route in module_paths.values())
+    ]
+    assert module_routes
+    assert all(route.dependant.dependencies for route in module_routes)
