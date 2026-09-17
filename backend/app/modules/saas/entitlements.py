@@ -63,6 +63,7 @@ def tenant_has_module(db: Session, tenant_id: int, module_code: str) -> bool:
         select(TenantModule).where(
             TenantModule.tenant_id == tenant_id,
             TenantModule.module_id == module.id,
+            TenantModule.source == "override",
         )
     )
     now = datetime.now(timezone.utc)
