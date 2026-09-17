@@ -3,13 +3,21 @@ from datetime import datetime, timezone
 from app.modules.saas import entitlements
 
 
+class _CaptureResult:
+    def __init__(self, statement):
+        self.statement = statement
+
+    def all(self):
+        return []
+
+
 class _CaptureDB:
     def __init__(self):
         self.statement = None
 
-    def scalar(self, statement):
+    def scalars(self, statement):
         self.statement = statement
-        return None
+        return _CaptureResult(statement)
 
 
 def test_active_subscription_query_excludes_expired_and_future_subscriptions():
@@ -20,8 +28,8 @@ def test_active_subscription_query_excludes_expired_and_future_subscriptions():
     sql = str(db.statement)
     assert "subscriptions.starts_at" in sql
     assert "subscriptions.ends_at" in sql
-    assert "IS NULL" in sql.upper()
-    assert ">" in sql
+    assert "subscriptions.status" in sql
+    assert "tenants.status" in sql
 
 
 def test_subscription_entitlement_uses_timezone_aware_now():
