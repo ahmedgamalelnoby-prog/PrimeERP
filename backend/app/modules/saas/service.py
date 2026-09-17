@@ -17,7 +17,7 @@ from app.modules.identity.models import User
 from app.modules.branches.models import Branch
 from app.modules.companies.models import Company
 from app.modules.roles.models import Role
-from app.modules.saas.lifecycle import SubscriptionLifecycleService
+from app.modules.saas.lifecycle import create_trial, resolve_legacy_plan
 from app.modules.saas.models import (
     PlanModule,
     Subscription,
@@ -53,13 +53,7 @@ def generate_slug(db: Session, business_name: str) -> str:
 
 
 def get_trial_plan(db: Session) -> SubscriptionPlan:
-    try:
-        return SubscriptionLifecycleService(db).resolve_legacy_plan("trial")
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Trial subscription plan is not configured",
-        ) from exc
+    return resolve_legacy_plan(db, "trial")
 
 
 def get_tenant_owner_role(db: Session) -> Role:
@@ -97,7 +91,6 @@ def register_trial_tenant(db: Session, payload: TenantRegistrationRequest) -> di
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Password is too long. It must not exceed 72 bytes.")
 
     validate_registration_uniqueness(db, payload)
-    lifecycle = SubscriptionLifecycleService(db)
     trial_plan = get_trial_plan(db)
     owner_role = get_tenant_owner_role(db)
     now = datetime.now(timezone.utc)
@@ -145,7 +138,8 @@ def register_trial_tenant(db: Session, payload: TenantRegistrationRequest) -> di
         db.add(owner_user)
         db.flush()
 
-        subscription, canonical_plan, modules = lifecycle.create_trial(
+        subscription, canonical_plan, modules = create_trial(
+            db,
             tenant.id,
             plan_code="trial",
             starts_at=now,
