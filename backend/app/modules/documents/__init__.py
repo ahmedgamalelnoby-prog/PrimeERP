@@ -1,0 +1,1 @@
+"""PrimeERP Documents application package."""
