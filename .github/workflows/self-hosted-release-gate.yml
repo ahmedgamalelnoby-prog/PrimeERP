@@ -241,7 +241,6 @@ jobs:
 
       - name: Execute PostgreSQL effective-date guard tests
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
-        working-directory: backend
         env:
           TEST_DATABASE_URL: postgresql://primeerp:${{ env.PRIMEERP_CI_POSTGRES_PASSWORD }}@db:5432/primeerp_ci
           DATABASE_URL: postgresql+psycopg://primeerp:${{ env.PRIMEERP_CI_POSTGRES_PASSWORD }}@db:5432/primeerp_ci
