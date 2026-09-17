@@ -18,8 +18,6 @@ class _DB:
     def get(self, model, object_id):
         if model is lifecycle.Tenant:
             return self.tenant
-        if model is lifecycle.SubscriptionPlan:
-            return self.plan
         return None
 
     def scalar(self, statement):
@@ -35,7 +33,14 @@ class _DB:
         return None
 
 
-def test_convert_trial_to_paid_changes_same_trial_subscription():
+def _isolate_transition_dependencies(monkeypatch, plan, subscription):
+    monkeypatch.setattr(lifecycle, "_canonical_plan", lambda db, plan_id: plan)
+    monkeypatch.setattr(lifecycle, "_legacy_plan", lambda db, canonical: SimpleNamespace(id=canonical.id))
+    monkeypatch.setattr(lifecycle, "_active_subscription", lambda db, tenant_id, now: subscription)
+    monkeypatch.setattr(lifecycle, "_provision_plan_modules", lambda *args, **kwargs: [])
+
+
+def test_convert_trial_to_paid_changes_same_trial_subscription(monkeypatch):
     tenant = SimpleNamespace(id=7, status="trial", is_trial=True, is_active=True, trial_ends_at="old")
     plan = SimpleNamespace(id=3, is_active=True)
     subscription = SimpleNamespace(
@@ -52,6 +57,7 @@ def test_convert_trial_to_paid_changes_same_trial_subscription():
         is_auto_renew=False,
     )
     db = _DB(tenant, plan, subscription)
+    _isolate_transition_dependencies(monkeypatch, plan, subscription)
 
     result = lifecycle.convert_trial_to_paid(db, 7, 3, "yearly", True)
 
@@ -67,7 +73,7 @@ def test_convert_trial_to_paid_changes_same_trial_subscription():
     assert db.commits == 1
 
 
-def test_renewal_after_expiry_starts_from_now():
+def test_renewal_after_expiry_starts_from_now(monkeypatch):
     now = datetime.now(timezone.utc)
     tenant = SimpleNamespace(id=7, status="expired", is_trial=True, is_active=True, suspended_at=None, suspension_reason=None)
     plan = SimpleNamespace(id=3, is_active=True)
@@ -78,6 +84,7 @@ def test_renewal_after_expiry_starts_from_now():
         is_auto_renew=True,
     )
     db = _DB(tenant, plan, expired)
+    _isolate_transition_dependencies(monkeypatch, plan, expired)
 
     result = lifecycle.renew_subscription(db, 7)
 
@@ -95,13 +102,12 @@ def test_cancel_auto_renew_keeps_access_until_existing_end_date():
     now = datetime.now(timezone.utc)
     end = now + timedelta(days=10)
     tenant = SimpleNamespace(id=7, status="active", is_active=True)
-    plan = SimpleNamespace(id=3, is_active=True)
     subscription = SimpleNamespace(
         id=9, tenant_id=7, plan_id=3, status="active", billing_cycle="monthly",
         starts_at=now - timedelta(days=20), ends_at=end, trial_ends_at=None,
         next_billing_date=end, cancelled_at=None, is_auto_renew=True,
     )
-    db = _DB(tenant, plan, subscription)
+    db = _DB(tenant, None, subscription)
 
     result = lifecycle.cancel_auto_renewal(db, 7)
 
@@ -112,7 +118,7 @@ def test_cancel_auto_renew_keeps_access_until_existing_end_date():
 
 
 def test_suspend_requires_reason():
-    db = _DB(SimpleNamespace(id=7), SimpleNamespace(id=3, is_active=True), None)
+    db = _DB(SimpleNamespace(id=7), None, None)
 
     with pytest.raises(HTTPException) as exc:
         lifecycle.suspend_tenant(db, 7, "   ")
@@ -129,7 +135,6 @@ def test_renewal_cannot_unsuspend_tenant():
         suspended_at="suspended-at",
         suspension_reason="billing dispute",
     )
-    plan = SimpleNamespace(id=3, is_active=True)
     subscription = SimpleNamespace(
         id=9,
         tenant_id=7,
@@ -143,7 +148,7 @@ def test_renewal_cannot_unsuspend_tenant():
         cancelled_at=None,
         is_auto_renew=True,
     )
-    db = _DB(tenant, plan, subscription)
+    db = _DB(tenant, None, subscription)
 
     with pytest.raises(HTTPException) as exc:
         lifecycle.renew_subscription(db, 7)
@@ -165,7 +170,6 @@ def test_conversion_cannot_unsuspend_tenant():
         suspended_at="suspended-at",
         suspension_reason="non-payment",
     )
-    plan = SimpleNamespace(id=3, is_active=True)
     trial = SimpleNamespace(
         id=9,
         tenant_id=7,
@@ -179,7 +183,7 @@ def test_conversion_cannot_unsuspend_tenant():
         cancelled_at=None,
         is_auto_renew=False,
     )
-    db = _DB(tenant, plan, trial)
+    db = _DB(tenant, None, trial)
 
     with pytest.raises(HTTPException) as exc:
         lifecycle.convert_trial_to_paid(db, 7, 3)

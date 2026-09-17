@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -38,6 +38,8 @@ class ProductMappingUpdate(BaseModel):
 
 
 class ProductMappingResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     company_id: int
     connection_id: int
@@ -50,8 +52,6 @@ class ProductMappingResponse(BaseModel):
     sync_direction: str
     sync_status: str
     last_synced_at: datetime | None
-    class Config:
-        from_attributes = True
 
 
 def _check_company(user: User, company_id: int, db: Session) -> int:

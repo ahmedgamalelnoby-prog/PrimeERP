@@ -65,7 +65,7 @@ def test_mapping_router_requires_integration_access_and_write():
     assert '"/salla/{salla_product_id}/reconcile"' in router
 
 
-def test_api_router_registers_mapping_router():
+def test_api_router_registers_mapping_router_with_integration_entitlement():
     router = (ROOT / "app/api/v1/router.py").read_text(encoding="utf-8")
     assert "integration_product_mapping_router" in router
-    assert "api_router.include_router(integration_product_mapping_router)" in router
+    assert "api_router.include_router(integration_product_mapping_router, dependencies=[Depends(require_module(\"integrations\"))])" in router
