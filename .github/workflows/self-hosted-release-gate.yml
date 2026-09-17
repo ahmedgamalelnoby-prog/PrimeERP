@@ -157,35 +157,18 @@ jobs:
           $headCount = (Select-String -Path alembic-heads.txt -Pattern '\(head\)' -AllMatches).Matches.Count
           if ($headCount -ne 1) { throw "Expected exactly one Alembic head; found $headCount" }
 
-      - name: Frontend dependency graph refresh
+      - name: Frontend dependency graph validation
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         working-directory: frontend
         run: |
           $ErrorActionPreference = 'Stop'
           git config --global --add safe.directory "$env:GITHUB_WORKSPACE"
-          if (Test-Path package-lock.json) {
-            Remove-Item package-lock.json -Force
-            Write-Host 'Removed stale frontend package-lock.json; regenerating from package.json.'
-          }
-          npm install --package-lock-only --ignore-scripts --no-audit
-          if ($LASTEXITCODE -ne 0) { throw "npm package-lock regeneration failed with exit code $LASTEXITCODE" }
+          if (-not (Test-Path package.json)) { throw 'frontend/package.json is missing.' }
+          if (-not (Test-Path package-lock.json)) { throw 'frontend/package-lock.json is missing. Generate and commit it locally before CI.' }
           npm ci --ignore-scripts --no-audit
-          if ($LASTEXITCODE -ne 0) { throw "npm ci from regenerated lockfile failed with exit code $LASTEXITCODE" }
+          if ($LASTEXITCODE -ne 0) { throw "npm ci failed with exit code $LASTEXITCODE" }
           npm ls --depth=0
           if ($LASTEXITCODE -ne 0) { throw "npm dependency graph is invalid with exit code $LASTEXITCODE" }
-
-          if (git status --short -- package-lock.json) {
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add package-lock.json
-            git commit -m "chore(frontend): persist resolved dependency graph"
-            if ($LASTEXITCODE -ne 0) { throw "git commit failed with exit code $LASTEXITCODE" }
-            git push origin HEAD:${{ github.head_ref || github.ref_name }}
-            if ($LASTEXITCODE -ne 0) { throw "git push failed with exit code $LASTEXITCODE" }
-          }
-
-          npm audit --audit-level=moderate
-          if ($LASTEXITCODE -ne 0) { throw "npm audit failed with exit code $LASTEXITCODE" }
 
       - name: Frontend install and build
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
