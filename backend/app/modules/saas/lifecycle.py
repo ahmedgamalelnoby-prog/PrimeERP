@@ -109,12 +109,24 @@ def _period_end(start: datetime, billing_cycle: str) -> datetime:
     return start.replace(year=year, month=month, day=day)
 
 
-def _provision_plan_modules(db: Session, tenant_id: int, legacy_plan: SubscriptionPlan, starts_at: datetime, ends_at: datetime | None) -> list[SystemModule]:
+def _provision_plan_modules(
+    db: Session,
+    tenant_id: int,
+    legacy_plan: SubscriptionPlan,
+    starts_at: datetime,
+    ends_at: datetime | None,
+    allowed_module_codes: set[str] | None = None,
+) -> list[SystemModule]:
     modules = list(db.scalars(select(SystemModule).join(PlanModule, PlanModule.module_id == SystemModule.id).where(
         PlanModule.plan_id == legacy_plan.id,
         PlanModule.is_enabled.is_(True),
         SystemModule.is_active.is_(True),
     )).all())
+    if allowed_module_codes is not None:
+        modules = [
+            module for module in modules
+            if module.is_core or module.code in allowed_module_codes
+        ]
     for module in modules:
         override = db.scalar(select(TenantModule).where(
             TenantModule.tenant_id == tenant_id,
@@ -129,7 +141,14 @@ def _provision_plan_modules(db: Session, tenant_id: int, legacy_plan: Subscripti
     return modules
 
 
-def create_trial(db: Session, tenant_id: int, plan_code: str = "trial", plan_version: int = 1, starts_at: datetime | None = None) -> tuple[Subscription, Plan, list[SystemModule]]:
+def create_trial(
+    db: Session,
+    tenant_id: int,
+    plan_code: str = "trial",
+    plan_version: int = 1,
+    starts_at: datetime | None = None,
+    allowed_module_codes: set[str] | None = None,
+) -> tuple[Subscription, Plan, list[SystemModule]]:
     tenant = _tenant(db, tenant_id)
     _reject_suspended(tenant)
     canonical = _canonical_plan_by_code(db, plan_code, plan_version)
@@ -152,7 +171,14 @@ def create_trial(db: Session, tenant_id: int, plan_code: str = "trial", plan_ver
     )
     db.add(subscription)
     db.flush()
-    modules = _provision_plan_modules(db, tenant_id, legacy, start, end)
+    modules = _provision_plan_modules(
+        db,
+        tenant_id,
+        legacy,
+        start,
+        end,
+        allowed_module_codes=allowed_module_codes,
+    )
     tenant.status = "trial"
     tenant.is_trial = True
     tenant.trial_started_at = start
