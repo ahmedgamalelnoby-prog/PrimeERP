@@ -163,14 +163,21 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           npm install --package-lock-only --ignore-scripts --no-audit
-          npm audit --audit-level=moderate
-          if (git status --short -- frontend/package-lock.json) {
+          if ($LASTEXITCODE -ne 0) { throw "npm package-lock refresh failed with exit code $LASTEXITCODE" }
+
+          git config --global --add safe.directory "$env:GITHUB_WORKSPACE"
+          if (git status --short -- package-lock.json) {
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add frontend/package-lock.json
+            git add package-lock.json
             git commit -m "chore(frontend): persist resolved secure dependency graph"
+            if ($LASTEXITCODE -ne 0) { throw "git commit failed with exit code $LASTEXITCODE" }
             git push origin HEAD:${{ github.head_ref || github.ref_name }}
+            if ($LASTEXITCODE -ne 0) { throw "git push failed with exit code $LASTEXITCODE" }
           }
+
+          npm audit --audit-level=moderate
+          if ($LASTEXITCODE -ne 0) { throw "npm audit failed with exit code $LASTEXITCODE" }
 
       - name: Frontend install and build
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
@@ -178,6 +185,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           npm install --no-audit
+          if ($LASTEXITCODE -ne 0) { throw "npm install failed with exit code $LASTEXITCODE" }
 
       - name: Frontend dependency security audit
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
@@ -213,6 +221,8 @@ jobs:
       - name: Frontend typecheck lint build
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         working-directory: frontend
+        env:
+          ESLINT_USE_FLAT_CONFIG: 'false'
         run: |
           $ErrorActionPreference = 'Stop'
           npm run typecheck
