@@ -22,7 +22,7 @@ def test_activate_rejects_cancelled_subscription():
     tenant = SimpleNamespace(status="active", is_active=True)
     svc = _service(subscription, tenant)
 
-    with pytest.raises(ValueError, match="Only trialing or past_due"):
+    with pytest.raises(ValueError, match="Only trialing, past_due, or grace"):
         svc.activate(9)
 
 
@@ -67,7 +67,11 @@ def test_create_locks_tenant_before_conflict_check():
 
         def create(self, db, data):
             self.calls.append("create")
-            return SimpleNamespace(tenant_id=data["tenant_id"], status=data["status"])
+            return SimpleNamespace(
+                tenant_id=data["tenant_id"],
+                plan_id=data["plan_id"],
+                status=data["status"],
+            )
 
     svc = SubscriptionService(DB())
     repo = Repo()
@@ -77,6 +81,7 @@ def test_create_locks_tenant_before_conflict_check():
     svc._locked_tenant = lambda tenant_id: calls.append("lock") or SimpleNamespace(id=tenant_id)
     svc._ensure_legacy_subscription_plan = lambda plan: calls.append("legacy")
     svc._sync_tenant_state = lambda instance: calls.append("sync")
+    svc._sync_modules = lambda instance: calls.append("modules")
 
     schema = SimpleNamespace(
         plan_id=1, tenant_id=7, starts_at=None, trial_ends_at=None, ends_at=None,
@@ -87,5 +92,5 @@ def test_create_locks_tenant_before_conflict_check():
     result = svc.create(schema)
 
     assert result.status == "active"
-    assert calls == ["lock", "legacy", "sync"]
+    assert calls == ["lock", "legacy", "modules", "sync"]
     assert repo.calls == ["conflict", "create"]
