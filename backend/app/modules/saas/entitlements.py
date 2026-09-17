@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, HTTPException, status
 from sqlalchemy import func, or_, select, text
@@ -23,7 +23,7 @@ ACTIVE_SUBSCRIPTION_STATUSES = ("trialing", "active", "past_due", "grace")
 
 def _active_subscription(db: Session, tenant_id: int) -> Subscription | None:
     now = datetime.now(timezone.utc)
-    return db.scalar(
+    candidates = db.scalars(
         select(Subscription)
         .join(Plan, Plan.id == Subscription.plan_id)
         .join(Tenant, Tenant.id == Subscription.tenant_id)
@@ -33,12 +33,35 @@ def _active_subscription(db: Session, tenant_id: int) -> Subscription | None:
             text("tenants.status <> 'suspended'"),
             Subscription.status.in_(ACTIVE_SUBSCRIPTION_STATUSES),
             Subscription.starts_at <= now,
-            or_(Subscription.ends_at.is_(None), Subscription.ends_at > now),
             Plan.is_deleted.is_(False),
             Plan.status == PlanStatus.ACTIVE.value,
         )
         .order_by(Subscription.ends_at.desc().nullslast(), Subscription.id.desc())
-    )
+    ).all()
+
+    for subscription in candidates:
+        ends_at = subscription.ends_at
+        if ends_at is not None and ends_at.tzinfo is None:
+            ends_at = ends_at.replace(tzinfo=timezone.utc)
+
+        if subscription.status == "trialing":
+            trial_end = subscription.trial_ends_at or ends_at
+            if trial_end is not None:
+                if trial_end.tzinfo is None:
+                    trial_end = trial_end.replace(tzinfo=timezone.utc)
+                if trial_end <= now:
+                    continue
+            return subscription
+
+        if ends_at is None or ends_at > now:
+            return subscription
+
+        if subscription.status == "grace":
+            grace_days = max(int(getattr(subscription.plan, "grace_period_days", 0) or 0), 0)
+            if ends_at + timedelta(days=grace_days) > now:
+                return subscription
+
+    return None
 
 
 def tenant_has_module(db: Session, tenant_id: int, module_code: str) -> bool:
