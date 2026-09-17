@@ -36,6 +36,9 @@ BUSINESS_TO_TECHNICAL: Final[dict[str, tuple[str, ...]]] = {
     "legal": ("legal/core",),
     "jurisdiction": ("jurisdiction/core",),
     "catalog": ("catalog/core",),
+    "helpdesk": ("application/helpdesk",),
+    "project": ("application/project",),
+    "documents": ("application/documents",),
 }
 
 TECHNICAL_TO_BUSINESS: Final[dict[str, str]] = {technical: business for business, technical_modules in BUSINESS_TO_TECHNICAL.items() for technical in technical_modules}
