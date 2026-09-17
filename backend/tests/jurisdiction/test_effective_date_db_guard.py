@@ -16,7 +16,10 @@ pytestmark = pytest.mark.integration
 def _connect():
     if not DATABASE_URL:
         pytest.skip("TEST_DATABASE_URL/DATABASE_URL is not configured")
-    return psycopg.connect(DATABASE_URL)
+    # The application uses SQLAlchemy's `postgresql+psycopg://` URL form,
+    # while psycopg.connect() expects the standard PostgreSQL URI/conninfo form.
+    conninfo = DATABASE_URL.replace("postgresql+psycopg://", "postgresql://", 1)
+    return psycopg.connect(conninfo)
 
 
 def _setup(conn, table_name):
