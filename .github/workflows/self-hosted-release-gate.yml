@@ -218,7 +218,7 @@ jobs:
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
           $ErrorActionPreference = 'Stop'
-          docker compose build --pull migrate backend report-worker frontend
+          docker compose build --pull migrate backend backend-test report-worker frontend
 
       - name: Start database and run migrations
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
@@ -241,16 +241,9 @@ jobs:
 
       - name: Execute PostgreSQL effective-date guard tests
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
-        env:
-          TEST_DATABASE_URL: postgresql://primeerp:${{ env.PRIMEERP_CI_POSTGRES_PASSWORD }}@db:5432/primeerp_ci
-          DATABASE_URL: postgresql+psycopg://primeerp:${{ env.PRIMEERP_CI_POSTGRES_PASSWORD }}@db:5432/primeerp_ci
-          APP_ENV: test
-          DEBUG: 'false'
-          SECRET_KEY: ${{ env.PRIMEERP_CI_SECRET_KEY }}
-          CORS_ORIGINS: http://localhost:3000
         run: |
           $ErrorActionPreference = 'Stop'
-          docker compose run --rm backend python -m pytest -q tests/jurisdiction/test_effective_date_db_guard.py
+          docker compose run --rm backend-test python -m pytest -q tests/jurisdiction/test_effective_date_db_guard.py
 
       - name: Start backend frontend and report worker
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
