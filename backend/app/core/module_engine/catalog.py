@@ -126,9 +126,9 @@ INDUSTRY = (
 )
 
 APPLICATION = (
-    CatalogEntry("application/helpdesk", "application", ("organization/companies",), layer="application"),
-    CatalogEntry("application/project", "application", ("organization/companies",), layer="application"),
-    CatalogEntry("application/documents", "application", ("organization/companies",), layer="application"),
+    CatalogEntry("application/helpdesk", "application", ("organization/companies", "core/identity", "core/security", "crm/crm_core"), layer="application"),
+    CatalogEntry("application/project", "application", ("organization/companies", "core/identity", "accounting/accounting_core"), layer="application"),
+    CatalogEntry("application/documents", "application", ("organization/companies", "core/identity", "core/audit"), layer="application"),
 )
 
 LOCALIZATION = (
