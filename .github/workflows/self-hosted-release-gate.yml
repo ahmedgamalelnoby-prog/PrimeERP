@@ -238,6 +238,15 @@ jobs:
           docker compose logs migrate
           throw 'Migration container did not finish within 10 minutes.'
 
+      - name: Audit module entitlement and plan relationships
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+psycopg://primeerp:${{ env.PRIMEERP_CI_POSTGRES_PASSWORD }}@db:5432/primeerp_ci
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/check_module_entitlement_contract.py
+
       - name: Execute PostgreSQL effective-date guard tests
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
