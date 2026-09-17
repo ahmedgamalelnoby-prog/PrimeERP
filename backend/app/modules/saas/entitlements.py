@@ -2,7 +2,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, HTTPException, status
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.core.context import get_effective_tenant_id
@@ -56,8 +56,9 @@ def _active_subscription(db: Session, tenant_id: int) -> Subscription | None:
         if ends_at is None or ends_at > now:
             return subscription
 
-        if subscription.status == "grace":
-            grace_days = max(int(getattr(subscription.plan, "grace_period_days", 0) or 0), 0)
+        if subscription.status == "grace" and ends_at is not None:
+            plan = db.get(Plan, subscription.plan_id)
+            grace_days = max(int(getattr(plan, "grace_period_days", 0) or 0), 0)
             if ends_at + timedelta(days=grace_days) > now:
                 return subscription
 
