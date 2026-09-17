@@ -43,6 +43,14 @@ MODULES = (
     ("jurisdiction", "Jurisdiction", "الاختصاص والبيانات القانونية", False, 765),
     ("transactions", "Transactions", "المعاملات", True, 370),
     ("commerce", "Commerce", "التجارة", False, 375),
+    # Business-level entitlements represented by executable domain modules.
+    ("crm", "CRM", "إدارة علاقات العملاء", False, 250),
+    ("hr", "Human Resources", "الموارد البشرية", False, 500),
+    ("restaurant", "Restaurant", "المطاعم", False, 550),
+    ("hospitality", "Hospitality", "الضيافة والفنادق", False, 560),
+    ("real_estate", "Real Estate", "العقارات", False, 570),
+    ("retail", "Retail", "التجزئة", False, 580),
+    ("manufacturing", "Manufacturing", "التصنيع", False, 590),
 )
 
 PLAN_ENTITLEMENTS = {
@@ -95,12 +103,12 @@ def _rename_legacy_einvoice(bind, system_modules, plan_modules, tenant_modules) 
 
     # Preserve existing references while eliminating the duplicate identity.
     for table in (plan_modules, tenant_modules):
+        owner_column = table.c.plan_id if hasattr(table.c, "plan_id") else table.c.tenant_id
         rows = bind.execute(
-            sa.select(table.c.id, table.c.plan_id if hasattr(table.c, "plan_id") else table.c.tenant_id)
+            sa.select(table.c.id, owner_column)
             .where(table.c.module_id == legacy)
         ).all()
         for row in rows:
-            owner_column = table.c.plan_id if hasattr(table.c, "plan_id") else table.c.tenant_id
             owner_id = getattr(row, owner_column.name)
             duplicate = bind.execute(
                 sa.select(table.c.id).where(owner_column == owner_id, table.c.module_id == canonical)
@@ -212,11 +220,8 @@ def upgrade() -> None:
             else:
                 bind.execute(plan_modules.update().where(plan_modules.c.id == existing).values(is_enabled=code in enabled))
 
-    # Explicitly synchronize the legacy sequence after deterministic ID mirroring.
     bind.execute(sa.text("SELECT setval(pg_get_serial_sequence('subscription_plans','id'), COALESCE((SELECT MAX(id) FROM subscription_plans), 1), true)"))
 
 
 def downgrade() -> None:
-    # Release catalog data is intentionally retained; subscriptions may already
-    # reference these plans/modules.
     pass
