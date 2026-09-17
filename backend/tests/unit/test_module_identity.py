@@ -22,3 +22,9 @@ def test_accounting_has_one_business_identity_for_all_technical_parts():
 def test_legacy_purchase_alias_is_canonicalized():
     assert canonical_business_code("purchase") == "purchasing"
     assert canonical_business_code("purchases") == "purchasing"
+
+
+def test_release_business_boundaries_have_canonical_technical_identity():
+    assert business_code_for_technical("logistics/shipping") == "shipping"
+    assert business_code_for_technical("integrations/core") == "integrations"
+    assert business_code_for_technical("treasury/core") == "treasury"
