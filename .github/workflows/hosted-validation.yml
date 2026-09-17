@@ -1,163 +1,34 @@
 name: PrimeERP Hosted Validation
 
+# Retained as an explicit/manual legacy validation workflow.
+# Canonical CI/release validation is PrimeERP Self-Hosted Release Gate.
+# No automatic push/pull_request trigger is allowed here so this workflow
+# cannot consume or compete for the single self-hosted runner.
 on:
-  pull_request:
-  push:
-    branches:
-      - main
-      - 'feature/**'
   workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: primeerp-validation-${{ github.ref }}
-  cancel-in-progress: false
-
 env:
   CI: true
 
 jobs:
-  backend:
-    name: Backend - hosted validation
+  legacy-validation:
+    name: Legacy validation (manual only)
     runs-on: [self-hosted, Windows, X64, PrimeERP]
-    timeout-minutes: 25
-    defaults:
-      run:
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
-        working-directory: backend
+    timeout-minutes: 45
     steps:
+      - name: Explain canonical gate
+        shell: powershell
+        run: |
+          Write-Host 'This workflow is manual-only by design.'
+          Write-Host 'Canonical automatic validation: PrimeERP Self-Hosted Release Gate.'
+          Write-Host 'Runner labels: self-hosted / Windows / X64 / PrimeERP'
       - name: Checkout
         uses: actions/checkout@v5
-      - name: Install dependencies
+      - name: Legacy validation is intentionally not duplicated
+        shell: powershell
         run: |
-          $ErrorActionPreference = 'Stop'
-          python -m pip install --upgrade pip --disable-pip-version-check --no-input
-          python -m pip install -r requirements.txt --disable-pip-version-check --no-input
-          python -m pip install pytest --disable-pip-version-check --no-input
-          python -m pip check
-      - name: Compile and architecture checks
-        run: |
-          $ErrorActionPreference = 'Stop'
-          python -m compileall -q app
-          python scripts/check_modular_architecture.py
-          python scripts/check_api_security.py
-          python scripts/check_release_readiness.py
-          python scripts/check_alembic_graph.py
-      - name: Import and production configuration smoke tests
-        env:
-          DATABASE_URL: sqlite:///./primeerp_ci_smoke.db
-          APP_ENV: test
-        run: |
-          $ErrorActionPreference = 'Stop'
-          python scripts/smoke_import.py
-          $env:APP_ENV = 'production'
-          $env:DEBUG = 'false'
-          $env:DATABASE_URL = 'sqlite:///./unsafe.db'
-          $env:SECRET_KEY = 'your-secret-key-change-this-in-production'
-          $env:CORS_ORIGINS = 'https://erp.example.com'
-          python scripts/check_production_config.py
-      - name: Alembic single-head check
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $heads = python -m alembic heads
-          Write-Host $heads
-          $count = ([regex]::Matches(($heads -join "`n"), '\(head\)')).Count
-          if ($count -ne 1) { throw "Expected exactly one Alembic head; found $count" }
-      - name: Run backend tests
-        run: python -m pytest -q
-
-  frontend:
-    name: Frontend - hosted validation
-    runs-on: [self-hosted, Windows, X64, PrimeERP]
-    timeout-minutes: 15
-    defaults:
-      run:
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
-        working-directory: frontend
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-      - name: Install dependencies and validate
-        run: |
-          $ErrorActionPreference = 'Stop'
-          npm ci
-          npm run typecheck
-          npm run lint
-          npm run build
-
-  docker:
-    name: Docker - hosted release gate
-    runs-on: [self-hosted, Windows, X64, PrimeERP]
-    timeout-minutes: 35
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-      - name: Prepare CI environment
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $pgPassword = [guid]::NewGuid().ToString('N')
-          $secretKey = ([guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToString('N'))
-          @(
-            'POSTGRES_DB=primeerp_ci'
-            'POSTGRES_USER=primeerp'
-            "POSTGRES_PASSWORD=$pgPassword"
-            "SECRET_KEY=$secretKey"
-            'CORS_ORIGINS=https://erp.example.com'
-            'APP_ENV=production'
-            'DEBUG=false'
-            'ETA_ENABLED=false'
-            'WHATSAPP_ENABLED=false'
-          ) | Set-Content -Encoding utf8 .env
-      - name: Validate Compose configuration
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
-        run: docker compose config
-      - name: Build production images
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
-        run: docker compose build --pull migrate backend backend-test report-worker frontend
-      - name: Start database and run migrations
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
-        run: |
-          $ErrorActionPreference = 'Stop'
-          docker compose up -d db migrate
-          $deadline = (Get-Date).AddMinutes(10)
-          while ((Get-Date) -lt $deadline) {
-            $status = docker inspect -f '{{.State.Status}}' primeerp-migrate 2>$null
-            if ($status -eq 'exited') {
-              $code = docker inspect -f '{{.State.ExitCode}}' primeerp-migrate
-              if ($code -eq '0') { exit 0 }
-              docker compose logs migrate
-              throw "Migration container exited with code $code"
-            }
-            Start-Sleep -Seconds 5
-          }
-          docker compose logs migrate
-          throw 'Migration container did not finish within 10 minutes.'
-      - name: Execute PostgreSQL effective-date guard tests
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
-        run: docker compose run --rm backend-test python -m pytest -q tests/jurisdiction/test_effective_date_db_guard.py
-      - name: Start services and validate runtime
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
-        run: |
-          $ErrorActionPreference = 'Stop'
-          docker compose up -d backend frontend report-worker
-          $deadline = (Get-Date).AddMinutes(10)
-          while ((Get-Date) -lt $deadline) {
-            $backendStatus = docker inspect -f '{{.State.Health.Status}}' primeerp-backend 2>$null
-            $frontendStatus = docker inspect -f '{{.State.Health.Status}}' primeerp-frontend 2>$null
-            $workerStatus = docker inspect -f '{{.State.Status}}' primeerp-report-worker 2>$null
-            if ($backendStatus -eq 'healthy' -and $frontendStatus -eq 'healthy' -and $workerStatus -eq 'running') {
-              Invoke-WebRequest -UseBasicParsing http://127.0.0.1:3000/ | Out-Null
-              exit 0
-            }
-            Start-Sleep -Seconds 5
-          }
-          docker compose ps
-          docker compose logs --tail=200 db migrate backend frontend report-worker
-          throw 'Runtime health check failed.'
-      - name: Cleanup
-        if: always()
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
-        run: docker compose down -v --remove-orphans
+          Write-Host 'PASS: automatic duplicate validation is disabled.'
+          Write-Host 'Use PrimeERP Self-Hosted Release Gate for the complete release gate.'
