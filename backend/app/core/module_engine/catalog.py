@@ -70,14 +70,24 @@ INVENTORY = (
 )
 
 COMMERCE = (
-    # The purchasing entitlement is backed by this real technical boundary,
-    # which orchestrates sales/purchasing against inventory and accounting.
     CatalogEntry(
         "commerce/sales_purchasing",
         "commerce",
         ("inventory/inventory_core", "accounting/accounting_core"),
         layer="business",
     ),
+)
+
+LOGISTICS = (
+    CatalogEntry("logistics/shipping", "logistics", ("commerce/sales_purchasing", "inventory/inventory_core"), layer="business"),
+)
+
+INTEGRATIONS = (
+    CatalogEntry("integrations/core", "integrations", ("core/identity",), layer="business"),
+)
+
+TREASURY = (
+    CatalogEntry("treasury/core", "treasury", ("accounting/accounting_core",), layer="finance"),
 )
 
 PLATFORM = (
@@ -115,7 +125,7 @@ LOCALIZATION = (
     CatalogEntry("localization/egyptian_einvoice", "localization", ("accounting/taxes", "accounting/journal_entries"), layer="localization"),
 )
 
-ALL_CATALOG_ENTRIES = CORE + ORGANIZATION + ACCOUNTING + SALES + INVENTORY + COMMERCE + PLATFORM + CRM + PEOPLE + INDUSTRY + LOCALIZATION
+ALL_CATALOG_ENTRIES = CORE + ORGANIZATION + ACCOUNTING + SALES + INVENTORY + COMMERCE + LOGISTICS + INTEGRATIONS + TREASURY + PLATFORM + CRM + PEOPLE + INDUSTRY + LOCALIZATION
 
 
 def catalog() -> Tuple[CatalogEntry, ...]:
