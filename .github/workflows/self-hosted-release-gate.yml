@@ -162,15 +162,21 @@ jobs:
         working-directory: frontend
         run: |
           $ErrorActionPreference = 'Stop'
-          npm install --package-lock-only --ignore-scripts --no-audit
-          if ($LASTEXITCODE -ne 0) { throw "npm package-lock refresh failed with exit code $LASTEXITCODE" }
-
           git config --global --add safe.directory "$env:GITHUB_WORKSPACE"
+          if (Test-Path package-lock.json) {
+            Remove-Item package-lock.json -Force
+            Write-Host 'Removed stale frontend package-lock.json; regenerating from package.json.'
+          }
+          npm install --package-lock-only --ignore-scripts --no-audit
+          if ($LASTEXITCODE -ne 0) { throw "npm package-lock regeneration failed with exit code $LASTEXITCODE" }
+          npm ls --depth=0
+          if ($LASTEXITCODE -ne 0) { throw "npm dependency graph is invalid with exit code $LASTEXITCODE" }
+
           if (git status --short -- package-lock.json) {
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add package-lock.json
-            git commit -m "chore(frontend): persist resolved secure dependency graph"
+            git commit -m "chore(frontend): persist resolved dependency graph"
             if ($LASTEXITCODE -ne 0) { throw "git commit failed with exit code $LASTEXITCODE" }
             git push origin HEAD:${{ github.head_ref || github.ref_name }}
             if ($LASTEXITCODE -ne 0) { throw "git push failed with exit code $LASTEXITCODE" }
