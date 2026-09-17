@@ -20,19 +20,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Regenerate committed frontend lockfile
+      - name: Regenerate committed frontend lockfile from package manifest
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         working-directory: frontend
         run: |
           $ErrorActionPreference = 'Stop'
           if (-not (Test-Path package.json)) { throw 'frontend/package.json is missing.' }
+          if (Test-Path package-lock.json) { Remove-Item package-lock.json -Force }
           npm install --package-lock-only --ignore-scripts --no-audit
           if ($LASTEXITCODE -ne 0) { throw "npm lockfile generation failed with exit code $LASTEXITCODE" }
-          node -e "const p=require('./package.json'),l=require('./package-lock.json'); const root=l.packages?.['']; const want=p.devDependencies?.['@vitejs/plugin-react']; const declared=root?.devDependencies?.['@vitejs/plugin-react']; const babel=l.packages?.['node_modules/@rolldown/plugin-babel']?.version; const resolved=l.packages?.['node_modules/@vitejs/plugin-react']?.version; console.log({want,declared,resolved,babel}); if(want!=='6.0.5'||declared!=='6.0.5'||resolved!=='6.0.5'||babel!=='0.2.3') process.exit(1)"
+          if (-not (Test-Path package-lock.json)) { throw 'npm did not generate frontend/package-lock.json.' }
+          node -e "const p=require('./package.json'),l=require('./package-lock.json'); const root=l.packages?.['']; const want=p.devDependencies?.['@vitejs/plugin-react']; const declared=root?.devDependencies?.['@vitejs/plugin-react']; const resolved=l.packages?.['node_modules/@vitejs/plugin-react']?.version; const babel=l.packages?.['node_modules/@rolldown/plugin-babel']; console.log({want,declared,resolved,hasRolldownPluginBabel:!!babel}); if(want!=='6.0.5'||declared!=='6.0.5'||resolved!=='6.0.5'||babel) process.exit(1)"
+          npm ci --ignore-scripts --no-audit
+          if ($LASTEXITCODE -ne 0) { throw "npm ci validation failed with exit code $LASTEXITCODE" }
+          npm ls --depth=0
+          if ($LASTEXITCODE -ne 0) { throw "npm ls validation failed with exit code $LASTEXITCODE" }
           git config --global --add safe.directory "$env:GITHUB_WORKSPACE"
           if (git status --short -- frontend/package-lock.json) {
             git add frontend/package-lock.json
-            git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'chore(frontend): synchronize package lockfile'
+            git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'chore(frontend): regenerate package lockfile from manifest'
             git push
           } else {
             Write-Host 'Frontend package-lock.json is already synchronized.'
