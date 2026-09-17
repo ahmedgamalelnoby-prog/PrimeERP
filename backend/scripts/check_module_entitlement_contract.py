@@ -126,30 +126,22 @@ def audit_database_contract() -> None:
         if dangling:
             fail(f"dangling plan_modules rows: {len(dangling)}")
 
+        plan_enabled: dict[str, set[str]] = {}
         for plan_code in PLAN_CODES:
-            count = conn.execute(text("""
-                SELECT COUNT(*)
+            enabled = conn.execute(text("""
+                SELECT m.code
                 FROM plan_modules pm
                 JOIN subscription_plans p ON p.id = pm.plan_id
                 JOIN system_modules m ON m.id = pm.module_id
                 WHERE p.code = :code AND m.is_active = true AND pm.is_enabled = true
-            """), {"code": plan_code}).scalar_one()
-            if count == 0:
-                fail(f"plan {plan_code} has no enabled active modules")
+            """), {"code": plan_code}).scalars().all()
+            plan_enabled[plan_code] = set(enabled)
+            if not (plan_enabled[plan_code] & BUSINESS_CODES):
+                fail(f"plan {plan_code} has no enabled executable business modules")
 
-        missing_for_professional = conn.execute(text("""
-            SELECT m.code
-            FROM system_modules m
-            WHERE m.is_active = true
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM plan_modules pm
-                  JOIN subscription_plans p ON p.id = pm.plan_id
-                  WHERE p.code = 'professional' AND pm.module_id = m.id AND pm.is_enabled = true
-              )
-        """)).scalars().all()
-        if missing_for_professional:
-            fail(f"professional plan is missing active modules: {sorted(missing_for_professional)}")
+        missing_professional = sorted(BUSINESS_CODES - plan_enabled["professional"])
+        if missing_professional:
+            fail(f"professional plan is missing executable business modules: {missing_professional}")
 
     engine.dispose()
 
