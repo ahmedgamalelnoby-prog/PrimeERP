@@ -6,6 +6,7 @@ from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session
 
 from app.core.context import get_effective_tenant_id
+from app.core.module_engine.identity import canonical_business_code
 from app.database.session import get_db
 from app.modules.branches.models import Branch
 from app.modules.companies.models import Company
@@ -37,15 +38,30 @@ def _active_subscription(db: Session, tenant_id: int) -> Subscription | None:
 
 
 def tenant_has_module(db: Session, tenant_id: int, module_code: str) -> bool:
+    """Check a business-level entitlement using one canonical module identity."""
     subscription = _active_subscription(db, tenant_id)
     if subscription is None:
         return False
+
+    module_code = canonical_business_code(module_code)
     if module_code in CORE_MODULES:
         return True
-    module = db.scalar(select(SystemModule).where(SystemModule.code == module_code, SystemModule.is_active.is_(True)))
+
+    module = db.scalar(
+        select(SystemModule).where(
+            SystemModule.code == module_code,
+            SystemModule.is_active.is_(True),
+        )
+    )
     if module is None:
         return False
-    override = db.scalar(select(TenantModule).where(TenantModule.tenant_id == tenant_id, TenantModule.module_id == module.id))
+
+    override = db.scalar(
+        select(TenantModule).where(
+            TenantModule.tenant_id == tenant_id,
+            TenantModule.module_id == module.id,
+        )
+    )
     now = datetime.now(timezone.utc)
     if override is not None:
         if not override.is_enabled:
@@ -55,6 +71,7 @@ def tenant_has_module(db: Session, tenant_id: int, module_code: str) -> bool:
         if override.ends_at is not None and override.ends_at <= now:
             return False
         return True
+
     return db.scalar(
         select(PlanModule.id).where(
             PlanModule.plan_id == subscription.plan_id,
@@ -65,15 +82,17 @@ def tenant_has_module(db: Session, tenant_id: int, module_code: str) -> bool:
 
 
 def require_module(module_code: str) -> Callable:
+    canonical_code = canonical_business_code(module_code)
+
     def dependency(
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user),
     ) -> User:
         tenant_id = get_effective_tenant_id(current_user)
-        if not tenant_has_module(db, tenant_id, module_code):
+        if not tenant_has_module(db, tenant_id, canonical_code):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Module '{module_code}' is not enabled for this subscription",
+                detail=f"Module '{canonical_code}' is not enabled for this subscription",
             )
         return current_user
 
