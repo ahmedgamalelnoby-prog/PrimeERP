@@ -65,11 +65,19 @@ def test_database_rejects_open_ended_overlap_and_allows_different_keys():
                     f"INSERT INTO {table_name} (company_id, jurisdiction_id, role, effective_from, effective_to) VALUES (1, 10, 'tax', %s, NULL)",
                     (date(2026, 1, 1),),
                 )
-                with pytest.raises(ExclusionViolation):
+                cur.execute("SAVEPOINT overlap_guard")
+                try:
                     cur.execute(
                         f"INSERT INTO {table_name} (company_id, jurisdiction_id, role, effective_from, effective_to) VALUES (1, 10, 'tax', %s, %s)",
                         (date(2026, 6, 1), date(2026, 12, 31)),
                     )
+                except ExclusionViolation:
+                    cur.execute("ROLLBACK TO SAVEPOINT overlap_guard")
+                else:
+                    pytest.fail("Expected overlapping effective-dated row to violate exclusion constraint")
+                finally:
+                    cur.execute("RELEASE SAVEPOINT overlap_guard")
+
                 cur.execute(
                     f"INSERT INTO {table_name} (company_id, jurisdiction_id, role, effective_from, effective_to) VALUES (2, 10, 'tax', %s, %s)",
                     (date(2026, 6, 1), date(2026, 12, 31)),
