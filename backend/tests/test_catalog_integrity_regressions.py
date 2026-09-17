@@ -32,7 +32,6 @@ def test_recipe_cost_uses_waste_and_yield_formula():
 
 
 def test_recipe_uom_conversion_uses_factor_ratio():
-    # Ingredient base UOM = KG (factor 1000 to the gram base), recipe line = G.
     from app.modules.catalog.service import CatalogService
 
     factor = CatalogService._calculate_uom_factor(
@@ -56,8 +55,6 @@ def test_recipe_uom_conversion_rejects_incompatible_categories():
 
 
 def test_recipe_nested_cost_math_preserves_sibling_reuse():
-    # Reusing the same ingredient in separate branches must not be treated as
-    # a cycle; the recursion guard is a path guard, not a global visited set.
     from app.modules.catalog.service import _money
 
     assert _money(Decimal("12.50") + Decimal("7.50")) == Decimal("20.0000")
@@ -67,8 +64,8 @@ def test_fifo_weighted_unit_cost_is_exact_for_multiple_layers():
     from app.modules.inventory.stock_moves.service import InventoryStockMoveService
 
     allocations = [
-        (Decimal("2"), Decimal("10")),
-        (Decimal("3"), Decimal("14")),
+        (Decimal("2"), Decimal("10"), Decimal("20")),
+        (Decimal("3"), Decimal("14"), Decimal("42")),
     ]
     unit_cost = InventoryStockMoveService._weighted_cost(allocations)
     assert unit_cost == Decimal("12.4")
