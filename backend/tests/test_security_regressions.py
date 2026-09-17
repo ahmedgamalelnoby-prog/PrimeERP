@@ -121,6 +121,8 @@ def test_stock_issue_rejects_reserved_quantity(monkeypatch):
             text = str(query)
             if "inventory_stock_moves" in text:
                 return move
+            if "product_variants" in text:
+                return None
             return item
 
     with pytest.raises(ValueError, match="reserved quantity"):
