@@ -32,36 +32,30 @@ def _reject_suspended(tenant: Tenant) -> None:
 
 
 def _canonical_plan(db: Session, plan_id: int) -> Plan:
-    plan = db.scalar(
-        select(Plan).where(
-            Plan.id == plan_id,
-            Plan.is_deleted.is_(False),
-            Plan.status == PlanStatus.ACTIVE.value,
-        )
-    )
+    plan = db.scalar(select(Plan).where(
+        Plan.id == plan_id,
+        Plan.is_deleted.is_(False),
+        Plan.status == PlanStatus.ACTIVE.value,
+    ))
     if plan is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Canonical subscription plan is not active")
+        raise HTTPException(status_code=404, detail="Canonical subscription plan is not active")
     return plan
 
 
 def _canonical_plan_by_code(db: Session, code: str, version: int = 1) -> Plan:
-    plan = db.scalar(
-        select(Plan).where(
-            Plan.code == code.strip().lower(),
-            Plan.version == version,
-            Plan.is_deleted.is_(False),
-            Plan.status == PlanStatus.ACTIVE.value,
-        )
-    )
+    plan = db.scalar(select(Plan).where(
+        Plan.code == code.strip().lower(),
+        Plan.version == version,
+        Plan.is_deleted.is_(False),
+        Plan.status == PlanStatus.ACTIVE.value,
+    ))
     if plan is None:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Canonical plan '{code}' is not configured")
+        raise HTTPException(status_code=503, detail=f"Canonical plan '{code}' is not configured")
     return plan
 
 
 def _legacy_plan(db: Session, canonical: Plan) -> SubscriptionPlan:
-    legacy = db.scalar(
-        select(SubscriptionPlan).where(SubscriptionPlan.code == canonical.code).with_for_update()
-    )
+    legacy = db.scalar(select(SubscriptionPlan).where(SubscriptionPlan.code == canonical.code).with_for_update())
     if legacy is not None and legacy.id != canonical.id:
         raise HTTPException(status_code=500, detail=f"Plan identity mismatch for '{canonical.code}'")
     if legacy is None:
@@ -91,6 +85,10 @@ def _legacy_plan(db: Session, canonical: Plan) -> SubscriptionPlan:
     return legacy
 
 
+def resolve_legacy_plan(db: Session, code: str, version: int = 1) -> SubscriptionPlan:
+    return _legacy_plan(db, _canonical_plan_by_code(db, code, version))
+
+
 def _active_subscription(db: Session, tenant_id: int, now: datetime) -> Subscription | None:
     return db.scalar(select(Subscription).where(
         Subscription.tenant_id == tenant_id,
@@ -111,33 +109,56 @@ def _period_end(start: datetime, billing_cycle: str) -> datetime:
     return start.replace(year=year, month=month, day=day)
 
 
-def _provision_plan_modules(db: Session, tenant_id: int, legacy_plan: SubscriptionPlan, starts_at: datetime, ends_at: datetime | None) -> None:
-    modules = db.scalars(
-        select(SystemModule)
-        .join(PlanModule, PlanModule.module_id == SystemModule.id)
-        .where(
-            PlanModule.plan_id == legacy_plan.id,
-            PlanModule.is_enabled.is_(True),
-            SystemModule.is_active.is_(True),
-        )
-    ).all()
+def _provision_plan_modules(db: Session, tenant_id: int, legacy_plan: SubscriptionPlan, starts_at: datetime, ends_at: datetime | None) -> list[SystemModule]:
+    modules = list(db.scalars(select(SystemModule).join(PlanModule, PlanModule.module_id == SystemModule.id).where(
+        PlanModule.plan_id == legacy_plan.id,
+        PlanModule.is_enabled.is_(True),
+        SystemModule.is_active.is_(True),
+    )).all())
     for module in modules:
         override = db.scalar(select(TenantModule).where(
             TenantModule.tenant_id == tenant_id,
             TenantModule.module_id == module.id,
         ))
         if override is None:
-            db.add(TenantModule(
-                tenant_id=tenant_id,
-                module_id=module.id,
-                is_enabled=True,
-                starts_at=starts_at,
-                ends_at=ends_at,
-            ))
+            db.add(TenantModule(tenant_id=tenant_id, module_id=module.id, is_enabled=True, starts_at=starts_at, ends_at=ends_at))
         else:
             override.is_enabled = True
             override.starts_at = starts_at
             override.ends_at = ends_at
+    return modules
+
+
+def create_trial(db: Session, tenant_id: int, plan_code: str = "trial", plan_version: int = 1, starts_at: datetime | None = None) -> tuple[Subscription, Plan, list[SystemModule]]:
+    tenant = _tenant(db, tenant_id)
+    _reject_suspended(tenant)
+    canonical = _canonical_plan_by_code(db, plan_code, plan_version)
+    legacy = _legacy_plan(db, canonical)
+    start = starts_at or _now()
+    end = start + timedelta(days=canonical.trial_days)
+    existing = _active_subscription(db, tenant_id, start)
+    if existing is not None:
+        raise HTTPException(status_code=409, detail="Tenant already has an active subscription")
+    subscription = Subscription(
+        tenant_id=tenant_id,
+        plan_id=legacy.id,
+        status="trialing",
+        billing_cycle=canonical.billing_cycle,
+        starts_at=start,
+        ends_at=end,
+        trial_ends_at=end,
+        next_billing_date=None,
+        is_auto_renew=False,
+    )
+    db.add(subscription)
+    db.flush()
+    modules = _provision_plan_modules(db, tenant_id, legacy, start, end)
+    tenant.status = "trial"
+    tenant.is_trial = True
+    tenant.trial_started_at = start
+    tenant.trial_ends_at = end
+    tenant.is_active = True
+    return subscription, canonical, modules
 
 
 def convert_trial_to_paid(db: Session, tenant_id: int, plan_id: int, billing_cycle: str = "monthly", auto_renew: bool = True) -> Subscription:
@@ -209,13 +230,12 @@ def renew_subscription(db: Session, tenant_id: int, plan_id: int | None = None, 
 def cancel_auto_renewal(db: Session, tenant_id: int) -> Subscription:
     tenant = _tenant(db, tenant_id)
     _reject_suspended(tenant)
-    now = _now()
-    subscription = _active_subscription(db, tenant_id, now)
+    subscription = _active_subscription(db, tenant_id, _now())
     if subscription is None:
         raise HTTPException(status_code=404, detail="No active subscription exists for tenant")
     subscription.is_auto_renew = False
     subscription.next_billing_date = None
-    subscription.cancelled_at = now
+    subscription.cancelled_at = _now()
     db.commit()
     db.refresh(subscription)
     return subscription
@@ -237,8 +257,7 @@ def suspend_tenant(db: Session, tenant_id: int, reason: str) -> Tenant:
 
 def unsuspend_tenant(db: Session, tenant_id: int) -> Tenant:
     tenant = _tenant(db, tenant_id)
-    now = _now()
-    subscription = _active_subscription(db, tenant_id, now)
+    subscription = _active_subscription(db, tenant_id, _now())
     if subscription is None:
         raise HTTPException(status_code=409, detail="Tenant has no valid subscription for reactivation")
     tenant.status = "trial" if subscription.status == "trialing" else "active"
