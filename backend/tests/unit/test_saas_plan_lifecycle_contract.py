@@ -27,3 +27,21 @@ def test_lifecycle_provisions_entitlements_and_expiry_state():
     assert "def cancel_auto_renewal(" in source
     assert "def expire_due_subscriptions(" in source
     assert "_provision_plan_modules" in source
+
+
+def test_plan_transition_revokes_only_plan_grants():
+    lifecycle_source = (ROOT / "app/modules/saas/lifecycle.py").read_text(encoding="utf-8")
+    model_source = (ROOT / "app/modules/saas/models.py").read_text(encoding="utf-8")
+    entitlement_source = (ROOT / "app/modules/saas/entitlements.py").read_text(encoding="utf-8")
+
+    assert 'source == "plan"' in lifecycle_source
+    assert 'grant.is_enabled = False' in lifecycle_source
+    assert 'source="plan"' in lifecycle_source
+    assert 'TenantModule.source == "override"' in entitlement_source
+    assert 'source = Column(String(20)' in model_source
+
+
+def test_plan_transition_does_not_rewrite_explicit_overrides():
+    source = (ROOT / "app/modules/saas/lifecycle.py").read_text(encoding="utf-8")
+    assert 'elif grant.source == "plan":' in source
+    assert "Explicit overrides are intentionally authoritative" in source
