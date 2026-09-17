@@ -35,7 +35,6 @@ BUSINESS_TO_TECHNICAL: Final[dict[str, tuple[str, ...]]] = {
         "accounting/taxes",
         "accounting/vat",
         "accounting/withholding_tax",
-        "taxes",
     ),
     "sales": (
         "sales/sales_core",
