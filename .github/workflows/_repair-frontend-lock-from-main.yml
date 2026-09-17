@@ -1,0 +1,49 @@
+name: _repair-frontend-lock-from-main
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-repair-branch-lock:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Refresh and validate repair branch lockfile
+        shell: pwsh
+        run: |
+          git fetch origin repair/module-entitlement-architecture-20260917
+          git worktree add ..\repair-worktree origin/repair/module-entitlement-architecture-20260917
+          Set-Location ..\repair-worktree\frontend
+          npm install --package-lock-only --ignore-scripts --no-audit
+          npm audit --audit-level=moderate
+          Set-Location ..
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/package-lock.json
+          if (-not (git diff --cached --quiet)) {
+            git commit -m "chore(frontend): regenerate dependency lockfile after security upgrades"
+            git push origin HEAD:repair/module-entitlement-architecture-20260917
+          } else {
+            Write-Host "Repair branch lockfile already current."
+          }
+
+      - name: Remove one-shot workflow from main
+        shell: pwsh
+        run: |
+          git rm .github/workflows/_repair-frontend-lock-from-main.yml
+          git commit -m "ci: remove one-shot repair lock workflow"
+          git push origin HEAD:main
