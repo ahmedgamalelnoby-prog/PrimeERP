@@ -1,38 +1,24 @@
-from fastapi.routing import APIRoute
-
 from main import create_application
+from app.modules.documents.router import router as documents_router
+from app.modules.helpdesk.router import router as helpdesk_router
+from app.modules.project.router import router as project_router
 
 
-def _application():
-    return create_application()
-
-
-def _application_routes():
-    return [route for route in _application().routes if isinstance(route, APIRoute)]
-
-
-def _paths(prefix: str) -> set[str]:
-    return {
-        route.path.removeprefix("/api/v1")
-        for route in _application_routes()
-        if route.path.removeprefix("/api/v1").startswith(prefix)
-    }
+def _openapi_paths():
+    return create_application().openapi().get("paths", {})
 
 
 def test_application_module_routes_are_registered():
-    assert "/helpdesk/tickets" in _paths("/helpdesk")
-    assert "/helpdesk/tickets/{ticket_id}/transition" in _paths("/helpdesk")
-    assert "/projects/{project_id}/tasks" in _paths("/projects")
-    assert "/projects/{project_id}/task-dependencies" in _paths("/projects")
-    assert "/documents/{document_id}/versions" in _paths("/documents")
-    assert "/documents/{document_id}/shares" in _paths("/documents")
+    paths = _openapi_paths()
+    assert "/api/v1/helpdesk/tickets" in paths
+    assert "/api/v1/helpdesk/tickets/{ticket_id}/transition" in paths
+    assert "/api/v1/projects/{project_id}/tasks" in paths
+    assert "/api/v1/projects/{project_id}/task-dependencies" in paths
+    assert "/api/v1/documents/{document_id}/versions" in paths
+    assert "/api/v1/documents/{document_id}/shares" in paths
 
 
-def test_application_routes_have_module_entitlement_dependencies():
-    module_routes = [
-        route
-        for route in _application_routes()
-        if route.path.removeprefix("/api/v1").startswith(("/helpdesk", "/projects", "/documents"))
-    ]
-    assert module_routes
-    assert all(route.dependant.dependencies for route in module_routes)
+def test_application_module_routers_require_module_entitlements():
+    for router in (helpdesk_router, project_router, documents_router):
+        assert router.dependencies
+        assert any(getattr(dependency.dependency, "__name__", "") == "require_module" for dependency in router.dependencies)
