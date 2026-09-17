@@ -163,6 +163,41 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           npm ci
+
+      - name: Frontend dependency security audit
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+        working-directory: frontend
+        run: |
+          $ErrorActionPreference = 'Continue'
+          npm audit --json *> npm-audit.json
+          $auditExit = $LASTEXITCODE
+          if (Test-Path npm-audit.json) {
+            try {
+              $audit = Get-Content npm-audit.json -Raw | ConvertFrom-Json
+              if ($audit.metadata.vulnerabilities) {
+                $v = $audit.metadata.vulnerabilities
+                Write-Host "npm audit summary: info=$($v.info) low=$($v.low) moderate=$($v.moderate) high=$($v.high) critical=$($v.critical)"
+              }
+            } catch {
+              Write-Host 'npm audit JSON could not be parsed; raw artifact will be retained.'
+            }
+          }
+          if ($auditExit -ne 0) { Write-Host "npm audit reported vulnerabilities (exit code $auditExit); continuing for diagnostic collection." }
+
+      - name: Upload frontend dependency audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: primeerp-frontend-npm-audit-${{ github.run_id }}
+          path: frontend/npm-audit.json
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Frontend typecheck lint build
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+        working-directory: frontend
+        run: |
+          $ErrorActionPreference = 'Stop'
           npm run typecheck
           npm run lint
           npm run build
