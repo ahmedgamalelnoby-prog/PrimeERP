@@ -16,7 +16,7 @@ from sqlalchemy import (
     and_,
 )
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import foreign, relationship
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.database.base import Base
@@ -68,28 +68,20 @@ class JournalEntry(Base):
     fiscal_year = relationship(
         "FiscalYear",
         primaryjoin=lambda: and_(
-            foreign(JournalEntry.fiscal_year_id) == FiscalYear.id,
-            foreign(JournalEntry.tenant_id) == FiscalYear.tenant_id,
-            foreign(JournalEntry.company_id) == FiscalYear.company_id,
+            JournalEntry.fiscal_year_id == FiscalYear.id,
+            JournalEntry.tenant_id == FiscalYear.tenant_id,
+            JournalEntry.company_id == FiscalYear.company_id,
         ),
-        foreign_keys=lambda: [
-            JournalEntry.fiscal_year_id,
-            JournalEntry.tenant_id,
-            JournalEntry.company_id,
-        ],
+        foreign_keys=lambda: [JournalEntry.fiscal_year_id],
     )
     period = relationship(
         "AccountingPeriod",
         primaryjoin=lambda: and_(
-            foreign(JournalEntry.period_id) == AccountingPeriod.id,
-            foreign(JournalEntry.tenant_id) == AccountingPeriod.tenant_id,
-            foreign(JournalEntry.company_id) == AccountingPeriod.company_id,
+            JournalEntry.period_id == AccountingPeriod.id,
+            JournalEntry.tenant_id == AccountingPeriod.tenant_id,
+            JournalEntry.company_id == AccountingPeriod.company_id,
         ),
-        foreign_keys=lambda: [
-            JournalEntry.period_id,
-            JournalEntry.tenant_id,
-            JournalEntry.company_id,
-        ],
+        foreign_keys=lambda: [JournalEntry.period_id],
     )
     business_transaction = relationship("BusinessTransaction")
     lines = relationship("JournalEntryLine", back_populates="entry", cascade="all, delete-orphan", passive_deletes=True, order_by="JournalEntryLine.line_number")
