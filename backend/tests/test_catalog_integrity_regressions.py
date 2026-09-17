@@ -63,9 +63,10 @@ def test_recipe_nested_cost_math_preserves_sibling_reuse():
 def test_fifo_weighted_unit_cost_is_exact_for_multiple_layers():
     from app.modules.inventory.stock_moves.service import InventoryStockMoveService
 
+    # Production FIFO allocations are (cost_layer, quantity, unit_cost).
     allocations = [
-        (Decimal("2"), Decimal("10"), Decimal("20")),
-        (Decimal("3"), Decimal("14"), Decimal("42")),
+        (None, Decimal("2"), Decimal("10")),
+        (None, Decimal("3"), Decimal("14")),
     ]
     unit_cost = InventoryStockMoveService._weighted_cost(allocations)
     assert unit_cost == Decimal("12.4")
