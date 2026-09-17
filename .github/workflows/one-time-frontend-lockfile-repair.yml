@@ -27,11 +27,11 @@ jobs:
           $ErrorActionPreference = 'Stop'
           if (-not (Test-Path package.json)) { throw 'frontend/package.json is missing.' }
           if (Test-Path package-lock.json) { Remove-Item package-lock.json -Force }
-          npm install --package-lock-only --ignore-scripts --no-audit
-          if ($LASTEXITCODE -ne 0) { throw "npm lockfile generation failed with exit code $LASTEXITCODE" }
+          npm install --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw "npm dependency installation and lockfile generation failed with exit code $LASTEXITCODE" }
           if (-not (Test-Path package-lock.json)) { throw 'npm did not generate frontend/package-lock.json.' }
           node -e "const p=require('./package.json'),l=require('./package-lock.json'); const root=l.packages?.['']; const want=p.devDependencies?.['@vitejs/plugin-react']; const declared=root?.devDependencies?.['@vitejs/plugin-react']; const resolved=l.packages?.['node_modules/@vitejs/plugin-react']?.version; const babel=l.packages?.['node_modules/@rolldown/plugin-babel']; console.log({want,declared,resolved,hasRolldownPluginBabel:!!babel}); if(want!=='6.0.5'||declared!=='6.0.5'||resolved!=='6.0.5'||babel) process.exit(1)"
-          npm ci --ignore-scripts --no-audit
+          npm ci --ignore-scripts --no-audit --no-fund
           if ($LASTEXITCODE -ne 0) { throw "npm ci validation failed with exit code $LASTEXITCODE" }
           npm ls --depth=0
           if ($LASTEXITCODE -ne 0) { throw "npm ls validation failed with exit code $LASTEXITCODE" }
