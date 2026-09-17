@@ -134,16 +134,6 @@ def _enforce_tenant_access(db: Session, user: User) -> None:
 
     now = datetime.now(timezone.utc)
 
-    if tenant.is_trial and tenant.trial_ends_at is not None:
-        trial_end = tenant.trial_ends_at
-        if trial_end.tzinfo is None:
-            trial_end = trial_end.replace(tzinfo=timezone.utc)
-        if trial_end <= now:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Trial period has expired. Please activate a subscription to continue.",
-            )
-
     subscription = db.execute(
         select(Subscription)
         .where(Subscription.tenant_id == tenant.id)
@@ -152,19 +142,39 @@ def _enforce_tenant_access(db: Session, user: User) -> None:
     ).scalar_one_or_none()
 
     if subscription is None:
+        if tenant.is_trial and tenant.trial_ends_at is not None:
+            trial_end = tenant.trial_ends_at
+            if trial_end.tzinfo is None:
+                trial_end = trial_end.replace(tzinfo=timezone.utc)
+            if trial_end <= now:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Trial period has expired. Please activate a subscription to continue.",
+                )
         return
 
-    if subscription.status in {"cancelled", "canceled", "expired", "suspended", "past_due"}:
+    if subscription.status not in {"trialing", "active", "past_due", "grace"}:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Subscription is not active. Please renew your subscription to continue.",
         )
 
+    if subscription.status == "trialing":
+        trial_end = subscription.trial_ends_at or subscription.ends_at
+        if trial_end is not None:
+            trial_end = trial_end if trial_end.tzinfo is not None else trial_end.replace(tzinfo=timezone.utc)
+            if trial_end <= now:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Trial period has expired. Please activate a subscription to continue.",
+                )
+        return
+
     if subscription.ends_at is not None:
         subscription_end = subscription.ends_at
         if subscription_end.tzinfo is None:
             subscription_end = subscription_end.replace(tzinfo=timezone.utc)
-        if subscription_end <= now:
+        if subscription_end <= now and subscription.status != "grace":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Subscription has expired. Please renew your subscription to continue.",
