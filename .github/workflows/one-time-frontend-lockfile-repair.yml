@@ -36,42 +36,27 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $frontend = Join-Path $env:GITHUB_WORKSPACE 'frontend'
           $temp = Join-Path $env:RUNNER_TEMP 'primeerp-frontend-lock-rebuild'
+          $branch = 'repair/module-entitlement-architecture-20260917'
 
-          if (-not (Test-Path (Join-Path $frontend 'package.json'))) {
-            throw 'frontend/package.json is missing.'
-          }
-
-          if (Test-Path $temp) {
-            Remove-Item $temp -Recurse -Force
-          }
+          if (-not (Test-Path (Join-Path $frontend 'package.json'))) { throw 'frontend/package.json is missing.' }
+          if (Test-Path $temp) { Remove-Item $temp -Recurse -Force }
           New-Item -ItemType Directory -Path $temp -Force | Out-Null
           Copy-Item (Join-Path $frontend 'package.json') (Join-Path $temp 'package.json') -Force
-          if (Test-Path (Join-Path $frontend '.npmrc')) {
-            Copy-Item (Join-Path $frontend '.npmrc') (Join-Path $temp '.npmrc') -Force
-          }
+          if (Test-Path (Join-Path $frontend '.npmrc')) { Copy-Item (Join-Path $frontend '.npmrc') (Join-Path $temp '.npmrc') -Force }
 
           Push-Location $temp
           try {
             npm install --ignore-scripts --include=dev --no-audit --no-fund --install-strategy=hoisted
             if ($LASTEXITCODE -ne 0) { throw "Clean npm install failed with exit code $LASTEXITCODE" }
-            if (-not (Test-Path (Join-Path $temp 'package-lock.json'))) {
-              throw 'Clean npm install did not generate package-lock.json.'
-            }
-
+            if (-not (Test-Path (Join-Path $temp 'package-lock.json'))) { throw 'Clean npm install did not generate package-lock.json.' }
             node -e "const p=require('./package.json'),l=require('./package-lock.json'); const root=l.packages?.['']; const checks=[['@vitejs/plugin-react',p.devDependencies?.['@vitejs/plugin-react'],root?.devDependencies?.['@vitejs/plugin-react'],l.packages?.['node_modules/@vitejs/plugin-react']?.version],['vite',p.devDependencies?.vite,root?.devDependencies?.vite,l.packages?.['node_modules/vite']?.version],['eslint',p.devDependencies?.eslint,root?.devDependencies?.eslint,l.packages?.['node_modules/eslint']?.version],['@typescript-eslint/eslint-plugin',p.devDependencies?.['@typescript-eslint/eslint-plugin'],root?.devDependencies?.['@typescript-eslint/eslint-plugin'],l.packages?.['node_modules/@typescript-eslint/eslint-plugin']?.version],['react-router-dom',p.dependencies?.['react-router-dom'],root?.dependencies?.['react-router-dom'],l.packages?.['node_modules/react-router-dom']?.version]]; console.log(checks); const bad=checks.filter(([,want,declared,resolved])=>!want||declared!==want||!resolved); if(bad.length){console.error('Manifest/lockfile checks failed:',bad);process.exit(1)}; if(l.packages?.['node_modules/@rolldown/plugin-babel']){console.error('Unused @rolldown/plugin-babel is present in lockfile');process.exit(1)}; console.log('Clean lockfile manifest checks: PASS')"
-
             npm ci --ignore-scripts --include=dev --no-audit --no-fund --install-strategy=hoisted
             if ($LASTEXITCODE -ne 0) { throw "Clean lockfile npm ci validation failed with exit code $LASTEXITCODE" }
-
             npm ls --depth=0
             if ($LASTEXITCODE -ne 0) { throw "Clean lockfile npm ls validation failed with exit code $LASTEXITCODE" }
-          }
-          finally {
-            Pop-Location
-          }
+          } finally { Pop-Location }
 
           Copy-Item (Join-Path $temp 'package-lock.json') (Join-Path $frontend 'package-lock.json') -Force
-
           Push-Location $frontend
           try {
             node -e "const p=require('./package.json'),l=require('./package-lock.json'); const root=l.packages?.['']; const deps={...(p.dependencies||{}),...(p.devDependencies||{})}; const rootDeps={...(root?.dependencies||{}),...(root?.devDependencies||{})}; const bad=Object.entries(deps).filter(([n,v])=>rootDeps[n]!==v).map(([n,v])=>n+': package='+v+' lock='+rootDeps[n]); if(bad.length){console.error(bad.join('\n'));process.exit(1)}; console.log('Committed lockfile root consistency: PASS')"
@@ -79,16 +64,13 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "Final frontend npm ci validation failed with exit code $LASTEXITCODE" }
             npm ls --depth=0
             if ($LASTEXITCODE -ne 0) { throw "Final frontend npm ls validation failed with exit code $LASTEXITCODE" }
-          }
-          finally {
-            Pop-Location
-          }
+          } finally { Pop-Location }
 
           git config --global --add safe.directory "$env:GITHUB_WORKSPACE"
-          if (git status --short -- frontend/package-lock.json) {
-            git add frontend/package-lock.json
-            git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'chore(frontend): regenerate package lockfile from manifest'
-            git push
-          } else {
+          git add frontend/package-lock.json
+          if (git diff --cached --quiet -- frontend/package-lock.json) {
             Write-Host 'Frontend package-lock.json is already synchronized.'
+            exit 0
           }
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'chore(frontend): regenerate package lockfile from manifest'
+          git push origin "HEAD:$branch"
