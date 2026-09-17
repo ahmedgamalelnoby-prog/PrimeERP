@@ -30,7 +30,7 @@ def test_sales_cogs_uses_posted_stock_move_cost_and_is_idempotent_by_source():
     assert 'source_entity == "sales_delivery"' in ACCOUNTING_SOURCE
     assert 'source_entity="sales_cogs"' in ACCOUNTING_SOURCE
     assert 'entry_number=f"COGS-{document.id}"' in ACCOUNTING_SOURCE
-    assert 'source_entity == "sales_delivery"' in INVENTORY_SOURCE
+    assert 'getattr(move, "source_entity", None) == "sales_delivery"' in INVENTORY_SOURCE
 
 
 def test_fifo_issue_preserves_weighted_layer_cost_on_stock_move():
