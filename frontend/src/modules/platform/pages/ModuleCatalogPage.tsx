@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { BookOpen, Boxes, Building2, Calculator, ChevronDown, CircleHelp, Factory, Headphones, LayoutGrid, Search, ShieldCheck, ShoppingCart, Users2, WalletCards } from "lucide-react";
+import { Boxes, Building2, Calculator, ChevronDown, CircleHelp, Headphones, LayoutGrid, Search, ShieldCheck, ShoppingCart, Users2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
 type CatalogItem = { name: string; ar: string; description: string };
