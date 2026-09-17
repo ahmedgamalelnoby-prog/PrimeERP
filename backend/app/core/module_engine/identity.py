@@ -31,6 +31,12 @@ BUSINESS_TO_TECHNICAL: Final[dict[str, tuple[str, ...]]] = {
         "accounting/cost_centers",
         "accounting/reports",
     ),
+    "taxes": (
+        "accounting/taxes",
+        "accounting/vat",
+        "accounting/withholding_tax",
+        "taxes",
+    ),
     "sales": (
         "sales/sales_core",
         "sales/quotations",
