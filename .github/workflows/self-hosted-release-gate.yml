@@ -73,9 +73,9 @@ jobs:
           $pgPassword = [guid]::NewGuid().ToString('N')
           $secretKey = ([guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToString('N'))
           $composeProject = "primeerp-ci-$env:GITHUB_RUN_ID"
+          "::add-mask::$pgPassword"
+          "::add-mask::$secretKey"
           @('POSTGRES_DB=primeerp_ci','POSTGRES_USER=primeerp',"POSTGRES_PASSWORD=$pgPassword","SECRET_KEY=$secretKey",'CORS_ORIGINS=https://erp.example.com','APP_ENV=production','DEBUG=false','ETA_ENABLED=false','WHATSAPP_ENABLED=false','PRIMEERP_FRONTEND_PORT=3100',"COMPOSE_PROJECT_NAME=$composeProject") | Set-Content -Encoding utf8 .env
-          "PRIMEERP_CI_POSTGRES_PASSWORD=$pgPassword" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
-          "PRIMEERP_CI_SECRET_KEY=$secretKey" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           "COMPOSE_PROJECT_NAME=$composeProject" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           "PRIMEERP_FRONTEND_PORT=3100" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
 
