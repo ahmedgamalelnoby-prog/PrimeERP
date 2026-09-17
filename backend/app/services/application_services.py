@@ -19,6 +19,12 @@ def create_helpdesk_ticket(db: Session, *, company_id: int, team_id: int, stage_
     stage = db.scalar(select(HelpdeskStage).where(HelpdeskStage.id == stage_id, HelpdeskStage.team_id == team_id))
     if not team or not stage:
         raise ApplicationServiceError("Team and stage must belong to the same company/team")
+    if assignee_ref and not db.scalar(select(HelpdeskTeamMember).where(
+        HelpdeskTeamMember.team_id == team_id,
+        HelpdeskTeamMember.member_ref == assignee_ref,
+        HelpdeskTeamMember.active.is_(True),
+    )):
+        raise ApplicationServiceError("Assignee is not an active member of the helpdesk team")
     ticket = HelpdeskTicket(company_id=company_id, team_id=team_id, stage_id=stage_id,
                             ticket_no=ticket_no, subject=subject, customer_ref=customer_ref,
                             assignee_ref=assignee_ref, sla_due_at=sla_due_at)
@@ -44,12 +50,11 @@ def assign_helpdesk_ticket(db: Session, *, ticket_id: int, company_id: int, memb
     ticket = db.scalar(select(HelpdeskTicket).where(HelpdeskTicket.id == ticket_id, HelpdeskTicket.company_id == company_id))
     if not ticket:
         raise ApplicationServiceError("Ticket not found")
-    member = db.scalar(select(HelpdeskTeamMember).where(
+    if not db.scalar(select(HelpdeskTeamMember).where(
         HelpdeskTeamMember.team_id == ticket.team_id,
         HelpdeskTeamMember.member_ref == member_ref,
         HelpdeskTeamMember.active.is_(True),
-    ))
-    if not member:
+    )):
         raise ApplicationServiceError("Assignee is not an active member of the helpdesk team")
     ticket.assignee_ref = member_ref
     ticket.updated_at = datetime.now(timezone.utc)
@@ -80,8 +85,9 @@ def add_task_dependency(db: Session, *, predecessor_id: int, successor_id: int, 
         seen.add(current)
         if current == predecessor_id:
             raise ApplicationServiceError("Task dependency would create a cycle")
-        stack.extend(db.execute(select(ProjectTaskDependency.successor_task_id).where(
-            ProjectTaskDependency.predecessor_task_id == current)).scalars().all())
+        rows = db.execute(select(ProjectTaskDependency.successor_task_id).where(
+            ProjectTaskDependency.predecessor_task_id == current)).scalars().all()
+        stack.extend(rows)
     db.add(ProjectTaskDependency(predecessor_task_id=predecessor_id, successor_task_id=successor_id))
 
 
@@ -115,7 +121,8 @@ def create_document_version(db: Session, *, document_id: int, storage_uri: str,
     return version
 
 
-def share_document(db: Session, *, document_id: int, grantee_ref: str, role: str, expires_at=None) -> DocumentShare:
+def share_document(db: Session, *, document_id: int, grantee_ref: str, role: str,
+                   expires_at=None) -> DocumentShare:
     if role not in {"viewer", "editor"}:
         raise ApplicationServiceError("Document role must be viewer or editor")
     document = db.get(Document, document_id)
