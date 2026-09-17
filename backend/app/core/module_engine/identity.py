@@ -1,7 +1,7 @@
 """Canonical identity bridge between technical modules and SaaS entitlements.
 
 The module engine uses granular technical names while the SaaS database/API uses
-business-level module codes.  This file is the single translation boundary.
+business-level module codes. This file is the single translation boundary.
 """
 
 from __future__ import annotations
@@ -71,11 +71,13 @@ TECHNICAL_TO_BUSINESS: Final[dict[str, str]] = {
 }
 
 # Backward-compatible aliases used by older migrations and API routes.
+# Every alias must resolve to a release-level entitlement, never to an
+# implementation-only submodule.
 ALIASES: Final[dict[str, str]] = {
     "egyptian_einvoice": "einvoice",
     "einvoice": "einvoice",
     "tax": "taxes",
-    "fixed_assets": "assets",
+    "fixed_assets": "accounting",
     "purchase": "purchasing",
     "purchases": "purchasing",
 }
