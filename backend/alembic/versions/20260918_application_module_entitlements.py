@@ -10,38 +10,38 @@ branch_labels = None
 depends_on = None
 
 MODULES = (
-    ("helpdesk", "Helpdesk", "نظام خدمة العملاء والدعم", "Helpdesk application services", 500),
-    ("project", "Project", "إدارة المشاريع والمهام", "Project management and task services", 501),
-    ("documents", "Documents", "إدارة المستندات والملفات", "Document management and file services", 502),
+    ("helpdesk", "Helpdesk", "نظام خدمة العملاء والدعم", "نظام خدمة العملاء والدعم", "Helpdesk application services", 500),
+    ("project", "Project", "إدارة المشاريع والمهام", "إدارة المشاريع والمهام", "Project management and task services", 501),
+    ("documents", "Documents", "إدارة المستندات والملفات", "إدارة المستندات والملفات", "Document management and file services", 502),
 )
 
 
 def upgrade() -> None:
-    for code, name_en, name_ar, description_en, display_order in MODULES:
+    statement = sa.text(
+        """
+        INSERT INTO system_modules
+            (code, name_ar, name_en, description_ar, description_en, is_core, is_active, display_order)
+        VALUES
+            (:code, :name_ar, :name_en, :description_ar, :description_en, false, true, :display_order)
+        ON CONFLICT (code) DO UPDATE SET
+            name_ar = EXCLUDED.name_ar,
+            name_en = EXCLUDED.name_en,
+            description_ar = EXCLUDED.description_ar,
+            description_en = EXCLUDED.description_en,
+            is_active = true,
+            display_order = EXCLUDED.display_order
+        """
+    )
+    for code, name_en, name_ar, description_ar, description_en, display_order in MODULES:
         op.execute(
-            sa.text(
-                """
-                INSERT INTO system_modules
-                    (code, name_ar, name_en, description_ar, description_en, is_core, is_active, display_order)
-                VALUES
-                    (:code, :name_ar, :name_en, :description_ar, :description_en, false, true, :display_order)
-                ON CONFLICT (code) DO UPDATE SET
-                    name_ar = EXCLUDED.name_ar,
-                    name_en = EXCLUDED.name_en,
-                    description_ar = EXCLUDED.description_ar,
-                    description_en = EXCLUDED.description_en,
-                    is_active = true,
-                    display_order = EXCLUDED.display_order
-                """
-            ),
-            {
-                "code": code,
-                "name_ar": name_ar,
-                "name_en": name_en,
-                "description_ar": name_ar,
-                "description_en": description_en,
-                "display_order": display_order,
-            },
+            statement.bindparams(
+                code=code,
+                name_ar=name_ar,
+                name_en=name_en,
+                description_ar=description_ar,
+                description_en=description_en,
+                display_order=display_order,
+            )
         )
 
     op.execute(
