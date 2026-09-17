@@ -1,13 +1,18 @@
+from __future__ import annotations
+
+from calendar import monthrange
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.modules.saas.models import Subscription, SubscriptionPlan, Tenant
+from app.modules.platform.plans.constants import PlanStatus
+from app.modules.platform.plans.models import Plan
+from app.modules.saas.models import PlanModule, Subscription, SubscriptionPlan, SystemModule, Tenant, TenantModule
 
-ACTIVE_STATUSES = ("trialing", "active", "past_due")
-BILLING_CYCLES = {"monthly": 30, "yearly": 365}
+ACTIVE_STATUSES = ("trialing", "active", "past_due", "grace")
+BILLING_CYCLES = ("monthly", "yearly")
 
 
 def _now() -> datetime:
@@ -26,11 +31,64 @@ def _reject_suspended(tenant: Tenant) -> None:
         raise HTTPException(status_code=423, detail="Tenant requires explicit reactivation before subscription lifecycle changes")
 
 
-def _plan(db: Session, plan_id: int) -> SubscriptionPlan:
-    plan = db.get(SubscriptionPlan, plan_id)
-    if plan is None or not plan.is_active:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription plan is not active")
+def _canonical_plan(db: Session, plan_id: int) -> Plan:
+    plan = db.scalar(
+        select(Plan).where(
+            Plan.id == plan_id,
+            Plan.is_deleted.is_(False),
+            Plan.status == PlanStatus.ACTIVE.value,
+        )
+    )
+    if plan is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Canonical subscription plan is not active")
     return plan
+
+
+def _canonical_plan_by_code(db: Session, code: str, version: int = 1) -> Plan:
+    plan = db.scalar(
+        select(Plan).where(
+            Plan.code == code.strip().lower(),
+            Plan.version == version,
+            Plan.is_deleted.is_(False),
+            Plan.status == PlanStatus.ACTIVE.value,
+        )
+    )
+    if plan is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Canonical plan '{code}' is not configured")
+    return plan
+
+
+def _legacy_plan(db: Session, canonical: Plan) -> SubscriptionPlan:
+    legacy = db.scalar(
+        select(SubscriptionPlan).where(SubscriptionPlan.code == canonical.code).with_for_update()
+    )
+    if legacy is not None and legacy.id != canonical.id:
+        raise HTTPException(status_code=500, detail=f"Plan identity mismatch for '{canonical.code}'")
+    if legacy is None:
+        legacy = SubscriptionPlan(
+            id=canonical.id,
+            name_ar=canonical.name_ar or canonical.name,
+            name_en=canonical.display_name or canonical.name,
+            code=canonical.code,
+            description_ar=canonical.description,
+            description_en=canonical.description,
+            monthly_price=canonical.monthly_price,
+            yearly_price=canonical.yearly_price,
+            currency_code=canonical.currency,
+            trial_days=canonical.trial_days,
+            max_users=canonical.max_users or 5,
+            max_companies=canonical.max_companies or 1,
+            max_branches=canonical.max_branches or 1,
+            max_products=canonical.max_products or 1000,
+            max_integrations=canonical.max_integrations or 0,
+            storage_limit_mb=canonical.storage_limit_mb or 1024,
+            is_public=canonical.is_public,
+            is_active=True,
+            display_order=canonical.sort_order,
+        )
+        db.add(legacy)
+        db.flush()
+    return legacy
 
 
 def _active_subscription(db: Session, tenant_id: int, now: datetime) -> Subscription | None:
@@ -43,21 +101,53 @@ def _active_subscription(db: Session, tenant_id: int, now: datetime) -> Subscrip
 
 
 def _period_end(start: datetime, billing_cycle: str) -> datetime:
-    days = BILLING_CYCLES.get(billing_cycle)
-    if days is None:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Billing cycle must be monthly or yearly")
-    return start + timedelta(days=days)
+    if billing_cycle not in BILLING_CYCLES:
+        raise HTTPException(status_code=422, detail="Billing cycle must be monthly or yearly")
+    months = 1 if billing_cycle == "monthly" else 12
+    month_index = start.month - 1 + months
+    year = start.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(start.day, monthrange(year, month)[1])
+    return start.replace(year=year, month=month, day=day)
+
+
+def _provision_plan_modules(db: Session, tenant_id: int, legacy_plan: SubscriptionPlan, starts_at: datetime, ends_at: datetime | None) -> None:
+    modules = db.scalars(
+        select(SystemModule)
+        .join(PlanModule, PlanModule.module_id == SystemModule.id)
+        .where(
+            PlanModule.plan_id == legacy_plan.id,
+            PlanModule.is_enabled.is_(True),
+            SystemModule.is_active.is_(True),
+        )
+    ).all()
+    for module in modules:
+        override = db.scalar(select(TenantModule).where(
+            TenantModule.tenant_id == tenant_id,
+            TenantModule.module_id == module.id,
+        ))
+        if override is None:
+            db.add(TenantModule(
+                tenant_id=tenant_id,
+                module_id=module.id,
+                is_enabled=True,
+                starts_at=starts_at,
+                ends_at=ends_at,
+            ))
+        else:
+            override.is_enabled = True
+            override.starts_at = starts_at
+            override.ends_at = ends_at
 
 
 def convert_trial_to_paid(db: Session, tenant_id: int, plan_id: int, billing_cycle: str = "monthly", auto_renew: bool = True) -> Subscription:
     tenant = _tenant(db, tenant_id)
     _reject_suspended(tenant)
-    plan = _plan(db, plan_id)
+    canonical = _canonical_plan(db, plan_id)
+    legacy = _legacy_plan(db, canonical)
     now = _now()
-    if billing_cycle not in BILLING_CYCLES:
-        raise HTTPException(status_code=422, detail="Billing cycle must be monthly or yearly")
     current = _active_subscription(db, tenant_id, now)
-    if current is not None and current.status == "active" and current.plan_id == plan.id:
+    if current is not None and current.status == "active" and current.plan_id == legacy.id:
         raise HTTPException(status_code=409, detail="Tenant already has this paid plan")
     if current is not None and current.status == "active":
         raise HTTPException(status_code=409, detail="Tenant already has an active paid subscription")
@@ -65,7 +155,7 @@ def convert_trial_to_paid(db: Session, tenant_id: int, plan_id: int, billing_cyc
     if subscription is None:
         subscription = Subscription(tenant_id=tenant.id)
         db.add(subscription)
-    subscription.plan_id = plan.id
+    subscription.plan_id = legacy.id
     subscription.status = "active"
     subscription.billing_cycle = billing_cycle
     subscription.starts_at = now
@@ -78,6 +168,9 @@ def convert_trial_to_paid(db: Session, tenant_id: int, plan_id: int, billing_cyc
     tenant.is_trial = False
     tenant.is_active = True
     tenant.trial_ends_at = None
+    tenant.suspended_at = None
+    tenant.suspension_reason = None
+    _provision_plan_modules(db, tenant_id, legacy, now, subscription.ends_at)
     db.commit()
     db.refresh(subscription)
     return subscription
@@ -92,12 +185,11 @@ def renew_subscription(db: Session, tenant_id: int, plan_id: int | None = None, 
         current = db.scalar(select(Subscription).where(Subscription.tenant_id == tenant_id).order_by(Subscription.ends_at.desc().nullslast(), Subscription.id.desc()))
     if current is None:
         raise HTTPException(status_code=404, detail="No subscription exists for tenant")
-    plan = _plan(db, plan_id if plan_id is not None else current.plan_id)
+    canonical = _canonical_plan(db, plan_id if plan_id is not None else current.plan_id)
+    legacy = _legacy_plan(db, canonical)
     cycle = billing_cycle or current.billing_cycle
-    if cycle not in BILLING_CYCLES:
-        raise HTTPException(status_code=422, detail="Billing cycle must be monthly or yearly")
     start = current.ends_at if current.ends_at and current.ends_at > now else now
-    current.plan_id = plan.id
+    current.plan_id = legacy.id
     current.status = "active"
     current.billing_cycle = cycle
     current.starts_at = start
@@ -108,6 +200,7 @@ def renew_subscription(db: Session, tenant_id: int, plan_id: int | None = None, 
     tenant.status = "active"
     tenant.is_trial = False
     tenant.is_active = True
+    _provision_plan_modules(db, tenant_id, legacy, start, current.ends_at)
     db.commit()
     db.refresh(current)
     return current
@@ -157,3 +250,32 @@ def unsuspend_tenant(db: Session, tenant_id: int) -> Tenant:
     db.commit()
     db.refresh(tenant)
     return tenant
+
+
+def expire_due_subscriptions(db: Session, now: datetime | None = None) -> int:
+    current = now or _now()
+    subscriptions = db.scalars(select(Subscription).where(
+        Subscription.status.in_(("trialing", "active", "past_due", "grace")),
+        Subscription.ends_at.is_not(None),
+        Subscription.ends_at <= current,
+    ).with_for_update()).all()
+    changed = 0
+    for subscription in subscriptions:
+        canonical = db.get(Plan, subscription.plan_id)
+        grace_days = canonical.grace_period_days if canonical is not None else 0
+        tenant = db.get(Tenant, subscription.tenant_id)
+        grace_end = subscription.ends_at + timedelta(days=grace_days)
+        if current < grace_end:
+            subscription.status = "grace"
+            if tenant is not None:
+                tenant.status = "grace"
+                tenant.is_active = True
+        else:
+            subscription.status = "expired"
+            subscription.next_billing_date = None
+            if tenant is not None:
+                tenant.status = "expired"
+                tenant.is_active = False
+        changed += 1
+    db.commit()
+    return changed
