@@ -1,5 +1,6 @@
 from datetime import datetime
-from pydantic import BaseModel, Field
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ConnectionCreate(BaseModel):
@@ -12,6 +13,8 @@ class ConnectionCreate(BaseModel):
 
 
 class ConnectionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     company_id: int
     provider: str
@@ -21,9 +24,6 @@ class ConnectionResponse(BaseModel):
     webhook_secret_env: str | None
     is_active: bool
     last_sync_at: datetime | None
-
-    class Config:
-        from_attributes = True
 
 
 class WebhookEventCreate(BaseModel):
