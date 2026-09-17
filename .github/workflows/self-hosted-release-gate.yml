@@ -157,48 +157,22 @@ jobs:
           $headCount = (Select-String -Path alembic-heads.txt -Pattern '\(head\)' -AllMatches).Matches.Count
           if ($headCount -ne 1) { throw "Expected exactly one Alembic head; found $headCount" }
 
-      - name: Repair stale frontend lockfile once
+      - name: Validate frontend lockfile consistency
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         working-directory: frontend
         run: |
           $ErrorActionPreference = 'Stop'
           if (-not (Test-Path package.json)) { throw 'frontend/package.json is missing.' }
-          if (-not (Test-Path package-lock.json)) { throw 'frontend/package-lock.json is missing.' }
-          $pkg = Get-Content package.json -Raw | ConvertFrom-Json
-          $lock = Get-Content package-lock.json -Raw | ConvertFrom-Json
-          $pkgReactPlugin = [string]$pkg.devDependencies.'@vitejs/plugin-react'
-          $lockReactPlugin = [string]$lock.packages.'node_modules/@vitejs/plugin-react'.version
-          Write-Host "package.json @vitejs/plugin-react requirement: $pkgReactPlugin"
-          Write-Host "package-lock.json @vitejs/plugin-react version: $lockReactPlugin"
-          if ($pkgReactPlugin -ne '6.0.5' -or $lockReactPlugin -ne '6.0.5') {
-            npm install --package-lock-only --ignore-scripts --no-audit
-            if ($LASTEXITCODE -ne 0) { throw "package-lock regeneration failed with exit code $LASTEXITCODE" }
-          }
-          $after = Get-Content package-lock.json -Raw | ConvertFrom-Json
-          $afterRoot = [string]$after.packages.''.devDependencies.'@vitejs/plugin-react'
-          $afterResolved = [string]$after.packages.'node_modules/@vitejs/plugin-react'.version
-          if ($afterRoot -ne '6.0.5' -or $afterResolved -ne '6.0.5') {
-            throw "Lockfile repair verification failed: root=$afterRoot resolved=$afterResolved"
-          }
-          git config --global --add safe.directory "$env:GITHUB_WORKSPACE"
-          $changed = git status --short -- frontend/package-lock.json
-          if ($changed) {
-            git add frontend/package-lock.json
-            git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'chore(frontend): synchronize package lockfile'
-            git push
-            Write-Host 'Frontend lockfile synchronized and committed.'
-          } else {
-            Write-Host 'Frontend lockfile already synchronized.'
-          }
+          if (-not (Test-Path package-lock.json)) { throw 'frontend/package-lock.json is missing. Generate and commit it before CI.' }
+          node -e "const p=require('./package.json'),l=require('./package-lock.json'); const root=l.packages?.['']; if(!root){console.error('package-lock root package entry is missing');process.exit(1)}; const deps={...(p.dependencies||{}),...(p.devDependencies||{})}; const rootDeps={...(root.dependencies||{}),...(root.devDependencies||{})}; const bad=[]; for(const [name,want] of Object.entries(deps)){if(rootDeps[name]!==want) bad.push(name+': package.json='+want+' lockfile='+rootDeps[name]);} if(bad.length){console.error('Frontend lockfile root dependency mismatch:'); console.error(bad.join('\n')); process.exit(1);} const want=p.devDependencies?.['@vitejs/plugin-react']; const resolved=l.packages?.['node_modules/@vitejs/plugin-react']?.version; console.log({pluginReactRequirement:want,pluginReactResolved:resolved}); if(want==='6.0.5' && resolved!=='6.0.5') process.exit(1); console.log('Frontend lockfile consistency: PASS')"
 
       - name: Frontend dependency graph validation
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         working-directory: frontend
         run: |
           $ErrorActionPreference = 'Stop'
-          git config --global --add safe.directory "$env:GITHUB_WORKSPACE"
           if (-not (Test-Path package.json)) { throw 'frontend/package.json is missing.' }
-          if (-not (Test-Path package-lock.json)) { throw 'frontend/package-lock.json is missing. Generate and commit it locally before CI.' }
+          if (-not (Test-Path package-lock.json)) { throw 'frontend/package-lock.json is missing. Generate and commit it before CI.' }
           npm ci --ignore-scripts --no-audit
           if ($LASTEXITCODE -ne 0) { throw "npm ci failed with exit code $LASTEXITCODE" }
           npm ls --depth=0
