@@ -143,6 +143,7 @@ def register_trial_tenant(db: Session, payload: TenantRegistrationRequest) -> di
             tenant.id,
             plan_code="trial",
             starts_at=now,
+            allowed_module_codes=BUSINESS_MODULES.get(payload.business_type),
         )
 
         db.commit()
