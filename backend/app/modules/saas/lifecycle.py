@@ -123,21 +123,39 @@ def _provision_plan_modules(
         SystemModule.is_active.is_(True),
     )).all())
     if allowed_module_codes is not None:
-        modules = [
-            module for module in modules
-            if module.is_core or module.code in allowed_module_codes
-        ]
+        modules = [module for module in modules if module.is_core or module.code in allowed_module_codes]
+
+    selected_module_ids = {module.id for module in modules}
+    plan_grants = db.scalars(select(TenantModule).where(
+        TenantModule.tenant_id == tenant_id,
+        TenantModule.source == "plan",
+    )).all()
+    for grant in plan_grants:
+        if grant.module_id not in selected_module_ids:
+            grant.is_enabled = False
+            grant.starts_at = starts_at
+            grant.ends_at = ends_at
+
     for module in modules:
-        override = db.scalar(select(TenantModule).where(
+        grant = db.scalar(select(TenantModule).where(
             TenantModule.tenant_id == tenant_id,
             TenantModule.module_id == module.id,
         ))
-        if override is None:
-            db.add(TenantModule(tenant_id=tenant_id, module_id=module.id, is_enabled=True, starts_at=starts_at, ends_at=ends_at))
-        else:
-            override.is_enabled = True
-            override.starts_at = starts_at
-            override.ends_at = ends_at
+        if grant is None:
+            db.add(TenantModule(
+                tenant_id=tenant_id,
+                module_id=module.id,
+                is_enabled=True,
+                source="plan",
+                starts_at=starts_at,
+                ends_at=ends_at,
+            ))
+        elif grant.source == "plan":
+            grant.is_enabled = True
+            grant.starts_at = starts_at
+            grant.ends_at = ends_at
+        # Explicit overrides are intentionally authoritative and are never
+        # rewritten by a plan transition.
     return modules
 
 
@@ -171,14 +189,7 @@ def create_trial(
     )
     db.add(subscription)
     db.flush()
-    modules = _provision_plan_modules(
-        db,
-        tenant_id,
-        legacy,
-        start,
-        end,
-        allowed_module_codes=allowed_module_codes,
-    )
+    modules = _provision_plan_modules(db, tenant_id, legacy, start, end, allowed_module_codes=allowed_module_codes)
     tenant.status = "trial"
     tenant.is_trial = True
     tenant.trial_started_at = start
