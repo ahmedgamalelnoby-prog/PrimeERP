@@ -124,4 +124,4 @@ def test_stock_issue_rejects_reserved_quantity(monkeypatch):
             return item
 
     with pytest.raises(ValueError, match="reserved quantity"):
-        service.post(FakeDB(), company_id=7, move_id=1)
+        service.post(FakeDB(), tenant_id=7, company_id=7, move_id=1, user_id=1)
