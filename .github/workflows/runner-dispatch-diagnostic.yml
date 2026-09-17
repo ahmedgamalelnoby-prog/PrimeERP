@@ -2,6 +2,9 @@ name: PrimeERP Runner Dispatch Diagnostic
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/runner-dispatch-diagnostic.yml'
 
 permissions:
   contents: read
@@ -14,6 +17,7 @@ jobs:
     steps:
       - name: Prove runner reached workflow steps
         run: |
+          set -e
           echo "RUNNER_DIAGNOSTIC=hosted-ubuntu-24.04"
           echo "RUNNER_NAME=$RUNNER_NAME"
           echo "RUNNER_OS=$RUNNER_OS"
@@ -28,6 +32,7 @@ jobs:
     steps:
       - name: Prove slim runner reached workflow steps
         run: |
+          set -e
           echo "RUNNER_DIAGNOSTIC=hosted-ubuntu-slim"
           echo "RUNNER_NAME=$RUNNER_NAME"
           echo "RUNNER_OS=$RUNNER_OS"
