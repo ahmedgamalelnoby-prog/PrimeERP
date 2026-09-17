@@ -1,0 +1,36 @@
+name: PrimeERP Frontend Lockfile Repair
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Windows, X64, PrimeERP]
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Repair committed frontend lockfile
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+        working-directory: frontend
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Test-Path package.json)) { throw 'frontend/package.json is missing.' }
+          npm install --package-lock-only --ignore-scripts --no-audit
+          if ($LASTEXITCODE -ne 0) { throw "npm lockfile generation failed with exit code $LASTEXITCODE" }
+          node -e "const p=require('./package.json'), l=require('./package-lock.json'); const want=p.devDependencies['@vitejs/plugin-react']; const root=l.packages['']?.devDependencies?.['@vitejs/plugin-react']; const resolved=l.packages['node_modules/@vitejs/plugin-react']?.version; console.log({want,root,resolved}); if(want!=='6.0.5'||root!=='6.0.5'||resolved!=='6.0.5') process.exit(1)"
+          git config --global --add safe.directory "$env:GITHUB_WORKSPACE"
+          if (git status --short -- frontend/package-lock.json) {
+            git add frontend/package-lock.json
+            git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'chore(frontend): synchronize package lockfile'
+            git push
+          } else {
+            Write-Host 'Frontend package-lock.json is already synchronized.'
+          }
