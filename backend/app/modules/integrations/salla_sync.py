@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 from .models import IntegrationConnection
 from .salla_public_app_service import get_salla_access_token, SallaPublicAppError
 from .salla_service import normalize_salla_event
+from .salla_models import SallaShipment
+from .salla_shipping_service import sync_salla_shipment
 
 SALLA_BASE_URL = "https://api.salla.dev/admin/v2"
 
@@ -62,6 +64,72 @@ def _enrich_order(client, base_url: str, token: str, row: dict[str, Any]) -> dic
     if items: detail["items"] = items
     return detail
 
+def sync_salla_shipping_companies(db: Session, connection_id: int) -> dict[str, int]:
+    """Link Salla's active shipping companies to existing ERP carriers.
+
+    The Salla company/courier id is the durable identity. Carrier names are
+    used only once as a bootstrap match; after that the IntegrationMapping
+    controls the relationship and prevents duplicate carriers.
+    """
+    connection = _connection(db, connection_id)
+    token = _token(db, connection)
+    base_url = (connection.base_url or SALLA_BASE_URL).rstrip("/")
+    payload = _request(requests.Session(), f"{base_url}/shipping/companies/", token)
+    rows = _data(payload)
+    linked = 0
+    unmatched = 0
+    from sqlalchemy import func
+    from app.modules.integrations.models import IntegrationMapping
+    from app.modules.shipping.models import ShippingCarrier
+
+    for row in rows:
+        if not isinstance(row, dict) or row.get("id") is None:
+            continue
+        external_id = str(row["id"])
+        mapping = db.scalar(select(IntegrationMapping).where(
+            IntegrationMapping.company_id == connection.company_id,
+            IntegrationMapping.connection_id == connection.id,
+            IntegrationMapping.entity_type == "salla_shipping_company",
+            IntegrationMapping.external_id == external_id,
+        ))
+        if mapping:
+            carrier = db.scalar(select(ShippingCarrier).where(
+                ShippingCarrier.id == mapping.local_id,
+                ShippingCarrier.company_id == connection.company_id,
+                ShippingCarrier.is_active.is_(True),
+            ))
+            if carrier:
+                linked += 1
+                continue
+
+        name = str(row.get("name") or "").strip()
+        carrier = None
+        if name:
+            carrier = db.scalar(select(ShippingCarrier).where(
+                ShippingCarrier.company_id == connection.company_id,
+                ShippingCarrier.is_active.is_(True),
+                func.lower(func.trim(ShippingCarrier.name)) == name.lower(),
+            ).order_by(ShippingCarrier.id))
+        if carrier is None:
+            unmatched += 1
+            continue
+
+        if mapping:
+            mapping.local_id = carrier.id
+        else:
+            db.add(IntegrationMapping(
+                company_id=connection.company_id,
+                connection_id=connection.id,
+                entity_type="salla_shipping_company",
+                external_id=external_id,
+                local_id=carrier.id,
+            ))
+        linked += 1
+
+    db.commit()
+    return {"salla_companies": len(rows), "linked": linked, "unmatched": unmatched}
+
+
 def sync_collection(db: Session, connection_id: int, resource: str, event_type: str, *, from_date: str | None = None, to_date: str | None = None) -> dict[str, int]:
     connection = _connection(db, connection_id); token = _token(db, connection); base_url = (connection.base_url or SALLA_BASE_URL).rstrip("/")
     imported = 0; enriched = 0; page = 1; total_pages = 1; client = requests.Session()
@@ -78,17 +146,28 @@ def sync_collection(db: Session, connection_id: int, resource: str, event_type: 
                 normalized = row
                 if resource == "orders":
                     normalized = _enrich_order(client, base_url, token, row); enriched += 1
-                _normalize(db, connection, normalized, event_type); imported += 1
+                _normalize(db, connection, normalized, event_type)
+                if resource == "shipments":
+                    shipment = db.scalar(select(SallaShipment).where(
+                        SallaShipment.company_id == connection.company_id,
+                        SallaShipment.connection_id == connection.id,
+                        SallaShipment.external_id == str(row.get("id")),
+                    ))
+                    if shipment is not None:
+                        sync_salla_shipment(db, shipment)
+                imported += 1
             db.commit(); page += 1
     finally: client.close()
     connection.last_sync_at = datetime.now(timezone.utc); db.commit()
     return {"imported": imported, "pages": total_pages, "enriched_orders": enriched}
 
 def full_sync(db: Session, connection_id: int, *, from_date: str | None = None, to_date: str | None = None) -> dict[str, dict[str, int]]:
+    shipping_companies = sync_salla_shipping_companies(db, connection_id)
     return {
         "orders": sync_collection(db, connection_id, "orders", "order.created", from_date=from_date, to_date=to_date),
         "products": sync_collection(db, connection_id, "products", "product.updated"),
         "customers": sync_collection(db, connection_id, "customers", "customer.updated"),
+        "shipping_companies": shipping_companies,
         "shipments": sync_collection(db, connection_id, "shipments", "shipment.updated"),
         "invoices": sync_collection(db, connection_id, "orders/invoices", "invoice.created", from_date=from_date, to_date=to_date),
     }
