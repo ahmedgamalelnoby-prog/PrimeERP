@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import client from "@/shared/api/client";
 
 interface Warehouse {
   id: number;
@@ -11,16 +12,15 @@ interface Warehouse {
 }
 
 export default function WarehousesPage() {
-  const [companyId, setCompanyId] = useState("1");
+  const [companyId, setCompanyId] = useState(() => localStorage.getItem("company_id") || "");
   const [branchId, setBranchId] = useState("");
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
 
   useEffect(() => {
     const params = new URLSearchParams({ company_id: companyId });
     if (branchId) params.set("branch_id", branchId);
-    fetch(`/api/v1/inventory/warehouses?${params.toString()}`)
-      .then((response) => (response.ok ? response.json() : []))
-      .then(setWarehouses)
+    client.get<Warehouse[]>("/inventory/warehouses", { params: Object.fromEntries(params) })
+      .then((response) => setWarehouses(response.data))
       .catch(() => setWarehouses([]));
   }, [companyId, branchId]);
 
