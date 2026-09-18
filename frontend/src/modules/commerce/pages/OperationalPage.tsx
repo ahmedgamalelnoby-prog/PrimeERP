@@ -38,6 +38,27 @@ export default function OperationalPage() {
   const [amount, setAmount] = useState("");
   const companyId = selectedCompanyId();
   const query = useMemo(() => companyId ? `?company_id=${companyId}` : "", [companyId]);
+  const isSale = meta.endpoint === "/commerce/sales/documents";
+  const isPurchase = meta.endpoint === "/commerce/purchases/documents";
+
+  async function actionDocument(id: number, action: string) {
+    if (!companyId) return;
+    setError("");
+    try {
+      const endpoint = isSale
+        ? action === "confirm" ? `/commerce/sales/${id}/confirm?company_id=${companyId}`
+          : action === "inventory" ? `/commerce/sales/${id}/post-inventory?company_id=${companyId}` : null
+        : isPurchase
+          ? action === "confirm" ? `/commerce/purchases/${id}/confirm?company_id=${companyId}`
+            : action === "inventory" ? `/commerce/purchases/${id}/receive?company_id=${companyId}` : null
+          : null;
+      if (!endpoint) return;
+      await client.post(endpoint);
+      await load();
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || "تعذر تنفيذ العملية");
+    }
+  }
 
   async function load() {
     setLoading(true);
@@ -116,7 +137,7 @@ export default function OperationalPage() {
       </form>
       <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
         <div className="flex items-center justify-between border-b p-4"><h2 className="font-semibold">السجلات</h2><button onClick={() => void load()} className="rounded-lg border px-3 py-1.5 text-sm">تحديث</button></div>
-        {loading ? <div className="p-8 text-center text-sm text-muted-foreground">جارٍ التحميل...</div> : rows.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">لا توجد سجلات.</div> : <div className="overflow-auto"><table className="w-full text-sm"><thead><tr className="border-b bg-muted/40">{Object.keys(rows[0]).slice(0, 8).map(k => <th key={k} className="whitespace-nowrap px-4 py-3 text-right font-semibold">{k}</th>)}</tr></thead><tbody>{rows.map((r, i) => <tr key={String(r.id ?? i)} className="border-b last:border-0">{Object.keys(rows[0]).slice(0, 8).map(k => <td key={k} className="whitespace-nowrap px-4 py-3">{String(r[k] ?? "—")}</td>)}</tr>)}</tbody></table></div>}
+        {loading ? <div className="p-8 text-center text-sm text-muted-foreground">جارٍ التحميل...</div> : rows.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">لا توجد سجلات.</div> : <div className="overflow-auto"><table className="w-full text-sm"><thead><tr className="border-b bg-muted/40">{Object.keys(rows[0]).slice(0, 8).map(k => <th key={k} className="whitespace-nowrap px-4 py-3 text-right font-semibold">{k}</th>)}{(isSale || isPurchase) && <th className="whitespace-nowrap px-4 py-3 text-right font-semibold">إجراءات</th>}</tr></thead><tbody>{rows.map((r, i) => <tr key={String(r.id ?? i)} className="border-b last:border-0">{Object.keys(rows[0]).slice(0, 8).map(k => <td key={k} className="whitespace-nowrap px-4 py-3">{String(r[k] ?? "—")}</td>)}{(isSale || isPurchase) && <td className="whitespace-nowrap px-4 py-3"><div className="flex gap-2"><button type="button" onClick={() => void actionDocument(Number(r.id), "confirm")} className="rounded border px-2 py-1 text-xs">اعتماد</button><button type="button" onClick={() => void actionDocument(Number(r.id), "inventory")} className="rounded border px-2 py-1 text-xs">مخزون</button></div></td>}</tr>)}</tbody></table></div>}
       </div>
     </div>
   </section>;
