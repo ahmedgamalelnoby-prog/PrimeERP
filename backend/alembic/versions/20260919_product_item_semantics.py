@@ -43,7 +43,7 @@ def upgrade() -> None:
         INSERT INTO catalog_products (company_id, item_id, code, name_ar, name_en, product_kind, is_sellable, is_active)
         SELECT i.company_id, i.id, i.sku, i.name_ar, i.name_en,
                CASE WHEN i.item_type = 'service' THEN 'service' ELSE 'traded' END,
-               CASE WHEN i.item_type = 'service' THEN true ELSE true END,
+               true,
                i.is_active
         FROM inventory_items i
         WHERE NOT EXISTS (
