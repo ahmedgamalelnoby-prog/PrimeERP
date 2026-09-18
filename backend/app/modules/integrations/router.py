@@ -17,7 +17,7 @@ from .models import IntegrationConnection, IntegrationEvent
 from .schemas import ConnectionCreate, ConnectionResponse, WebhookEventCreate
 from .salla_models import SallaCustomer, SallaInvoice, SallaOrder, SallaOrderItem, SallaProduct, SallaProductVariant, SallaShipment
 from .salla_service import normalize_salla_event
-from .salla_sync import full_sync
+from .salla_sync import full_sync, sync_salla_shipping_companies
 from .salla_erp_finalize import finalize_salla_order
 from .salla_shipping_service import sync_salla_shipment
 
@@ -69,6 +69,8 @@ def _process_event(db: Session, event: IntegrationEvent) -> dict:
             if order_id is not None:
                 order = db.scalar(select(SallaOrder).where(SallaOrder.connection_id == event.connection_id, SallaOrder.external_id == str(order_id)))
                 if order: result["erp"] = finalize_salla_order(db, order)
+        elif event_key.startswith("shipping.company") or event_key.startswith("shipping_company"):
+            result["erp_shipping_companies"] = sync_salla_shipping_companies(db, event.connection_id)
         elif event_key.startswith("shipment") or "shipment." in event_key:
             payload = json.loads(event.payload) if isinstance(event.payload, str) else event.payload
             data = payload.get("data", payload) if isinstance(payload, dict) else {}
