@@ -74,6 +74,7 @@ class ShippingCostInput(BaseModel):
     remote_area: bool = False
     shipment_status: Literal["pending", "picked_up", "in_transit", "out_for_delivery", "delivered", "returned", "cancelled"] = "pending"
     storage_days: Decimal = Field(default=0, ge=0)
+    exchange_requested: bool = False
 
 
 class ShippingCostResponse(BaseModel):
