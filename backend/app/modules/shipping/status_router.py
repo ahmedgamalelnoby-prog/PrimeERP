@@ -83,6 +83,15 @@ def update_status(status_id: int, payload: ShippingStatusCreate, current_user: U
         raise HTTPException(422, f"Unsupported financial actions: {sorted(unknown_actions)}")
     if payload.code in payload.allowed_next_codes:
         raise HTTPException(422, "A status cannot transition to itself")
+    if payload.allowed_next_codes:
+        known = set(db.scalars(select(ShippingOrderStatus.code).where(
+            ShippingOrderStatus.company_id == payload.company_id
+        )).all())
+        unknown_next = set(payload.allowed_next_codes) - known
+        if unknown_next:
+            raise HTTPException(422, f"Unknown next statuses: {sorted(unknown_next)}")
+    if payload.parent_code and payload.parent_code == payload.code:
+        raise HTTPException(422, "A status cannot be its own parent")
     obj = db.scalar(select(ShippingOrderStatus).where(ShippingOrderStatus.id == status_id, ShippingOrderStatus.company_id == payload.company_id))
     if obj is None:
         raise HTTPException(404, "Shipping status not found")
