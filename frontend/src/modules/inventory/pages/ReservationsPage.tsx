@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import client from "@/shared/api/client";
 
 interface Reservation {
   id: number;
@@ -12,14 +13,13 @@ interface Reservation {
 }
 
 export default function ReservationsPage() {
-  const [companyId, setCompanyId] = useState("1");
+  const [companyId, setCompanyId] = useState(() => localStorage.getItem("company_id") || "");
   const [reservations, setReservations] = useState<Reservation[]>([]);
 
   const load = () => {
     const params = new URLSearchParams({ company_id: companyId });
-    fetch(`/api/v1/inventory/reservations?${params.toString()}`)
-      .then((response) => (response.ok ? response.json() : []))
-      .then(setReservations)
+    client.get<Reservation[]>("/inventory/reservations", { params: Object.fromEntries(params) })
+      .then((response) => setReservations(response.data))
       .catch(() => setReservations([]));
   };
 
