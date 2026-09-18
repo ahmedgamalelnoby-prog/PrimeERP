@@ -52,3 +52,34 @@ def test_salla_event_identity_is_deterministic_without_event_id():
 def test_salla_event_identity_requires_event_type():
     with pytest.raises(Exception):
         _event_identity({"id": "1"}, None, "1", b"{}")
+
+
+def test_salla_shipping_status_normalization_covers_common_salla_states():
+    from app.modules.integrations.salla_shipping_service import _STATUS_MAP
+    assert _STATUS_MAP["shipped"] == "picked_up"
+    assert _STATUS_MAP["received_at_final_hub"] == "in_transit"
+    assert _STATUS_MAP["reattempted"] == "out_for_delivery"
+    assert _STATUS_MAP["return_to_origin"] == "returned"
+    assert _STATUS_MAP["cancelled"] == "cancelled"
+
+
+def test_salla_shipping_status_does_not_move_backwards():
+    from app.modules.integrations.salla_shipping_service import _advance_status
+    assert _advance_status("delivered", "in_transit") == "delivered"
+    assert _advance_status("out_for_delivery", "pending") == "out_for_delivery"
+    assert _advance_status("in_transit", "returned") == "returned"
+    assert _advance_status("delivered", "cancelled") == "cancelled"
+
+
+def test_salla_shipping_payment_method_mapping_is_not_cross_bound():
+    # The bridge deliberately requires a compatible ERP method instead of
+    # falling back to the first carrier method, preventing COD/prepaid mixups.
+    from app.modules.integrations.salla_shipping_service import _method
+    class FakeDB:
+        def scalar(self, stmt):
+            return None
+    class Carrier:
+        id = 10
+    class Shipment:
+        payment_method = "cod"
+    assert _method(FakeDB(), Carrier(), Shipment()) is None
