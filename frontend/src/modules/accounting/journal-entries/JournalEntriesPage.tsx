@@ -21,6 +21,9 @@ export default function JournalEntriesPage() {
   const [busy, setBusy] = useState<number | null>(null);
   const [filter, setFilter] = useState("");
   const [details, setDetails] = useState<JournalEntry | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [createForm, setCreateForm] = useState({ branchId: "", journalId: "", fiscalYearId: "", periodId: "", entryNumber: "", entryDate: new Date().toISOString().slice(0, 10), description: "", debitAccountId: "", creditAccountId: "", amount: "" });
+  const [createBusy, setCreateBusy] = useState(false);
 
   const loadEntries = async () => {
     if (!companyId) { setEntries([]); setError("اختر شركة فعالة أولاً."); return; }
@@ -35,6 +38,37 @@ export default function JournalEntriesPage() {
   };
 
   useEffect(() => { void loadEntries(); }, [companyId]);
+
+  const createDraft = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!companyId) { setError("اختر شركة فعالة أولاً."); return; }
+    const amount = Number(createForm.amount);
+    if (!amount || amount <= 0) { setError("أدخل مبلغًا صحيحًا أكبر من صفر."); return; }
+    const required = ["branchId", "journalId", "fiscalYearId", "periodId", "entryNumber", "entryDate", "description", "debitAccountId", "creditAccountId"] as const;
+    if (required.some(key => !createForm[key].trim())) { setError("أكمل جميع بيانات القيد."); return; }
+    setCreateBusy(true); setError(null);
+    try {
+      const response = await fetch(`${API_BASE}/accounting/journal-entries`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          company_id: companyId, branch_id: Number(createForm.branchId), journal_id: Number(createForm.journalId),
+          fiscal_year_id: Number(createForm.fiscalYearId), period_id: Number(createForm.periodId),
+          entry_number: createForm.entryNumber.trim(), entry_date: createForm.entryDate, description: createForm.description.trim(),
+          lines: [
+            { account_combination_id: Number(createForm.debitAccountId), debit: amount, credit: 0 },
+            { account_combination_id: Number(createForm.creditAccountId), debit: 0, credit: amount },
+          ],
+          currency_code: "EGP", exchange_rate: 1,
+        }),
+      });
+      if (!response.ok) throw new Error((await response.text()) || "تعذر إنشاء مسودة القيد");
+      setShowCreate(false);
+      setCreateForm(current => ({ ...current, entryNumber: "", description: "", amount: "" }));
+      await loadEntries();
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : "تعذر إنشاء القيد");
+    } finally { setCreateBusy(false); }
+  };
 
   const action = async (id: number, name: "submit" | "approve" | "post" | "cancel" | "reverse") => {
     setBusy(id); setError(null);
@@ -72,6 +106,7 @@ export default function JournalEntriesPage() {
       <section className="rounded-2xl border bg-card p-4 shadow-sm">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <label className="flex items-center gap-2 text-sm font-medium">الشركة<input type="number" min={1} value={companyId} onChange={(e) => setCompanyId(Number(e.target.value) || 0)} className="w-28 rounded-lg border bg-background px-3 py-2" /></label>
+          <button className="rounded-lg bg-primary px-3 py-2 text-primary-foreground" onClick={() => setShowCreate(true)}>+ إنشاء مسودة</button>
           <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="بحث..." className="w-full max-w-xs rounded-lg border bg-background px-3 py-2" />
           <span className="text-sm text-muted-foreground">{loading ? "جاري التحميل..." : `${filtered.length} قيد`}</span>
         </div>
@@ -99,6 +134,22 @@ export default function JournalEntriesPage() {
           {!loading && !filtered.length && <div className="p-8 text-center text-muted-foreground">لا توجد قيود.</div>}
         </div>
       </section>
+      {showCreate && (
+        <section className="rounded-2xl border bg-card p-5 shadow-sm">
+          <div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-semibold">إنشاء قيد يومية — مسودة</h2><button className="rounded-lg border px-3 py-1" onClick={() => setShowCreate(false)}>إغلاق</button></div>
+          <form onSubmit={createDraft} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {([["branchId","رقم الفرع"],["journalId","رقم اليومية"],["fiscalYearId","رقم السنة المالية"],["periodId","رقم الفترة"],["debitAccountId","حساب المدين"],["creditAccountId","حساب الدائن"]] as const).map(([key,label]) =>
+              <label key={key} className="text-sm font-medium">{label}<input type="number" min={1} required value={createForm[key]} onChange={e => setCreateForm(v => ({...v,[key]:e.target.value}))} className="mt-1 w-full rounded-lg border bg-background px-3 py-2" /></label>
+            )}
+            <label className="text-sm font-medium">رقم القيد<input required value={createForm.entryNumber} onChange={e => setCreateForm(v => ({...v,entryNumber:e.target.value}))} className="mt-1 w-full rounded-lg border bg-background px-3 py-2" /></label>
+            <label className="text-sm font-medium">التاريخ<input type="date" required value={createForm.entryDate} onChange={e => setCreateForm(v => ({...v,entryDate:e.target.value}))} className="mt-1 w-full rounded-lg border bg-background px-3 py-2" /></label>
+            <label className="text-sm font-medium">المبلغ<input type="number" min="0.01" step="0.01" required value={createForm.amount} onChange={e => setCreateForm(v => ({...v,amount:e.target.value}))} className="mt-1 w-full rounded-lg border bg-background px-3 py-2" /></label>
+            <label className="text-sm font-medium sm:col-span-2 lg:col-span-3">الوصف<input required value={createForm.description} onChange={e => setCreateForm(v => ({...v,description:e.target.value}))} className="mt-1 w-full rounded-lg border bg-background px-3 py-2" /></label>
+            <div className="flex gap-2 sm:col-span-2 lg:col-span-3"><button type="submit" disabled={createBusy} className="rounded-lg bg-primary px-4 py-2 text-primary-foreground">{createBusy ? "جاري الإنشاء..." : "إنشاء المسودة"}</button><button type="button" className="rounded-lg border px-4 py-2" onClick={() => setShowCreate(false)}>إلغاء</button></div>
+          </form>
+          <p className="mt-3 text-xs text-muted-foreground">يتم إنشاء قيد متوازن من سطر مدين وسطر دائن. يجب أن تنتمي الفرع واليومية والسنة والفترة والحسابات إلى الشركة النشطة.</p>
+        </section>
+      )}
       {details && (
         <section className="rounded-2xl border bg-card p-5 shadow-sm">
           <div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-semibold">تفاصيل القيد {details.entry_number}</h2><button className="rounded-lg border px-3 py-1" onClick={() => setDetails(null)}>إغلاق</button></div>
