@@ -26,7 +26,7 @@ DEFAULT_STATUSES = [
     ]),
     ("returning", "Returning", "قيد الاسترجاع", None, 80, []),
     ("returned", "Returned", "مرتجع", None, 90, [
-        "reverse_revenue", "reverse_cod_receivable", "recognize_return_cost"
+        "reverse_revenue", "reverse_shipping_revenue", "reverse_cod_receivable", "recognize_return_cost"
     ]),
     ("cancelled", "Cancelled", "ملغي", None, 100, []),
 ]
@@ -70,6 +70,7 @@ class ShippingStatusService:
             "recognize_cod_fee": Decimal(cost.cod_fee or 0) + Decimal(cost.cod_collected_fee or 0) if cost else Decimal("0"),
             "recognize_card_fee": Decimal(cost.card_fee or 0) if cost else Decimal("0"),
             "reverse_revenue": Decimal(shipment.order_value or 0),
+            "reverse_shipping_revenue": Decimal(shipment.customer_shipping_fee or 0),
             "reverse_cod_receivable": Decimal(shipment.cod_amount or 0),
             "recognize_return_cost": (Decimal(cost.rto_fee or 0) if cost else Decimal("0")),
         }
@@ -81,6 +82,7 @@ class ShippingStatusService:
             "recognize_cod_fee": ("cod_commission_expense", "carrier_payable"),
             "recognize_card_fee": ("payment_withdrawal_fee_expense", "carrier_payable"),
             "reverse_revenue": ("sales_revenue", "customer_receivable"),
+            "reverse_shipping_revenue": ("shipping_revenue", "customer_receivable"),
             "reverse_cod_receivable": ("customer_receivable", "carrier_cod_receivable"),
             "recognize_return_cost": ("return_shipping_expense", "carrier_payable"),
         }
