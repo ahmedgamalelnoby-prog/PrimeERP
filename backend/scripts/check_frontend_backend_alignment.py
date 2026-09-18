@@ -89,7 +89,7 @@ def main() -> None:
         "/treasury/cheques": ('router = APIRouter(prefix="/treasury"', '@router.post("/cheques"'),
         "/commerce/payments": ('router = APIRouter(prefix="/commerce"', '@router.get("/payments"'),
         "/inventory/stock-moves": ('router = APIRouter(prefix="/inventory/stock-moves"',),
-        "/inventory/transfers": ('prefix="/inventory/transfers"', '@router.get("")', '@router.post("")'),
+        "/inventory/transfers": ('prefix="/inventory/transfers"',),
         "/chart-of-accounts/combinations": ('router = APIRouter(prefix="/chart-of-accounts"', '@router.get("/combinations"'),
         "/accounting/journal-entries/journals": ('@router.get("/journals"',),
         "/accounting/reports/summary": ('prefix="/accounting/reports"', '@router.get("/summary"'),
