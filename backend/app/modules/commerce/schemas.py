@@ -112,6 +112,22 @@ class PaymentCreate(BaseModel):
         return self
 
 
+class PaymentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    company_id: int
+    document_kind: str
+    document_id: int
+    payment_date: date
+    amount: Decimal
+    wht_amount: Decimal
+    method: str
+    reference: str | None
+    notes: str | None
+    status: str
+    reversed_of_id: int | None
+
+
 class PaymentReverse(BaseModel):
     company_id: int = Field(gt=0)
     reversal_date: date
