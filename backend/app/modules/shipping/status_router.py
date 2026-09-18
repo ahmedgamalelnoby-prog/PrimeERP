@@ -78,6 +78,11 @@ def create_status(payload: ShippingStatusCreate, current_user: User = Depends(ge
 @router.put("/{status_id}", dependencies=[Depends(require_permission("shipping.write"))])
 def update_status(status_id: int, payload: ShippingStatusCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company(db, payload.company_id, current_user)
+    unknown_actions = set(payload.financial_actions) - ALLOWED_FINANCIAL_ACTIONS
+    if unknown_actions:
+        raise HTTPException(422, f"Unsupported financial actions: {sorted(unknown_actions)}")
+    if payload.code in payload.allowed_next_codes:
+        raise HTTPException(422, "A status cannot transition to itself")
     obj = db.scalar(select(ShippingOrderStatus).where(ShippingOrderStatus.id == status_id, ShippingOrderStatus.company_id == payload.company_id))
     if obj is None:
         raise HTTPException(404, "Shipping status not found")
