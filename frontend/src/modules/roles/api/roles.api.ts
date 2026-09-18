@@ -9,7 +9,7 @@ import type {
   RoleUpdatePayload,
 } from "../types/role";
 
-const BASE_URL = "/identity/roles";
+const BASE_URL = "/roles";
 
 function cleanParams(filters?: RolesFilters) {
   if (!filters) {
