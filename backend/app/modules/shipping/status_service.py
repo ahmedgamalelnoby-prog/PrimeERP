@@ -21,7 +21,7 @@ DEFAULT_STATUSES = [
     ("in_transit", "In Transit", "في الطريق", None, 50, []),
     ("out_for_delivery", "Out for Delivery", "جاري التوصيل", None, 60, []),
     ("delivered", "Delivered", "تم التسليم", None, 70, [
-        "recognize_revenue", "recognize_shipping_cost", "create_cod_receivable",
+        "recognize_revenue", "recognize_shipping_revenue", "recognize_shipping_cost", "create_cod_receivable",
         "recognize_cod_fee", "recognize_card_fee"
     ]),
     ("returning", "Returning", "قيد الاسترجاع", None, 80, []),
@@ -64,6 +64,7 @@ class ShippingStatusService:
         cost_total = Decimal(cost.total_cost or 0) if cost else Decimal(shipment.shipping_fee or 0)
         action_amounts = {
             "recognize_revenue": Decimal(shipment.order_value or 0),
+            "recognize_shipping_revenue": Decimal(shipment.customer_shipping_fee or 0),
             "recognize_shipping_cost": (Decimal(cost.base_shipping or 0) + Decimal(cost.surcharge_remote or 0) + Decimal(cost.surcharge_rto or 0) + Decimal(cost.surcharge_exchange or 0) + Decimal(cost.storage_fee or 0) + Decimal(cost.other_fees or 0) + Decimal(cost.minimum_adjustment or 0)) if cost else cost_total,
             "create_cod_receivable": Decimal(shipment.cod_amount or 0),
             "recognize_cod_fee": Decimal(cost.cod_fee or 0) + Decimal(cost.cod_collected_fee or 0) if cost else Decimal("0"),
@@ -74,6 +75,7 @@ class ShippingStatusService:
         }
         roles = {
             "recognize_revenue": ("customer_receivable", "sales_revenue"),
+            "recognize_shipping_revenue": ("customer_receivable", "shipping_revenue"),
             "recognize_shipping_cost": ("shipping_expense", "carrier_payable"),
             "create_cod_receivable": ("carrier_cod_receivable", "customer_receivable"),
             "recognize_cod_fee": ("cod_commission_expense", "carrier_payable"),
