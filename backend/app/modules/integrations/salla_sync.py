@@ -93,7 +93,7 @@ def sync_salla_shipping_companies(db: Session, connection_id: int) -> dict[str, 
         mapping = db.scalar(select(IntegrationMapping).where(
             IntegrationMapping.company_id == connection.company_id,
             IntegrationMapping.connection_id == connection.id,
-            IntegrationMapping.entity_type == "salla_shipping_company",
+            IntegrationMapping.entity_type == "shipping_carrier",
             IntegrationMapping.external_id == external_id,
         ))
         if mapping:
@@ -131,7 +131,7 @@ def sync_salla_shipping_companies(db: Session, connection_id: int) -> dict[str, 
             db.add(IntegrationMapping(
                 company_id=connection.company_id,
                 connection_id=connection.id,
-                entity_type="salla_shipping_company",
+                entity_type="shipping_carrier",
                 external_id=external_id,
                 local_id=carrier.id,
             ))
