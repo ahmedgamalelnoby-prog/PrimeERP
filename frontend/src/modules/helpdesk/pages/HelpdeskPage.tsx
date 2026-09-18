@@ -15,16 +15,22 @@ export default function HelpdeskPage() {
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
+  const companyId = Number(localStorage.getItem("company_id")) || 0;
 
   const ask = async (value = question) => {
     const q = value.trim();
     if (!q || loading) return;
+    if (!companyId) {
+      setMessages(current => [...current, { role: "assistant", content: text("لا توجد شركة نشطة. اختر الشركة أولًا ثم أعد المحاولة.", "No active company is selected. Select a company first and try again.") }]);
+      return;
+    }
     setQuestion("");
     const next = [...messages, { role: "user" as const, content: q }];
     setMessages(next);
     setLoading(true);
     try {
       const response = await client.post<{ answer: string; suggested_actions: string[] }>("/helpdesk/ai/answer", {
+        company_id: companyId,
         question: q,
         language: isArabic ? "ar" : "en",
         conversation: next.map(item => ({ role: item.role, content: item.content })),
