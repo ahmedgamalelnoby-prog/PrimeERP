@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.modules.shipping.models import ShippingCarrier
+from app.modules.shipping.models import ShippingCarrier, Shipment
 from app.modules.shipping.pricing_models import ShippingPricingProfile, ShippingPricingRule
 from app.modules.shipping.pricing_schemas import ShippingCostInput, ShippingCostResponse
 
@@ -75,20 +75,28 @@ class ShippingPricingService:
         }
         breakdown = []
 
+        contract_units = db.scalar(
+            select(func.count(Shipment.id)).where(
+                Shipment.company_id == payload.company_id,
+                Shipment.carrier_id == payload.carrier_id,
+            )
+        ) or 0
+        contract_units = Decimal(contract_units)
+
         bases = {
             "base": (Decimal("1"), payload.order_value),
             "zone": (Decimal("1"), payload.order_value),
             "weight": (payload.weight_kg, Decimal("0")),
             "pieces": (payload.pieces, Decimal("0")),
             "order_value": (payload.order_value, payload.order_value),
-            "tier": (payload.pieces, payload.order_value),
+            "tier": (contract_units + Decimal("1"), payload.order_value),
             "cod": (payload.cod_amount, payload.cod_amount),
             "cod_collected": (payload.cod_collected, payload.cod_collected),
             "card": (payload.card_amount, payload.card_amount),
             "minimum": (payload.order_value, payload.order_value),
             "remote": (Decimal("1") if payload.remote_area else Decimal("0"), payload.order_value),
             "rto": (Decimal("1") if payload.shipment_status == "returned" else Decimal("0"), payload.order_value),
-            "exchange": (Decimal("1") if payload.shipment_status == "returned" else Decimal("0"), payload.order_value),
+            "exchange": (Decimal("1") if payload.exchange_requested else Decimal("0"), payload.order_value),
             "storage": (payload.storage_days, Decimal("0")),
         }
 
