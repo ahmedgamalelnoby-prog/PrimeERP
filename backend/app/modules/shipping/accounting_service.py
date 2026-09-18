@@ -10,6 +10,7 @@ from app.modules.accounting.journals.models import AccountingJournal, JournalEnt
 from app.modules.accounting.journals.services.journal_service import journal_service
 from app.modules.branches.models import Branch
 from app.modules.companies.models import Company
+from app.modules.commerce.accounting_models import CommerceAccountingSettings
 from app.modules.shipping.models import ShippingCarrier
 from app.modules.shipping.settlement_models import ShippingSettlementBatch
 from app.modules.shipping.status_models import ShippingFinancialEvent
@@ -112,9 +113,7 @@ class ShippingAccountingService:
             AccountingJournal.tenant_id == company.tenant_id,
             AccountingJournal.is_active.is_(True),
         ))
-        settings = db.scalar(select(__import__("app.modules.commerce.accounting_models", fromlist=["CommerceAccountingSettings"]).CommerceAccountingSettings).where(
-            __import__("app.modules.commerce.accounting_models", fromlist=["CommerceAccountingSettings"]).CommerceAccountingSettings.company_id == company.id
-        ))
+        settings = db.scalar(select(CommerceAccountingSettings).where(CommerceAccountingSettings.company_id == company.id))
         if branch is None or journal is None:
             raise HTTPException(status_code=409, detail="Carrier shipping journal or branch is invalid")
         if settings is None:
