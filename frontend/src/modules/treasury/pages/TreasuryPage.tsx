@@ -24,6 +24,7 @@ const issuedStatuses = ["issued", "cleared"];
 export default function TreasuryPage() {
   const companyId = cid();
   const [rows, setRows] = useState<Cheque[]>([]);
+  const [withdrawableIds, setWithdrawableIds] = useState<Set<number>>(new Set());
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [direction, setDirection] = useState<"received" | "issued">("received");
@@ -39,15 +40,26 @@ export default function TreasuryPage() {
     setLoading(true);
     if (!companyId) {
       setRows([]);
+      setWithdrawableIds(new Set());
       setError("اختر شركة فعالة أولاً.");
       setLoading(false);
       return;
     }
     try {
-      const r = await client.get("/treasury/cheques", { params: { company_id: companyId } });
-      setRows(Array.isArray(r.data) ? r.data : []);
+      const [all, withdrawable] = await Promise.all([
+        client.get("/treasury/cheques", { params: { company_id: companyId } }),
+        client.get("/treasury/cheques/withdrawable", { params: { company_id: companyId } }),
+      ]);
+      setRows(Array.isArray(all.data) ? all.data : []);
+      setWithdrawableIds(new Set(
+        (Array.isArray(withdrawable.data) ? withdrawable.data : [])
+          .map((item: Cheque) => Number(item.id))
+          .filter((id: number) => Number.isInteger(id) && id > 0),
+      ));
       setError("");
     } catch (e: any) {
+      setRows([]);
+      setWithdrawableIds(new Set());
       setError(e?.response?.data?.detail || "تعذر تحميل الشيكات");
     } finally {
       setLoading(false);
@@ -147,13 +159,14 @@ export default function TreasuryPage() {
                   <td className="p-3"><div className="flex flex-wrap gap-1">
                     {c.status === "received" && <button onClick={() => void action(c.id, "deposit")} className="rounded border px-2 py-1 text-xs">إيداع</button>}
                     {c.status === "deposited" && <button onClick={() => void action(c.id, "under-collection")} className="rounded border px-2 py-1 text-xs">تحت التحصيل</button>}
-                    {["deposited", "under_collection"].includes(c.status) && <button onClick={() => void action(c.id, "collect")} className="rounded border px-2 py-1 text-xs">تحصيل</button>}
+                    {["deposited", "under_collection", "resubmitted"].includes(c.status) && <button onClick={() => void action(c.id, "collect")} className="rounded border px-2 py-1 text-xs">تحصيل</button>}
+                    {c.status === "resubmitted" && <button onClick={() => void action(c.id, "under-collection")} className="rounded border px-2 py-1 text-xs">تحت التحصيل</button>}
                     {receivedStatuses.includes(c.status) && !["collected", "returned"].includes(c.status) && <button onClick={() => void action(c.id, "return")} className="rounded border px-2 py-1 text-xs">مرتجع</button>}
                     {c.status === "returned" && <button onClick={() => void action(c.id, "resubmit")} className="rounded border px-2 py-1 text-xs">إعادة تقديم</button>}
                     {c.status === "issued" && <button onClick={() => void action(c.id, "collect")} className="rounded border px-2 py-1 text-xs">تسوية</button>}
                     {issuedStatuses.includes(c.status) && <button onClick={() => void action(c.id, "reverse")} className="rounded border px-2 py-1 text-xs">عكس</button>}
-                    {!terminal.includes(c.status) && c.status !== "cleared" && <button onClick={() => void action(c.id, "withdraw")} className="rounded border px-2 py-1 text-xs">سحب</button>}
-                    {!terminal.includes(c.status) && <button onClick={() => void action(c.id, "cancel")} className="rounded border px-2 py-1 text-xs">إلغاء</button>}
+                    {withdrawableIds.has(c.id) && !terminal.includes(c.status) && <button onClick={() => void action(c.id, "withdraw")} className="rounded border px-2 py-1 text-xs">سحب</button>}
+                    {!terminal.includes(c.status) && c.status !== "cleared" && <button onClick={() => void action(c.id, "cancel")} className="rounded border px-2 py-1 text-xs">إلغاء</button>}
                     {c.status === "collected" && <button onClick={() => void action(c.id, "reverse")} className="rounded border px-2 py-1 text-xs">عكس</button>}
                   </div></td>
                 </tr>)}</tbody>
