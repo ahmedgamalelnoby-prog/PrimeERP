@@ -9,18 +9,24 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .models import IntegrationConnection
+from .salla_public_app_service import get_salla_access_token, SallaPublicAppError
 from .salla_service import normalize_salla_event
 
 SALLA_BASE_URL = "https://api.salla.dev/admin/v2"
 
 class SallaSyncError(RuntimeError): pass
 
-def _token(connection: IntegrationConnection) -> str:
-    ref = connection.credential_ref
-    if not ref: raise SallaSyncError("Salla access-token environment reference is not configured")
-    token = os.getenv(ref)
-    if not token: raise SallaSyncError(f"Salla access-token environment variable '{ref}' is unavailable")
-    return token
+def _token(db: Session, connection: IntegrationConnection) -> str:
+    try:
+        return get_salla_access_token(db, connection)
+    except SallaPublicAppError:
+        ref = connection.credential_ref
+        if not ref:
+            raise SallaSyncError("Salla access token is not configured")
+        token = os.getenv(ref)
+        if not token:
+            raise SallaSyncError(f"Salla access-token environment variable '{ref}' is unavailable")
+        return token
 
 def _data(response: dict[str, Any]) -> list[dict[str, Any]]:
     value = response.get("data"); return value if isinstance(value, list) else []
@@ -57,7 +63,7 @@ def _enrich_order(client, base_url: str, token: str, row: dict[str, Any]) -> dic
     return detail
 
 def sync_collection(db: Session, connection_id: int, resource: str, event_type: str, *, from_date: str | None = None, to_date: str | None = None) -> dict[str, int]:
-    connection = _connection(db, connection_id); token = _token(connection); base_url = (connection.base_url or SALLA_BASE_URL).rstrip("/")
+    connection = _connection(db, connection_id); token = _token(db, connection); base_url = (connection.base_url or SALLA_BASE_URL).rstrip("/")
     imported = 0; enriched = 0; page = 1; total_pages = 1; client = requests.Session()
     try:
         while page <= total_pages:
