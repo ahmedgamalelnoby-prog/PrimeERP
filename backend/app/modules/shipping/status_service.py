@@ -42,7 +42,7 @@ class ShippingStatusService:
             "in_transit": ["delivering", "out_for_delivery", "returning"],
             "delivering": ["out_for_delivery", "delivered", "returning"],
             "out_for_delivery": ["delivered", "returning"], "delivered": ["returning", "returned"],
-            "returning": ["returned", "delivered"], "returned": [], "cancelled": [], "picked_up": ["in_transit"],
+            "returning": ["returned"], "returned": [], "cancelled": [], "picked_up": ["in_transit"],
         }
         defaults_by_code = {row[0]: row for row in DEFAULT_STATUSES}
         for code, name, name_ar, parent, sort_order, actions in DEFAULT_STATUSES:
