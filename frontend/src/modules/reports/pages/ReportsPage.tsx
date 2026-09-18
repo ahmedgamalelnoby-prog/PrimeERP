@@ -16,11 +16,12 @@ export default function ReportsPage(){
   const [body,setBody]=useState("");
   const [schedule,setSchedule]=useState("daily:09:00");
   const [schedules,setSchedules]=useState<Schedule[]>([]);
-  const [companyId,setCompanyId]=useState(Number(localStorage.getItem("company_id"))||1);
+  const [companyId,setCompanyId]=useState(Number(localStorage.getItem("company_id"))||0);
 
   useEffect(()=>{loadSchedules();},[]);
 
   async function loadSchedules(){
+    if(!companyId){setSchedules([]);return;}
     try{const r=await client.get("/reports/schedules",{params:{company_id:companyId}});setSchedules(r.data||[]);}
     catch(e:any){setError(e?.response?.data?.detail||"تعذر تحميل جدولة التقارير");}
   }
@@ -37,6 +38,7 @@ export default function ReportsPage(){
   }
 
   async function deliver(e:FormEvent){
+    if(!companyId){setError("اختر شركة فعالة أولاً؛ لا يتم استخدام شركة افتراضية.");return;}
     e.preventDefault();setDeliveryLoading(true);setError("");
     try{
       await client.post("/reports/deliver",{company_id:companyId,channel,destination,title,body:body||result||"PrimeERP report"});
@@ -46,6 +48,7 @@ export default function ReportsPage(){
   }
 
   async function createSchedule(e:FormEvent){
+    if(!companyId){setError("اختر شركة فعالة أولاً؛ لا يتم استخدام شركة افتراضية.");return;}
     e.preventDefault();setDeliveryLoading(true);setError("");
     try{
       await client.post("/reports/schedules",{company_id:companyId,code:"management_snapshot",name:title,report_type:"snapshot",channel,destination,schedule,format:"text",parameters:{},filters:{}});
@@ -73,7 +76,7 @@ export default function ReportsPage(){
       <form onSubmit={deliver} className="space-y-4 rounded-2xl border bg-card p-5 shadow-sm">
         <div><h2 className="font-semibold">إرسال تقرير</h2><p className="text-xs text-muted-foreground">يتطلب إعداد SMTP أو WhatsApp في بيئة التشغيل.</p></div>
         <div className="grid gap-3 sm:grid-cols-2">
-          <label className="text-sm font-semibold">الشركة<input type="number" min="1" value={companyId} onChange={e=>setCompanyId(Number(e.target.value)||1)} className="mt-1 w-full rounded-lg border bg-background p-2"/></label>
+          <label className="text-sm font-semibold">الشركة<input type="number" min="1" value={companyId} onChange={e=>setCompanyId(Number(e.target.value)||0)} className="mt-1 w-full rounded-lg border bg-background p-2"/></label>
           <label className="text-sm font-semibold">القناة<select value={channel} onChange={e=>setChannel(e.target.value as "email"|"whatsapp")} className="mt-1 w-full rounded-lg border bg-background p-2"><option value="email">Email</option><option value="whatsapp">WhatsApp</option></select></label>
         </div>
         <label className="block text-sm font-semibold">المستلم<input value={destination} onChange={e=>setDestination(e.target.value)} placeholder={channel==="email"?"manager@example.com":"+2010..."} className="mt-1 w-full rounded-lg border bg-background p-2"/></label>
