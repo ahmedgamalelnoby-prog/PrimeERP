@@ -425,6 +425,11 @@ def handle_app_event(db: Session, payload: dict[str, Any]) -> dict[str, Any]:
             if end:
                 try:
                     installation.trial_ends_at = datetime.fromisoformat(end.replace("Z", "+00:00"))
+                    tenant = db.get(Tenant, installation.tenant_id)
+                    if tenant:
+                        tenant.trial_ends_at = installation.trial_ends_at
+                        tenant.status = "trial"
+                        tenant.is_trial = True
                 except ValueError:
                     pass
     elif event == "app.updated":
