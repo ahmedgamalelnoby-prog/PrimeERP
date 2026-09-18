@@ -220,7 +220,7 @@ def shipments(company_id: int = Query(..., gt=0), status: str | None = None, cur
     return list(db.scalars(stmt.order_by(Shipment.id.desc())).all())
 
 
-@router.post("/shipments/{shipment_id}/status", response_model=ShipmentResponse, dependencies=[Depends(require_permission("shipping.post"))])
+@router.post("/shipments/{shipment_id}/status", response_model=ShipmentResponse, dependencies=[Depends(require_permission("shipping.write"))])
 def status(shipment_id: int, value: str = Query(...), company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
     obj = db.scalar(select(Shipment).where(Shipment.id == shipment_id, Shipment.company_id == company_id).with_for_update())
@@ -228,21 +228,6 @@ def status(shipment_id: int, value: str = Query(...), company_id: int = Query(..
         raise HTTPException(404, "Shipment not found")
     if value == obj.status:
         return obj
-    allowed = {
-        "pending": {"preparing", "picked_up", "cancelled"},
-        "preparing": {"packing", "cancelled"},
-        "packing": {"shipped", "cancelled"},
-        "shipped": {"in_transit", "cancelled"},
-        "picked_up": {"in_transit", "cancelled"},
-        "in_transit": {"out_for_delivery", "returned"},
-        "out_for_delivery": {"delivered", "returned"},
-        "delivered": {"returning", "returned"},
-        "returning": {"returned", "delivered"},
-        "returned": set(),
-        "cancelled": set(),
-    }
-    if value not in allowed.get(obj.status, set()):
-        raise HTTPException(409, f"Invalid shipment transition: {obj.status} -> {value}")
     try:
         shipping_status_service.apply_transition(db, obj, value)
         db.commit(); db.refresh(obj)
