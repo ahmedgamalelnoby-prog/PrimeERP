@@ -16,10 +16,15 @@ _STATUS_MAP = {
     "ready": "pending",
     "picked_up": "picked_up",
     "pickedup": "picked_up",
+    "shipped": "picked_up",
     "in_transit": "in_transit",
     "intransit": "in_transit",
+    "received_at_final_hub": "in_transit",
     "out_for_delivery": "out_for_delivery",
     "outfordelivery": "out_for_delivery",
+    "reattempted": "out_for_delivery",
+    "to_be_reattempted": "out_for_delivery",
+    "partially_delivered": "out_for_delivery",
     "delivered": "delivered",
     "returned": "returned",
     "return": "returned",
@@ -60,33 +65,75 @@ def _order(db: Session, shipment: SallaShipment) -> SallaOrder | None:
 
 
 def _carrier(db: Session, company_id: int, shipment: SallaShipment) -> ShippingCarrier | None:
+    # Prefer the immutable Salla courier/company id. Names are only a safe
+    # bootstrap fallback when the store was linked before the mapping existed.
+    courier_id = str(shipment.courier_id or "").strip()
+    if courier_id:
+        mapped = db.scalar(select(IntegrationMapping).where(
+            IntegrationMapping.company_id == company_id,
+            IntegrationMapping.connection_id == shipment.connection_id,
+            IntegrationMapping.entity_type == "salla_shipping_company",
+            IntegrationMapping.external_id == courier_id,
+        ))
+        if mapped:
+            carrier = db.scalar(select(ShippingCarrier).where(
+                ShippingCarrier.id == mapped.local_id,
+                ShippingCarrier.company_id == company_id,
+                ShippingCarrier.is_active.is_(True),
+            ))
+            if carrier:
+                return carrier
+
     for name in (shipment.courier_name, shipment.external_company_name):
         candidate = str(name or "").strip()
         if not candidate:
             continue
-        obj = db.scalar(
-            select(ShippingCarrier).where(
-                ShippingCarrier.company_id == company_id,
-                ShippingCarrier.is_active.is_(True),
-                func.lower(func.trim(ShippingCarrier.name)) == candidate.lower(),
-            ).order_by(ShippingCarrier.id)
-        )
+        obj = db.scalar(select(ShippingCarrier).where(
+            ShippingCarrier.company_id == company_id,
+            ShippingCarrier.is_active.is_(True),
+            func.lower(func.trim(ShippingCarrier.name)) == candidate.lower(),
+        ).order_by(ShippingCarrier.id))
         if obj:
+            if courier_id:
+                existing = db.scalar(select(IntegrationMapping).where(
+                    IntegrationMapping.company_id == company_id,
+                    IntegrationMapping.connection_id == shipment.connection_id,
+                    IntegrationMapping.entity_type == "salla_shipping_company",
+                    IntegrationMapping.external_id == courier_id,
+                ))
+                if existing:
+                    existing.local_id = obj.id
+                else:
+                    db.add(IntegrationMapping(
+                        company_id=company_id,
+                        connection_id=shipment.connection_id,
+                        entity_type="salla_shipping_company",
+                        external_id=courier_id,
+                        local_id=obj.id,
+                    ))
+                db.flush()
             return obj
     return None
 
 
 def _method(db: Session, carrier: ShippingCarrier, shipment: SallaShipment) -> ShippingMethod | None:
     payment = str(shipment.payment_method or "").strip().lower().replace("-", "_").replace(" ", "_")
-    preferred = "cod" if payment in {"cod", "cash_on_delivery"} else "prepaid" if payment else "mixed"
-    return db.scalar(
-        select(ShippingMethod).where(
+    if payment in {"cod", "cash_on_delivery"}:
+        preferred = ("cod", "mixed")
+    elif payment in {"pre_paid", "prepaid", "paid", "card", "mada"}:
+        preferred = ("prepaid", "mixed")
+    else:
+        preferred = ("mixed", "prepaid", "cod")
+    for kind in preferred:
+        method = db.scalar(select(ShippingMethod).where(
             ShippingMethod.carrier_id == carrier.id,
-            ShippingMethod.payment_method == preferred,
-        ).order_by(ShippingMethod.id)
-    ) or db.scalar(
-        select(ShippingMethod).where(ShippingMethod.carrier_id == carrier.id).order_by(ShippingMethod.id)
-    )
+            ShippingMethod.payment_method == kind,
+        ).order_by(ShippingMethod.id))
+        if method:
+            return method
+    # Never silently bind a COD shipment to a prepaid-only method (or vice
+    # versa). Missing configuration is explicit and retryable.
+    return None
 
 
 def _advance_status(current: str, target: str) -> str:
@@ -98,7 +145,7 @@ def _advance_status(current: str, target: str) -> str:
     if target == "returned":
         return "returned" if current not in {"returned", "cancelled"} else current
     if target == "cancelled":
-        return "cancelled" if current not in {"returned", "cancelled", "delivered"} else current
+        return "cancelled" if current not in {"returned", "cancelled"} else current
     path = {
         "pending": ["picked_up", "in_transit", "out_for_delivery", "delivered"],
         "picked_up": ["in_transit", "out_for_delivery", "delivered"],
