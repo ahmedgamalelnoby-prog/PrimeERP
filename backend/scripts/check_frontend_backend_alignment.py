@@ -18,18 +18,16 @@ def main() -> None:
         raise SystemExit("Frontend API authentication interceptor is not initialized globally")
 
     ts_files = list(FRONTEND.rglob("*.ts")) + list(FRONTEND.rglob("*.tsx"))
-    source = "\n".join(read(path) for path in ts_files)
-
     forbidden_patterns = (
-        r'\\bfetch\\s*\\(',
-        r'\\bAPI_BASE\\s*=',
-        r'useState\\(\\s*["\\\']1["\\\']\\s*\\)',
-        r'company[_A-Za-z]*\\s*[:=]\\s*1\\b',
+        r"\bfetch\s*\(",
+        r"\bAPI_BASE\s*=",
+        r'useState\(\s*["\']1["\']\s*\)',
+        r"company[_A-Za-z]*\s*[:=]\s*1\b",
     )
     violations: list[str] = []
     for path in ts_files:
         text = read(path)
-        if path.name == "client.ts" or path.name == "env.ts":
+        if path.name in {"client.ts", "env.ts"}:
             continue
         for pattern in forbidden_patterns:
             if re.search(pattern, text):
@@ -39,16 +37,18 @@ def main() -> None:
 
     router = read(FRONTEND / "app" / "router" / "AppRouter.tsx")
     navigation = read(FRONTEND / "app" / "navigation.ts")
-    nav_paths = sorted(set(re.findall(r'path:"([^"]+)"', navigation)))
-    missing_routes = [path for path in nav_paths if f'path="{path}"' not in router and f'path="/{path.lstrip("/")}"' not in router]
+    nav_paths = sorted(set(re.findall(r'path:\s*"([^"]+)"', navigation)))
+    missing_routes = [
+        path
+        for path in nav_paths
+        if f'path="{path}"' not in router and f'path="/{path.lstrip("/")}"' not in router
+    ]
     if missing_routes:
         raise SystemExit("Navigation paths missing from AppRouter:\n" + "\n".join(missing_routes))
 
     import_paths = re.findall(r'from ["\'](@/[^"\']+)["\']', router)
     missing_imports: list[str] = []
     for spec in import_paths:
-        if not spec.startswith("@/"):
-            continue
         rel = spec[2:]
         candidates = [
             FRONTEND / f"{rel}.ts",
@@ -90,7 +90,7 @@ def main() -> None:
         if fragment not in read(backend_file):
             raise SystemExit(f"Backend contract not found: {contract} in {backend_file.relative_to(ROOT)}")
 
-    if '/roles/permissions' not in read(FRONTEND / "modules" / "roles" / "api" / "roles.api.ts"):
+    if "/roles/permissions" not in read(FRONTEND / "modules" / "roles" / "api" / "roles.api.ts"):
         raise SystemExit("Roles frontend is not aligned with the backend /roles contract")
 
     print(f"Frontend/backend alignment audit: PASS ({len(nav_paths)} navigation paths; {len(required_contracts)} critical API contracts)")
