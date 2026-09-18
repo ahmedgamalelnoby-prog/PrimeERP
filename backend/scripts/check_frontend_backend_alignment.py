@@ -79,18 +79,30 @@ def main() -> None:
         "/identity/users": BACKEND / "modules" / "identity" / "api" / "users.py",
         "/plans/": BACKEND / "modules" / "platform" / "plans" / "router.py",
     }
-    backend_fragments = {
-        "/platform/modules": 'router = APIRouter(prefix="/platform/modules"',
-        "/helpdesk/ai/answer": '@router.post("/ai/answer"',
-        "/helpdesk/ai/advice": '@router.post("/ai/advice"',
-        "/accounting/journal-entries/journals": '@router.get("/journals"',
-        "/identity/users": 'prefix="/users"',
+    backend_fragments: dict[str, tuple[str, ...]] = {
+        "/platform/modules": ('router = APIRouter(prefix="/platform/modules"',),
+        "/helpdesk/ai/answer": ('@router.post("/ai/answer"',),
+        "/helpdesk/ai/advice": ('@router.post("/ai/advice"',),
+        "/reports/ai/analyze": ('router = APIRouter(prefix="/reports"', '@router.post("/ai/analyze"'),
+        "/reports/deliver": ('router = APIRouter(prefix="/reports"', '@router.post("/deliver"'),
+        "/reports/schedules": ('router = APIRouter(prefix="/reports"', '@router.post("/schedules"'),
+        "/treasury/cheques": ('router = APIRouter(prefix="/treasury"', '@router.post("/cheques"'),
+        "/commerce/payments": ('router = APIRouter(prefix="/commerce"', '@router.get("/payments"'),
+        "/inventory/stock-moves": ('router = APIRouter(prefix="/inventory/stock-moves"',),
+        "/inventory/transfers": ('prefix="/inventory/transfers"', '@router.get("")', '@router.post("")'),
+        "/chart-of-accounts/combinations": ('router = APIRouter(prefix="/chart-of-accounts"', '@router.get("/combinations"'),
+        "/accounting/journal-entries/journals": ('@router.get("/journals"',),
+        "/accounting/reports/summary": ('prefix="/accounting/reports"', '@router.get("/summary"'),
+        "/roles/permissions": ('router = APIRouter(prefix="/roles"', '@router.get("/permissions"'),
+        "/identity/users": ('prefix="/users"',),
+        "/plans/": ('prefix="/plans"', '@router.get(', '"/"'),
     }
     for contract, backend_file in required_contracts.items():
         if not backend_file.exists():
             raise SystemExit(f"Backend contract file missing for {contract}: {backend_file}")
-        fragment = backend_fragments.get(contract, contract)
-        if fragment not in read(backend_file):
+        fragments = backend_fragments.get(contract, (contract,))
+        backend_text = read(backend_file)
+        if not all(fragment in backend_text for fragment in fragments):
             raise SystemExit(f"Backend contract not found: {contract} in {backend_file.relative_to(ROOT)}")
 
     if "/roles/permissions" not in read(FRONTEND / "modules" / "roles" / "api" / "roles.api.ts"):
