@@ -114,6 +114,13 @@ def sync_salla_shipping_companies(db: Session, connection_id: int) -> dict[str, 
                 ShippingCarrier.is_active.is_(True),
                 func.lower(func.trim(ShippingCarrier.name)) == name.lower(),
             ).order_by(ShippingCarrier.id))
+        slug = str(row.get("slug") or "").strip().lower()
+        if carrier is None and slug:
+            carrier = db.scalar(select(ShippingCarrier).where(
+                ShippingCarrier.company_id == connection.company_id,
+                ShippingCarrier.is_active.is_(True),
+                func.lower(ShippingCarrier.code).in_((slug, f"salla-{slug}")),
+            ).order_by(ShippingCarrier.id))
         if carrier is None:
             unmatched += 1
             continue
