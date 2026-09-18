@@ -28,6 +28,8 @@ _STATUS_MAP = {
     "delivered": "delivered",
     "returned": "returned",
     "return": "returned",
+    "return_to_origin": "returned",
+    "return_in_progress": "returned",
     "cancelled": "cancelled",
     "canceled": "cancelled",
 }
