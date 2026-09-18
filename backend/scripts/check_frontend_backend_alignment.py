@@ -80,6 +80,9 @@ def main() -> None:
         "/plans/": BACKEND / "modules" / "platform" / "plans" / "router.py",
     }
     backend_fragments = {
+        "/platform/modules": 'router = APIRouter(prefix="/platform/modules"',
+        "/helpdesk/ai/answer": '@router.post("/ai/answer"',
+        "/helpdesk/ai/advice": '@router.post("/ai/advice"',
         "/accounting/journal-entries/journals": '@router.get("/journals"',
         "/identity/users": 'prefix="/users"',
     }
