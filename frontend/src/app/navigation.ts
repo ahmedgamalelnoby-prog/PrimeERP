@@ -1,7 +1,9 @@
 import type { LucideIcon } from "lucide-react";
 import { BadgeDollarSign, Banknote, BarChart3, Boxes, Building2, Calculator, CalendarRange, ChartNoAxesCombined, CheckSquare, ClipboardCheck, ContactRound, FileCheck2, FileText, Gauge, HandCoins, Hotel, Landmark, LayoutDashboard, Package, Settings, ShieldCheck, ShoppingCart, Store, Truck, UserCog, Users, UsersRound, WalletCards, Warehouse } from "lucide-react";
+
 export type NavigationItemType = "item" | "group" | "separator";
 export interface NavigationItem { id:string; label:string; labelAr:string; type:NavigationItemType; path?:string; icon?:LucideIcon; children?:NavigationItem[]; permission?:string; module?:string; visible?:boolean; disabled?:boolean; isNew?:boolean; comingSoon?:boolean; order?:number; }
+
 export const navigationItems: NavigationItem[] = [
  {id:"dashboard",label:"Dashboard",labelAr:"لوحة التحكم",type:"item",path:"/dashboard",icon:LayoutDashboard,module:"dashboard",visible:true,order:1},
  {id:"module-catalog",label:"Module Catalog",labelAr:"كتالوج الموديولات",type:"item",path:"/modules",icon:Boxes,module:"platform",visible:true,isNew:true,order:2},
@@ -47,11 +49,62 @@ export const navigationItems: NavigationItem[] = [
   {id:"hotels",label:"Hotels",labelAr:"الفنادق",type:"item",path:"/hospitality/hotels",icon:Hotel,permission:"hotels.view",module:"hospitality",visible:true,order:1},
   {id:"hotel-revenue",label:"Hotel Revenue",labelAr:"إيرادات الفنادق",type:"item",path:"/hospitality/revenue",icon:BadgeDollarSign,permission:"hotel_revenue.view",module:"hospitality",visible:true,order:2},
   {id:"hotel-profit-share",label:"Profit Share",labelAr:"نسب الأرباح",type:"item",path:"/hospitality/profit-share",icon:ChartNoAxesCombined,permission:"hotel_profit_share.view",module:"hospitality",visible:true,order:3}]},
- {id:"reports",label:"Reports",labelAr:"التقارير",type:"item",path:"/reports",icon:BarChart3,permission:"reports.view",module:"reports",visible:true,order:13},
- {id:"settings",label:"Settings",labelAr:"الإعدادات",type:"item",path:"/settings",icon:Settings,permission:"settings.view",module:"settings",visible:true,order:14},
+ {id:"saas",label:"SaaS Administration",labelAr:"إدارة SaaS",type:"group",icon:BadgeDollarSign,module:"saas",visible:true,order:13,children:[
+  {id:"plans",label:"Plans",labelAr:"الباقات",type:"item",path:"/platform/plans",icon:BadgeDollarSign,permission:"plans.view",module:"saas",visible:true,order:1}]},
+ {id:"reports",label:"Reports",labelAr:"التقارير",type:"item",path:"/reports",icon:BarChart3,permission:"reports.view",module:"reports",visible:true,order:14},
+ {id:"settings",label:"Settings",labelAr:"الإعدادات",type:"item",path:"/settings",icon:Settings,permission:"settings.view",module:"settings",visible:true,order:15},
 ];
-export function getVisibleNavigationItems(): NavigationItem[] { return navigationItems.filter(item=>item.visible!==false).sort((a,b)=>(a.order??0)-(b.order??0)).map(item=>({...item,children:item.children?.filter(child=>child.visible!==false).sort((a,b)=>(a.order??0)-(b.order??0))})); }
-export function findNavigationItemByPath(path:string,items:NavigationItem[]=navigationItems):NavigationItem|undefined { for(const item of items){if(item.path===path)return item;if(item.children?.length){const child=findNavigationItemByPath(path,item.children);if(child)return child;}}return undefined; }
-export function findNavigationParent(path:string):NavigationItem|undefined { return navigationItems.find(item=>item.children?.some(child=>child.path===path)); }
-export function flattenNavigationItems(items:NavigationItem[]=navigationItems):NavigationItem[]{ return items.flatMap(item=>[item,...(item.children?flattenNavigationItems(item.children):[])]); }
-export function isNavigationItemActive(item:NavigationItem,pathname:string):boolean { if(item.path){if(item.path==="/dashboard")return pathname===item.path;return pathname===item.path||pathname.startsWith(item.path+"/");}return item.children?.some(child=>isNavigationItemActive(child,pathname))??false; }
+
+export function getVisibleNavigationItems(): NavigationItem[] {
+  return navigationItems
+    .filter((item) => item.visible !== false)
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    .map((item) => ({
+      ...item,
+      children: item.children
+        ?.filter((child) => child.visible !== false)
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
+    }));
+}
+
+export function findNavigationItemByPath(
+  path: string,
+  items: NavigationItem[] = navigationItems,
+): NavigationItem | undefined {
+  for (const item of items) {
+    if (item.path === path) return item;
+    if (item.children?.length) {
+      const child = findNavigationItemByPath(path, item.children);
+      if (child) return child;
+    }
+  }
+  return undefined;
+}
+
+export function findNavigationParent(path: string): NavigationItem | undefined {
+  return navigationItems.find((item) =>
+    item.children?.some((child) => child.path === path),
+  );
+}
+
+export function flattenNavigationItems(
+  items: NavigationItem[] = navigationItems,
+): NavigationItem[] {
+  return items.flatMap((item) => [
+    item,
+    ...(item.children ? flattenNavigationItems(item.children) : []),
+  ]);
+}
+
+export function isNavigationItemActive(
+  item: NavigationItem,
+  pathname: string,
+): boolean {
+  if (item.path) {
+    if (item.path === "/dashboard") return pathname === item.path;
+    return pathname === item.path || pathname.startsWith(item.path + "/");
+  }
+  return item.children?.some((child) =>
+    isNavigationItemActive(child, pathname),
+  ) ?? false;
+}
