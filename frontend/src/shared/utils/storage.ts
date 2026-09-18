@@ -8,6 +8,13 @@ export const storage = {
     );
   },
 
+  setAccessToken(access: string) {
+    localStorage.setItem(
+      STORAGE_KEYS.ACCESS_TOKEN,
+      access
+    );
+  },
+
   getRefreshToken() {
     return localStorage.getItem(
       STORAGE_KEYS.REFRESH_TOKEN
