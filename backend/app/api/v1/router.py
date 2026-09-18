@@ -31,6 +31,7 @@ from app.modules.shipping.reports_router import router as shipping_reports_route
 from app.modules.shipping.status_router import router as shipping_status_router
 from app.modules.integrations.router import public_router as integrations_public_router
 from app.modules.integrations.router import router as integrations_router
+from app.modules.integrations.salla_public_app_router import router as salla_public_app_router
 from app.modules.integrations.product_mapping_router import router as integration_product_mapping_router
 from app.modules.integrations.provider_catalog_router import router as integration_providers_router
 from app.modules.uom.router import router as uom_router
@@ -91,6 +92,7 @@ def build_router() -> APIRouter:
     api_router.include_router(reports_router)
     api_router.include_router(audit_router)
     api_router.include_router(integrations_public_router)
+    api_router.include_router(salla_public_app_router)
     api_router.include_router(plans_router)
     api_router.include_router(subscriptions_router)
     api_router.include_router(tenants_router, prefix="/platform")
