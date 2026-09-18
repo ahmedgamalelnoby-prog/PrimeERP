@@ -13,6 +13,7 @@ from app.modules.identity.models import User
 from app.modules.shipping.cost_models import ShippingShipmentCost
 from app.modules.shipping.models import ShippingCarrier, Shipment
 from app.modules.shipping.settlement_models import ShippingShipmentSettlement
+from app.modules.shipping.status_models import ShippingFinancialEvent
 from app.modules.saas.entitlements import require_module
 
 router = APIRouter(
@@ -25,110 +26,97 @@ router = APIRouter(
 def _company(db: Session, company_id: int, user: User):
     if user.tenant_id is None:
         raise HTTPException(403, "User is not assigned to a tenant")
-    company = db.scalar(select(Company).where(
-        Company.id == company_id,
-        Company.tenant_id == user.tenant_id,
-        Company.is_active.is_(True),
-    ))
+    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == user.tenant_id, Company.is_active.is_(True)))
     if company is None:
         raise HTTPException(403, "Company is outside the current tenant or inactive")
     return company
 
 
 def _filtered_shipments(db: Session, company_id: int, carrier_id: int | None, date_from: date | None, date_to: date | None, date_basis: str):
-    stmt = select(Shipment, ShippingCarrier.name, ShippingShipmentCost).join(
-        ShippingCarrier, ShippingCarrier.id == Shipment.carrier_id
-    ).outerjoin(
-        ShippingShipmentCost, ShippingShipmentCost.shipment_id == Shipment.id
-    ).where(Shipment.company_id == company_id)
+    stmt = select(Shipment, ShippingCarrier.name, ShippingShipmentCost).join(ShippingCarrier, ShippingCarrier.id == Shipment.carrier_id).outerjoin(ShippingShipmentCost, ShippingShipmentCost.shipment_id == Shipment.id).where(Shipment.company_id == company_id)
     if carrier_id:
         stmt = stmt.where(Shipment.carrier_id == carrier_id)
+    column = Shipment.order_date if date_basis == "order" else Shipment.shipment_date
     if date_from:
-        column = ShippingShipmentCost.order_date if date_basis == "order" else ShippingShipmentCost.shipment_date
         stmt = stmt.where(column >= date_from)
     if date_to:
-        column = ShippingShipmentCost.order_date if date_basis == "order" else ShippingShipmentCost.shipment_date
         stmt = stmt.where(column <= date_to)
     return db.execute(stmt.order_by(Shipment.id.desc())).all()
 
 
+def _events(db: Session, shipment_id: int):
+    return db.scalars(select(ShippingFinancialEvent).where(ShippingFinancialEvent.shipment_id == shipment_id)).all()
+
+
+def _ledger_for_shipment(db: Session, shipment_id: int):
+    expected_cod = Decimal("0")
+    costs = Decimal("0")
+    revenue = Decimal("0")
+    for event in _events(db, shipment_id):
+        amount = Decimal(event.amount or 0)
+        if event.event_type == "create_cod_receivable":
+            expected_cod += amount
+        elif event.event_type == "reverse_cod_receivable":
+            expected_cod -= amount
+        elif event.event_type == "recognize_shipping_cost" or event.event_type in {"recognize_cod_fee", "recognize_card_fee", "recognize_return_cost"}:
+            costs += amount
+        elif event.event_type == "recognize_revenue":
+            revenue += amount
+        elif event.event_type == "reverse_revenue":
+            revenue -= amount
+    return expected_cod, costs, revenue
+
+
 @router.get("/carrier-position")
-def carrier_position(
-    company_id: int = Query(..., gt=0),
-    carrier_id: int | None = Query(default=None, gt=0),
-    date_from: date | None = None,
-    date_to: date | None = None,
-    date_basis: str = Query(default="shipment", pattern="^(order|shipment)$"),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+def carrier_position(company_id: int = Query(..., gt=0), carrier_id: int | None = Query(default=None, gt=0), date_from: date | None = None, date_to: date | None = None, date_basis: str = Query(default="shipment", pattern="^(order|shipment)$"), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company(db, company_id, current_user)
     rows = _filtered_shipments(db, company_id, carrier_id, date_from, date_to, date_basis)
     by_carrier = {}
     for shipment, carrier_name, cost in rows:
         bucket = by_carrier.setdefault(shipment.carrier_id, {
-            "carrier_id": shipment.carrier_id,
-            "carrier_name": carrier_name,
-            "cod_due": Decimal("0"),
-            "estimated_fees_due": Decimal("0"),
-            "settled_gross": Decimal("0"),
-            "settled_net": Decimal("0"),
-            "shipment_count": 0,
-            "unsettled_count": 0,
+            "carrier_id": shipment.carrier_id, "carrier_name": carrier_name,
+            "cod_receivable": Decimal("0"), "estimated_unsettled_costs": Decimal("0"),
+            "settled_net": Decimal("0"), "settled_gross": Decimal("0"),
+            "revenue": Decimal("0"), "shipment_count": 0, "unsettled_count": 0,
         })
         bucket["shipment_count"] += 1
-        settled = db.scalar(select(ShippingShipmentSettlement).where(
-            ShippingShipmentSettlement.shipment_id == shipment.id
-        ))
+        expected_cod, event_costs, revenue = _ledger_for_shipment(db, shipment.id)
+        bucket["cod_receivable"] += expected_cod
+        bucket["revenue"] += revenue
+        settled = db.scalar(select(ShippingShipmentSettlement).where(ShippingShipmentSettlement.shipment_id == shipment.id))
         if settled is None:
             bucket["unsettled_count"] += 1
-            if shipment.status == "delivered":
-                bucket["cod_due"] += Decimal(shipment.cod_amount or 0)
-            if cost is not None:
-                bucket["estimated_fees_due"] += Decimal(cost.total_cost or 0)
+            bucket["estimated_unsettled_costs"] += event_costs if event_costs else Decimal(cost.total_cost or 0) if cost else Decimal("0")
         else:
             bucket["settled_gross"] += Decimal(settled.collected_amount or 0)
             bucket["settled_net"] += Decimal(settled.net_amount or 0)
 
     result = []
     for bucket in by_carrier.values():
-        bucket["net_position"] = bucket["cod_due"] - bucket["estimated_fees_due"]
-        bucket["position"] = "carrier_owes_company" if bucket["net_position"] > 0 else (
-            "company_owes_carrier" if bucket["net_position"] < 0 else "settled"
-        )
-        for key in ("cod_due", "estimated_fees_due", "settled_gross", "settled_net", "net_position"):
+        bucket["net_position"] = bucket["cod_receivable"] - bucket["settled_net"] - bucket["estimated_unsettled_costs"]
+        bucket["position"] = "carrier_owes_company" if bucket["net_position"] > 0 else ("company_owes_carrier" if bucket["net_position"] < 0 else "settled")
+        for key in ("cod_receivable", "estimated_unsettled_costs", "settled_gross", "settled_net", "revenue", "net_position"):
             bucket[key] = str(bucket[key].quantize(Decimal("0.01")))
         result.append(bucket)
     return result
 
 
 @router.get("/shipment-reconciliation")
-def shipment_reconciliation(
-    company_id: int = Query(..., gt=0),
-    carrier_id: int | None = Query(default=None, gt=0),
-    date_from: date | None = None,
-    date_to: date | None = None,
-    date_basis: str = Query(default="shipment", pattern="^(order|shipment)$"),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+def shipment_reconciliation(company_id: int = Query(..., gt=0), carrier_id: int | None = Query(default=None, gt=0), date_from: date | None = None, date_to: date | None = None, date_basis: str = Query(default="shipment", pattern="^(order|shipment)$"), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company(db, company_id, current_user)
     rows = _filtered_shipments(db, company_id, carrier_id, date_from, date_to, date_basis)
     result = []
     for shipment, carrier_name, cost in rows:
-        settled = db.scalar(select(ShippingShipmentSettlement).where(
-            ShippingShipmentSettlement.shipment_id == shipment.id
-        ))
+        expected_cod, event_costs, revenue = _ledger_for_shipment(db, shipment.id)
+        settled = db.scalar(select(ShippingShipmentSettlement).where(ShippingShipmentSettlement.shipment_id == shipment.id))
         result.append({
-            "shipment_id": shipment.id,
-            "tracking_no": shipment.tracking_no,
-            "carrier_id": shipment.carrier_id,
-            "carrier_name": carrier_name,
-            "status": shipment.status,
-            "order_date": cost.order_date if cost else None,
-            "shipment_date": cost.shipment_date if cost else None,
+            "shipment_id": shipment.id, "tracking_no": shipment.tracking_no,
+            "carrier_id": shipment.carrier_id, "carrier_name": carrier_name, "status": shipment.status,
+            "order_date": shipment.order_date, "shipment_date": shipment.shipment_date,
             "cod_amount": str(Decimal(shipment.cod_amount or 0).quantize(Decimal("0.01"))),
-            "shipping_cost": str(Decimal(cost.total_cost or 0).quantize(Decimal("0.01"))) if cost else None,
+            "cod_receivable": str(expected_cod.quantize(Decimal("0.01"))),
+            "shipping_cost": str((event_costs if event_costs else Decimal(cost.total_cost or 0) if cost else Decimal("0")).quantize(Decimal("0.01"))),
+            "revenue": str(revenue.quantize(Decimal("0.01"))),
             "settled": settled is not None,
             "collected_amount": str(Decimal(settled.collected_amount or 0).quantize(Decimal("0.01"))) if settled else None,
             "carrier_fee": str(Decimal(settled.carrier_fee or 0).quantize(Decimal("0.01"))) if settled else None,
