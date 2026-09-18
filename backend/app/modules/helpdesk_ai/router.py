@@ -28,7 +28,7 @@ PrimeERP also provides AI business analytics and scheduled report delivery by em
 """
 
 class HelpdeskQuestion(BaseModel):
-    company_id: int | None = Field(default=None, gt=0)
+    company_id: int = Field(gt=0)
     question: str = Field(min_length=2, max_length=4000)
     language: str = Field(default="ar", pattern="^(ar|en)$")
     conversation: list[dict[str, str]] = Field(default_factory=list, max_length=20)
@@ -103,9 +103,8 @@ def answer_helpdesk(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> HelpdeskAnswer:
-    if request.company_id is not None:
-        from app.models.company import Company
-        company = db.get(Company, request.company_id)
-        if company is None or getattr(company, "tenant_id", None) != get_effective_tenant_id(current_user):
-            raise HTTPException(status_code=404, detail="Company not found")
+    from app.models.company import Company
+    company = db.get(Company, request.company_id)
+    if company is None or getattr(company, "tenant_id", None) != get_effective_tenant_id(current_user):
+        raise HTTPException(status_code=404, detail="Company not found")
     return _ask_ai(request)
