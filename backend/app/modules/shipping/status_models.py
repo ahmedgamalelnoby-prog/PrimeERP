@@ -14,6 +14,7 @@ class ShippingOrderStatus(Base):
     sort_order = Column(Integer, server_default="0", nullable=False)
     is_active = Column(Boolean, server_default="true", nullable=False)
     financial_actions = Column(Text, server_default="[]", nullable=False)
+    allowed_next_codes = Column(Text, server_default="[]", nullable=False)
     __table_args__ = (
         UniqueConstraint("company_id", "code", name="uq_shipping_order_status_company_code"),
         CheckConstraint("sort_order >= 0", name="ck_shipping_order_status_sort"),
