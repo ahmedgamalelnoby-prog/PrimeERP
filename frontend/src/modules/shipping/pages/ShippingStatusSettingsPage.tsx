@@ -10,7 +10,7 @@ type Status = { id:number; company_id:number; code:string; name:string; name_ar?
 const actions = [
   ["recognize_revenue","Recognize order revenue / إثبات إيراد الطلب"],["recognize_shipping_revenue","Recognize shipping revenue / إثبات إيراد الشحن"],
   ["recognize_shipping_cost","Recognize carrier cost / إثبات تكلفة شركة الشحن"],["create_cod_receivable","Create COD receivable / إثبات مستحقات COD"],
-  ["recognize_cod_fee","Recognize COD commission / إثبات عمولة COD"],["recognize_card_fee","Recognize card fee / إثبات رسوم البطاقة"],
+  ["recognize_cod_fee","Recognize COD commission / إثبات عمولة COD"],["recognize_payment_withdrawal_fee","Recognize carrier withdrawal fee / إثبات رسوم سحب شركة الشحن"],
   ["reverse_revenue","Reverse revenue / عكس الإيراد"],["reverse_shipping_revenue","Reverse shipping revenue / عكس إيراد الشحن"],
   ["reverse_cod_receivable","Reverse COD receivable / عكس مستحقات COD"],["recognize_return_cost","Recognize return cost / إثبات تكلفة المرتجع"],
 ] as const;
