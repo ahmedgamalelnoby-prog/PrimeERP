@@ -1,0 +1,90 @@
+import { useEffect, useState } from "react";
+import { embedded } from "@salla.sa/embedded-sdk";
+import env from "@/shared/config/env";
+import { storage } from "@/shared/utils/storage";
+
+export default function SallaEmbeddedPage() {
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const bootstrap = async () => {
+      try {
+        await embedded.init({ debug: false });
+        const token = embedded.auth.getToken();
+        if (!token) throw new Error("Salla session token is missing.");
+
+        const response = await fetch(
+          `${env.API_BASE_URL}/salla-app/embedded/session`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ salla_token: token }),
+          },
+        );
+
+        if (!response.ok) {
+          throw new Error("PrimeERP could not verify the Salla session.");
+        }
+
+        const payload = await response.json();
+        const ticket = payload?.sso_ticket;
+        if (!ticket) throw new Error("PrimeERP did not return an SSO ticket.");
+
+        const exchange = await fetch(
+          `${env.API_BASE_URL}/salla-app/sso/exchange?ticket=${encodeURIComponent(ticket)}`,
+          { method: "POST" },
+        );
+
+        if (!exchange.ok) {
+          throw new Error("PrimeERP SSO exchange failed.");
+        }
+
+        const session = await exchange.json();
+        if (!session?.access_token) {
+          throw new Error("PrimeERP did not return an access token.");
+        }
+
+        storage.setAccessToken(session.access_token);
+        embedded.ready();
+        window.location.replace("/dashboard");
+      } catch (cause) {
+        if (!mounted) return;
+        console.error("Salla embedded bootstrap failed:", cause);
+        setError(cause instanceof Error ? cause.message : "Unable to connect to Salla.");
+        try {
+          embedded.destroy();
+        } catch {
+          // The SDK may already be destroyed or unavailable during local development.
+        }
+      }
+    };
+
+    void bootstrap();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background px-6" dir="rtl">
+      <div className="w-full max-w-md rounded-2xl border bg-card p-8 text-center shadow-sm">
+        {!error ? (
+          <>
+            <h1 className="text-2xl font-bold">PrimeERP</h1>
+            <p className="mt-3 text-sm text-muted-foreground">
+              جاري التحقق من متجر Salla وفتح حسابك تلقائياً...
+            </p>
+          </>
+        ) : (
+          <>
+            <h1 className="text-xl font-bold text-destructive">تعذر فتح PrimeERP</h1>
+            <p className="mt-3 text-sm text-muted-foreground">{error}</p>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
