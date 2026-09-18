@@ -26,6 +26,7 @@ from app.modules.enterprise.router import router as enterprise_router
 from app.modules.shipping.router import router as shipping_router
 from app.modules.shipping.settlement_router import router as shipping_settlement_router
 from app.modules.shipping.accounting_router import router as shipping_accounting_router
+from app.modules.shipping.pricing_router import router as shipping_pricing_router
 from app.modules.integrations.router import public_router as integrations_public_router
 from app.modules.integrations.router import router as integrations_router
 from app.modules.integrations.product_mapping_router import router as integration_product_mapping_router
@@ -74,6 +75,7 @@ def build_router() -> APIRouter:
     api_router.include_router(shipping_router)
     api_router.include_router(shipping_settlement_router)
     api_router.include_router(shipping_accounting_router)
+    api_router.include_router(shipping_pricing_router)
     api_router.include_router(integrations_router)
     api_router.include_router(integration_product_mapping_router)
     api_router.include_router(integration_providers_router)
