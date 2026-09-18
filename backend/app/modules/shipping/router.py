@@ -151,6 +151,7 @@ def shipment(payload: ShipmentCreate, current_user: User = Depends(get_current_u
                 card_amount=payload.card_amount,
                 remote_area=payload.remote_area,
                 storage_days=payload.storage_days,
+                exchange_requested=False,
             ),
         )
         fee = pricing_result.total_cost
