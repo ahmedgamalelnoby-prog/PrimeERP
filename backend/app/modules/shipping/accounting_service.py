@@ -17,6 +17,23 @@ from app.modules.shipping.status_models import ShippingFinancialEvent
 
 
 class ShippingAccountingService:
+    @staticmethod
+    def _account_map(carrier, settings) -> dict[str, int | None]:
+        """Resolve shipping event roles to the existing company chart configuration."""
+        return {
+            "customer_receivable": settings.ar_account_id,
+            "sales_revenue": settings.sales_account_id,
+            "shipping_revenue": settings.sales_account_id,
+            "shipping_expense": carrier.fee_account_id,
+            "return_shipping_expense": carrier.fee_account_id,
+            "cod_commission_expense": carrier.fee_account_id,
+            "payment_withdrawal_fee_expense": carrier.fee_account_id,
+            "shipping_other_fee_expense": carrier.fee_account_id,
+            "carrier_payable": carrier.settlement_account_id,
+            "carrier_cod_receivable": carrier.settlement_account_id,
+            "bank_cash": carrier.cash_account_id,
+        }
+
     def post_settlement(self, db: Session, *, batch_id: int, user_id: int, posting_date: date | None = None) -> JournalEntry:
         """Compatibility entry point: post the batch's already-created financial events.
 
@@ -96,19 +113,7 @@ class ShippingAccountingService:
         if settings is None:
             raise HTTPException(status_code=409, detail="Commerce accounting configuration is required for shipping AR/revenue posting")
 
-        account_map = {
-            "customer_receivable": settings.ar_account_id,
-            "sales_revenue": settings.sales_account_id,
-            "shipping_revenue": settings.sales_account_id,
-            "shipping_expense": carrier.fee_account_id,
-            "return_shipping_expense": carrier.fee_account_id,
-            "cod_commission_expense": carrier.fee_account_id,
-            "payment_withdrawal_fee_expense": carrier.fee_account_id,
-            "shipping_other_fee_expense": carrier.fee_account_id,
-            "carrier_payable": carrier.settlement_account_id,
-            "carrier_cod_receivable": carrier.settlement_account_id,
-            "bank_cash": carrier.cash_account_id,
-        }
+        account_map = self._account_map(carrier, settings)
         debit_account = account_map.get(event.debit_role)
         credit_account = account_map.get(event.credit_role)
         if debit_account is None or credit_account is None:
