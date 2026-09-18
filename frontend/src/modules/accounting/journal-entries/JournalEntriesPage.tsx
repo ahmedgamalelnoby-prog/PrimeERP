@@ -9,6 +9,9 @@ type JournalEntry = {
   branch_id: number; fiscal_year_id: number; period_id: number;
 };
 
+type JournalOption = { id: number; code: string; name_ar: string; name_en: string; journal_type: string; allow_manual_entries: boolean; is_active: boolean };
+type AccountOption = { id: number; code: string; name_ar: string; name_en?: string | null; is_active: boolean };
+
 const statusLabels: Record<string, string> = {
   draft: "مسودة", pending: "بانتظار الاعتماد", approved: "معتمد", posted: "مرحّل", cancelled: "ملغي", reversed: "معكوس",
 };
@@ -16,6 +19,9 @@ const statusLabels: Record<string, string> = {
 export default function JournalEntriesPage() {
   const [companyId, setCompanyId] = useState(() => Number(localStorage.getItem("company_id")) || 0);
   const [entries, setEntries] = useState<JournalEntry[]>([]);
+  const [journals, setJournals] = useState<JournalOption[]>([]);
+  const [accounts, setAccounts] = useState<AccountOption[]>([]);
+  const [optionsLoading, setOptionsLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
@@ -37,7 +43,23 @@ export default function JournalEntriesPage() {
     } finally { setLoading(false); }
   };
 
-  useEffect(() => { void loadEntries(); }, [companyId]);
+  useEffect(() => {
+    void loadEntries();
+    if (!companyId) { setJournals([]); setAccounts([]); return; }
+    setOptionsLoading(true);
+    Promise.all([
+      fetch(API_BASE + "/accounting/journal-entries/journals?company_id=" + companyId),
+      fetch(API_BASE + "/accounting/chart-of-accounts/combinations?company_id=" + companyId),
+    ])
+      .then(async ([journalResponse, accountResponse]) => {
+        if (!journalResponse.ok) throw new Error((await journalResponse.text()) || "تعذر تحميل اليوميات المحاسبية");
+        if (!accountResponse.ok) throw new Error((await accountResponse.text()) || "تعذر تحميل الحسابات المحاسبية");
+        setJournals(await journalResponse.json() as JournalOption[]);
+        setAccounts(await accountResponse.json() as AccountOption[]);
+      })
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "تعذر تحميل بيانات المحاسبة"))
+      .finally(() => setOptionsLoading(false));
+  }, [companyId]);
 
   const createDraft = async (event: FormEvent) => {
     event.preventDefault();
@@ -138,16 +160,34 @@ export default function JournalEntriesPage() {
         <section className="rounded-2xl border bg-card p-5 shadow-sm">
           <div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-semibold">إنشاء قيد يومية — مسودة</h2><button className="rounded-lg border px-3 py-1" onClick={() => setShowCreate(false)}>إغلاق</button></div>
           <form onSubmit={createDraft} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {([["branchId","رقم الفرع"],["journalId","رقم اليومية"],["fiscalYearId","رقم السنة المالية"],["periodId","رقم الفترة"],["debitAccountId","حساب المدين"],["creditAccountId","حساب الدائن"]] as const).map(([key,label]) =>
-              <label key={key} className="text-sm font-medium">{label}<input type="number" min={1} required value={createForm[key]} onChange={e => setCreateForm(v => ({...v,[key]:e.target.value}))} className="mt-1 w-full rounded-lg border bg-background px-3 py-2" /></label>
-            )}
+            <label className="text-sm font-medium">رقم الفرع<input type="number" min={1} required value={createForm.branchId} onChange={e => setCreateForm(v => ({...v,branchId:e.target.value}))} className="mt-1 w-full rounded-lg border bg-background px-3 py-2" /></label>
+            <label className="text-sm font-medium">اليومية
+              <select required value={createForm.journalId} onChange={e => setCreateForm(v => ({...v,journalId:e.target.value}))} className="mt-1 w-full rounded-lg border bg-background px-3 py-2" disabled={optionsLoading}>
+                <option value="">{optionsLoading ? "جاري التحميل..." : "اختر اليومية"}</option>
+                {journals.filter(j => j.is_active && j.allow_manual_entries).map(j => <option key={j.id} value={j.id}>{j.code} — {j.name_ar}</option>)}
+              </select>
+            </label>
+            <label className="text-sm font-medium">رقم السنة المالية<input type="number" min={1} required value={createForm.fiscalYearId} onChange={e => setCreateForm(v => ({...v,fiscalYearId:e.target.value}))} className="mt-1 w-full rounded-lg border bg-background px-3 py-2" /></label>
+            <label className="text-sm font-medium">رقم الفترة<input type="number" min={1} required value={createForm.periodId} onChange={e => setCreateForm(v => ({...v,periodId:e.target.value}))} className="mt-1 w-full rounded-lg border bg-background px-3 py-2" /></label>
+            <label className="text-sm font-medium">حساب المدين
+              <select required value={createForm.debitAccountId} onChange={e => setCreateForm(v => ({...v,debitAccountId:e.target.value}))} className="mt-1 w-full rounded-lg border bg-background px-3 py-2" disabled={optionsLoading}>
+                <option value="">{optionsLoading ? "جاري التحميل..." : "اختر الحساب"}</option>
+                {accounts.map(a => <option key={a.id} value={a.id}>{a.code} — {a.name_ar}</option>)}
+              </select>
+            </label>
+            <label className="text-sm font-medium">حساب الدائن
+              <select required value={createForm.creditAccountId} onChange={e => setCreateForm(v => ({...v,creditAccountId:e.target.value}))} className="mt-1 w-full rounded-lg border bg-background px-3 py-2" disabled={optionsLoading}>
+                <option value="">{optionsLoading ? "جاري التحميل..." : "اختر الحساب"}</option>
+                {accounts.map(a => <option key={a.id} value={a.id}>{a.code} — {a.name_ar}</option>)}
+              </select>
+            </label>
             <label className="text-sm font-medium">رقم القيد<input required value={createForm.entryNumber} onChange={e => setCreateForm(v => ({...v,entryNumber:e.target.value}))} className="mt-1 w-full rounded-lg border bg-background px-3 py-2" /></label>
             <label className="text-sm font-medium">التاريخ<input type="date" required value={createForm.entryDate} onChange={e => setCreateForm(v => ({...v,entryDate:e.target.value}))} className="mt-1 w-full rounded-lg border bg-background px-3 py-2" /></label>
             <label className="text-sm font-medium">المبلغ<input type="number" min="0.01" step="0.01" required value={createForm.amount} onChange={e => setCreateForm(v => ({...v,amount:e.target.value}))} className="mt-1 w-full rounded-lg border bg-background px-3 py-2" /></label>
             <label className="text-sm font-medium sm:col-span-2 lg:col-span-3">الوصف<input required value={createForm.description} onChange={e => setCreateForm(v => ({...v,description:e.target.value}))} className="mt-1 w-full rounded-lg border bg-background px-3 py-2" /></label>
             <div className="flex gap-2 sm:col-span-2 lg:col-span-3"><button type="submit" disabled={createBusy} className="rounded-lg bg-primary px-4 py-2 text-primary-foreground">{createBusy ? "جاري الإنشاء..." : "إنشاء المسودة"}</button><button type="button" className="rounded-lg border px-4 py-2" onClick={() => setShowCreate(false)}>إلغاء</button></div>
           </form>
-          <p className="mt-3 text-xs text-muted-foreground">يتم إنشاء قيد متوازن من سطر مدين وسطر دائن. يجب أن تنتمي الفرع واليومية والسنة والفترة والحسابات إلى الشركة النشطة.</p>
+          <p className="mt-3 text-xs text-muted-foreground">اليومية والحسابات تُحمّل تلقائيًا من الشركة النشطة وتُعرض بالأكواد والأسماء بدل إدخال أرقامها يدويًا. الفرع والسنة والفترة تُتحقق منها الخدمة قبل الحفظ.</p>
         </section>
       )}
       {details && (
