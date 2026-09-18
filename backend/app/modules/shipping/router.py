@@ -67,7 +67,8 @@ def carrier(payload: CarrierCreate, current_user: User = Depends(get_current_use
     _validate_account(db, company.id, payload.cash_account_id, "Carrier cash account")
     _validate_account(db, company.id, payload.fee_account_id, "Carrier fee account")
     _validate_journal_and_branch(db, company.id, payload.settlement_journal_id, payload.branch_id, _tenant_id(current_user))
-    if not all((payload.settlement_account_id, payload.cash_account_id, payload.fee_account_id)):
+    account_fields = (payload.settlement_account_id, payload.cash_account_id, payload.fee_account_id)
+    if any(account_fields) and not all(account_fields):
         raise HTTPException(422, "Settlement, cash and fee accounts must be configured together")
     if (payload.settlement_journal_id is None) != (payload.branch_id is None):
         raise HTTPException(422, "Settlement journal and branch must be configured together")
