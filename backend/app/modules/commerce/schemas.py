@@ -104,6 +104,10 @@ class PaymentCreate(BaseModel):
     reference: str | None = None
     idempotency_key: str | None = Field(default=None, min_length=1, max_length=100)
     notes: str | None = None
+    cheque_number: str | None = Field(default=None, min_length=1, max_length=100)
+    cheque_bank_name: str | None = Field(default=None, max_length=150)
+    cheque_account_number: str | None = Field(default=None, max_length=100)
+    cheque_due_date: date | None = None
 
     @model_validator(mode="after")
     def validate_wht(self):
