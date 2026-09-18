@@ -20,6 +20,7 @@ from app.modules.shipping.cost_models import ShippingShipmentCost
 from app.modules.shipping.schemas import CarrierCreate, CarrierResponse, MethodCreate, MethodResponse, ShipmentCreate, ShipmentResponse
 from app.modules.shipping.pricing_schemas import ShippingCostInput
 from app.modules.shipping.pricing_service import shipping_pricing_service
+from app.modules.shipping.status_service import shipping_status_service
 
 router = APIRouter(prefix="/shipping", tags=["Shipping"], dependencies=[Depends(require_permission("shipping.access")), Depends(require_module("shipping"))])
 
@@ -218,20 +219,33 @@ def shipments(company_id: int = Query(..., gt=0), status: str | None = None, cur
     return list(db.scalars(stmt.order_by(Shipment.id.desc())).all())
 
 
-_TRANSITIONS = {"pending": {"picked_up", "cancelled"}, "picked_up": {"in_transit", "cancelled"}, "in_transit": {"out_for_delivery", "returned"}, "out_for_delivery": {"delivered", "returned"}, "delivered": {"returned"}, "returned": set(), "cancelled": set()}
-
-
 @router.post("/shipments/{shipment_id}/status", response_model=ShipmentResponse, dependencies=[Depends(require_permission("shipping.post"))])
 def status(shipment_id: int, value: str = Query(...), company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
     obj = db.scalar(select(Shipment).where(Shipment.id == shipment_id, Shipment.company_id == company_id).with_for_update())
     if obj is None:
         raise HTTPException(404, "Shipment not found")
-    if value not in _TRANSITIONS:
-        raise HTTPException(400, "Invalid shipment status")
     if value == obj.status:
         return obj
-    if value not in _TRANSITIONS[obj.status]:
+    allowed = {
+        "pending": {"preparing", "picked_up", "cancelled"},
+        "preparing": {"packing", "cancelled"},
+        "packing": {"shipped", "cancelled"},
+        "shipped": {"in_transit", "cancelled"},
+        "picked_up": {"in_transit", "cancelled"},
+        "in_transit": {"out_for_delivery", "returned"},
+        "out_for_delivery": {"delivered", "returned"},
+        "delivered": {"returning", "returned"},
+        "returning": {"returned", "delivered"},
+        "returned": set(),
+        "cancelled": set(),
+    }
+    if value not in allowed.get(obj.status, set()):
         raise HTTPException(409, f"Invalid shipment transition: {obj.status} -> {value}")
-    obj.status = value; db.commit(); db.refresh(obj)
-    return obj
+    try:
+        shipping_status_service.apply_transition(db, obj, value)
+        db.commit(); db.refresh(obj)
+        return obj
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc)) from exc
