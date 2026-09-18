@@ -110,7 +110,9 @@ def main() -> None:
         if not all(fragment in backend_text for fragment in normalized_fragments):
             raise SystemExit(f"Backend contract not found: {contract} in {backend_file.relative_to(ROOT)}")
 
-    if "/roles/permissions" not in read(FRONTEND / "modules" / "roles" / "api" / "roles.api.ts"):
+    roles_api = read(FRONTEND / "modules" / "roles" / "api" / "roles.api.ts")
+    normalized_roles_api = normalize_contract(roles_api)
+    if "/roles/permissions" not in normalized_roles_api and "BASE_URL}/permissions" not in roles_api:
         raise SystemExit("Roles frontend is not aligned with the backend /roles contract")
 
     print(f"Frontend/backend alignment audit: PASS ({len(nav_paths)} navigation paths; {len(required_contracts)} critical API contracts)")
