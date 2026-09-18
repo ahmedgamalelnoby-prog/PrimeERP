@@ -17,8 +17,10 @@ export default function ReportsPage(){
   const [schedule,setSchedule]=useState("daily:09:00");
   const [schedules,setSchedules]=useState<Schedule[]>([]);
   const [companyId,setCompanyId]=useState(Number(localStorage.getItem("company_id"))||0);
+  const [fromDate,setFromDate]=useState("");
+  const [toDate,setToDate]=useState("");
 
-  useEffect(()=>{loadSchedules();},[]);
+  useEffect(()=>{loadSchedules();},[companyId]);
 
   async function loadSchedules(){
     if(!companyId){setSchedules([]);return;}
@@ -30,10 +32,12 @@ export default function ReportsPage(){
     e.preventDefault();setLoading(true);setError("");
     try{
       const parsed=JSON.parse(metrics);
-      const r=await client.post("/reports/ai/analyze",{domain:"general",metrics:parsed,question:question||null});
+      if(!companyId){throw new Error("اختر شركة فعالة أولاً؛ لا يتم استخدام شركة افتراضية.");}
+      if(fromDate&&toDate&&fromDate>toDate){throw new Error("تاريخ البداية لا يمكن أن يكون بعد تاريخ النهاية.");}
+      const r=await client.post("/reports/ai/analyze",{company_id:companyId,domain:"general",metrics:parsed,question:question||null,from_date:fromDate||null,to_date:toDate||null});
       setResult(JSON.stringify(r.data,null,2));
       setBody(JSON.stringify(r.data,null,2));
-    }catch(e:any){setError(e?.message==="Unexpected end of JSON input"?"صيغة Metrics JSON غير صحيحة":e?.response?.data?.detail||"تعذر تحليل التقرير");}
+    }catch(e:any){setError(e?.message==="Unexpected end of JSON input"?"صيغة Metrics JSON غير صحيحة":e?.response?.data?.detail||e?.message||"تعذر تحليل التقرير");}
     finally{setLoading(false);}
   }
 
@@ -69,6 +73,7 @@ export default function ReportsPage(){
       <form onSubmit={analyze} className="space-y-4 rounded-2xl border bg-card p-5 shadow-sm">
         <div><h2 className="font-semibold">تحليل ذكي</h2><p className="text-xs text-muted-foreground">القواعد الرقابية تعمل حتى عند عدم تفعيل مزود AI.</p></div>
         <label className="block text-sm font-semibold">سؤال التحليل<textarea value={question} onChange={e=>setQuestion(e.target.value)} placeholder="ما أهم المخاطر في المؤشرات الحالية؟" className="mt-1 min-h-24 w-full rounded-lg border bg-background p-3"/></label>
+        <div className="grid gap-3 sm:grid-cols-2"><label className="text-sm font-semibold">من تاريخ<input type="date" value={fromDate} onChange={e=>setFromDate(e.target.value)} className="mt-1 w-full rounded-lg border bg-background p-2"/></label><label className="text-sm font-semibold">إلى تاريخ<input type="date" value={toDate} onChange={e=>setToDate(e.target.value)} className="mt-1 w-full rounded-lg border bg-background p-2"/></label></div>
         <label className="block text-sm font-semibold">Metrics JSON<textarea value={metrics} onChange={e=>setMetrics(e.target.value)} className="mt-1 min-h-32 w-full rounded-lg border bg-background p-3 font-mono text-xs"/></label>
         <button disabled={loading} className="rounded-lg bg-primary px-5 py-2 text-primary-foreground">{loading?"جارٍ التحليل...":"تحليل المؤشرات"}</button>
       </form>
