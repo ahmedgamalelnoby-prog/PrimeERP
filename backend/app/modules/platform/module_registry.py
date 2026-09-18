@@ -7,6 +7,9 @@ ModuleStatus = Literal["active", "foundation", "roadmap"]
 MODULE_REGISTRY: tuple[dict[str, object], ...] = (
     {"key": "accounting", "name": "Accounting", "name_ar": "المحاسبة", "group": "finance", "status": "active", "description": "General ledger, journals, fiscal periods, chart of accounts and financial reporting."},
     {"key": "treasury", "name": "Treasury", "name_ar": "الخزينة والبنوك", "group": "finance", "status": "active", "description": "Cash, banks, cheques, collections and payment lifecycle controls."},
+    {"key": "cost_centers", "name": "Cost Centers", "name_ar": "مراكز التكلفة", "group": "finance", "status": "active", "description": "Cost-center accounting and management analysis."},
+    {"key": "installments", "name": "Installments", "name_ar": "الأقساط والاستحقاقات", "group": "finance", "status": "foundation", "description": "Installment and due-date management foundation."},
+    {"key": "transactions", "name": "Transactions", "name_ar": "المعاملات", "group": "finance", "status": "active", "description": "Financial and operational transaction foundation."},
     {"key": "taxes", "name": "Taxes", "name_ar": "الضرائب", "group": "finance", "status": "active", "description": "Tax master data, rates and tax controls."},
     {"key": "einvoice", "name": "Egyptian E-Invoice", "name_ar": "الفاتورة الإلكترونية المصرية", "group": "finance", "status": "active", "description": "Egyptian e-invoice integration and compliance workflow."},
     {"key": "inventory", "name": "Inventory", "name_ar": "المخزون", "group": "operations", "status": "active", "description": "Items, warehouses, locations, stock moves, transfers, reservations, adjustments and costing."},
@@ -14,6 +17,7 @@ MODULE_REGISTRY: tuple[dict[str, object], ...] = (
     {"key": "sales", "name": "Sales", "name_ar": "المبيعات", "group": "commercial", "status": "active", "description": "Customers, quotations, orders, deliveries, invoices, returns and payments."},
     {"key": "purchasing", "name": "Purchasing", "name_ar": "المشتريات", "group": "commercial", "status": "foundation", "description": "Supplier and purchase lifecycle foundation integrated with commerce."},
     {"key": "commerce", "name": "Commerce", "name_ar": "التجارة", "group": "commercial", "status": "active", "description": "Commercial documents, partners, payments and operational lifecycle."},
+    {"key": "operations", "name": "Operations", "name_ar": "التشغيل", "group": "operations", "status": "foundation", "description": "Cross-module operational workflows."},
     {"key": "shipping", "name": "Shipping", "name_ar": "الشحن", "group": "operations", "status": "active", "description": "Shipping operations, settlement and accounting integration."},
     {"key": "enterprise", "name": "Enterprise", "name_ar": "إدارة المؤسسة", "group": "enterprise", "status": "active", "description": "Enterprise operational capabilities, assets, budgets, HR, projects and contracts."},
     {"key": "hr", "name": "HR", "name_ar": "الموارد البشرية", "group": "enterprise", "status": "foundation", "description": "Employee and human-resources foundation."},
