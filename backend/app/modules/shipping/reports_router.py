@@ -60,7 +60,7 @@ def _ledger_for_shipment(db: Session, shipment_id: int):
             expected_cod -= amount
         elif event.event_type == "recognize_shipping_cost" or event.event_type in {"recognize_cod_fee", "recognize_card_fee", "recognize_return_cost"}:
             costs += amount
-        elif event.event_type == "recognize_revenue":
+        elif event.event_type in {"recognize_revenue", "recognize_shipping_revenue"}:
             revenue += amount
         elif event.event_type == "reverse_revenue":
             revenue -= amount
