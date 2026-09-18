@@ -83,6 +83,12 @@ def upgrade() -> None:
         JOIN purchase_documents pd ON pd.id = pl.document_id
         WHERE p.company_id = pd.company_id AND p.item_id = pl.item_id
     """))
+    conn.execute(sa.text("""
+        UPDATE integration_product_mappings ipm
+        SET catalog_product_id = p.id
+        FROM catalog_products p
+        WHERE p.company_id = ipm.company_id AND p.item_id = ipm.product_id
+    """))
 
     # These links preserve all existing data while making the commercial Product
     # identity explicit. Existing product_id/item_id columns remain compatible.
@@ -119,6 +125,10 @@ def upgrade() -> None:
     )
     op.create_index("ix_product_prices_catalog_product_id", "product_prices", ["catalog_product_id"])
 
+    op.add_column("integration_product_mappings", sa.Column("catalog_product_id", sa.Integer(), nullable=True))
+    op.create_foreign_key("fk_integration_product_mapping_catalog_product", "integration_product_mappings", "catalog_products", ["catalog_product_id"], ["id"], ondelete="RESTRICT")
+    op.create_index("ix_integration_product_mapping_catalog_product_id", "integration_product_mappings", ["catalog_product_id"])
+
     op.add_column("sales_lines", sa.Column("catalog_product_id", sa.Integer(), nullable=True))
     op.create_foreign_key(
         "fk_sales_lines_catalog_product",
@@ -143,7 +153,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_purchase_lines_catalog_product_id", table_name="purchase_lines")
+    op.drop_index("ix_integration_product_mapping_catalog_product_id", table_name="integration_product_mappings")
+    op.drop_constraint("fk_integration_product_mapping_catalog_product", "integration_product_mappings", type_="foreignkey")
+    op.drop_column("integration_product_mappings", "catalog_product_id")
+        op.drop_index("ix_purchase_lines_catalog_product_id", table_name="purchase_lines")
     op.drop_constraint("fk_purchase_lines_catalog_product", "purchase_lines", type_="foreignkey")
     op.drop_column("purchase_lines", "catalog_product_id")
     op.drop_index("ix_sales_lines_catalog_product_id", table_name="sales_lines")
