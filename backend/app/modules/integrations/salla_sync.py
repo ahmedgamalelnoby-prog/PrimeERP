@@ -74,7 +74,11 @@ def sync_salla_shipping_companies(db: Session, connection_id: int) -> dict[str, 
     connection = _connection(db, connection_id)
     token = _token(db, connection)
     base_url = (connection.base_url or SALLA_BASE_URL).rstrip("/")
-    payload = _request(requests.Session(), f"{base_url}/shipping/companies/", token)
+    client = requests.Session()
+    try:
+        payload = _request(client, f"{base_url}/shipping/companies/", token)
+    finally:
+        client.close()
     rows = _data(payload)
     linked = 0
     unmatched = 0
