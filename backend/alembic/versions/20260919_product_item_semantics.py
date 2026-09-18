@@ -52,6 +52,16 @@ def upgrade() -> None:
         )
     """))
     conn.execute(sa.text("""
+        UPDATE recipe_lines
+        SET ingredient_item_id = ingredient_product_id
+        WHERE ingredient_item_id IS NULL
+    """))
+    conn.execute(sa.text("""
+        UPDATE product_bundle_lines
+        SET component_item_id = component_product_id
+        WHERE component_item_id IS NULL
+    """))
+    conn.execute(sa.text("""
         UPDATE recipes r
         SET catalog_product_id = p.id
         FROM catalog_products p
@@ -93,6 +103,9 @@ def upgrade() -> None:
     # These links preserve all existing data while making the commercial Product
     # identity explicit. Existing product_id/item_id columns remain compatible.
     op.add_column("recipes", sa.Column("catalog_product_id", sa.Integer(), nullable=True))
+    op.add_column("recipe_lines", sa.Column("ingredient_item_id", sa.Integer(), nullable=True))
+    op.create_foreign_key("fk_recipe_lines_ingredient_item", "recipe_lines", "inventory_items", ["ingredient_item_id"], ["id"], ondelete="RESTRICT")
+    op.create_index("ix_recipe_lines_ingredient_item_id", "recipe_lines", ["ingredient_item_id"])
     op.create_foreign_key(
         "fk_recipes_catalog_product",
         "recipes",
@@ -104,6 +117,9 @@ def upgrade() -> None:
     op.create_index("ix_recipes_catalog_product_id", "recipes", ["catalog_product_id"])
 
     op.add_column("product_bundles", sa.Column("catalog_product_id", sa.Integer(), nullable=True))
+    op.add_column("product_bundle_lines", sa.Column("component_item_id", sa.Integer(), nullable=True))
+    op.create_foreign_key("fk_product_bundle_lines_component_item", "product_bundle_lines", "inventory_items", ["component_item_id"], ["id"], ondelete="RESTRICT")
+    op.create_index("ix_product_bundle_lines_component_item_id", "product_bundle_lines", ["component_item_id"])
     op.create_foreign_key(
         "fk_product_bundles_catalog_product",
         "product_bundles",
@@ -168,7 +184,13 @@ def downgrade() -> None:
     op.drop_index("ix_product_bundles_catalog_product_id", table_name="product_bundles")
     op.drop_constraint("fk_product_bundles_catalog_product", "product_bundles", type_="foreignkey")
     op.drop_column("product_bundles", "catalog_product_id")
-    op.drop_index("ix_recipes_catalog_product_id", table_name="recipes")
+    op.drop_index("ix_recipe_lines_ingredient_item_id", table_name="recipe_lines")
+    op.drop_constraint("fk_recipe_lines_ingredient_item", "recipe_lines", type_="foreignkey")
+    op.drop_column("recipe_lines", "ingredient_item_id")
+    op.drop_index("ix_product_bundle_lines_component_item_id", table_name="product_bundle_lines")
+    op.drop_constraint("fk_product_bundle_lines_component_item", "product_bundle_lines", type_="foreignkey")
+    op.drop_column("product_bundle_lines", "component_item_id")
+        op.drop_index("ix_recipes_catalog_product_id", table_name="recipes")
     op.drop_constraint("fk_recipes_catalog_product", "recipes", type_="foreignkey")
     op.drop_column("recipes", "catalog_product_id")
     op.drop_index("ix_catalog_products_item_id", table_name="catalog_products")
