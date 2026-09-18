@@ -32,3 +32,17 @@ def test_unknown_industry_is_safe_and_does_not_enable_features():
 def test_industry_profile_is_company_scoped():
     assert CompanyIndustryProfile.__table__.c.company_id is not None
     assert CompanyIndustryProfile.__table__.c.industry_code is not None
+
+
+def test_perfume_trading_keeps_recipe_capability_for_composed_products():
+    assert behavior_for("perfume_trading").enabled("recipes")
+
+
+def test_integration_product_mapping_points_to_commercial_product_identity():
+    from app.modules.integrations.models import IntegrationProductMapping
+    assert IntegrationProductMapping.__table__.c.catalog_product_id is not None
+
+
+def test_commerce_adapter_registry_is_provider_neutral_and_has_salla_builtin():
+    from app.modules.integrations.commerce_registry import registry
+    assert "salla" in registry.providers()
