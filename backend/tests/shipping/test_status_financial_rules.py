@@ -15,3 +15,9 @@ def test_default_shipping_lifecycle_has_financial_delivery_rules():
 def test_default_status_codes_are_unique():
     codes = [row[0] for row in DEFAULT_STATUSES]
     assert len(codes) == len(set(codes))
+
+
+def test_delivered_default_includes_carrier_withdrawal_fee():
+    from app.modules.shipping.status_service import DEFAULT_STATUSES
+    delivered = next(row for row in DEFAULT_STATUSES if row[0] == "delivered")
+    assert "recognize_payment_withdrawal_fee" in delivered[5]
