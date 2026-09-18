@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-
-const API_BASE = import.meta.env.VITE_API_URL ?? "/api/v1";
+import client from "@/shared/api/client";
 
 type Account = { id: number; code: string; name: string; name_ar?: string | null; statement?: string | null; normal_balance?: string | null };
 
@@ -9,16 +8,20 @@ export default function AccountsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const companyId = Number(localStorage.getItem("company_id")) || 0;
+
   useEffect(() => {
-    fetch(`${API_BASE}/chart-of-accounts/natural-accounts`)
-      .then(async (response) => {
-        if (!response.ok) throw new Error(await response.text() || "تعذر تحميل دليل الحسابات");
-        return response.json() as Promise<Account[]>;
-      })
-      .then(setAccounts)
+    if (!companyId) {
+      setAccounts([]);
+      setError("اختر شركة فعالة أولاً.");
+      setLoading(false);
+      return;
+    }
+    client.get<Account[]>("/chart-of-accounts/natural-accounts", { params: { company_id: companyId } })
+      .then((response) => setAccounts(response.data))
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "تعذر تحميل دليل الحسابات"))
       .finally(() => setLoading(false));
-  }, []);
+  }, [companyId]);
 
   return (
     <section className="space-y-6 p-6" dir="rtl">
