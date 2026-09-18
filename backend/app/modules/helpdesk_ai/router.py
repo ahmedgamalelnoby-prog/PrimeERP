@@ -13,6 +13,8 @@ from app.modules.identity.models import User
 from app.database.session import get_db
 from sqlalchemy.orm import Session
 from app.core.context import get_effective_tenant_id
+from app.modules.accounting.reports.service import financial_report_service
+from app.modules.platform.module_registry import REGISTRY_VERSION, knowledge_context
 
 router = APIRouter(prefix="/helpdesk", tags=["helpdesk"])
 
@@ -37,6 +39,24 @@ class HelpdeskAnswer(BaseModel):
     answer: str
     source: str
     suggested_actions: list[str] = Field(default_factory=list)
+
+
+class AdvisoryRequest(BaseModel):
+    company_id: int = Field(gt=0)
+    focus: str = Field(default="general", min_length=1, max_length=80)
+    question: str | None = Field(default=None, max_length=2000)
+    from_date: str | None = None
+    to_date: str | None = None
+    language: str = Field(default="ar", pattern="^(ar|en)$")
+
+
+class AdvisoryResponse(BaseModel):
+    summary: str
+    priorities: list[str] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
+    next_steps: list[str] = Field(default_factory=list)
+    knowledge_version: str
+    ai_provider: str
 
 def _fallback(question: str, language: str) -> HelpdeskAnswer:
     q = question.lower()
@@ -108,3 +128,117 @@ def answer_helpdesk(
     if company is None or getattr(company, "tenant_id", None) != get_effective_tenant_id(current_user):
         raise HTTPException(status_code=404, detail="Company not found")
     return _ask_ai(request)
+
+
+@router.post("/ai/advice", response_model=AdvisoryResponse)
+def business_advice(
+    request: AdvisoryRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AdvisoryResponse:
+    if not settings.AI_ADVISORY_ENABLED:
+        raise HTTPException(status_code=404, detail="AI advisory is disabled")
+    from datetime import date
+
+    from_date = None
+    to_date = None
+    try:
+        if request.from_date:
+            from_date = date.fromisoformat(request.from_date)
+        if request.to_date:
+            to_date = date.fromisoformat(request.to_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Dates must use YYYY-MM-DD") from exc
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(status_code=422, detail="from_date cannot be after to_date")
+
+    from app.models.company import Company
+    company = db.get(Company, request.company_id)
+    if company is None or getattr(company, "tenant_id", None) != get_effective_tenant_id(current_user):
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    summary = financial_report_service.financial_summary(
+        db,
+        tenant_id=get_effective_tenant_id(current_user),
+        company_id=request.company_id,
+        from_date=from_date,
+        to_date=to_date,
+    )
+    metrics = {
+        "revenue": float(summary.revenue),
+        "expenses": float(summary.expenses),
+        "net_profit": float(summary.net_profit),
+        "assets": float(summary.assets),
+        "liabilities": float(summary.liabilities),
+        "equity": float(summary.equity),
+    }
+    margin = round(metrics["net_profit"] / metrics["revenue"] * 100, 2) if metrics["revenue"] else None
+    if margin is not None:
+        metrics["net_margin_pct"] = margin
+
+    priorities: list[str] = []
+    if margin is not None and margin < 10:
+        priorities.append("Review profitability and cost drivers.")
+    if metrics["liabilities"] > metrics["assets"] and metrics["assets"] > 0:
+        priorities.append("Review leverage, liquidity and near-term obligations.")
+    if not priorities:
+        priorities.append("Maintain current controls and review trend changes before taking action.")
+
+    fallback = AdvisoryResponse(
+        summary="PrimeERP reviewed the current financial snapshot and identified practical improvement priorities.",
+        priorities=priorities,
+        recommendations=[
+            "Compare revenue, expenses and net margin by month or operating segment.",
+            "Review overdue receivables, payment commitments and cash requirements.",
+            "Use the relevant operational module and schedule a recurring management report for trend monitoring.",
+        ],
+        next_steps=[
+            "Validate the recommendation against the underlying transaction data.",
+            "Assign an owner and due date to each action.",
+            "Re-run the advisory review after the next reporting period.",
+        ],
+        knowledge_version=REGISTRY_VERSION,
+        ai_provider="prime_rules",
+    )
+    if not settings.OPENAI_API_KEY:
+        return fallback
+
+    system = f"""You are PrimeERP Business Advisor.
+Use only the supplied live financial snapshot and PrimeERP module knowledge.
+Never invent values, transactions, features, regulations or implementation status.
+Give practical, measurable advice for management. Separate observations from recommendations.
+Return strict JSON with keys: summary, priorities, recommendations, next_steps.
+Answer in {'Arabic' if request.language == 'ar' else 'English'}.
+Module knowledge version: {REGISTRY_VERSION}
+MODULE KNOWLEDGE:
+{knowledge_context()}
+LIVE METRICS:
+{json.dumps(metrics, ensure_ascii=False)}
+FOCUS: {request.focus}
+QUESTION: {request.question or 'Provide the most useful improvement plan for the current snapshot.'}
+"""
+    try:
+        response = requests.post(
+            f"{settings.OPENAI_BASE_URL.rstrip('/')}/chat/completions",
+            headers={"Authorization": f"Bearer {settings.OPENAI_API_KEY}", "Content-Type": "application/json"},
+            json={
+                "model": settings.AI_MODEL,
+                "messages": [{"role": "system", "content": system}],
+                "temperature": 0.15,
+                "max_tokens": settings.AI_MAX_OUTPUT_TOKENS,
+                "response_format": {"type": "json_object"},
+            },
+            timeout=60,
+        )
+        response.raise_for_status()
+        payload = json.loads(response.json()["choices"][0]["message"]["content"])
+        return AdvisoryResponse(
+            summary=str(payload.get("summary") or fallback.summary),
+            priorities=[str(x) for x in payload.get("priorities", []) if str(x).strip()][:6],
+            recommendations=[str(x) for x in payload.get("recommendations", []) if str(x).strip()][:8],
+            next_steps=[str(x) for x in payload.get("next_steps", []) if str(x).strip()][:8],
+            knowledge_version=REGISTRY_VERSION,
+            ai_provider="openai_compatible",
+        )
+    except (requests.RequestException, KeyError, IndexError, TypeError, json.JSONDecodeError):
+        return fallback.model_copy(update={"ai_provider": "prime_rules_after_provider_error"})
