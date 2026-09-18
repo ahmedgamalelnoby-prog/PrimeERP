@@ -101,7 +101,6 @@ def carrier_position(company_id: int = Query(..., gt=0), carrier_id: int | None 
             bucket["cod_receivable"]
             - bucket["settled_net"]
             - bucket["carrier_payable"]
-            + bucket["settled_fees"]
         )
         bucket["position"] = "carrier_owes_company" if bucket["net_position"] > 0 else ("company_owes_carrier" if bucket["net_position"] < 0 else "settled")
         for key in ("cod_receivable", "carrier_payable", "settled_gross", "settled_fees", "settled_net", "revenue", "net_position"):
