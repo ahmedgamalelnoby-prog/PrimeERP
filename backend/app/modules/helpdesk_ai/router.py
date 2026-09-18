@@ -19,15 +19,6 @@ from app.modules.platform.module_registry import REGISTRY_VERSION, knowledge_con
 router = APIRouter(prefix="/helpdesk", tags=["helpdesk"])
 
 
-PRODUCT_CONTEXT = """
-PrimeERP is a multi-tenant SaaS ERP platform. Core areas include:
-Finance: Accounting, Treasury, Invoicing, Taxes, Assets, Budgets, Cost Centers, Egyptian e-Invoice.
-Commercial: CRM, Sales, Purchasing, POS, Subscriptions, Rentals, Loyalty, Promotions, Commissions.
-Operations: Inventory, Catalog, UOM, Shipping, Manufacturing, Quality, Maintenance, Restaurant, Work Orders.
-Enterprise: Companies, Branches, Users, Roles, Permissions, Audit, HR, Projects, Contracts, Documents, Reports.
-Platform: Tenants, Plans, Subscriptions, Entitlements, Integrations, Notifications.
-PrimeERP also provides AI business analytics and scheduled report delivery by email/WhatsApp when configured.
-"""
 
 class HelpdeskQuestion(BaseModel):
     company_id: int = Field(gt=0)
@@ -89,8 +80,9 @@ If the customer asks for a procedure, provide numbered steps.
 Protect secrets: never request or expose passwords, access tokens, API keys, or private tenant data.
 Respond in {'Arabic' if request.language == 'ar' else 'English'}.
 Return strict JSON with keys: answer, suggested_actions.
-PRODUCT CONTEXT:
-{PRODUCT_CONTEXT}
+MODULE REGISTRY VERSION: {REGISTRY_VERSION}
+LIVE MODULE KNOWLEDGE:
+{knowledge_context()}
 """
     messages: list[dict[str, str]] = [{"role": "system", "content": system}]
     for item in request.conversation[-10:]:
@@ -103,7 +95,7 @@ PRODUCT CONTEXT:
         response = requests.post(
             f"{settings.OPENAI_BASE_URL.rstrip('/')}/chat/completions",
             headers={"Authorization": f"Bearer {settings.OPENAI_API_KEY}", "Content-Type": "application/json"},
-            json={"model": settings.AI_MODEL, "messages": messages, "temperature": 0.2, "response_format": {"type": "json_object"}},
+            json={"model": settings.AI_MODEL, "messages": messages, "temperature": 0.2, "max_tokens": settings.AI_MAX_OUTPUT_TOKENS, "response_format": {"type": "json_object"}},
             timeout=45,
         )
         response.raise_for_status()
@@ -113,7 +105,7 @@ PRODUCT CONTEXT:
         if not answer:
             return fallback
         actions = [str(x) for x in payload.get("suggested_actions", []) if str(x).strip()][:5]
-        return HelpdeskAnswer(answer=answer, source="openai", suggested_actions=actions)
+        return HelpdeskAnswer(answer=answer, source=f"openai:{REGISTRY_VERSION}", suggested_actions=actions)
     except (requests.RequestException, KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=503, detail="AI help desk is temporarily unavailable") from exc
 
