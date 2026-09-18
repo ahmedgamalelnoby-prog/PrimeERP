@@ -68,7 +68,7 @@ export default function ShippingPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={()=>void load()} disabled={loading}><RefreshCw className="me-2 size-4"/>تحديث</Button>
-          <Button variant="outline" onClick={()=>window.location.assign("/shipping/pricing")}><Calculator className="me-2 size-4"/>تسعير الشحن</Button><Button variant="outline" onClick={()=>window.location.assign("/shipping/settings")}><ExternalLink className="me-2 size-4"/>حالات الشحن</Button>
+          <Button variant="outline" onClick={()=>window.location.assign("/shipping/pricing")}><Calculator className="me-2 size-4"/>تسعير الشحن</Button><Button variant="outline" onClick={()=>window.location.assign("/shipping/settlements")}><Wallet className="me-2 size-4"/>التسويات</Button><Button variant="outline" onClick={()=>window.location.assign("/shipping/settings")}><ExternalLink className="me-2 size-4"/>حالات الشحن</Button>
         </div>
       </div>
 
