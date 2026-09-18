@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import client from "@/shared/api/client";
 
 type Move = {
   id:number; item_id:number; source_location_id:number|null; destination_location_id:number|null;
@@ -9,7 +10,7 @@ type Move = {
 const API = "/inventory/stock-moves";
 
 export default function InventoryTransactionsPage() {
-  const [companyId,setCompanyId]=useState("1");
+  const [companyId,setCompanyId]=useState(() => localStorage.getItem("company_id") || "");
   const [moves,setMoves]=useState<Move[]>([]);
   const [loading,setLoading]=useState(false);
   const [message,setMessage]=useState("");
