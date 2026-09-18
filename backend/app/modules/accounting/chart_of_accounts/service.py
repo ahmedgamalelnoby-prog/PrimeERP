@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import AccountingCostCenter, AccountingDepartment, NaturalAccount
+from .models import AccountCombination, AccountingCostCenter, AccountingDepartment, NaturalAccount
 
 
 class ChartOfAccountsService:
@@ -31,6 +31,13 @@ class ChartOfAccountsService:
         if active_only:
             stmt = stmt.where(NaturalAccount.is_active.is_(True))
         return db.scalars(stmt.order_by(NaturalAccount.code)).all()
+
+    @staticmethod
+    def list_account_combinations(db: Session, company_id: int, *, active_only: bool = True):
+        stmt = select(AccountCombination).where(AccountCombination.company_id == company_id)
+        if active_only:
+            stmt = stmt.where(AccountCombination.is_active.is_(True))
+        return db.scalars(stmt.order_by(AccountCombination.code)).all()
 
     @staticmethod
     def get_natural_account(db: Session, company_id: int, account_id: int) -> NaturalAccount | None:
