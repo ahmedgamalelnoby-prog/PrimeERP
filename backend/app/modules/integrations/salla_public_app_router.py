@@ -7,7 +7,7 @@ import os
 import requests
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -114,8 +114,8 @@ def establish_embedded_session(
 
 @router.get("/launch")
 def launch_from_salla(
-    current_user: User = __import__("fastapi").Depends(get_current_user),
-    db: Session = __import__("fastapi").Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     installation = db.scalar(
         select(SallaAppInstallation)
@@ -133,7 +133,7 @@ def launch_from_salla(
 
 
 @router.post("/sso/exchange")
-def exchange_sso_ticket(ticket: str, db: Session = __import__("fastapi").Depends(get_db)):
+def exchange_sso_ticket(ticket: str, db: Session = Depends(get_db)):
     if not ticket or len(ticket) > 128:
         raise HTTPException(400, "Invalid SSO ticket")
     try:
