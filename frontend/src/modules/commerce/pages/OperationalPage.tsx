@@ -4,7 +4,8 @@ import client from "@/shared/api/client";
 import "@/shared/api/interceptors";
 
 type Row = Record<string, unknown>;
-const config: Record<string, { title: string; endpoint: string; kind: "partners" | "documents" | "shipping" }> = {
+type RouteConfig = { title: string; endpoint: string; kind: "partners" | "documents" | "shipping"; partnerType?: "customer" | "supplier"; documentKind?: "sale" | "purchase" };
+const config: Record<string, RouteConfig> = {
   "/customers": { title: "العملاء", endpoint: "/commerce/partners", kind: "partners", partnerType: "customer" },
   "/purchasing/suppliers": { title: "الموردون", endpoint: "/commerce/partners", kind: "partners", partnerType: "supplier" },
   "/sales/quotations": { title: "عروض المبيعات", endpoint: "/commerce/sales/documents", kind: "documents" },
