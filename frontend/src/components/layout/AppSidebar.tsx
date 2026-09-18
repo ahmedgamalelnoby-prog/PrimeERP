@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 
 import {
-  findNavigationParent,
   getVisibleNavigationItems,
   isNavigationItemActive,
   type NavigationItem,
@@ -115,12 +114,6 @@ function NavigationNode({
 export default function AppSidebar({ open, onClose }: AppSidebarProps) {
   const location = useLocation();
   const navigation = getVisibleNavigationItems();
-  const parent = findNavigationParent(location.pathname);
-
-  useEffect(() => {
-    if (!parent) return;
-  }, [parent]);
-
   return (
     <>
       {open && (
