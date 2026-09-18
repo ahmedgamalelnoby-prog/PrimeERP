@@ -21,6 +21,7 @@ from app.modules.identity.models import User
 from app.modules.reports.models import ReportDefinition, ReportDelivery
 from app.modules.accounting.reports.service import financial_report_service
 from app.modules.reports.worker import calculate_next_run
+from app.modules.platform.module_registry import REGISTRY_VERSION, knowledge_context
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -116,15 +117,15 @@ def _deterministic_analysis(metrics: dict[str, Any]) -> dict[str, Any]:
 def _ai_analysis(request: AIAnalysisRequest) -> dict[str, Any]:
     fallback = _deterministic_analysis(request.metrics)
     if not settings.OPENAI_API_KEY:
-        return {**fallback, "ai_provider": "not_configured"}
-    prompt = "You are PrimeERP's financial and operational analyst. Analyze the supplied ERP metrics. Do not invent missing values. Return strict JSON with keys executive_summary, risks, recommendations, questions_for_controller. Domain=" + request.domain + "\nMetrics=" + json.dumps(request.metrics, ensure_ascii=False, default=str) + ("\nQuestion=" + request.question if request.question else "")
+        return {**fallback, "ai_provider": "not_configured", "knowledge_version": REGISTRY_VERSION}
+    prompt = "You are PrimeERP's financial and operational analyst. Analyze only supplied live metrics and current module knowledge. Do not invent missing values, features, policies or implementation status. Return strict JSON with keys executive_summary, risks, recommendations, questions_for_controller. Knowledge version=" + REGISTRY_VERSION + " Modules=" + knowledge_context() + " Domain=" + request.domain + "\nMetrics=" + json.dumps(request.metrics, ensure_ascii=False, default=str) + ("\nQuestion=" + request.question if request.question else "")
     try:
-        response = requests.post(f"{settings.OPENAI_BASE_URL.rstrip('/')}/chat/completions", headers={"Authorization": f"Bearer {settings.OPENAI_API_KEY}", "Content-Type": "application/json"}, json={"model": settings.AI_MODEL, "messages": [{"role": "user", "content": prompt}], "temperature": 0.1, "response_format": {"type": "json_object"}}, timeout=60)
+        response = requests.post(f"{settings.OPENAI_BASE_URL.rstrip('/')}/chat/completions", headers={"Authorization": f"Bearer {settings.OPENAI_API_KEY}", "Content-Type": "application/json"}, json={"model": settings.AI_MODEL, "messages": [{"role": "user", "content": prompt}], "temperature": 0.1, "max_tokens": settings.AI_MAX_OUTPUT_TOKENS, "response_format": {"type": "json_object"}}, timeout=60)
         response.raise_for_status()
         content = response.json()["choices"][0]["message"]["content"]
-        return {"engine": "llm", "ai_provider": "openai_compatible", "analysis": json.loads(content), "rule_checks": fallback}
+        return {"engine": "llm", "ai_provider": "openai_compatible", "knowledge_version": REGISTRY_VERSION, "analysis": json.loads(content), "rule_checks": fallback}
     except (requests.RequestException, KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
-        return {**fallback, "ai_provider": "fallback_after_provider_error", "provider_error": str(exc)[:500]}
+        return {**fallback, "ai_provider": "fallback_after_provider_error", "knowledge_version": REGISTRY_VERSION, "provider_error": str(exc)[:500]}
 
 
 @router.post("/preview")
