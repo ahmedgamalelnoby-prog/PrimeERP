@@ -16,9 +16,9 @@ from app.core.config import settings
 from app.core.security import create_access_token
 from app.modules.companies.models import Company
 from app.modules.identity.models import User
-from app.modules.saas.models import Subscription, SubscriptionPlan, Tenant
+from app.modules.saas.models import Subscription, SubscriptionPlan, Tenant, TenantModule
 from app.modules.saas.schemas import TenantRegistrationRequest
-from app.modules.saas.service import register_trial_tenant
+from app.modules.saas.service import register_trial_tenant, resolve_enabled_modules
 
 from .models import IntegrationConnection
 from .salla_public_app_models import SallaAppInstallation, SallaSSOTicket
@@ -351,6 +351,21 @@ def _activate_primeerp_subscription(db: Session, installation: SallaAppInstallat
         tenant.is_active = True
         tenant.is_trial = False
         tenant.trial_ends_at = None
+        modules = resolve_enabled_modules(db, plan, tenant.business_type)
+        enabled_ids = {module.id for module in modules}
+        for module in modules:
+            row = db.scalar(select(TenantModule).where(TenantModule.tenant_id == tenant.id, TenantModule.module_id == module.id))
+            if row is None:
+                db.add(TenantModule(tenant_id=tenant.id, module_id=module.id, is_enabled=True, starts_at=start, ends_at=end))
+            else:
+                row.is_enabled = True
+                row.starts_at = row.starts_at or start
+                row.ends_at = end
+        if enabled_ids:
+            stale = db.scalars(select(TenantModule).where(TenantModule.tenant_id == tenant.id, TenantModule.is_enabled.is_(True))).all()
+            for row in stale:
+                if row.module_id not in enabled_ids and row.ends_at is not None and row.ends_at <= start:
+                    row.is_enabled = False
 
 
 def _deactivate_primeerp_subscription(db: Session, installation: SallaAppInstallation, status: str) -> None:
