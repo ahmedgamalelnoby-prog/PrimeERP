@@ -1,16 +1,51 @@
 import { useEffect, useState } from "react";
-import { embedded } from "@salla.sa/embedded-sdk";
 import env from "@/shared/config/env";
 import { storage } from "@/shared/utils/storage";
+
+type SallaEmbedded = {
+  init: (options?: { debug?: boolean }) => Promise<unknown>;
+  auth: { getToken: () => string | null };
+  ready: () => void;
+  destroy: () => void;
+};
+
+declare global {
+  interface Window {
+    Salla?: { embedded?: SallaEmbedded };
+  }
+}
+
+const SDK_URL = "https://unpkg.com/@salla.sa/embedded-sdk/dist/umd/index.js";
+
+function loadSallaSdk(): Promise<SallaEmbedded> {
+  return new Promise((resolve, reject) => {
+    if (window.Salla?.embedded) {
+      resolve(window.Salla.embedded);
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = SDK_URL;
+    script.async = true;
+    script.onload = () => {
+      const embedded = window.Salla?.embedded;
+      if (embedded) resolve(embedded);
+      else reject(new Error("Salla Embedded SDK did not initialize."));
+    };
+    script.onerror = () => reject(new Error("Unable to load Salla Embedded SDK."));
+    document.head.appendChild(script);
+  });
+}
 
 export default function SallaEmbeddedPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
+    let embedded: SallaEmbedded | undefined;
 
     const bootstrap = async () => {
       try {
+        embedded = await loadSallaSdk();
         await embedded.init({ debug: false });
         const token = embedded.auth.getToken();
         if (!token) throw new Error("Salla session token is missing.");
@@ -37,9 +72,7 @@ export default function SallaEmbeddedPage() {
           { method: "POST" },
         );
 
-        if (!exchange.ok) {
-          throw new Error("PrimeERP SSO exchange failed.");
-        }
+        if (!exchange.ok) throw new Error("PrimeERP SSO exchange failed.");
 
         const session = await exchange.json();
         if (!session?.access_token) {
@@ -54,15 +87,14 @@ export default function SallaEmbeddedPage() {
         console.error("Salla embedded bootstrap failed:", cause);
         setError(cause instanceof Error ? cause.message : "Unable to connect to Salla.");
         try {
-          embedded.destroy();
+          embedded?.destroy();
         } catch {
-          // The SDK may already be destroyed or unavailable during local development.
+          // Ignore SDK teardown errors.
         }
       }
     };
 
     void bootstrap();
-
     return () => {
       mounted = false;
     };
