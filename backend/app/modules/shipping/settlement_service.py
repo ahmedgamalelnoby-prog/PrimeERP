@@ -53,8 +53,8 @@ class ShippingSettlementService:
         fully_reconciled = True
         for line in payload.lines:
             shipment = by_id[line.shipment_id]
-            if shipment.status not in {"delivered", "returned"}:
-                raise ValueError(f"Shipment {shipment.id} is not eligible for settlement")
+            if shipment.status != "delivered":
+                raise ValueError(f"Shipment {shipment.id} must be delivered before COD settlement")
             if db.scalar(select(ShippingShipmentSettlement.id).where(ShippingShipmentSettlement.shipment_id == shipment.id)):
                 raise ValueError(f"Shipment {shipment.id} is already settled")
             expected = Decimal(shipment.cod_amount or 0)
