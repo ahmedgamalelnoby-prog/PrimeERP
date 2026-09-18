@@ -68,7 +68,7 @@ export default function ShippingPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={()=>void load()} disabled={loading}><RefreshCw className="me-2 size-4"/>تحديث</Button>
-          <Button variant="outline" onClick={()=>window.location.assign("/shipping/settings")}><ExternalLink className="me-2 size-4"/>حالات الشحن</Button>
+          <Button variant="outline" onClick={()=>window.location.assign("/shipping/pricing")}><Calculator className="me-2 size-4"/>تسعير الشحن</Button><Button variant="outline" onClick={()=>window.location.assign("/shipping/settings")}><ExternalLink className="me-2 size-4"/>حالات الشحن</Button>
         </div>
       </div>
 
@@ -90,7 +90,7 @@ export default function ShippingPage() {
         <Card className="rounded-2xl"><CardHeader><CardTitle>عقود / Profiles التسعير</CardTitle></CardHeader><CardContent className="space-y-3">
           {carrierProfiles.map(p=><div key={p.id} className="rounded-xl border bg-white p-4"><div className="font-bold">{p.name}</div><div className="mt-1 text-xs text-slate-500">من {p.effective_from}{p.effective_to?` إلى ${p.effective_to}`:""} · أولوية {p.priority}</div></div>)}
           <div className="grid gap-2 sm:grid-cols-[1fr_150px_90px_auto]"><Input placeholder="اسم العقد" value={newProfile.name} onChange={e=>setNewProfile({...newProfile,name:e.target.value})}/><Input type="date" value={newProfile.effective_from} onChange={e=>setNewProfile({...newProfile,effective_from:e.target.value})}/><Input type="number" value={newProfile.priority} onChange={e=>setNewProfile({...newProfile,priority:e.target.value})}/><Button onClick={()=>void createProfile()} disabled={!selectedCarrier}><Plus className="size-4"/></Button></div>
-          {selectedCarrier&&<div className="text-xs text-slate-500">بعد إنشاء الـProfile، أضف قواعد الوزن/المنطقة/COD/الـtier من API أو شاشة إعدادات التسعير القادمة.</div>}
+          {selectedCarrier&&<div className="text-xs text-slate-500">بعد إنشاء الـProfile، افتح «تسعير الشحن» لإضافة قواعد الوزن/المنطقة/COD/الـtier والمرتجع والتخزين.</div>}
         </CardContent></Card>
       </div>
 
