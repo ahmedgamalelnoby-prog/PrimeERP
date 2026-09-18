@@ -94,3 +94,23 @@ def withdraw(cheque_id: int, payload: ChequeAction, current_user: User = Depends
     _company(db, payload.company_id, current_user); cheque = _get_cheque(db, payload.company_id, cheque_id)
     try: obj = withdraw_cheque(db, cheque, payload.event_date or date.today(), current_user.id, payload.reference, payload.notes); db.commit(); db.refresh(obj); return obj
     except ValueError as exc: db.rollback(); raise HTTPException(400, str(exc)) from exc
+
+
+@router.post("/cheques/{cheque_id}/cancel", response_model=ChequeResponse, dependencies=[Depends(require_permission("treasury.write"))])
+def cancel(cheque_id: int, payload: ChequeAction, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company(db, payload.company_id, current_user); cheque = _get_cheque(db, payload.company_id, cheque_id)
+    try:
+        obj = transition_cheque(db, cheque, "cancelled", payload.event_date or date.today(), current_user.id, "cancelled", payload.reference, payload.notes)
+        db.commit(); db.refresh(obj); return obj
+    except ValueError as exc:
+        db.rollback(); raise HTTPException(400, str(exc)) from exc
+
+
+@router.post("/cheques/{cheque_id}/reverse", response_model=ChequeResponse, dependencies=[Depends(require_permission("treasury.post"))])
+def reverse(cheque_id: int, payload: ChequeAction, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company(db, payload.company_id, current_user); cheque = _get_cheque(db, payload.company_id, cheque_id)
+    try:
+        obj = transition_cheque(db, cheque, "reversed", payload.event_date or date.today(), current_user.id, "reversed", payload.reference, payload.notes)
+        db.commit(); db.refresh(obj); return obj
+    except ValueError as exc:
+        db.rollback(); raise HTTPException(400, str(exc)) from exc
