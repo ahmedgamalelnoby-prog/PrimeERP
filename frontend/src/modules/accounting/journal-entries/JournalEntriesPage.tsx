@@ -38,7 +38,7 @@ async function loadEntries(companyId: number): Promise<JournalEntry[]> {
 }
 
 export default function JournalEntriesPage() {
-  const [companyId, setCompanyId] = useState(1);
+  const [companyId, setCompanyId] = useState(() => { const n = Number(localStorage.getItem("company_id")); return Number.isInteger(n) && n > 0 ? n : 0; });
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,6 +54,7 @@ export default function JournalEntriesPage() {
 
   useEffect(() => {
     let active = true;
+    if (!companyId) { setEntries([]); setLoading(false); setError("اختر شركة فعالة أولاً."); return; }
     setLoading(true);
     setError(null);
     loadEntries(companyId)
@@ -101,7 +102,7 @@ export default function JournalEntriesPage() {
               type="number"
               min={1}
               value={companyId}
-              onChange={(event) => setCompanyId(Number(event.target.value) || 1)}
+              onChange={(event) => setCompanyId(Number(event.target.value) || 0)}
               className="w-28 rounded-lg border bg-background px-3 py-2"
             />
           </label>
