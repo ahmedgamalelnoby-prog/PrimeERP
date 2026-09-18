@@ -63,7 +63,6 @@ class Shipment(Base):
     notes = Column(Text)
 
     __table_args__ = (
-        CheckConstraint("status IN ('pending','preparing','packing','picked_up','shipped','in_transit','out_for_delivery','delivering','returning','delivered','returned','cancelled')", name="ck_shipment_status"),
         CheckConstraint("cod_amount >= 0", name="ck_shipment_cod"),
         CheckConstraint("shipping_fee >= 0", name="ck_shipment_fee"),
     )
