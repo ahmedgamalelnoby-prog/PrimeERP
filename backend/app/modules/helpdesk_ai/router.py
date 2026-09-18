@@ -10,6 +10,9 @@ from pydantic import BaseModel, Field
 from app.core.config import settings
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
+from app.core.database.session import get_db
+from sqlalchemy.orm import Session
+from app.modules.identity.tenant import get_effective_tenant_id
 
 router = APIRouter(prefix="/helpdesk", tags=["helpdesk"])
 
@@ -25,6 +28,7 @@ PrimeERP also provides AI business analytics and scheduled report delivery by em
 """
 
 class HelpdeskQuestion(BaseModel):
+    company_id: int | None = Field(default=None, gt=0)
     question: str = Field(min_length=2, max_length=4000)
     language: str = Field(default="ar", pattern="^(ar|en)$")
     conversation: list[dict[str, str]] = Field(default_factory=list, max_length=20)
@@ -94,5 +98,14 @@ PRODUCT CONTEXT:
         raise HTTPException(status_code=503, detail="AI help desk is temporarily unavailable") from exc
 
 @router.post("/ai/answer", response_model=HelpdeskAnswer)
-def answer_helpdesk(request: HelpdeskQuestion, current_user: User = Depends(get_current_user)) -> HelpdeskAnswer:
+def answer_helpdesk(
+    request: HelpdeskQuestion,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> HelpdeskAnswer:
+    if request.company_id is not None:
+        from app.models.company import Company
+        company = db.get(Company, request.company_id)
+        if company is None or getattr(company, "tenant_id", None) != get_effective_tenant_id(current_user):
+            raise HTTPException(status_code=404, detail="Company not found")
     return _ask_ai(request)
