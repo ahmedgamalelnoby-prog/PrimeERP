@@ -213,11 +213,13 @@ def shipment(payload: ShipmentCreate, current_user: User = Depends(get_current_u
 
 
 @router.get("/shipments", response_model=list[ShipmentResponse])
-def shipments(company_id: int = Query(..., gt=0), status: str | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def shipments(company_id: int = Query(..., gt=0), status: str | None = None, carrier_id: int | None = Query(default=None, gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
     stmt = select(Shipment).where(Shipment.company_id == company_id)
     if status:
         stmt = stmt.where(Shipment.status == status)
+    if carrier_id:
+        stmt = stmt.where(Shipment.carrier_id == carrier_id)
     return list(db.scalars(stmt.order_by(Shipment.id.desc())).all())
 
 
