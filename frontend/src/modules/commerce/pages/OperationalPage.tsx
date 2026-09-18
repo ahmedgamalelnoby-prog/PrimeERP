@@ -5,10 +5,12 @@ import "@/shared/api/interceptors";
 
 type Row = Record<string, unknown>;
 const config: Record<string, { title: string; endpoint: string; kind: "partners" | "documents" | "shipping" }> = {
-  "/customers": { title: "العملاء والموردون", endpoint: "/commerce/partners", kind: "partners" },
+  "/customers": { title: "العملاء", endpoint: "/commerce/partners", kind: "partners", partnerType: "customer" },
+  "/purchasing/suppliers": { title: "الموردون", endpoint: "/commerce/partners", kind: "partners", partnerType: "supplier" },
   "/sales/quotations": { title: "عروض المبيعات", endpoint: "/commerce/sales/documents", kind: "documents" },
-  "/sales/orders": { title: "طلبات المبيعات", endpoint: "/commerce/sales/documents", kind: "documents" },
-  "/purchases/orders": { title: "طلبات المشتريات", endpoint: "/commerce/purchases/documents", kind: "documents" },
+  "/sales/orders": { title: "طلبات المبيعات", endpoint: "/commerce/sales/documents", kind: "documents", documentKind: "sale" },
+  "/sales/invoices": { title: "فواتير المبيعات", endpoint: "/commerce/sales/documents", kind: "documents", documentKind: "sale" },
+  "/purchases/orders": { title: "طلبات المشتريات", endpoint: "/commerce/purchases/documents", kind: "documents", documentKind: "purchase" },
   "/shipping": { title: "الشحن واللوجستيات", endpoint: "/shipping/carriers", kind: "shipping" },
 };
 
@@ -31,7 +33,7 @@ export default function OperationalPage() {
   const [partnerId, setPartnerId] = useState("");
   const [itemId, setItemId] = useState("");
   const [number, setNumber] = useState("");
-  const [type, setType] = useState(path.startsWith("/purchases") ? "order" : path.includes("quotations") ? "quotation" : "order");
+  const [type, setType] = useState(path === "/sales/invoices" ? "invoice" : path.startsWith("/purchases") ? "order" : path.includes("quotations") ? "quotation" : "order");
   const [amount, setAmount] = useState("");
   const companyId = selectedCompanyId();
   const query = useMemo(() => companyId ? `?company_id=${companyId}` : "", [companyId]);
@@ -46,7 +48,7 @@ export default function OperationalPage() {
       return;
     }
     try {
-      const r = await client.get(`${meta.endpoint}${query}`);
+      const r = await client.get(`${meta.endpoint}${query}${meta.partnerType ? `&partner_type=${meta.partnerType}` : ""}`);
       setRows(Array.isArray(r.data) ? r.data : []);
     } catch (e: any) {
       setError(e?.response?.data?.detail || "تعذر تحميل البيانات");
@@ -67,7 +69,7 @@ export default function OperationalPage() {
     setError("");
     try {
       if (meta.kind === "partners") {
-        await client.post("/commerce/partners", { company_id: companyId, code, name, partner_type: "customer" });
+        await client.post("/commerce/partners", { company_id: companyId, code, name, partner_type: meta.partnerType || "customer" });
       } else if (meta.kind === "documents") {
         await client.post(meta.endpoint, {
           company_id: companyId,
