@@ -1,3 +1,6 @@
+from datetime import date
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -13,7 +16,10 @@ from app.modules.identity.models import User
 from app.modules.saas.entitlements import require_module
 from app.modules.commerce.models import SalesDocument
 from app.modules.shipping.models import ShippingCarrier, ShippingMethod, Shipment
+from app.modules.shipping.cost_models import ShippingShipmentCost
 from app.modules.shipping.schemas import CarrierCreate, CarrierResponse, MethodCreate, MethodResponse, ShipmentCreate, ShipmentResponse
+from app.modules.shipping.pricing_schemas import ShippingCostInput
+from app.modules.shipping.pricing_service import shipping_pricing_service
 
 router = APIRouter(prefix="/shipping", tags=["Shipping"], dependencies=[Depends(require_permission("shipping.access")), Depends(require_module("shipping"))])
 
@@ -122,8 +128,72 @@ def shipment(payload: ShipmentCreate, current_user: User = Depends(get_current_u
     fee = payload.shipping_fee if payload.shipping_fee > 0 else method_obj.base_fee
     if method_obj.payment_method in {"cod", "mixed"} and payload.cod_amount:
         fee += payload.cod_amount * method_obj.cod_fee_percent / 100
-    obj = Shipment(**payload.model_dump(), shipping_fee=fee)
-    db.add(obj); db.commit(); db.refresh(obj)
+
+    shipment_date = payload.shipment_date or date.today()
+    order_date = payload.order_date
+    if order_date is None and payload.sales_document_id is not None:
+        order_date = sales_document.document_date
+
+    pricing_result = None
+    try:
+        pricing_result = shipping_pricing_service.calculate(
+            db,
+            ShippingCostInput(
+                company_id=payload.company_id,
+                carrier_id=payload.carrier_id,
+                calculation_date=shipment_date,
+                zone_code=payload.zone_code,
+                weight_kg=payload.weight_kg,
+                pieces=payload.pieces,
+                order_value=payload.order_value,
+                cod_amount=payload.cod_amount,
+                cod_collected=payload.cod_collected,
+                card_amount=payload.card_amount,
+                remote_area=payload.remote_area,
+                storage_days=payload.storage_days,
+            ),
+        )
+        fee = pricing_result.total_cost
+    except ValueError:
+        pass
+
+    obj = Shipment(
+        company_id=payload.company_id,
+        carrier_id=payload.carrier_id,
+        method_id=payload.method_id,
+        sales_document_id=payload.sales_document_id,
+        tracking_no=payload.tracking_no,
+        cod_amount=payload.cod_amount,
+        shipping_fee=fee,
+        customer_name=payload.customer_name,
+        phone=payload.phone,
+        address=payload.address,
+        notes=payload.notes,
+    )
+    db.add(obj)
+    db.flush()
+
+    if pricing_result is not None:
+        db.add(ShippingShipmentCost(
+            shipment_id=obj.id,
+            profile_id=pricing_result.profile_id,
+            order_date=order_date,
+            shipment_date=shipment_date,
+            calculated_at=shipment_date,
+            base_shipping=pricing_result.base_shipping,
+            cod_fee=pricing_result.cod_fee,
+            cod_collected_fee=pricing_result.cod_collected_fee,
+            card_fee=pricing_result.card_fee,
+            remote_fee=pricing_result.surcharge_remote,
+            rto_fee=pricing_result.surcharge_rto,
+            exchange_fee=pricing_result.surcharge_exchange,
+            storage_fee=pricing_result.storage_fee,
+            other_fees=pricing_result.other_fees,
+            minimum_adjustment=pricing_result.minimum_adjustment,
+            total_cost=pricing_result.total_cost,
+            calculation_breakdown=json.dumps(pricing_result.breakdown, ensure_ascii=False),
+        ))
+    db.commit(); db.refresh(obj)
     return obj
 
 
