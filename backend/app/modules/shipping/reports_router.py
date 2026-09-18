@@ -59,7 +59,7 @@ def _ledger_for_shipment(db: Session, shipment_id: int):
         elif event.event_type == "reverse_cod_receivable":
             expected_cod -= amount
         elif event.event_type in {
-            "recognize_shipping_cost", "recognize_cod_fee", "recognize_card_fee",
+            "recognize_shipping_cost", "recognize_cod_fee", "recognize_payment_withdrawal_fee",
             "recognize_return_cost", "settlement_fee_adjustment",
         }:
             # Settlement adjustments can be positive (additional fee) or
