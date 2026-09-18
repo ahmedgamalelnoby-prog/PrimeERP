@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.modules.shipping.cost_models import ShippingShipmentCost
 from app.modules.shipping.models import Shipment
+from app.modules.shipping.pricing_schemas import ShippingCostInput
+from app.modules.shipping.pricing_service import shipping_pricing_service
 from app.modules.shipping.settlement_models import ShippingShipmentSettlement
 from app.modules.shipping.status_models import ShippingFinancialEvent, ShippingOrderStatus, ShippingStatusHistory
 
@@ -95,6 +97,19 @@ class ShippingStatusService:
         events: list[ShippingFinancialEvent] = []
         cost = db.scalar(select(ShippingShipmentCost).where(ShippingShipmentCost.shipment_id == shipment.id))
         cost_total = Decimal(cost.total_cost or 0) if cost else Decimal(shipment.shipping_fee or 0)
+        dynamic_return_cost = Decimal("0")
+        if new_status == "returned":
+            try:
+                priced = shipping_pricing_service.calculate(db, ShippingCostInput(
+                    company_id=shipment.company_id, carrier_id=shipment.carrier_id, calculation_date=changed_on,
+                    zone_code=shipment.zone_code, weight_kg=shipment.weight_kg, pieces=shipment.pieces,
+                    order_value=shipment.order_value, cod_amount=shipment.cod_amount, cod_collected=shipment.cod_collected,
+                    card_amount=shipment.card_amount, remote_area=shipment.remote_area, shipment_status="returned",
+                    storage_days=shipment.storage_days, exchange_requested=shipment.exchange_requested,
+                ))
+                dynamic_return_cost = Decimal(priced.surcharge_rto or 0)
+            except ValueError:
+                dynamic_return_cost = Decimal(cost.rto_fee or 0) if cost else Decimal("0")
         action_amounts = {
             "recognize_revenue": Decimal(shipment.order_value or 0),
             "recognize_shipping_revenue": Decimal(shipment.customer_shipping_fee or 0),
@@ -105,7 +120,7 @@ class ShippingStatusService:
             "reverse_revenue": Decimal(shipment.order_value or 0),
             "reverse_shipping_revenue": Decimal(shipment.customer_shipping_fee or 0),
             "reverse_cod_receivable": Decimal(shipment.cod_amount or 0),
-            "recognize_return_cost": (Decimal(cost.rto_fee or 0) if cost else Decimal("0")),
+            "recognize_return_cost": dynamic_return_cost,
         }
         roles = {
             "recognize_revenue": ("customer_receivable", "sales_revenue"),
