@@ -44,6 +44,7 @@ def _dump(status: ShippingOrderStatus):
         "name": status.name, "name_ar": status.name_ar, "parent_code": status.parent_code,
         "sort_order": status.sort_order, "is_active": status.is_active,
         "financial_actions": json.loads(status.financial_actions or "[]"),
+        "allowed_next_codes": json.loads(status.allowed_next_codes or "[]"),
     }
 
 
@@ -69,7 +70,7 @@ def create_status(payload: ShippingStatusCreate, current_user: User = Depends(ge
             raise HTTPException(422, f"Unknown next statuses: {sorted(unknown_next)}")
     if db.scalar(select(ShippingOrderStatus.id).where(ShippingOrderStatus.company_id == payload.company_id, ShippingOrderStatus.code == payload.code)):
         raise HTTPException(409, "Status code already exists")
-    obj = ShippingOrderStatus(**payload.model_dump(exclude={"financial_actions", "company_id"}), company_id=payload.company_id, financial_actions=json.dumps(payload.financial_actions))
+    obj = ShippingOrderStatus(**payload.model_dump(exclude={"financial_actions", "allowed_next_codes", "company_id"}), company_id=payload.company_id, financial_actions=json.dumps(payload.financial_actions), allowed_next_codes=json.dumps(payload.allowed_next_codes))
     db.add(obj); db.commit(); db.refresh(obj)
     return _dump(obj)
 
@@ -86,6 +87,7 @@ def update_status(status_id: int, payload: ShippingStatusCreate, current_user: U
     for key in ("code", "name", "name_ar", "parent_code", "sort_order", "is_active"):
         setattr(obj, key, getattr(payload, key))
     obj.financial_actions = json.dumps(payload.financial_actions)
+    obj.allowed_next_codes = json.dumps(payload.allowed_next_codes)
     db.commit(); db.refresh(obj)
     return _dump(obj)
 
