@@ -29,6 +29,9 @@ class SettlementLineResponse(BaseModel):
     expected_amount: Decimal
     collected_amount: Decimal
     carrier_fee: Decimal
+    cod_commission: Decimal
+    withdrawal_fee: Decimal
+    other_fee: Decimal
     net_amount: Decimal
     variance: Decimal
     reconciled: bool
