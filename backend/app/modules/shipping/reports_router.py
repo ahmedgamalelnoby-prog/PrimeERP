@@ -58,8 +58,13 @@ def _ledger_for_shipment(db: Session, shipment_id: int):
             expected_cod += amount
         elif event.event_type == "reverse_cod_receivable":
             expected_cod -= amount
-        elif event.event_type in {"recognize_shipping_cost", "recognize_cod_fee", "recognize_card_fee", "recognize_return_cost"}:
-            carrier_payable += amount
+        elif event.event_type in {
+            "recognize_shipping_cost", "recognize_cod_fee", "recognize_card_fee",
+            "recognize_return_cost", "settlement_fee_adjustment",
+        }:
+            # Settlement adjustments can be positive (additional fee) or
+            # reversal events (crediting back an estimated fee).
+            carrier_payable += -amount if event.is_reversal else amount
         elif event.event_type in {"recognize_revenue", "recognize_shipping_revenue"}:
             revenue += amount
         elif event.event_type in {"reverse_revenue", "reverse_shipping_revenue"}:
@@ -95,8 +100,9 @@ def carrier_position(company_id: int = Query(..., gt=0), carrier_id: int | None 
     result = []
     for bucket in by_carrier.values():
         # Positive means the carrier still owes the company. Negative means the
-        # company still owes the carrier. Carrier fees deducted from a remittance
-        # settle the corresponding carrier payable, so they are added back here.
+        # company still owes the carrier. The net remittance already reflects
+        # fees deducted by the carrier, while carrier-payable events represent
+        # the corresponding expenses; subtracting both avoids double counting.
         bucket["net_position"] = (
             bucket["cod_receivable"]
             - bucket["settled_net"]
