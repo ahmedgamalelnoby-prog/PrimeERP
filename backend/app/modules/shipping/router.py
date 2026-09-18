@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import datetime, time
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -193,7 +193,7 @@ def shipment(payload: ShipmentCreate, current_user: User = Depends(get_current_u
             profile_id=pricing_result.profile_id,
             order_date=order_date,
             shipment_date=shipment_date,
-            calculated_at=shipment_date,
+            calculated_at=datetime.combine(shipment_date, time.min),
             base_shipping=pricing_result.base_shipping,
             cod_fee=pricing_result.cod_fee,
             cod_collected_fee=pricing_result.cod_collected_fee,
