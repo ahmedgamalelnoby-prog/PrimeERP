@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import secrets
 import unicodedata
 import re
@@ -15,6 +16,7 @@ from app.core.config import settings
 from app.core.security import create_access_token
 from app.modules.companies.models import Company
 from app.modules.identity.models import User
+from app.modules.saas.models import Subscription, SubscriptionPlan, Tenant
 from app.modules.saas.schemas import TenantRegistrationRequest
 from app.modules.saas.service import register_trial_tenant
 
@@ -283,6 +285,90 @@ def get_salla_access_token(db: Session, connection: IntegrationConnection) -> st
     return token
 
 
+
+def _activate_primeerp_subscription(db: Session, installation: SallaAppInstallation, data: dict[str, Any]) -> None:
+    """Map a Salla paid plan event to a PrimeERP subscription plan."""
+    import json
+    try:
+        mapping = json.loads(os.getenv("SALLA_PLAN_MAP_JSON", "{}"))
+    except json.JSONDecodeError as exc:
+        raise SallaPublicAppError("SALLA_PLAN_MAP_JSON is invalid") from exc
+
+    candidates = [_text(data, "item_slug"), _text(data, "plan_name"), _text(data, "app_name")]
+    plan_code = next((str(mapping.get(value)).strip() for value in candidates if value and mapping.get(value)), None)
+    plan_code = plan_code or os.getenv("SALLA_DEFAULT_PLAN_CODE", "business").strip()
+    plan = db.scalar(select(SubscriptionPlan).where(SubscriptionPlan.code == plan_code, SubscriptionPlan.is_active.is_(True)))
+    if plan is None:
+        raise SallaPublicAppError(f"PrimeERP subscription plan '{plan_code}' is not configured")
+
+    external_id = _text(data, "subscription_id") or _text(data, "id")
+    existing = db.scalar(select(Subscription).where(
+        Subscription.external_provider == "salla",
+        Subscription.external_subscription_id == external_id,
+    )) if external_id else None
+
+    start = datetime.now(timezone.utc)
+    end = None
+    for key, target in (("start_date", "start"), ("end_date", "end")):
+        raw = _text(data, key)
+        if raw:
+            try:
+                value = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                if target == "start":
+                    start = value
+                else:
+                    end = value
+            except ValueError:
+                pass
+
+    if existing is None:
+        existing = Subscription(
+            tenant_id=installation.tenant_id,
+            plan_id=plan.id,
+            status="active",
+            billing_cycle="monthly",
+            starts_at=start,
+            ends_at=end,
+            trial_ends_at=None,
+            next_billing_date=end,
+            is_auto_renew=True,
+            external_provider="salla",
+            external_subscription_id=external_id,
+            notes=f"Salla App Store plan: {_text(data, 'plan_name') or _text(data, 'item_slug') or plan.code}",
+        )
+        db.add(existing)
+    else:
+        existing.plan_id = plan.id
+        existing.status = "active"
+        existing.starts_at = start
+        existing.ends_at = end
+        existing.next_billing_date = end
+        existing.is_auto_renew = True
+
+    tenant = db.get(Tenant, installation.tenant_id)
+    if tenant:
+        tenant.status = "active"
+        tenant.is_active = True
+        tenant.is_trial = False
+        tenant.trial_ends_at = None
+
+
+def _deactivate_primeerp_subscription(db: Session, installation: SallaAppInstallation, status: str) -> None:
+    subscription = db.scalar(select(Subscription).where(
+        Subscription.tenant_id == installation.tenant_id,
+        Subscription.external_provider == "salla",
+    ).order_by(Subscription.id.desc()))
+    if subscription:
+        subscription.status = status
+        subscription.is_auto_renew = False
+        if status == "canceled":
+            subscription.cancelled_at = datetime.now(timezone.utc)
+    tenant = db.get(Tenant, installation.tenant_id)
+    if tenant and status in {"expired", "canceled"}:
+        tenant.status = status
+        tenant.is_active = True
+
+
 def handle_app_event(db: Session, payload: dict[str, Any]) -> dict[str, Any]:
     event = str(payload.get("event") or "").strip().lower()
     merchant_id = _merchant_id(payload)
@@ -304,13 +390,18 @@ def handle_app_event(db: Session, payload: dict[str, Any]) -> dict[str, Any]:
                     connection.is_active = False
         elif event == "app.subscription.expired":
             installation.subscription_status = "expired"
+            _deactivate_primeerp_subscription(db, installation, "expired")
         elif event == "app.subscription.canceled":
             installation.subscription_status = "canceled"
+            _deactivate_primeerp_subscription(db, installation, "canceled")
         elif event in {"app.trial.expired", "app.trial.canceled"}:
             installation.subscription_status = event.rsplit(".", 1)[1]
+            _deactivate_primeerp_subscription(db, installation, event.rsplit(".", 1)[1])
     elif event in {"app.trial.started", "app.subscription.started", "app.subscription.renewed"}:
         installation.status = "active"
         installation.subscription_status = "trialing" if event == "app.trial.started" else "active"
+        if event in {"app.subscription.started", "app.subscription.renewed"} and _text(data, "item_type") in {None, "plan"}:
+            _activate_primeerp_subscription(db, installation, data)
         installation.subscription_id = _text(data, "subscription_id", "id") or installation.subscription_id
         installation.subscription_item_slug = _text(data, "item_slug") or installation.subscription_item_slug
         installation.trial_ends_at = None
