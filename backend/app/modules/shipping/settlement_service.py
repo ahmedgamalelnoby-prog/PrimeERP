@@ -92,6 +92,10 @@ class ShippingSettlementService:
                 "withdrawal_fee": Decimal(line.withdrawal_fee),
                 "other_fee": Decimal(line.other_fee),
             }
+            # If the carrier supplied only the legacy aggregate carrier_fee,
+            # preserve it as an actual "other" fee so it is still reconciled.
+            if breakdown_fee == 0 and declared_fee > 0:
+                actual_fee_parts["other_fee"] = declared_fee
             estimated_fee_parts = {
                 "cod_commission": estimated_cod_fee,
                 "withdrawal_fee": estimated_withdrawal_fee,
@@ -101,20 +105,15 @@ class ShippingSettlementService:
                 delta = actual_part - estimated_fee_parts[fee_key]
                 if delta == 0:
                     continue
+                expense_role = (
+                    "cod_commission_expense" if fee_key == "cod_commission"
+                    else "payment_withdrawal_fee_expense" if fee_key == "withdrawal_fee"
+                    else "shipping_other_fee_expense"
+                )
                 if delta > 0:
-                    debit_role, credit_role = (
-                        "cod_commission_expense" if fee_key == "cod_commission"
-                        else "payment_withdrawal_fee_expense" if fee_key == "withdrawal_fee"
-                        else "shipping_other_fee_expense",
-                        "carrier_payable",
-                    )
+                    debit_role, credit_role = expense_role, "carrier_payable"
                 else:
-                    debit_role, credit_role = (
-                        "carrier_payable",
-                        "cod_commission_expense" if fee_key == "cod_commission"
-                        else "payment_withdrawal_fee_expense" if fee_key == "withdrawal_fee"
-                        else "shipping_other_fee_expense",
-                    )
+                    debit_role, credit_role = "carrier_payable", expense_role
                 db.add(ShippingFinancialEvent(
                     company_id=payload.company_id, carrier_id=payload.carrier_id, shipment_id=shipment.id,
                     event_key=f"settlement_fee_adjustment:{payload.reference}:{fee_key}",
