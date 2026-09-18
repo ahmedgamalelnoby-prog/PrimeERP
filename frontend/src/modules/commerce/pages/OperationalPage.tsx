@@ -36,6 +36,9 @@ export default function OperationalPage() {
   const [number, setNumber] = useState("");
   const [type, setType] = useState(path === "/sales/invoices" ? "invoice" : path === "/purchasing/invoices" ? "bill" : path.startsWith("/purchases") ? "order" : path.includes("quotations") ? "quotation" : "order");
   const [amount, setAmount] = useState("");
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("bank");
+  const [payments, setPayments] = useState<Row[]>([]);
   const companyId = selectedCompanyId();
   const query = useMemo(() => companyId ? `?company_id=${companyId}` : "", [companyId]);
   const isSale = meta.endpoint === "/commerce/sales/documents";
@@ -60,6 +63,42 @@ export default function OperationalPage() {
     }
   }
 
+  async function loadPayments() {
+    if (!companyId || (!isSale && !isPurchase)) { setPayments([]); return; }
+    try {
+      const r = await client.get(`/commerce/payments?company_id=${companyId}&document_kind=${isSale ? "sale" : "purchase"}`);
+      setPayments(Array.isArray(r.data) ? r.data : []);
+    } catch { setPayments([]); }
+  }
+
+  async function recordPayment(id: number) {
+    if (!companyId || !paymentAmount) return;
+    setError("");
+    try {
+      await client.post(`/commerce/${isSale ? "sales" : "purchases"}/${id}/payments`, {
+        company_id: companyId,
+        document_id: id,
+        payment_date: new Date().toISOString().slice(0, 10),
+        amount: Number(paymentAmount),
+        method: paymentMethod,
+      });
+      setPaymentAmount("");
+      await Promise.all([load(), loadPayments()]);
+    } catch (e: any) { setError(e?.response?.data?.detail || "تعذر تسجيل الدفعة"); }
+  }
+
+  async function reversePayment(paymentId: number) {
+    if (!companyId) return;
+    setError("");
+    try {
+      await client.post(`/commerce/payments/${paymentId}/reverse`, {
+        company_id: companyId,
+        reversal_date: new Date().toISOString().slice(0, 10),
+      });
+      await Promise.all([load(), loadPayments()]);
+    } catch (e: any) { setError(e?.response?.data?.detail || "تعذر عكس الدفعة"); }
+  }
+
   async function load() {
     setLoading(true);
     setError("");
@@ -79,7 +118,7 @@ export default function OperationalPage() {
     }
   }
 
-  useEffect(() => { void load(); }, [meta.endpoint, query]);
+  useEffect(() => { void load(); void loadPayments(); }, [meta.endpoint, query]);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -137,7 +176,7 @@ export default function OperationalPage() {
       </form>
       <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
         <div className="flex items-center justify-between border-b p-4"><h2 className="font-semibold">السجلات</h2><button onClick={() => void load()} className="rounded-lg border px-3 py-1.5 text-sm">تحديث</button></div>
-        {loading ? <div className="p-8 text-center text-sm text-muted-foreground">جارٍ التحميل...</div> : rows.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">لا توجد سجلات.</div> : <div className="overflow-auto"><table className="w-full text-sm"><thead><tr className="border-b bg-muted/40">{Object.keys(rows[0]).slice(0, 8).map(k => <th key={k} className="whitespace-nowrap px-4 py-3 text-right font-semibold">{k}</th>)}{(isSale || isPurchase) && <th className="whitespace-nowrap px-4 py-3 text-right font-semibold">إجراءات</th>}</tr></thead><tbody>{rows.map((r, i) => <tr key={String(r.id ?? i)} className="border-b last:border-0">{Object.keys(rows[0]).slice(0, 8).map(k => <td key={k} className="whitespace-nowrap px-4 py-3">{String(r[k] ?? "—")}</td>)}{(isSale || isPurchase) && <td className="whitespace-nowrap px-4 py-3"><div className="flex gap-2"><button type="button" onClick={() => void actionDocument(Number(r.id), "confirm")} className="rounded border px-2 py-1 text-xs">اعتماد</button><button type="button" onClick={() => void actionDocument(Number(r.id), "inventory")} className="rounded border px-2 py-1 text-xs">مخزون</button></div></td>}</tr>)}</tbody></table></div>}
+        {loading ? <div className="p-8 text-center text-sm text-muted-foreground">جارٍ التحميل...</div> : rows.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">لا توجد سجلات.</div> : <div className="overflow-auto"><table className="w-full text-sm"><thead><tr className="border-b bg-muted/40">{Object.keys(rows[0]).slice(0, 8).map(k => <th key={k} className="whitespace-nowrap px-4 py-3 text-right font-semibold">{k}</th>)}{(isSale || isPurchase) && <th className="whitespace-nowrap px-4 py-3 text-right font-semibold">إجراءات</th>}</tr></thead><tbody>{rows.map((r, i) => <tr key={String(r.id ?? i)} className="border-b last:border-0">{Object.keys(rows[0]).slice(0, 8).map(k => <td key={k} className="whitespace-nowrap px-4 py-3">{String(r[k] ?? "—")}</td>)}{(isSale || isPurchase) && <td className="whitespace-nowrap px-4 py-3"><div className="flex gap-2"><button type="button" onClick={() => void actionDocument(Number(r.id), "confirm")} className="rounded border px-2 py-1 text-xs">اعتماد</button><button type="button" onClick={() => void actionDocument(Number(r.id), "inventory")} className="rounded border px-2 py-1 text-xs">مخزون</button><div className="mt-2 flex gap-1"><input type="number" min="0.01" step="0.01" value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} placeholder="مبلغ" className="w-20 rounded border px-1 py-1 text-xs" /><select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className="rounded border px-1 py-1 text-xs"><option value="bank">Bank</option><option value="cash">Cash</option><option value="cheque">Cheque</option><option value="transfer">Transfer</option></select><button type="button" onClick={() => void recordPayment(Number(r.id))} className="rounded border px-2 py-1 text-xs">دفع</button></div>{payments.filter(p => Number(p.document_id) === Number(r.id) && p.status === "posted").map(p => <button key={String(p.id)} type="button" onClick={() => void reversePayment(Number(p.id))} className="mt-1 block rounded border border-destructive/40 px-2 py-1 text-xs text-destructive">عكس دفعة {String(p.amount)}</button>)}</div></td>}</tr>)}</tbody></table></div>}
       </div>
     </div>
   </section>;
