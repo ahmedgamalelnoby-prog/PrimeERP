@@ -191,6 +191,7 @@ def handle_authorize_event(db: Session, payload: dict[str, Any]) -> dict[str, An
     installation.scope = _text(data, "scope")
     installation.token_type = _text(data, "token_type") or "bearer"
     installation.last_authorized_at = datetime.now(timezone.utc)
+    installation.salla_user_id = _text(merchant, "user_id", "id")
     installation.status = "active"
     installation.store_name = _text(merchant, "name", "store_name", "business_name")
     installation.store_domain = _text(merchant, "domain", "store_url", "url")
