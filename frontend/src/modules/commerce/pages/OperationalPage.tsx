@@ -11,6 +11,7 @@ const config: Record<string, { title: string; endpoint: string; kind: "partners"
   "/sales/orders": { title: "طلبات المبيعات", endpoint: "/commerce/sales/documents", kind: "documents", documentKind: "sale" },
   "/sales/invoices": { title: "فواتير المبيعات", endpoint: "/commerce/sales/documents", kind: "documents", documentKind: "sale" },
   "/purchases/orders": { title: "طلبات المشتريات", endpoint: "/commerce/purchases/documents", kind: "documents", documentKind: "purchase" },
+  "/purchasing/invoices": { title: "فواتير المشتريات", endpoint: "/commerce/purchases/documents", kind: "documents", documentKind: "purchase" },
   "/shipping": { title: "الشحن واللوجستيات", endpoint: "/shipping/carriers", kind: "shipping" },
 };
 
@@ -33,7 +34,7 @@ export default function OperationalPage() {
   const [partnerId, setPartnerId] = useState("");
   const [itemId, setItemId] = useState("");
   const [number, setNumber] = useState("");
-  const [type, setType] = useState(path === "/sales/invoices" ? "invoice" : path.startsWith("/purchases") ? "order" : path.includes("quotations") ? "quotation" : "order");
+  const [type, setType] = useState(path === "/sales/invoices" ? "invoice" : path === "/purchasing/invoices" ? "bill" : path.startsWith("/purchases") ? "order" : path.includes("quotations") ? "quotation" : "order");
   const [amount, setAmount] = useState("");
   const companyId = selectedCompanyId();
   const query = useMemo(() => companyId ? `?company_id=${companyId}` : "", [companyId]);
