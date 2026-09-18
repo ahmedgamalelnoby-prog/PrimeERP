@@ -5,6 +5,27 @@ from sqlalchemy.sql import func
 from app.database.base import Base
 
 
+class CatalogProduct(Base):
+    """Commercial Product identity; InventoryItem is the physical stock/cost identity."""
+    __tablename__ = "catalog_products"
+    id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    item_id = Column(Integer, ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False, index=True)
+    code = Column(String(80), nullable=False)
+    name_ar = Column(String(200), nullable=False)
+    name_en = Column(String(200), nullable=True)
+    product_kind = Column(String(30), nullable=False, default="manufactured")
+    is_sellable = Column(Boolean, nullable=False, default=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+    __table_args__ = (
+        UniqueConstraint("company_id", "code", name="uq_catalog_product_company_code"),
+        UniqueConstraint("company_id", "item_id", name="uq_catalog_product_company_item"),
+        CheckConstraint("product_kind IN ('manufactured','traded','assembled','bundle','service')", name="ck_catalog_product_kind"),
+    )
+    item = relationship("InventoryItem")
+
 class ProductCategory(Base):
     __tablename__ = "product_categories"
     id = Column(Integer, primary_key=True, index=True)
@@ -40,6 +61,7 @@ class ProductPrice(Base):
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     price_list_id = Column(Integer, ForeignKey("product_price_lists.id", ondelete="CASCADE"), nullable=False, index=True)
     product_id = Column(Integer, ForeignKey("inventory_items.id", ondelete="CASCADE"), nullable=False, index=True)
+    catalog_product_id = Column(Integer, ForeignKey("catalog_products.id", ondelete="RESTRICT"), nullable=True, index=True)
     sale_price = Column(Numeric(18, 4), nullable=False)
     min_quantity = Column(Numeric(18, 4), nullable=False, default=1)
     valid_from = Column(DateTime, nullable=False, server_default=func.now())
@@ -70,6 +92,7 @@ class Recipe(Base):
     id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     product_id = Column(Integer, ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False, index=True)
+    catalog_product_id = Column(Integer, ForeignKey("catalog_products.id", ondelete="RESTRICT"), nullable=True, index=True)
     code = Column(String(60), nullable=False)
     name_ar = Column(String(200), nullable=False)
     name_en = Column(String(200), nullable=True)
@@ -81,6 +104,7 @@ class Recipe(Base):
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
     __table_args__ = (UniqueConstraint("company_id", "code", "version", name="uq_recipe_company_code_version"), UniqueConstraint("company_id", "product_id", "version", name="uq_recipe_company_product_version"), CheckConstraint("yield_quantity > 0", name="ck_recipe_yield_positive"), CheckConstraint("waste_percentage >= 0 AND waste_percentage < 100", name="ck_recipe_waste_range"))
     product = relationship("InventoryItem")
+    catalog_product = relationship("CatalogProduct")
     lines = relationship("RecipeLine", back_populates="recipe", cascade="all, delete-orphan", order_by="RecipeLine.line_no")
 
 
