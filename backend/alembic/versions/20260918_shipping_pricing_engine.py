@@ -13,6 +13,18 @@ depends_on = None
 
 
 def upgrade():
+    op.add_column("shipments", sa.Column("order_date", sa.Date()))
+    op.add_column("shipments", sa.Column("shipment_date", sa.Date()))
+    op.add_column("shipments", sa.Column("zone_code", sa.String(80)))
+    op.add_column("shipments", sa.Column("weight_kg", sa.Numeric(18, 6), server_default="0", nullable=False))
+    op.add_column("shipments", sa.Column("pieces", sa.Numeric(18, 6), server_default="1", nullable=False))
+    op.add_column("shipments", sa.Column("order_value", sa.Numeric(18, 4), server_default="0", nullable=False))
+    op.add_column("shipments", sa.Column("cod_collected", sa.Numeric(18, 4), server_default="0", nullable=False))
+    op.add_column("shipments", sa.Column("card_amount", sa.Numeric(18, 4), server_default="0", nullable=False))
+    op.add_column("shipments", sa.Column("remote_area", sa.Boolean(), server_default=sa.false(), nullable=False))
+    op.add_column("shipments", sa.Column("storage_days", sa.Numeric(18, 6), server_default="0", nullable=False))
+    op.add_column("shipments", sa.Column("exchange_requested", sa.Boolean(), server_default=sa.false(), nullable=False))
+
     op.create_table(
         "shipping_pricing_profiles",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -91,3 +103,14 @@ def downgrade():
     op.drop_index("ix_shipping_pricing_profiles_carrier_id", table_name="shipping_pricing_profiles")
     op.drop_index("ix_shipping_pricing_profiles_company_id", table_name="shipping_pricing_profiles")
     op.drop_table("shipping_pricing_profiles")
+    op.drop_column("shipments", "exchange_requested")
+    op.drop_column("shipments", "storage_days")
+    op.drop_column("shipments", "remote_area")
+    op.drop_column("shipments", "card_amount")
+    op.drop_column("shipments", "cod_collected")
+    op.drop_column("shipments", "order_value")
+    op.drop_column("shipments", "pieces")
+    op.drop_column("shipments", "weight_kg")
+    op.drop_column("shipments", "zone_code")
+    op.drop_column("shipments", "shipment_date")
+    op.drop_column("shipments", "order_date")
