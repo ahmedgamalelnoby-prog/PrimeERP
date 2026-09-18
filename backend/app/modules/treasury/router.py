@@ -46,7 +46,7 @@ def list_all(company_id: int = Query(..., gt=0), status: str | None = None, dire
 @router.get("/cheques/withdrawable", response_model=list[ChequeResponse])
 def withdrawable(company_id: int = Query(..., gt=0), as_of: date | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company(db, company_id, current_user); as_of = as_of or date.today()
-    return [c for c in list_cheques(db, company_id, direction="received") if c.status not in {"withdrawn", "cancelled", "reversed"} and (c.cheque_date >= as_of or c.due_date >= as_of)]
+    return [c for c in list_cheques(db, company_id) if c.status not in {"withdrawn", "cancelled", "reversed"} and (c.cheque_date >= as_of or c.due_date >= as_of)]
 
 
 @router.get("/cheques/{cheque_id}/events", response_model=list[ChequeEventResponse])
