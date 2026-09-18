@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.modules.companies.models import Company
-from app.modules.catalog.models import ProductVariant
+from app.modules.catalog.models import CatalogProduct, ProductVariant
 from app.modules.inventory.items.models import InventoryItem
 from .models import IntegrationConnection, IntegrationProductMapping
 
@@ -43,6 +43,9 @@ def create_mapping(db: Session, *, company_id: int, connection_id: int, product_
                    sync_direction: str = "bidirectional"):
     _connection(db, company_id, connection_id)
     _product(db, company_id, product_id)
+    catalog_product = db.scalar(select(CatalogProduct).where(CatalogProduct.company_id == company_id, CatalogProduct.item_id == product_id, CatalogProduct.is_active.is_(True)))
+    if catalog_product is None:
+        raise ValueError("Commercial Product identity is required before external mapping")
     if variant_id is not None:
         _variant(db, company_id, variant_id, product_id)
     external_id = external_id.strip()
@@ -53,7 +56,7 @@ def create_mapping(db: Session, *, company_id: int, connection_id: int, product_
         raise ValueError("Invalid sync direction")
     entity_type = "variant" if variant_id is not None else "product"
     mapping = IntegrationProductMapping(company_id=company_id, connection_id=connection_id,
-                                        product_id=product_id, variant_id=variant_id, entity_type=entity_type,
+                                        product_id=product_id, catalog_product_id=catalog_product.id, variant_id=variant_id, entity_type=entity_type,
                                         external_id=external_id,
                                         external_sku=external_sku.strip() if external_sku else None,
                                         external_url=external_url.strip() if external_url else None,
