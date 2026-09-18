@@ -75,11 +75,19 @@ class ShippingPricingService:
         }
         breakdown = []
 
+        # Contract/tier volume is scoped to the selected pricing profile's
+        # effective period. The current shipment is the next unit in that
+        # period, so a tier of 1-500 applies through shipment 500.
+        volume_filters = [
+            Shipment.company_id == payload.company_id,
+            Shipment.carrier_id == payload.carrier_id,
+            Shipment.shipment_date.is_not(None),
+            Shipment.shipment_date >= profile.effective_from,
+        ]
+        if profile.effective_to is not None:
+            volume_filters.append(Shipment.shipment_date <= profile.effective_to)
         contract_units = db.scalar(
-            select(func.count(Shipment.id)).where(
-                Shipment.company_id == payload.company_id,
-                Shipment.carrier_id == payload.carrier_id,
-            )
+            select(func.count(Shipment.id)).where(*volume_filters)
         ) or 0
         contract_units = Decimal(contract_units)
 
