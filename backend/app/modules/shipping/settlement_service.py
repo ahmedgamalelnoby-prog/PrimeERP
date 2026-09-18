@@ -3,6 +3,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.modules.shipping.accounting_service import shipping_accounting_service
 from app.modules.shipping.models import ShippingCarrier, Shipment
 from app.modules.shipping.cost_models import ShippingShipmentCost
 from app.modules.shipping.settlement_models import ShippingSettlementBatch, ShippingShipmentSettlement
@@ -11,7 +12,7 @@ from app.modules.shipping.status_models import ShippingFinancialEvent
 
 
 class ShippingSettlementService:
-    def create_batch(self, db: Session, payload: SettlementBatchCreate) -> ShippingSettlementBatch:
+    def create_batch(self, db: Session, payload: SettlementBatchCreate, user_id: int | None = None) -> ShippingSettlementBatch:
         existing = db.scalar(select(ShippingSettlementBatch).where(
             ShippingSettlementBatch.company_id == payload.company_id,
             ShippingSettlementBatch.reference == payload.reference.strip(),
@@ -148,6 +149,23 @@ class ShippingSettlementService:
         batch.carrier_fees = fees
         batch.net_amount = gross - fees
         batch.status = "reconciled" if fully_reconciled else "open"
+        db.flush()
+        if user_id is None:
+            raise ValueError("User identity is required to post shipping settlement events")
+        events = db.scalars(select(ShippingFinancialEvent).where(
+            ShippingFinancialEvent.company_id == payload.company_id,
+            ShippingFinancialEvent.carrier_id == payload.carrier_id,
+            ShippingFinancialEvent.event_date == payload.settlement_date,
+        ).where(
+            ShippingFinancialEvent.event_key.like(f"settlement:{payload.reference}"),
+        )).all()
+        adjustment_events = db.scalars(select(ShippingFinancialEvent).where(
+            ShippingFinancialEvent.company_id == payload.company_id,
+            ShippingFinancialEvent.carrier_id == payload.carrier_id,
+            ShippingFinancialEvent.event_key.like(f"settlement_fee_adjustment:{payload.reference}:%"),
+        )).all()
+        for event in [*adjustment_events, *events]:
+            shipping_accounting_service.post_financial_event(db, event_id=event.id, user_id=user_id)
         db.flush()
         return batch
 
