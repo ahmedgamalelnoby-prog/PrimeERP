@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import PageHeader from "@/components/layout/PageHeader";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "/api/v1";
@@ -39,7 +39,7 @@ export default function JournalEntriesPage() {
 
   useEffect(() => { void loadEntries(); }, [companyId]);
 
-  const createDraft = async (event: React.FormEvent) => {
+  const createDraft = async (event: FormEvent) => {
     event.preventDefault();
     if (!companyId) { setError("اختر شركة فعالة أولاً."); return; }
     const amount = Number(createForm.amount);
