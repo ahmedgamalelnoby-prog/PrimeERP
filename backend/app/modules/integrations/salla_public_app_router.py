@@ -100,6 +100,7 @@ def establish_embedded_session(
     if not isinstance(data, dict) or data.get("merchant_id") is None:
         raise HTTPException(401, "Salla embedded token did not identify a merchant")
     merchant_id = str(data["merchant_id"])
+    salla_user_id = str(data.get("user_id")) if data.get("user_id") is not None else None
     installation = db.scalar(
         select(SallaAppInstallation).where(
             SallaAppInstallation.merchant_id == merchant_id,
@@ -108,6 +109,8 @@ def establish_embedded_session(
     )
     if installation is None or installation.user_id is None:
         raise HTTPException(409, "Salla store is not provisioned in PrimeERP yet")
+    if not salla_user_id or not installation.salla_user_id or salla_user_id != installation.salla_user_id:
+        raise HTTPException(403, "Salla user is not authorized for this PrimeERP installation")
     ticket = issue_sso_ticket(db, installation)
     return {"sso_ticket": ticket, "expires_in": 120, "merchant_id": merchant_id}
 
