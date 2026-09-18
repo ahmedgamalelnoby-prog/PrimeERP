@@ -117,6 +117,7 @@ jobs:
           python scripts/check_release_readiness.py
           python scripts/check_alembic_graph.py
           python scripts/check_product_architecture.py
+          python scripts/check_frontend_backend_alignment.py
 
       - name: Backend environment diagnostics
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
