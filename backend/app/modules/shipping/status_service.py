@@ -82,7 +82,10 @@ class ShippingStatusService:
             "reverse_cod_receivable": ("customer_receivable", "carrier_cod_receivable"),
             "recognize_return_cost": ("return_shipping_expense", "carrier_payable"),
         }
+        already_settled = db.scalar(select(ShippingShipmentSettlement.id).where(ShippingShipmentSettlement.shipment_id == shipment.id)) is not None
         for action in actions:
+            if action == "reverse_cod_receivable" and already_settled:
+                continue
             amount = action_amounts.get(action, Decimal("0"))
             if amount <= 0 or action not in roles:
                 continue
