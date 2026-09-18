@@ -8,6 +8,7 @@ class ProductBundle(Base):
     id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     product_id = Column(Integer, ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False, index=True)
+    catalog_product_id = Column(Integer, ForeignKey("catalog_products.id", ondelete="RESTRICT"), nullable=True, index=True)
     code = Column(String(60), nullable=False)
     name_ar = Column(String(200), nullable=False)
     name_en = Column(String(200), nullable=True)
