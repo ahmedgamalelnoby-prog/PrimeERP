@@ -64,7 +64,7 @@ class ShippingStatusService:
         cost_total = Decimal(cost.total_cost or 0) if cost else Decimal(shipment.shipping_fee or 0)
         action_amounts = {
             "recognize_revenue": Decimal(shipment.order_value or 0),
-            "recognize_shipping_cost": cost_total,
+            "recognize_shipping_cost": (Decimal(cost.base_shipping or 0) + Decimal(cost.surcharge_remote or 0) + Decimal(cost.surcharge_rto or 0) + Decimal(cost.surcharge_exchange or 0) + Decimal(cost.storage_fee or 0) + Decimal(cost.other_fees or 0) + Decimal(cost.minimum_adjustment or 0)) if cost else cost_total,
             "create_cod_receivable": Decimal(shipment.cod_amount or 0),
             "recognize_cod_fee": Decimal(cost.cod_fee or 0) + Decimal(cost.cod_collected_fee or 0) if cost else Decimal("0"),
             "recognize_card_fee": Decimal(cost.card_fee or 0) if cost else Decimal("0"),
