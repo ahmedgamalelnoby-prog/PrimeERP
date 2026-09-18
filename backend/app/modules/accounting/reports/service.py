@@ -1,11 +1,12 @@
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, select
 from sqlalchemy.orm import Session
 
 from app.modules.accounting.chart_of_accounts.models import AccountCombination, NaturalAccount
 from app.modules.accounting.journals.models import JournalEntry, JournalEntryLine
+from app.modules.companies.models import Company
 from app.modules.companies.models import Company
 from app.modules.accounting.reports.schemas import (
     FinancialSummaryResponse,
@@ -17,6 +18,11 @@ from app.modules.accounting.reports.schemas import (
 class FinancialReportService:
     """Read-only reporting boundary over posted journal entries."""
 
+    def _assert_company(self, db: Session, *, tenant_id: int, company_id: int) -> None:
+        company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == tenant_id))
+        if company is None:
+            raise ValueError("Company is outside the current tenant")
+
     def trial_balance(
         self,
         db: Session,
@@ -26,6 +32,7 @@ class FinancialReportService:
         from_date: date | None = None,
         to_date: date | None = None,
     ) -> TrialBalanceResponse:
+        self._assert_company(db, tenant_id=tenant_id, company_id=company_id)
         query = (
             db.query(
                 AccountCombination.id.label("account_combination_id"),
