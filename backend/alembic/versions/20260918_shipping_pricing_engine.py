@@ -1,13 +1,13 @@
 """add configurable shipping carrier pricing engine
 
 Revision ID: 20260918_shipping_pricing_engine
-Revises: 20260917_saas_functional_hardening
+Revises: 20260916_release_graph_absolute_merge
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = "20260918_shipping_pricing_engine"
-down_revision = "20260917_saas_functional_hardening"
+down_revision = "20260916_release_graph_absolute_merge"
 branch_labels = None
 depends_on = None
 
