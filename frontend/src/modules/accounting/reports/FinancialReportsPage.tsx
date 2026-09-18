@@ -16,13 +16,14 @@ type Summary = {
 const formatMoney = (value: string) => Number(value).toLocaleString("ar-EG", { maximumFractionDigits: 2 });
 
 export default function FinancialReportsPage() {
-  const [companyId, setCompanyId] = useState(1);
+  const [companyId, setCompanyId] = useState(() => { const n = Number(localStorage.getItem("company_id")); return Number.isInteger(n) && n > 0 ? n : 0; });
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
+    if (!companyId) { setSummary(null); setLoading(false); setError("اختر شركة فعالة أولاً."); return; }
     setLoading(true);
     setError(null);
     fetch(`${API_BASE}/accounting/reports/summary?company_id=${companyId}`)
@@ -63,7 +64,7 @@ export default function FinancialReportsPage() {
             type="number"
             min={1}
             value={companyId}
-            onChange={(event) => setCompanyId(Number(event.target.value) || 1)}
+            onChange={(event) => setCompanyId(Number(event.target.value) || 0)}
             className="w-28 rounded-lg border bg-background px-3 py-2"
           />
           {loading && <span className="text-muted-foreground">جاري التحديث...</span>}
