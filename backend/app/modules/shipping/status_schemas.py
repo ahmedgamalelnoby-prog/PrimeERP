@@ -12,6 +12,7 @@ class ShippingStatusCreate(BaseModel):
     sort_order: int = Field(default=0, ge=0)
     is_active: bool = True
     financial_actions: list[str] = Field(default_factory=list)
+    allowed_next_codes: list[str] = Field(default_factory=list)
 
 
 class ShippingStatusResponse(ShippingStatusCreate):
