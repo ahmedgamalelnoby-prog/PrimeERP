@@ -23,6 +23,8 @@ class FakeDB:
 
     def scalar(self, stmt):
         text = str(stmt)
+        if "count(" in text.lower():
+            return 0
         if "shipping_carriers" in text:
             return self.carrier
         return self.profile
