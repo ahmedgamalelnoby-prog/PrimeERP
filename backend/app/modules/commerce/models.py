@@ -47,6 +47,7 @@ class SalesLine(Base):
     id = Column(Integer, primary_key=True)
     document_id = Column(Integer, ForeignKey("sales_documents.id", ondelete="CASCADE"), nullable=False, index=True)
     item_id = Column(Integer, ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False, index=True)
+    catalog_product_id = Column(Integer, ForeignKey("catalog_products.id", ondelete="RESTRICT"), nullable=True, index=True)
     variant_id = Column(Integer, ForeignKey("product_variants.id", ondelete="RESTRICT"), nullable=True, index=True)
     tax_rate_id = Column(Integer, ForeignKey("tax_rates.id", ondelete="RESTRICT"), nullable=True, index=True)
     tax_rate_ids = Column(JSON, nullable=False, default=list)
