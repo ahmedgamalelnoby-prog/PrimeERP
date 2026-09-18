@@ -52,9 +52,8 @@ export default function JournalEntriesPage() {
       if (journalFilter) params.set("journal_id", journalFilter);
       if (fromDate) params.set("from_date", fromDate);
       if (toDate) params.set("to_date", toDate);
-      const response = await fetch(`${API_BASE}/accounting/journal-entries?${params.toString()}`);
-      if (!response.ok) throw new Error((await response.text()) || "تعذر تحميل القيود اليومية");
-      setEntries(await response.json() as JournalEntry[]);
+      const response = await client.get<JournalEntry[]>("/accounting/journal-entries",{params:Object.fromEntries(params)});
+      setEntries(response.data);
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : "تعذر تحميل البيانات");
     } finally { setLoading(false); }
@@ -65,14 +64,12 @@ export default function JournalEntriesPage() {
     if (!companyId) { setJournals([]); setAccounts([]); return; }
     setOptionsLoading(true);
     Promise.all([
-      client.get<JournalOption>("/accounting/journal-entries/journals",{params:{company_id:companyId}}),
+      client.get<JournalOption[]>("/accounting/journal-entries/journals",{params:{company_id:companyId}}),
       client.get<AccountOption[]>("/chart-of-accounts/combinations",{params:{company_id:companyId}}),
     ])
-      .then(async ([journalResponse, accountResponse]) => {
-        if (!journalResponse.ok) throw new Error((await journalResponse.text()) || "تعذر تحميل اليوميات المحاسبية");
-        if (!accountResponse.ok) throw new Error((await accountResponse.text()) || "تعذر تحميل الحسابات المحاسبية");
-        setJournals(await journalResponse.json() as JournalOption[]);
-        setAccounts(await accountResponse.json() as AccountOption[]);
+      .then(([journalResponse, accountResponse]) => {
+        setJournals(journalResponse.data);
+        setAccounts(accountResponse.data);
       })
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "تعذر تحميل بيانات المحاسبة"))
       .finally(() => setOptionsLoading(false));
@@ -88,9 +85,7 @@ export default function JournalEntriesPage() {
     if (required.some(key => !createForm[key].trim())) { setError("أكمل جميع بيانات القيد."); return; }
     setCreateBusy(true); setError(null);
     try {
-      const response = await fetch(`${API_BASE}/accounting/journal-entries`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      await client.post("/accounting/journal-entries",{
           company_id: companyId, branch_id: Number(createForm.branchId), journal_id: Number(createForm.journalId),
           fiscal_year_id: Number(createForm.fiscalYearId), period_id: Number(createForm.periodId),
           entry_number: createForm.entryNumber.trim(), entry_date: createForm.entryDate, description: createForm.description.trim(),
@@ -99,9 +94,7 @@ export default function JournalEntriesPage() {
             { account_combination_id: Number(createForm.creditAccountId), debit: 0, credit: amount },
           ],
           currency_code: "EGP", exchange_rate: 1,
-        }),
-      });
-      if (!response.ok) throw new Error((await response.text()) || "تعذر إنشاء مسودة القيد");
+        });
       setShowCreate(false);
       setCreateForm(current => ({ ...current, entryNumber: "", description: "", amount: "" }));
       await loadEntries();
@@ -113,11 +106,7 @@ export default function JournalEntriesPage() {
   const action = async (id: number, name: "submit" | "approve" | "post" | "cancel" | "reverse") => {
     setBusy(id); setError(null);
     try {
-      const response = await fetch(`${API_BASE}/accounting/journal-entries/${id}/${name}`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: name === "reverse" ? JSON.stringify({}) : undefined,
-      });
-      if (!response.ok) throw new Error((await response.text()) || "تعذر تنفيذ العملية");
+      await client.post(`/accounting/journal-entries/${id}/${name}`, name === "reverse" ? {} : undefined);
       await loadEntries();
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : "تعذر تنفيذ العملية");
@@ -127,9 +116,8 @@ export default function JournalEntriesPage() {
   const openDetails = async (id: number) => {
     setDetailsLoading(true); setError(null);
     try {
-      const response = await fetch(`${API_BASE}/accounting/journal-entries/${id}`);
-      if (!response.ok) throw new Error((await response.text()) || "تعذر تحميل تفاصيل القيد");
-      setDetails(await response.json() as JournalEntry);
+      const response = await client.get<JournalEntry>(`/accounting/journal-entries/${id}`);
+      setDetails(response.data);
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : "تعذر تحميل تفاصيل القيد");
     } finally { setDetailsLoading(false); }
