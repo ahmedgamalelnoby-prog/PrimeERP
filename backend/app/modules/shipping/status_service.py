@@ -19,7 +19,8 @@ DEFAULT_STATUSES = [
     ("packing", "Packing", "في التغليف", None, 30, []),
     ("shipped", "Shipped", "تم الشحن", None, 40, []),
     ("in_transit", "In Transit", "في الطريق", None, 50, []),
-    ("out_for_delivery", "Out for Delivery", "جاري التوصيل", None, 60, []),
+    ("delivering", "Delivering", "جاري التوصيل", None, 60, []),
+    ("out_for_delivery", "Out for Delivery", "خارج للتوصيل", "delivering", 61, []),
     ("delivered", "Delivered", "تم التسليم", None, 70, [
         "recognize_revenue", "recognize_shipping_revenue", "recognize_shipping_cost", "create_cod_receivable",
         "recognize_cod_fee", "recognize_card_fee"
@@ -35,11 +36,20 @@ DEFAULT_STATUSES = [
 class ShippingStatusService:
     def ensure_defaults(self, db: Session, company_id: int) -> None:
         existing = {x.code for x in db.scalars(select(ShippingOrderStatus).where(ShippingOrderStatus.company_id == company_id)).all()}
+        default_next = {
+            "pending": ["preparing", "cancelled"], "preparing": ["packing", "cancelled"],
+            "packing": ["shipped", "cancelled"], "shipped": ["in_transit", "cancelled"],
+            "in_transit": ["delivering", "out_for_delivery", "returning"],
+            "delivering": ["out_for_delivery", "delivered", "returning"],
+            "out_for_delivery": ["delivered", "returning"], "delivered": ["returning", "returned"],
+            "returning": ["returned", "delivered"], "returned": [], "cancelled": [], "picked_up": ["in_transit"],
+        }
         for code, name, name_ar, parent, sort_order, actions in DEFAULT_STATUSES:
             if code not in existing:
                 db.add(ShippingOrderStatus(company_id=company_id, code=code, name=name, name_ar=name_ar,
                                            parent_code=parent, sort_order=sort_order,
-                                           financial_actions=json.dumps(actions)))
+                                           financial_actions=json.dumps(actions),
+                                           allowed_next_codes=json.dumps(default_next.get(code, []))))
         db.flush()
 
     def apply_transition(self, db: Session, shipment: Shipment, new_status: str, changed_on: date | None = None) -> list[ShippingFinancialEvent]:
@@ -58,6 +68,9 @@ class ShippingStatusService:
         db.add(history)
         shipment.status = new_status
         db.flush()
+        allowed_next = json.loads((db.scalar(select(ShippingOrderStatus.allowed_next_codes).where(ShippingOrderStatus.company_id == shipment.company_id, ShippingOrderStatus.code == shipment.status)) or "[]"))
+        if new_status not in allowed_next:
+            raise ValueError(f"Invalid shipping status transition: {shipment.status} -> {new_status}")
         actions = json.loads(status.financial_actions or "[]")
         events: list[ShippingFinancialEvent] = []
         cost = db.scalar(select(ShippingShipmentCost).where(ShippingShipmentCost.shipment_id == shipment.id))
