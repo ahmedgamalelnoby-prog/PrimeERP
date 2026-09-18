@@ -3,7 +3,7 @@ import client from "@/shared/api/client";
 
 type Transfer={id:number;company_id:number;source_warehouse_id:number;destination_warehouse_id:number;reference:string;status:string;notes:string|null};
 export default function InventoryTransfersPage(){
- const [companyId,setCompanyId]=useState("1"),[items,setItems]=useState<Transfer[]>([]),[message,setMessage]=useState("");
+ const [companyId,setCompanyId]=useState(() => localStorage.getItem("company_id") || ""),[items,setItems]=useState<Transfer[]>([]),[message,setMessage]=useState("");
  const [form,setForm]=useState({source_warehouse_id:"",destination_warehouse_id:"",reference:"",item_id:"",source_location_id:"",destination_location_id:"",quantity:"",unit_cost:"0"});
  async function load(){try{const r=await client.get("/inventory/transfers",{params:{company_id:Number(companyId)}});setItems(r.data)}catch(e){setMessage(e instanceof Error?e.message:"تعذر تحميل التحويلات")}}
  useEffect(()=>{void load()},[]);
