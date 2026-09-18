@@ -72,18 +72,21 @@ def calculate_next_run(schedule: str, now: datetime | None = None) -> datetime:
         hour, minute = _parse_time(raw_time)
         if not 1 <= day <= 31:
             raise ValueError("Schedule day must be between 1 and 31")
-        months = [now.month + (3 if quarterly else 1)]
+            if quarterly:
+            quarter_start_month = ((now.month - 1) // 3) * 3 + 1
+            candidate = now.replace(month=quarter_start_month, day=min(day, 28), hour=hour, minute=minute, second=0, microsecond=0)
+            if candidate <= now:
+                month = quarter_start_month + 3
+                year = now.year + (month - 1) // 12
+                month = (month - 1) % 12 + 1
+                candidate = candidate.replace(year=year, month=month)
+            return candidate
         candidate = now.replace(day=min(day, 28), hour=hour, minute=minute, second=0, microsecond=0)
         if candidate <= now:
-            month = now.month + (3 if quarterly else 1)
+            month = now.month + 1
             year = now.year + (month - 1) // 12
             month = (month - 1) % 12 + 1
-            candidate = candidate.replace(year=year, month=month, day=min(day, 28))
-        elif quarterly and (now.month - 1) % 3 != 0:
-            month = now.month + (3 - (now.month - 1) % 3)
-            year = now.year + (month - 1) // 12
-            month = (month - 1) % 12 + 1
-            candidate = candidate.replace(year=year, month=month, day=min(day, 28))
+            candidate = candidate.replace(year=year, month=month)
         return candidate
     raise ValueError("Unsupported schedule. Use every, daily, weekly, monthly or quarterly grammar")
 
