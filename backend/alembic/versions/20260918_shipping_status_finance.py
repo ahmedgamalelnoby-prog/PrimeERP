@@ -13,6 +13,9 @@ depends_on = None
 
 
 def upgrade():
+    op.drop_constraint("ck_shipment_status", "shipments", type_="check")
+    op.create_check_constraint("ck_shipment_status", "shipments", "status IN ('pending','preparing','packing','picked_up','shipped','in_transit','out_for_delivery','delivering','returning','delivered','returned','cancelled')")
+
     op.create_table(
         "shipping_order_statuses",
         sa.Column("id", sa.Integer(), primary_key=True),
