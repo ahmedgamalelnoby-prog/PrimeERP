@@ -12,12 +12,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.security import create_access_token, get_password_hash
-from app.modules.branches.models import Branch
+from app.core.security import create_access_token
 from app.modules.companies.models import Company
 from app.modules.identity.models import User
-from app.modules.roles.models import Role
-from app.modules.saas.models import Tenant
 from app.modules.saas.schemas import TenantRegistrationRequest
 from app.modules.saas.service import register_trial_tenant
 
@@ -304,6 +301,12 @@ def handle_app_event(db: Session, payload: dict[str, Any]) -> dict[str, Any]:
                 connection = db.get(IntegrationConnection, installation.connection_id)
                 if connection:
                     connection.is_active = False
+        elif event == "app.subscription.expired":
+            installation.subscription_status = "expired"
+        elif event == "app.subscription.canceled":
+            installation.subscription_status = "canceled"
+        elif event in {"app.trial.expired", "app.trial.canceled"}:
+            installation.subscription_status = event.rsplit(".", 1)[1]
     elif event in {"app.trial.started", "app.subscription.started", "app.subscription.renewed"}:
         installation.status = "active"
         installation.subscription_status = "trialing" if event == "app.trial.started" else "active"
@@ -317,8 +320,6 @@ def handle_app_event(db: Session, payload: dict[str, Any]) -> dict[str, Any]:
                     installation.trial_ends_at = datetime.fromisoformat(end.replace("Z", "+00:00"))
                 except ValueError:
                     pass
-    elif event == "app.subscription.expired":
-        installation.subscription_status = "expired"
     elif event == "app.updated":
         installation.status = "active"
     db.commit()
