@@ -10,7 +10,6 @@ from app.core.config import settings
 from app.modules.platform.module_registry import MODULE_REGISTRY
 
 
-
 def main() -> None:
     keys = [str(item["key"]) for item in MODULE_REGISTRY]
     if len(keys) < 50:
@@ -29,13 +28,19 @@ def main() -> None:
         for path in scan_root.rglob("*"):
             if not path.is_file() or path.suffix not in {".py", ".ts", ".tsx"}:
                 continue
+            # Test fixtures commonly use company 1 as a deterministic fixture key.
+            # The product audit is intended to detect production fallbacks in app/src,
+            # not prohibit legitimate test data.
+            relative = path.relative_to(ROOT)
+            if "tests" in relative.parts or path.name.startswith("test_"):
+                continue
             try:
                 text = path.read_text(encoding="utf-8")
             except UnicodeDecodeError:
                 continue
             for token in forbidden:
                 if token in text:
-                    hits.append(f"{path.relative_to(ROOT)} contains {token!r}")
+                    hits.append(f"{relative} contains {token!r}")
     if hits:
         raise SystemExit("Hard-coded company fallback detected:\n" + "\n".join(hits))
 
