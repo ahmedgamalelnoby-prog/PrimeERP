@@ -18,7 +18,7 @@ from app.modules.shipping.status_service import shipping_status_service
 
 ALLOWED_FINANCIAL_ACTIONS = {
     "recognize_revenue", "recognize_shipping_revenue", "recognize_shipping_cost", "create_cod_receivable",
-    "recognize_cod_fee", "recognize_card_fee", "reverse_revenue", "reverse_shipping_revenue",
+    "recognize_cod_fee", "recognize_payment_withdrawal_fee", "reverse_revenue", "reverse_shipping_revenue",
     "reverse_cod_receivable", "recognize_return_cost",
 }
 
