@@ -29,6 +29,7 @@ def upgrade():
         sa.Column("sort_order", sa.Integer(), server_default="0", nullable=False),
         sa.Column("is_active", sa.Boolean(), server_default=sa.true(), nullable=False),
         sa.Column("financial_actions", sa.Text(), server_default="[]", nullable=False),
+        sa.Column("allowed_next_codes", sa.Text(), server_default="[]", nullable=False),
         sa.UniqueConstraint("company_id", "code", name="uq_shipping_order_status_company_code"),
         sa.CheckConstraint("sort_order >= 0", name="ck_shipping_order_status_sort"),
     )
