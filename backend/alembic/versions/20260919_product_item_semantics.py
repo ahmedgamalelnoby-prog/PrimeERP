@@ -177,7 +177,7 @@ def downgrade() -> None:
     op.drop_index("ix_product_bundle_lines_component_item_id", table_name="product_bundle_lines")
     op.drop_constraint("fk_product_bundle_lines_component_item", "product_bundle_lines", type_="foreignkey")
     op.drop_column("product_bundle_lines", "component_item_id")
-        op.drop_index("ix_recipes_catalog_product_id", table_name="recipes")
+    op.drop_index("ix_recipes_catalog_product_id", table_name="recipes")
     op.drop_constraint("fk_recipes_catalog_product", "recipes", type_="foreignkey")
     op.drop_column("recipes", "catalog_product_id")
     op.drop_index("ix_catalog_products_item_id", table_name="catalog_products")
