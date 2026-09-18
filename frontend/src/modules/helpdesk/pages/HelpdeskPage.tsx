@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
 interface Message { role: "user" | "assistant"; content: string; actions?: string[]; }
+interface Advice { summary:string; priorities:string[]; recommendations:string[]; next_steps:string[]; knowledge_version:string; ai_provider:string; }
 
 export default function HelpdeskPage() {
   const { i18n } = useTranslation();
@@ -15,6 +16,8 @@ export default function HelpdeskPage() {
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
+  const [advice, setAdvice] = useState<Advice | null>(null);
+  const [adviceLoading, setAdviceLoading] = useState(false);
   const companyId = Number(localStorage.getItem("company_id")) || 0;
 
   const ask = async (value = question) => {
@@ -39,6 +42,21 @@ export default function HelpdeskPage() {
     } catch {
       setMessages(current => [...current, { role: "assistant", content: text("تعذر الوصول إلى مساعد الذكاء الاصطناعي حاليًا. حاول مرة أخرى أو افتح تذكرة دعم.", "The AI assistant is temporarily unavailable. Please try again or open a support ticket.") }]);
     } finally { setLoading(false); }
+  };
+
+  const getAdvice = async () => {
+    if (!companyId || adviceLoading) return;
+    setAdviceLoading(true);
+    try {
+      const response = await client.post<Advice>("/helpdesk/ai/advice", {
+        company_id: companyId,
+        language: isArabic ? "ar" : "en",
+        focus: "general",
+      });
+      setAdvice(response.data);
+    } catch {
+      setMessages(current => [...current, { role: "assistant", content: text("تعذر إنشاء خطة التطوير الآن. تأكد من وجود بيانات الشركة ثم حاول مرة أخرى.", "Business advisory is temporarily unavailable. Verify the company data and try again.") }]);
+    } finally { setAdviceLoading(false); }
   };
 
   const prompts = isArabic
@@ -100,6 +118,17 @@ export default function HelpdeskPage() {
               <ul className="mt-4 space-y-3 text-sm text-slate-600">
                 {[text("شرح الموديولات ووظائفها", "Explain modules and their purpose"), text("شرح خطوات تنفيذ العمليات", "Guide users through workflows"), text("اقتراح المكان الصحيح داخل النظام", "Point to the right area of the system"), text("الإجابة بالعربية أو الإنجليزية", "Answer in Arabic or English")].map(item => <li key={item} className="flex gap-2"><CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600" />{item}</li>)}
               </ul>
+            </CardContent></Card>
+            <Card className="rounded-3xl border-violet-100 bg-violet-50/60 shadow-sm"><CardContent className="p-5">
+              <div className="flex items-center justify-between gap-3"><h3 className="font-bold text-violet-950">{text("مستشار تطوير الأعمال", "Business improvement advisor")}</h3><Sparkles className="size-4 text-violet-600" /></div>
+              <p className="mt-2 text-xs leading-6 text-violet-900/70">{text("حلل البيانات المالية الحالية واحصل على أولويات وتوصيات وخطوات قابلة للتنفيذ.", "Analyze the live financial snapshot and get priorities, recommendations and actionable next steps.")}</p>
+              <Button type="button" onClick={() => void getAdvice()} disabled={adviceLoading || !companyId} className="mt-4 w-full rounded-xl">{adviceLoading ? text("جارٍ التحليل...", "Analyzing...") : text("إنشاء خطة تطوير", "Create improvement plan")}</Button>
+              {advice && <div className="mt-4 space-y-3 border-t border-violet-200 pt-4 text-xs text-violet-950">
+                <p className="font-semibold leading-5">{advice.summary}</p>
+                <div><div className="font-bold">{text("الأولويات", "Priorities")}</div>{advice.priorities.map(x=><div key={x} className="mt-1">• {x}</div>)}</div>
+                <div><div className="font-bold">{text("التوصيات", "Recommendations")}</div>{advice.recommendations.slice(0,4).map(x=><div key={x} className="mt-1">• {x}</div>)}</div>
+                <div className="text-[10px] text-violet-700/70">Knowledge {advice.knowledge_version} · {advice.ai_provider}</div>
+              </div>}
             </CardContent></Card>
             <Card className="rounded-3xl border-blue-100 bg-blue-50/60 shadow-sm"><CardContent className="p-5"><h3 className="font-bold text-blue-950">{text("ملاحظة أمنية", "Security note")}</h3><p className="mt-2 text-xs leading-6 text-blue-900/70">{text("لا ترسل كلمة المرور أو Access Token أو مفاتيح API أو بيانات سرية للمساعد.", "Never send passwords, access tokens, API keys or other secrets to the assistant.")}</p></CardContent></Card>
           </div>
