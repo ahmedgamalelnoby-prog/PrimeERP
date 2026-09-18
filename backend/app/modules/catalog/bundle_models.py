@@ -23,6 +23,7 @@ class ProductBundleLine(Base):
     bundle_id = Column(Integer, ForeignKey("product_bundles.id", ondelete="CASCADE"), nullable=False, index=True)
     line_no = Column(Integer, nullable=False)
     component_product_id = Column(Integer, ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False, index=True)
+    component_item_id = Column(Integer, ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=True, index=True)
     quantity = Column(Numeric(18, 6), nullable=False)
     __table_args__ = (UniqueConstraint("bundle_id", "line_no", name="uq_product_bundle_line_no"), UniqueConstraint("bundle_id", "component_product_id", name="uq_product_bundle_component"), CheckConstraint("line_no > 0", name="ck_product_bundle_line_no_positive"), CheckConstraint("quantity > 0", name="ck_product_bundle_line_quantity_positive"))
     bundle = relationship("ProductBundle", back_populates="lines")
