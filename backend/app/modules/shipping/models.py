@@ -56,6 +56,7 @@ class Shipment(Base):
     exchange_requested = Column(Boolean, server_default="false", nullable=False)
     status = Column(String(30), server_default="pending", nullable=False)
     shipping_fee = Column(Numeric(18, 4), server_default="0", nullable=False)
+    customer_shipping_fee = Column(Numeric(18, 4), server_default="0", nullable=False)
     customer_name = Column(String(200), nullable=False)
     phone = Column(String(50))
     address = Column(Text)
