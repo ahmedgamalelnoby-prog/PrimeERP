@@ -10,9 +10,9 @@ from pydantic import BaseModel, Field
 from app.core.config import settings
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
-from app.core.database.session import get_db
+from app.database.session import get_db
 from sqlalchemy.orm import Session
-from app.modules.identity.tenant import get_effective_tenant_id
+from app.core.context import get_effective_tenant_id
 
 router = APIRouter(prefix="/helpdesk", tags=["helpdesk"])
 
