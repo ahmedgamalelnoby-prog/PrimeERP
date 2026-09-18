@@ -16,7 +16,15 @@ MODULE_REGISTRY: tuple[dict[str, object], ...] = (
     {"key": "commerce", "name": "Commerce", "name_ar": "التجارة", "group": "commercial", "status": "active", "description": "Commercial documents, partners, payments and operational lifecycle."},
     {"key": "shipping", "name": "Shipping", "name_ar": "الشحن", "group": "operations", "status": "active", "description": "Shipping operations, settlement and accounting integration."},
     {"key": "enterprise", "name": "Enterprise", "name_ar": "إدارة المؤسسة", "group": "enterprise", "status": "active", "description": "Enterprise operational capabilities, assets, budgets, HR, projects and contracts."},
+    {"key": "hr", "name": "HR", "name_ar": "الموارد البشرية", "group": "enterprise", "status": "foundation", "description": "Employee and human-resources foundation."},
+    {"key": "time_tracking", "name": "Time Tracking", "name_ar": "تتبع الوقت", "group": "enterprise", "status": "foundation", "description": "Time and attendance tracking foundation."},
     {"key": "identity", "name": "Identity & Access", "name_ar": "الهوية والصلاحيات", "group": "platform", "status": "active", "description": "Authentication, users, roles, permissions and tenant-aware access."},
+    {"key": "platform", "name": "Platform", "name_ar": "المنصة", "group": "platform", "status": "active", "description": "Shared platform services and product configuration."},
+    {"key": "language", "name": "Language", "name_ar": "اللغات", "group": "platform", "status": "active", "description": "Arabic/English localization and RTL/LTR support."},
+    {"key": "roles", "name": "Roles", "name_ar": "الأدوار", "group": "platform", "status": "active", "description": "Role definitions and access policies."},
+    {"key": "permissions", "name": "Permissions", "name_ar": "الصلاحيات", "group": "platform", "status": "active", "description": "Permission definitions and authorization controls."},
+    {"key": "settings", "name": "Settings", "name_ar": "الإعدادات", "group": "platform", "status": "active", "description": "System and tenant configuration."},
+
     {"key": "organization", "name": "Organization", "name_ar": "المؤسسة والفروع", "group": "platform", "status": "active", "description": "Companies, branches and organizational structure."},
     {"key": "saas", "name": "SaaS", "name_ar": "إدارة SaaS", "group": "platform", "status": "active", "description": "Plans, subscriptions, trials and module entitlements."},
     {"key": "integrations", "name": "Integrations", "name_ar": "التكاملات", "group": "platform", "status": "active", "description": "External providers, product mappings, reliable events and integrations."},
@@ -49,6 +57,8 @@ MODULE_REGISTRY: tuple[dict[str, object], ...] = (
     {"key": "loyalty", "name": "Loyalty", "name_ar": "ولاء العملاء", "group": "commercial", "status": "roadmap", "description": "Customer loyalty programs."},
     {"key": "promotions", "name": "Promotions", "name_ar": "العروض", "group": "commercial", "status": "roadmap", "description": "Promotion and pricing campaigns."},
     {"key": "rentals", "name": "Rentals", "name_ar": "التأجير", "group": "industry", "status": "foundation", "description": "Rental lifecycle foundation."},
+    {"key": "mobile", "name": "Mobile", "name_ar": "الموبايل", "group": "industry", "status": "roadmap", "description": "Mobile application experience foundation."},
+    {"key": "insurance", "name": "Insurance", "name_ar": "التأمين", "group": "industry", "status": "roadmap", "description": "Insurance operations foundation."},
 )
 
 REGISTRY_VERSION = "2026.09.18.1"
