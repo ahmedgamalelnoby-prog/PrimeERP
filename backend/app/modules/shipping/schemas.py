@@ -55,6 +55,7 @@ class ShipmentCreate(BaseModel):
     storage_days: Decimal = Field(default=0, ge=0)
     exchange_requested: bool = False
     shipping_fee: Decimal = Field(default=0, ge=0)
+    customer_shipping_fee: Decimal = Field(default=0, ge=0)
     customer_name: str
     phone: str | None = None
     address: str | None = None
