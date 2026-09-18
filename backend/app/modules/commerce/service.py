@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -14,6 +15,7 @@ from app.modules.inventory.stock_moves.models import InventoryStockMove
 from app.modules.inventory.stock_moves.schemas import StockMoveCreate
 from app.modules.inventory.stock_moves.service import inventory_stock_move_service
 from app.modules.inventory.warehouses.models import InventoryWarehouse
+from app.modules.treasury.models import Cheque, ChequeEvent
 
 SALE_TYPES = {"quotation", "order", "delivery", "invoice", "credit_note"}
 PURCHASE_TYPES = {"requisition", "rfq", "order", "receipt", "bill", "debit_note"}
@@ -157,6 +159,45 @@ class CommerceService:
             document, payment = payment_result
         else:
             payment = payment_result
+        if payload.method.lower() == "cheque":
+            if not payload.cheque_number:
+                raise ValueError("Cheque number is required for cheque payments")
+            due_date = payload.cheque_due_date or payload.payment_date
+            if due_date < payload.payment_date:
+                raise ValueError("Cheque due date cannot be earlier than payment date")
+            direction = "received" if kind == "sale" else "issued"
+            now = datetime.now(timezone.utc)
+            cheque = Cheque(
+                company_id=payload.company_id,
+                partner_id=document.partner_id,
+                direction=direction,
+                cheque_number=payload.cheque_number,
+                bank_name=payload.cheque_bank_name,
+                account_number=payload.cheque_account_number,
+                cheque_date=payload.payment_date,
+                due_date=due_date,
+                amount=payload.amount,
+                currency="EGP",
+                status=direction,
+                source_payment_id=payment.id,
+                notes=payload.notes,
+                created_at=now,
+                updated_at=now,
+            )
+            db.add(cheque)
+            db.flush()
+            db.add(ChequeEvent(
+                company_id=payload.company_id,
+                cheque_id=cheque.id,
+                event_type="created_from_payment",
+                from_status=None,
+                to_status=direction,
+                event_date=payload.payment_date,
+                reference=payload.reference,
+                notes=payload.notes,
+                created_by=user_id,
+                created_at=now,
+            ))
         if user_id is not None: commerce_accounting_service.post_payment(db, payment, document, user_id)
         return document, payment
 
