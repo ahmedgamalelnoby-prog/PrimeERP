@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import client from "@/shared/api/client";
 
 import PageHeader from "@/components/layout/PageHeader";
 
-const API_BASE = import.meta.env.VITE_API_URL ?? "/api/v1";
+
 
 type Summary = {
   company_id: number;
