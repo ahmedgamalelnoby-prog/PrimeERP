@@ -58,8 +58,34 @@ def upgrade():
     )
     op.create_index("ix_shipping_pricing_rules_profile_id", "shipping_pricing_rules", ["profile_id"])
 
+    op.create_table(
+        "shipping_shipment_costs",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("shipment_id", sa.Integer(), sa.ForeignKey("shipments.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("profile_id", sa.Integer(), sa.ForeignKey("shipping_pricing_profiles.id", ondelete="RESTRICT"), nullable=False),
+        sa.Column("order_date", sa.Date()),
+        sa.Column("shipment_date", sa.Date()),
+        sa.Column("calculated_at", sa.Date(), nullable=False),
+        sa.Column("base_shipping", sa.Numeric(18, 4), server_default="0", nullable=False),
+        sa.Column("cod_fee", sa.Numeric(18, 4), server_default="0", nullable=False),
+        sa.Column("cod_collected_fee", sa.Numeric(18, 4), server_default="0", nullable=False),
+        sa.Column("card_fee", sa.Numeric(18, 4), server_default="0", nullable=False),
+        sa.Column("remote_fee", sa.Numeric(18, 4), server_default="0", nullable=False),
+        sa.Column("rto_fee", sa.Numeric(18, 4), server_default="0", nullable=False),
+        sa.Column("exchange_fee", sa.Numeric(18, 4), server_default="0", nullable=False),
+        sa.Column("storage_fee", sa.Numeric(18, 4), server_default="0", nullable=False),
+        sa.Column("other_fees", sa.Numeric(18, 4), server_default="0", nullable=False),
+        sa.Column("minimum_adjustment", sa.Numeric(18, 4), server_default="0", nullable=False),
+        sa.Column("total_cost", sa.Numeric(18, 4), server_default="0", nullable=False),
+        sa.Column("calculation_breakdown", sa.Text()),
+        sa.UniqueConstraint("shipment_id", name="uq_shipping_shipment_cost_shipment"),
+    )
+    op.create_index("ix_shipping_shipment_costs_profile_id", "shipping_shipment_costs", ["profile_id"])
+
 
 def downgrade():
+    op.drop_index("ix_shipping_shipment_costs_profile_id", table_name="shipping_shipment_costs")
+    op.drop_table("shipping_shipment_costs")
     op.drop_index("ix_shipping_pricing_rules_profile_id", table_name="shipping_pricing_rules")
     op.drop_table("shipping_pricing_rules")
     op.drop_index("ix_shipping_pricing_profiles_carrier_id", table_name="shipping_pricing_profiles")
