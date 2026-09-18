@@ -28,11 +28,15 @@ def main() -> None:
         for path in scan_root.rglob("*"):
             if not path.is_file() or path.suffix not in {".py", ".ts", ".tsx"}:
                 continue
-            # Test fixtures commonly use company 1 as a deterministic fixture key.
-            # The product audit is intended to detect production fallbacks in app/src,
-            # not prohibit legitimate test data.
             relative = path.relative_to(ROOT)
-            if "tests" in relative.parts or path.name.startswith("test_"):
+            # Test fixtures commonly use company 1 as a deterministic fixture key.
+            # Exclude test directories and conventional test modules, including tests.py.
+            if (
+                "tests" in relative.parts
+                or path.name.startswith("test_")
+                or path.name.endswith("_test.py")
+                or path.name == "tests.py"
+            ):
                 continue
             try:
                 text = path.read_text(encoding="utf-8")
