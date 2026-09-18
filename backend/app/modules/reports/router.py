@@ -19,6 +19,7 @@ from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.reports.models import ReportDefinition, ReportDelivery
+from app.modules.accounting.reports.service import financial_report_service
 from app.modules.reports.worker import calculate_next_run
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -52,9 +53,12 @@ class ScheduleRequest(BaseModel):
 
 
 class AIAnalysisRequest(BaseModel):
+    company_id: int = Field(gt=0)
     domain: str = Field(default="general", min_length=1, max_length=80)
-    metrics: dict[str, Any]
+    metrics: dict[str, Any] = Field(default_factory=dict)
     question: str | None = Field(default=None, max_length=2000)
+    from_date: str | None = None
+    to_date: str | None = None
 
 
 def _company_for_user(db: Session, company_id: int, user: User) -> Company:
@@ -166,5 +170,50 @@ def list_schedules(company_id: int, current_user: User = Depends(get_current_use
 
 
 @router.post("/ai/analyze")
-def analyze_report(request: AIAnalysisRequest, current_user: User = Depends(get_current_user)) -> dict[str, Any]:
-    return _ai_analysis(request)
+def analyze_report(
+    request: AIAnalysisRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    _company_for_user(db, request.company_id, current_user)
+    from datetime import date
+
+    try:
+        from_date = date.fromisoformat(request.from_date) if request.from_date else None
+        to_date = date.fromisoformat(request.to_date) if request.to_date else None
+    except ValueError as exc:
+        raise HTTPException(422, "from_date and to_date must use YYYY-MM-DD") from exc
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(422, "from_date cannot be after to_date")
+
+    summary = financial_report_service.financial_summary(
+        db,
+        tenant_id=get_effective_tenant_id(current_user),
+        company_id=request.company_id,
+        from_date=from_date,
+        to_date=to_date,
+    )
+    actual_metrics = {
+        "revenue": float(summary.revenue),
+        "expenses": float(summary.expenses),
+        "net_profit": float(summary.net_profit),
+        "assets": float(summary.assets),
+        "liabilities": float(summary.liabilities),
+        "equity": float(summary.equity),
+    }
+    if actual_metrics["revenue"]:
+        actual_metrics["net_margin_pct"] = round(actual_metrics["net_profit"] / actual_metrics["revenue"] * 100, 2)
+    actual_metrics.update(request.metrics)
+    enriched = AIAnalysisRequest(
+        company_id=request.company_id,
+        domain=request.domain,
+        metrics=actual_metrics,
+        question=request.question,
+        from_date=request.from_date,
+        to_date=request.to_date,
+    )
+    result = _ai_analysis(enriched)
+    result["company_id"] = request.company_id
+    result["period"] = {"from_date": request.from_date, "to_date": request.to_date}
+    result["actual_financial_metrics"] = actual_metrics
+    return result
