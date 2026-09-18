@@ -16,15 +16,16 @@ class _ScalarResult:
 
 
 class FakeDB:
-    def __init__(self, carrier, profile, rules):
+    def __init__(self, carrier, profile, rules, shipment_count=0):
         self.carrier = carrier
         self.profile = profile
         self.rules = rules
+        self.shipment_count = shipment_count
 
     def scalar(self, stmt):
         text = str(stmt)
         if "count(" in text.lower():
-            return 0
+            return self.shipment_count
         if "shipping_carriers" in text:
             return self.carrier
         return self.profile
@@ -88,3 +89,24 @@ def test_zone_and_remote_surcharge():
     assert result.other_fees == Decimal("55.00")
     assert result.surcharge_remote == Decimal("30.00")
     assert result.total_cost == Decimal("85.00")
+
+
+def test_tier_rule_uses_contract_period_volume_and_current_shipment():
+    rules = [
+        ShippingPricingRule(id=1, profile_id=10, rule_type="tier", basis="pieces",
+                            min_value=1, max_value=500, fixed_amount=20),
+        ShippingPricingRule(id=2, profile_id=10, rule_type="tier", basis="pieces",
+                            min_value=501, max_value=1000, fixed_amount=15),
+    ]
+    payload = ShippingCostInput(
+        company_id=1, carrier_id=1, calculation_date=date(2026, 9, 18),
+        pieces=1,
+    )
+    before_500 = ShippingPricingService().calculate(
+        FakeDB(make_carrier(), make_profile(), rules, shipment_count=499), payload
+    )
+    at_501 = ShippingPricingService().calculate(
+        FakeDB(make_carrier(), make_profile(), rules, shipment_count=500), payload
+    )
+    assert before_500.total_cost == Decimal("20.00")
+    assert at_501.total_cost == Decimal("15.00")
