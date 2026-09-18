@@ -16,6 +16,8 @@ def upgrade():
     op.drop_constraint("ck_shipment_status", "shipments", type_="check")
     op.create_check_constraint("ck_shipment_status", "shipments", "status IN ('pending','preparing','packing','picked_up','shipped','in_transit','out_for_delivery','delivering','returning','delivered','returned','cancelled')")
 
+    op.add_column("shipments", sa.Column("customer_shipping_fee", sa.Numeric(18, 4), server_default="0", nullable=False))
+
     op.create_table(
         "shipping_order_statuses",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -77,3 +79,4 @@ def downgrade():
     op.drop_table("shipping_status_histories")
     op.drop_index("ix_shipping_order_statuses_company_id", table_name="shipping_order_statuses")
     op.drop_table("shipping_order_statuses")
+    op.drop_column("shipments", "customer_shipping_fee")
