@@ -19,9 +19,8 @@ export default function InventoryTransactionsPage() {
   async function load(){
     setLoading(true); setMessage("");
     try {
-      const r=await fetch(`${API}?company_id=${encodeURIComponent(companyId)}`);
-      if(!r.ok) throw new Error(await r.text());
-      setMoves(await r.json());
+      const r=await client.get<Move[]>(API,{params:{company_id:Number(companyId)}});
+      setMoves(r.data);
     } catch(e){ setMessage(e instanceof Error?e.message:"تعذر تحميل حركات المخزون"); }
     finally{setLoading(false);}
   }
@@ -30,15 +29,13 @@ export default function InventoryTransactionsPage() {
   async function create(){
     try{
       const payload={company_id:Number(companyId),item_id:Number(form.item_id),source_location_id:form.source_location_id?Number(form.source_location_id):null,destination_location_id:form.destination_location_id?Number(form.destination_location_id):null,quantity:form.quantity,unit_cost:form.unit_cost,movement_type:form.movement_type,reference:form.reference||null,notes:form.notes||null};
-      const r=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
-      if(!r.ok) throw new Error(await r.text());
+      await client.post(API,payload);
       setMessage("تم إنشاء حركة مخزون مسودة."); setForm({...form,item_id:"",source_location_id:"",destination_location_id:"",quantity:"",reference:"",notes:""}); await load();
     }catch(e){setMessage(e instanceof Error?e.message:"تعذر إنشاء الحركة");}
   }
   async function action(id:number,kind:"post"|"reverse"){
     try{
-      const r=await fetch(`${API}/${id}/${kind}?company_id=${encodeURIComponent(companyId)}`,{method:"POST"});
-      if(!r.ok) throw new Error(await r.text());
+      await client.post(`${API}/${id}/${kind}`,undefined,{params:{company_id:Number(companyId)}});
       setMessage(kind==="post"?"تم ترحيل الحركة.":"تم عكس الحركة."); await load();
     }catch(e){setMessage(e instanceof Error?e.message:"تعذر تنفيذ العملية");}
   }
