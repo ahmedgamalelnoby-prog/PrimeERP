@@ -7,7 +7,10 @@ from pydantic import BaseModel, Field
 class SettlementLineCreate(BaseModel):
     shipment_id: int = Field(gt=0)
     collected_amount: Decimal = Field(ge=0)
-    carrier_fee: Decimal = Field(default=Decimal("0"), ge=0)\n    cod_commission: Decimal = Field(default=Decimal("0"), ge=0)\n    withdrawal_fee: Decimal = Field(default=Decimal("0"), ge=0)\n    other_fee: Decimal = Field(default=Decimal("0"), ge=0)
+    carrier_fee: Decimal = Field(default=Decimal("0"), ge=0)
+    cod_commission: Decimal = Field(default=Decimal("0"), ge=0)
+    withdrawal_fee: Decimal = Field(default=Decimal("0"), ge=0)
+    other_fee: Decimal = Field(default=Decimal("0"), ge=0)
 
 
 class SettlementBatchCreate(BaseModel):
