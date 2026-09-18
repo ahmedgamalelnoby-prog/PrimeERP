@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.modules.shipping.models import ShippingCarrier, Shipment
 from app.modules.shipping.settlement_models import ShippingSettlementBatch, ShippingShipmentSettlement
 from app.modules.shipping.settlement_schemas import SettlementBatchCreate
+from app.modules.shipping.status_models import ShippingFinancialEvent
 
 
 class ShippingSettlementService:
@@ -67,6 +68,12 @@ class ShippingSettlementService:
             fully_reconciled = fully_reconciled and variance == 0
             gross += collected
             fees += fee
+            db.add(ShippingFinancialEvent(
+                company_id=payload.company_id, carrier_id=payload.carrier_id, shipment_id=shipment.id,
+                event_key=f"settlement:{payload.reference}", event_type="carrier_remittance", event_date=payload.settlement_date,
+                amount=net, debit_role="bank_cash", credit_role="carrier_cod_receivable", source_status=shipment.status,
+                description=f"Carrier remittance {payload.reference}",
+            ))
             db.add(ShippingShipmentSettlement(
                 batch_id=batch.id,
                 shipment_id=shipment.id,
