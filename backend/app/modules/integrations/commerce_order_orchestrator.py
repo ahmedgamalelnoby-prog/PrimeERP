@@ -15,6 +15,8 @@ from app.modules.commerce.service import commerce_service
 from app.modules.integrations.commerce_contracts import CanonicalOrder
 from app.modules.integrations.commerce_registry import registry
 from app.modules.integrations.models import IntegrationConnection, IntegrationMapping, IntegrationProductMapping
+from app.modules.companies.models import Company
+from app.modules.identity.models import User
 
 def _date(value: Any) -> date:
     if isinstance(value, date): return value
@@ -99,8 +101,13 @@ class CommerceOrderOrchestrator:
         for sales_line, mapping in zip(document.lines, resolved): sales_line.catalog_product_id = mapping.catalog_product_id
         db.flush()
         if user_id is None:
-            from app.modules.integrations.salla_erp_service import _system_user_id
-            user_id = _system_user_id(db, connection.company_id)
+            company = db.scalar(select(Company).where(Company.id == connection.company_id))
+            if company is None or company.tenant_id is None:
+                raise ValueError("Company tenant context is missing")
+            user = db.scalar(select(User).where(User.tenant_id == company.tenant_id, User.is_active.is_(True)).order_by(User.id))
+            if user is None:
+                raise ValueError("No active tenant user is available for ERP posting")
+            user_id = user.id
         commerce_service.confirm(db, connection.company_id, document.id, "sale", user_id=user_id)
         delivery_id = None
         if fulfill:
