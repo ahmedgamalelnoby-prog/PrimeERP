@@ -75,17 +75,13 @@ export default function FinancialReportsPage() {
     setLoading(true);
     setError(null);
     Promise.all([
-      fetch(`${API_BASE}/accounting/reports/summary?${query}`),
-      fetch(`${API_BASE}/accounting/reports/trial-balance?${query}`),
+      client.get<Summary>(`/accounting/reports/summary?${query}`),
+      client.get<TrialBalance>(`/accounting/reports/trial-balance?${query}`),
     ])
-      .then(async ([summaryResponse, trialResponse]) => {
-        if (!summaryResponse.ok) throw new Error((await summaryResponse.text()) || "تعذر تحميل الملخص المالي");
-        if (!trialResponse.ok) throw new Error((await trialResponse.text()) || "تعذر تحميل ميزان المراجعة");
-        return Promise.all([
-          summaryResponse.json() as Promise<Summary>,
-          trialResponse.json() as Promise<TrialBalance>,
-        ]);
-      })
+      .then(([summaryResponse, trialResponse]) => Promise.all([
+        summaryResponse.data,
+        trialResponse.data,
+      ]))
       .then(([summaryData, trialData]) => {
         if (!active) return;
         setSummary(summaryData);
