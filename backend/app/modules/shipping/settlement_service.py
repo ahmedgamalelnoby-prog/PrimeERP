@@ -60,7 +60,11 @@ class ShippingSettlementService:
                 raise ValueError(f"Shipment {shipment.id} is already settled")
             expected = Decimal(shipment.cod_amount or 0)
             collected = Decimal(line.collected_amount)
-            fee = Decimal(line.carrier_fee)
+            breakdown_fee = Decimal(line.cod_commission) + Decimal(line.withdrawal_fee) + Decimal(line.other_fee)
+            declared_fee = Decimal(line.carrier_fee)
+            if declared_fee > 0 and breakdown_fee > 0 and declared_fee != breakdown_fee:
+                raise ValueError(f"Carrier fee breakdown must equal carrier_fee for shipment {shipment.id}")
+            fee = breakdown_fee if breakdown_fee > 0 else declared_fee
             if fee > collected:
                 raise ValueError(f"Carrier fee cannot exceed collected amount for shipment {shipment.id}")
             net = collected - fee
@@ -80,6 +84,9 @@ class ShippingSettlementService:
                 expected_amount=expected,
                 collected_amount=collected,
                 carrier_fee=fee,
+                cod_commission=Decimal(line.cod_commission),
+                withdrawal_fee=Decimal(line.withdrawal_fee),
+                other_fee=Decimal(line.other_fee),
                 net_amount=net,
                 variance=variance,
                 reconciled=(variance == 0),
