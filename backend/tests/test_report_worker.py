@@ -21,6 +21,21 @@ def test_weekly_schedule():
     assert calculate_next_run("weekly:MON@09:00", now) == datetime(2026, 9, 21, 9, 0, tzinfo=timezone.utc)
 
 
+def test_monthly_schedule_uses_next_month_when_day_has_passed():
+    now = datetime(2026, 9, 20, 10, 0, tzinfo=timezone.utc)
+    assert calculate_next_run("monthly:15@09:00", now) == datetime(2026, 10, 15, 9, 0, tzinfo=timezone.utc)
+
+
+def test_quarterly_schedule_targets_next_quarter_when_current_quarter_date_has_passed():
+    now = datetime(2026, 9, 18, 10, 0, tzinfo=timezone.utc)
+    assert calculate_next_run("quarterly:1@09:00", now) == datetime(2026, 10, 1, 9, 0, tzinfo=timezone.utc)
+
+
+def test_quarterly_schedule_targets_current_quarter_when_due_date_is_still_ahead():
+    now = datetime(2026, 9, 18, 10, 0, tzinfo=timezone.utc)
+    assert calculate_next_run("quarterly:28@11:00", now) == datetime(2026, 9, 28, 11, 0, tzinfo=timezone.utc)
+
+
 def test_invalid_schedule_rejected():
     with pytest.raises(ValueError):
         calculate_next_run("cron:* * * * *")
