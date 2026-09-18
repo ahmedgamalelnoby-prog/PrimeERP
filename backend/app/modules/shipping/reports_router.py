@@ -50,7 +50,7 @@ def _events(db: Session, shipment_id: int):
 
 def _ledger_for_shipment(db: Session, shipment_id: int):
     expected_cod = Decimal("0")
-    costs = Decimal("0")
+    carrier_payable = Decimal("0")
     revenue = Decimal("0")
     for event in _events(db, shipment_id):
         amount = Decimal(event.amount or 0)
@@ -58,13 +58,13 @@ def _ledger_for_shipment(db: Session, shipment_id: int):
             expected_cod += amount
         elif event.event_type == "reverse_cod_receivable":
             expected_cod -= amount
-        elif event.event_type == "recognize_shipping_cost" or event.event_type in {"recognize_cod_fee", "recognize_card_fee", "recognize_return_cost"}:
-            costs += amount
+        elif event.event_type in {"recognize_shipping_cost", "recognize_cod_fee", "recognize_card_fee", "recognize_return_cost"}:
+            carrier_payable += amount
         elif event.event_type in {"recognize_revenue", "recognize_shipping_revenue"}:
             revenue += amount
-        elif event.event_type == "reverse_revenue":
+        elif event.event_type in {"reverse_revenue", "reverse_shipping_revenue"}:
             revenue -= amount
-    return expected_cod, costs, revenue
+    return expected_cod, carrier_payable, revenue
 
 
 @router.get("/carrier-position")
@@ -75,27 +75,36 @@ def carrier_position(company_id: int = Query(..., gt=0), carrier_id: int | None 
     for shipment, carrier_name, cost in rows:
         bucket = by_carrier.setdefault(shipment.carrier_id, {
             "carrier_id": shipment.carrier_id, "carrier_name": carrier_name,
-            "cod_receivable": Decimal("0"), "estimated_unsettled_costs": Decimal("0"),
-            "settled_net": Decimal("0"), "settled_gross": Decimal("0"),
+            "cod_receivable": Decimal("0"), "carrier_payable": Decimal("0"),
+            "settled_net": Decimal("0"), "settled_gross": Decimal("0"), "settled_fees": Decimal("0"),
             "revenue": Decimal("0"), "shipment_count": 0, "unsettled_count": 0,
         })
         bucket["shipment_count"] += 1
-        expected_cod, event_costs, revenue = _ledger_for_shipment(db, shipment.id)
+        expected_cod, carrier_payable, revenue = _ledger_for_shipment(db, shipment.id)
         bucket["cod_receivable"] += expected_cod
+        bucket["carrier_payable"] += carrier_payable
         bucket["revenue"] += revenue
         settled = db.scalar(select(ShippingShipmentSettlement).where(ShippingShipmentSettlement.shipment_id == shipment.id))
         if settled is None:
             bucket["unsettled_count"] += 1
-            bucket["estimated_unsettled_costs"] += event_costs if event_costs else Decimal(cost.total_cost or 0) if cost else Decimal("0")
         else:
             bucket["settled_gross"] += Decimal(settled.collected_amount or 0)
             bucket["settled_net"] += Decimal(settled.net_amount or 0)
+            bucket["settled_fees"] += Decimal(settled.carrier_fee or 0)
 
     result = []
     for bucket in by_carrier.values():
-        bucket["net_position"] = bucket["cod_receivable"] - bucket["settled_net"] - bucket["estimated_unsettled_costs"]
+        # Positive means the carrier still owes the company. Negative means the
+        # company still owes the carrier. Carrier fees deducted from a remittance
+        # settle the corresponding carrier payable, so they are added back here.
+        bucket["net_position"] = (
+            bucket["cod_receivable"]
+            - bucket["settled_net"]
+            - bucket["carrier_payable"]
+            + bucket["settled_fees"]
+        )
         bucket["position"] = "carrier_owes_company" if bucket["net_position"] > 0 else ("company_owes_carrier" if bucket["net_position"] < 0 else "settled")
-        for key in ("cod_receivable", "estimated_unsettled_costs", "settled_gross", "settled_net", "revenue", "net_position"):
+        for key in ("cod_receivable", "carrier_payable", "settled_gross", "settled_fees", "settled_net", "revenue", "net_position"):
             bucket[key] = str(bucket[key].quantize(Decimal("0.01")))
         result.append(bucket)
     return result
@@ -107,7 +116,7 @@ def shipment_reconciliation(company_id: int = Query(..., gt=0), carrier_id: int 
     rows = _filtered_shipments(db, company_id, carrier_id, date_from, date_to, date_basis)
     result = []
     for shipment, carrier_name, cost in rows:
-        expected_cod, event_costs, revenue = _ledger_for_shipment(db, shipment.id)
+        expected_cod, carrier_payable, revenue = _ledger_for_shipment(db, shipment.id)
         settled = db.scalar(select(ShippingShipmentSettlement).where(ShippingShipmentSettlement.shipment_id == shipment.id))
         result.append({
             "shipment_id": shipment.id, "tracking_no": shipment.tracking_no,
@@ -115,7 +124,7 @@ def shipment_reconciliation(company_id: int = Query(..., gt=0), carrier_id: int 
             "order_date": shipment.order_date, "shipment_date": shipment.shipment_date,
             "cod_amount": str(Decimal(shipment.cod_amount or 0).quantize(Decimal("0.01"))),
             "cod_receivable": str(expected_cod.quantize(Decimal("0.01"))),
-            "shipping_cost": str((event_costs if event_costs else Decimal(cost.total_cost or 0) if cost else Decimal("0")).quantize(Decimal("0.01"))),
+            "carrier_payable": str(carrier_payable.quantize(Decimal("0.01"))),
             "revenue": str(revenue.quantize(Decimal("0.01"))),
             "settled": settled is not None,
             "collected_amount": str(Decimal(settled.collected_amount or 0).quantize(Decimal("0.01"))) if settled else None,
