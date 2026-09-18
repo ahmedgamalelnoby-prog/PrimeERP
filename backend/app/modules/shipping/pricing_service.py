@@ -107,6 +107,8 @@ class ShippingPricingService:
             if not _matches(rule, value, payload.zone_code):
                 continue
 
+            if rule.rule_type == "minimum":
+                continue
             amount = _rule_amount(rule, value, percentage_basis)
             if rule.rule_type == "base":
                 totals["base_shipping"] += amount
@@ -132,15 +134,14 @@ class ShippingPricingService:
             if amount:
                 breakdown.append({"rule_id": rule.id, "rule_type": rule.rule_type, "description": rule.description, "amount": str(amount)})
 
-        subtotal = sum(totals.values(), Decimal("0"))
+        subtotal_before_minimum = sum(totals.values(), Decimal("0"))
         min_rules = [r for r in rules if r.rule_type == "minimum" and (not r.zone_code or r.zone_code == payload.zone_code)]
         if min_rules:
             floor = max((Decimal(r.minimum_amount or 0) for r in min_rules), default=Decimal("0"))
-            if floor > 0 and subtotal < floor:
-                adjustment = floor - subtotal
-                totals["minimum_adjustment"] += adjustment
+            if floor > 0 and subtotal_before_minimum < floor:
+                adjustment = floor - subtotal_before_minimum
+                totals["minimum_adjustment"] = money(adjustment)
                 breakdown.append({"rule_id": None, "rule_type": "minimum_floor", "description": "Minimum charge adjustment", "amount": str(money(adjustment))})
-                subtotal = floor
 
         for key in totals:
             totals[key] = money(totals[key])
