@@ -3,10 +3,16 @@ import PageHeader from "@/components/layout/PageHeader";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "/api/v1";
 
+type JournalLine = {
+  id: number; line_number: number; account_combination_id: number; department_id: number | null; cost_center_id: number | null;
+  description: string | null; reference: string | null; debit: string; credit: string; base_debit: string; base_credit: string;
+};
+
 type JournalEntry = {
   id: number; company_id: number; journal_id: number; entry_number: string; entry_date: string;
   posting_date: string | null; description: string; total_debit: string; total_credit: string; status: string;
-  branch_id: number; fiscal_year_id: number; period_id: number;
+  branch_id: number; fiscal_year_id: number; period_id: number; reference?: string | null; currency_code?: string;
+  lines?: JournalLine[];
 };
 
 type JournalOption = { id: number; code: string; name_ar: string; name_en: string; journal_type: string; allow_manual_entries: boolean; is_active: boolean };
@@ -23,9 +29,14 @@ export default function JournalEntriesPage() {
   const [accounts, setAccounts] = useState<AccountOption[]>([]);
   const [optionsLoading, setOptionsLoading] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [detailsLoading, setDetailsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
   const [filter, setFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [journalFilter, setJournalFilter] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [details, setDetails] = useState<JournalEntry | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [createForm, setCreateForm] = useState({ branchId: "", journalId: "", fiscalYearId: "", periodId: "", entryNumber: "", entryDate: new Date().toISOString().slice(0, 10), description: "", debitAccountId: "", creditAccountId: "", amount: "" });
@@ -35,7 +46,12 @@ export default function JournalEntriesPage() {
     if (!companyId) { setEntries([]); setError("اختر شركة فعالة أولاً."); return; }
     setLoading(true); setError(null);
     try {
-      const response = await fetch(`${API_BASE}/accounting/journal-entries?company_id=${companyId}`);
+      const params = new URLSearchParams({ company_id: String(companyId) });
+      if (statusFilter) params.set("status", statusFilter);
+      if (journalFilter) params.set("journal_id", journalFilter);
+      if (fromDate) params.set("from_date", fromDate);
+      if (toDate) params.set("to_date", toDate);
+      const response = await fetch(`${API_BASE}/accounting/journal-entries?${params.toString()}`);
       if (!response.ok) throw new Error((await response.text()) || "تعذر تحميل القيود اليومية");
       setEntries(await response.json() as JournalEntry[]);
     } catch (reason: unknown) {
@@ -66,6 +82,7 @@ export default function JournalEntriesPage() {
     if (!companyId) { setError("اختر شركة فعالة أولاً."); return; }
     const amount = Number(createForm.amount);
     if (!amount || amount <= 0) { setError("أدخل مبلغًا صحيحًا أكبر من صفر."); return; }
+    if (createForm.debitAccountId === createForm.creditAccountId) { setError("لا يمكن أن يكون حساب المدين هو نفسه حساب الدائن."); return; }
     const required = ["branchId", "journalId", "fiscalYearId", "periodId", "entryNumber", "entryDate", "description", "debitAccountId", "creditAccountId"] as const;
     if (required.some(key => !createForm[key].trim())) { setError("أكمل جميع بيانات القيد."); return; }
     setCreateBusy(true); setError(null);
@@ -106,6 +123,17 @@ export default function JournalEntriesPage() {
     } finally { setBusy(null); }
   };
 
+  const openDetails = async (id: number) => {
+    setDetailsLoading(true); setError(null);
+    try {
+      const response = await fetch(`${API_BASE}/accounting/journal-entries/${id}`);
+      if (!response.ok) throw new Error((await response.text()) || "تعذر تحميل تفاصيل القيد");
+      setDetails(await response.json() as JournalEntry);
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : "تعذر تحميل تفاصيل القيد");
+    } finally { setDetailsLoading(false); }
+  };
+
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
     return q ? entries.filter((x) => `${x.entry_number} ${x.description} ${x.status}`.toLowerCase().includes(q)) : entries;
@@ -117,19 +145,30 @@ export default function JournalEntriesPage() {
     credit: filtered.reduce((sum, entry) => sum + Number(entry.total_credit), 0),
   }), [filtered]);
 
+  const accountName = (id: number) => {
+    const account = accounts.find(x => x.id === id);
+    return account ? `${account.code} — ${account.name_ar}` : `حساب #${id}`;
+  };
+
   return (
     <div className="space-y-6" dir="rtl">
-      <PageHeader title="القيود اليومية" description="متابعة دورة المسودة والاعتماد والترحيل والعكس من محرك المحاسبة." />
+      <PageHeader title="القيود اليومية" description="دورة كاملة من المسودة إلى الاعتماد والترحيل والعكس مع البحث والتصفية والتفاصيل." />
       <section className="grid gap-4 sm:grid-cols-3">
         <div className="rounded-2xl border bg-card p-5 shadow-sm"><p className="text-sm text-muted-foreground">عدد القيود</p><p className="mt-1 text-2xl font-bold">{totals.count}</p></div>
         <div className="rounded-2xl border bg-card p-5 shadow-sm"><p className="text-sm text-muted-foreground">إجمالي المدين</p><p className="mt-1 text-2xl font-bold">{totals.debit.toLocaleString("ar-EG")}</p></div>
         <div className="rounded-2xl border bg-card p-5 shadow-sm"><p className="text-sm text-muted-foreground">إجمالي الدائن</p><p className="mt-1 text-2xl font-bold">{totals.credit.toLocaleString("ar-EG")}</p></div>
       </section>
       <section className="rounded-2xl border bg-card p-4 shadow-sm">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <label className="flex items-center gap-2 text-sm font-medium">الشركة<input type="number" min={1} value={companyId} onChange={(e) => setCompanyId(Number(e.target.value) || 0)} className="w-28 rounded-lg border bg-background px-3 py-2" /></label>
+        <div className="mb-4 flex flex-wrap items-end gap-3">
+          <label className="text-sm font-medium">الشركة<input type="number" min={1} value={companyId} onChange={(e) => setCompanyId(Number(e.target.value) || 0)} className="mt-1 w-28 rounded-lg border bg-background px-3 py-2" /></label>
+          <label className="text-sm font-medium">الحالة<select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="mt-1 w-40 rounded-lg border bg-background px-3 py-2"><option value="">كل الحالات</option>{Object.entries(statusLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+          <label className="text-sm font-medium">اليومية<select value={journalFilter} onChange={e => setJournalFilter(e.target.value)} className="mt-1 w-48 rounded-lg border bg-background px-3 py-2"><option value="">كل اليوميات</option>{journals.filter(j => j.is_active).map(j => <option key={j.id} value={j.id}>{j.code} — {j.name_ar}</option>)}</select></label>
+          <label className="text-sm font-medium">من تاريخ<input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className="mt-1 rounded-lg border bg-background px-3 py-2" /></label>
+          <label className="text-sm font-medium">إلى تاريخ<input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className="mt-1 rounded-lg border bg-background px-3 py-2" /></label>
+          <button className="rounded-lg border px-3 py-2" onClick={() => void loadEntries()}>تطبيق</button>
+          <button className="rounded-lg border px-3 py-2" onClick={() => { setStatusFilter(""); setJournalFilter(""); setFromDate(""); setToDate(""); setFilter(""); void setTimeout(() => void loadEntries(), 0); }}>مسح</button>
           <button className="rounded-lg bg-primary px-3 py-2 text-primary-foreground" onClick={() => setShowCreate(true)}>+ إنشاء مسودة</button>
-          <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="بحث..." className="w-full max-w-xs rounded-lg border bg-background px-3 py-2" />
+          <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="بحث داخل النتائج..." className="w-full max-w-xs rounded-lg border bg-background px-3 py-2" />
           <span className="text-sm text-muted-foreground">{loading ? "جاري التحميل..." : `${filtered.length} قيد`}</span>
         </div>
         {error && <div className="mb-4 rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">{error}</div>}
@@ -142,7 +181,7 @@ export default function JournalEntriesPage() {
                   <td className="p-3 font-medium">{entry.entry_number}</td><td className="p-3">{entry.entry_date}</td><td className="p-3">{entry.description}</td>
                   <td className="p-3">{Number(entry.total_debit).toLocaleString("ar-EG")}</td><td className="p-3">{Number(entry.total_credit).toLocaleString("ar-EG")}</td><td className="p-3">{statusLabels[entry.status] ?? entry.status}</td>
                   <td className="flex flex-wrap gap-2 p-3">
-                    <button className="rounded-lg border px-2 py-1" onClick={async () => { const r = await fetch(`${API_BASE}/accounting/journal-entries/${entry.id}`); if (r.ok) setDetails(await r.json()); }}>عرض</button>
+                    <button className="rounded-lg border px-2 py-1" disabled={detailsLoading} onClick={() => void openDetails(entry.id)}>{detailsLoading ? "تحميل..." : "عرض"}</button>
                     {entry.status === "draft" && <button className="rounded-lg border px-2 py-1" disabled={busy === entry.id} onClick={() => void action(entry.id, "submit")}>إرسال</button>}
                     {entry.status === "pending" && <button className="rounded-lg border px-2 py-1" disabled={busy === entry.id} onClick={() => void action(entry.id, "approve")}>اعتماد</button>}
                     {entry.status === "approved" && <button className="rounded-lg border px-2 py-1" disabled={busy === entry.id} onClick={() => void action(entry.id, "post")}>ترحيل</button>}
@@ -187,13 +226,16 @@ export default function JournalEntriesPage() {
             <label className="text-sm font-medium sm:col-span-2 lg:col-span-3">الوصف<input required value={createForm.description} onChange={e => setCreateForm(v => ({...v,description:e.target.value}))} className="mt-1 w-full rounded-lg border bg-background px-3 py-2" /></label>
             <div className="flex gap-2 sm:col-span-2 lg:col-span-3"><button type="submit" disabled={createBusy} className="rounded-lg bg-primary px-4 py-2 text-primary-foreground">{createBusy ? "جاري الإنشاء..." : "إنشاء المسودة"}</button><button type="button" className="rounded-lg border px-4 py-2" onClick={() => setShowCreate(false)}>إلغاء</button></div>
           </form>
-          <p className="mt-3 text-xs text-muted-foreground">اليومية والحسابات تُحمّل تلقائيًا من الشركة النشطة وتُعرض بالأكواد والأسماء بدل إدخال أرقامها يدويًا. الفرع والسنة والفترة تُتحقق منها الخدمة قبل الحفظ.</p>
+          <p className="mt-3 text-xs text-muted-foreground">اليومية والحسابات تُحمّل تلقائيًا من الشركة النشطة. الفرع والسنة والفترة تُتحقق منها الخدمة قبل الحفظ.</p>
         </section>
       )}
       {details && (
         <section className="rounded-2xl border bg-card p-5 shadow-sm">
           <div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-semibold">تفاصيل القيد {details.entry_number}</h2><button className="rounded-lg border px-3 py-1" onClick={() => setDetails(null)}>إغلاق</button></div>
-          <div className="grid gap-3 text-sm sm:grid-cols-2"><div>التاريخ: {details.entry_date}</div><div>الحالة: {statusLabels[details.status] ?? details.status}</div><div>الفرع: {details.branch_id}</div><div>الفترة: {details.period_id}</div></div>
+          <div className="grid gap-3 text-sm sm:grid-cols-2"><div>التاريخ: {details.entry_date}</div><div>الحالة: {statusLabels[details.status] ?? details.status}</div><div>الفرع: {details.branch_id}</div><div>الفترة: {details.period_id}</div><div>العملة: {details.currency_code ?? "EGP"}</div><div>مرجع: {details.reference || "—"}</div></div>
+          <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[850px] text-sm"><thead><tr className="border-b text-right text-muted-foreground"><th className="p-3">السطر</th><th className="p-3">الحساب</th><th className="p-3">الوصف</th><th className="p-3">مدين</th><th className="p-3">دائن</th></tr></thead><tbody>
+            {(details.lines ?? []).map(line => <tr key={line.id} className="border-b last:border-0"><td className="p-3">{line.line_number}</td><td className="p-3">{accountName(line.account_combination_id)}</td><td className="p-3">{line.description || "—"}</td><td className="p-3">{Number(line.debit).toLocaleString("ar-EG")}</td><td className="p-3">{Number(line.credit).toLocaleString("ar-EG")}</td></tr>)}
+          </tbody></table></div>
         </section>
       )}
     </div>
