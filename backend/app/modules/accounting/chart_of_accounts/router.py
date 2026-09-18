@@ -15,6 +15,7 @@ from .schemas import (
     CostCenterResponse,
     DepartmentResponse,
     NaturalAccountResponse,
+    AccountCombinationListResponse,
 )
 from .service import ChartOfAccountsService
 
@@ -88,5 +89,20 @@ def list_natural_accounts(
     current_user: User = Depends(get_current_user),
 ):
     return ChartOfAccountsService.list_natural_accounts(
+        db, _authorized_company(db, company_id, current_user)
+    )
+
+
+@router.get(
+    "/combinations",
+    response_model=list[AccountCombinationListResponse],
+    dependencies=[Depends(require_permission("accounting.chart_of_accounts.read"))],
+)
+def list_account_combinations(
+    company_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return ChartOfAccountsService.list_account_combinations(
         db, _authorized_company(db, company_id, current_user)
     )
