@@ -44,12 +44,24 @@ class ShippingStatusService:
             "out_for_delivery": ["delivered", "returning"], "delivered": ["returning", "returned"],
             "returning": ["returned", "delivered"], "returned": [], "cancelled": [], "picked_up": ["in_transit"],
         }
+        defaults_by_code = {row[0]: row for row in DEFAULT_STATUSES}
         for code, name, name_ar, parent, sort_order, actions in DEFAULT_STATUSES:
             if code not in existing:
                 db.add(ShippingOrderStatus(company_id=company_id, code=code, name=name, name_ar=name_ar,
                                            parent_code=parent, sort_order=sort_order,
                                            financial_actions=json.dumps(actions),
                                            allowed_next_codes=json.dumps(default_next.get(code, []))))
+            else:
+                current = db.scalar(select(ShippingOrderStatus).where(
+                    ShippingOrderStatus.company_id == company_id,
+                    ShippingOrderStatus.code == code,
+                ))
+                # Existing rows created before transition rules were introduced must receive
+                # the canonical defaults; custom edits remain untouched.
+                if current is not None and (current.allowed_next_codes is None or current.allowed_next_codes == "[]"):
+                    current.allowed_next_codes = json.dumps(default_next.get(code, []))
+                if current is not None and (current.financial_actions is None or current.financial_actions == "[]"):
+                    current.financial_actions = json.dumps(actions)
         db.flush()
 
     def apply_transition(self, db: Session, shipment: Shipment, new_status: str, changed_on: date | None = None) -> list[ShippingFinancialEvent]:
@@ -64,13 +76,21 @@ class ShippingStatusService:
             raise ValueError(f"Unknown or inactive shipping status: {new_status}")
         if new_status == shipment.status:
             return []
-        history = ShippingStatusHistory(shipment_id=shipment.id, from_status=shipment.status, to_status=new_status, changed_on=changed_on)
+        old_status = shipment.status
+        old_status_row = db.scalar(select(ShippingOrderStatus).where(
+            ShippingOrderStatus.company_id == shipment.company_id,
+            ShippingOrderStatus.code == old_status,
+            ShippingOrderStatus.is_active.is_(True),
+        ))
+        if old_status_row is None:
+            raise ValueError(f"Unknown or inactive current shipping status: {old_status}")
+        allowed_next = json.loads(old_status_row.allowed_next_codes or "[]")
+        if new_status not in allowed_next:
+            raise ValueError(f"Invalid shipping status transition: {old_status} -> {new_status}")
+        history = ShippingStatusHistory(shipment_id=shipment.id, from_status=old_status, to_status=new_status, changed_on=changed_on)
         db.add(history)
         shipment.status = new_status
         db.flush()
-        allowed_next = json.loads((db.scalar(select(ShippingOrderStatus.allowed_next_codes).where(ShippingOrderStatus.company_id == shipment.company_id, ShippingOrderStatus.code == shipment.status)) or "[]"))
-        if new_status not in allowed_next:
-            raise ValueError(f"Invalid shipping status transition: {shipment.status} -> {new_status}")
         actions = json.loads(status.financial_actions or "[]")
         events: list[ShippingFinancialEvent] = []
         cost = db.scalar(select(ShippingShipmentCost).where(ShippingShipmentCost.shipment_id == shipment.id))
