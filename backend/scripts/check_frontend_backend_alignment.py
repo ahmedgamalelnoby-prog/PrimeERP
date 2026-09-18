@@ -79,10 +79,15 @@ def main() -> None:
         "/identity/users": BACKEND / "modules" / "identity" / "api" / "users.py",
         "/plans/": BACKEND / "modules" / "platform" / "plans" / "router.py",
     }
+    backend_fragments = {
+        "/accounting/journal-entries/journals": '@router.get("/journals"',
+        "/identity/users": 'prefix="/users"',
+    }
     for contract, backend_file in required_contracts.items():
         if not backend_file.exists():
             raise SystemExit(f"Backend contract file missing for {contract}: {backend_file}")
-        if contract not in read(backend_file):
+        fragment = backend_fragments.get(contract, contract)
+        if fragment not in read(backend_file):
             raise SystemExit(f"Backend contract not found: {contract} in {backend_file.relative_to(ROOT)}")
 
     if '/roles/permissions' not in read(FRONTEND / "modules" / "roles" / "api" / "roles.api.ts"):
