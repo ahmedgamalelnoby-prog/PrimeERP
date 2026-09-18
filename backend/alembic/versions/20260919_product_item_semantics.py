@@ -36,6 +36,54 @@ def upgrade() -> None:
     op.create_index("ix_catalog_products_company_id", "catalog_products", ["company_id"])
     op.create_index("ix_catalog_products_item_id", "catalog_products", ["item_id"])
 
+    # Backfill one commercial Product identity for every existing Item so the
+    # new separation is immediately usable without breaking historical data.
+    conn = op.get_bind()
+    conn.execute(sa.text("""
+        INSERT INTO catalog_products (company_id, item_id, code, name_ar, name_en, product_kind, is_sellable, is_active)
+        SELECT i.company_id, i.id, i.sku, i.name_ar, i.name_en,
+               CASE WHEN i.item_type = 'service' THEN 'service' ELSE 'traded' END,
+               CASE WHEN i.item_type = 'service' THEN true ELSE true END,
+               i.is_active
+        FROM inventory_items i
+        WHERE NOT EXISTS (
+            SELECT 1 FROM catalog_products p
+            WHERE p.company_id = i.company_id AND p.item_id = i.id
+        )
+    """))
+    conn.execute(sa.text("""
+        UPDATE recipes r
+        SET catalog_product_id = p.id
+        FROM catalog_products p
+        WHERE p.company_id = r.company_id AND p.item_id = r.product_id
+    """))
+    conn.execute(sa.text("""
+        UPDATE product_bundles b
+        SET catalog_product_id = p.id
+        FROM catalog_products p
+        WHERE p.company_id = b.company_id AND p.item_id = b.product_id
+    """))
+    conn.execute(sa.text("""
+        UPDATE product_prices pp
+        SET catalog_product_id = p.id
+        FROM catalog_products p
+        WHERE p.company_id = pp.company_id AND p.item_id = pp.product_id
+    """))
+    conn.execute(sa.text("""
+        UPDATE sales_lines sl
+        SET catalog_product_id = p.id
+        FROM catalog_products p
+        JOIN sales_documents sd ON sd.id = sl.document_id
+        WHERE p.company_id = sd.company_id AND p.item_id = sl.item_id
+    """))
+    conn.execute(sa.text("""
+        UPDATE purchase_lines pl
+        SET catalog_product_id = p.id
+        FROM catalog_products p
+        JOIN purchase_documents pd ON pd.id = pl.document_id
+        WHERE p.company_id = pd.company_id AND p.item_id = pl.item_id
+    """))
+
     # These links preserve all existing data while making the commercial Product
     # identity explicit. Existing product_id/item_id columns remain compatible.
     op.add_column("recipes", sa.Column("catalog_product_id", sa.Integer(), nullable=True))
