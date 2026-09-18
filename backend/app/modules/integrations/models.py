@@ -1,8 +1,6 @@
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.sql import func
-
 from app.database.base import Base
-
 
 class IntegrationConnection(Base):
     __tablename__ = "integration_connections"
@@ -17,7 +15,6 @@ class IntegrationConnection(Base):
     last_sync_at = Column(DateTime)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     __table_args__ = (UniqueConstraint("company_id", "provider", "name", name="uq_integration_company_provider_name"),)
-
 
 class IntegrationEvent(Base):
     __tablename__ = "integration_events"
@@ -35,7 +32,6 @@ class IntegrationEvent(Base):
     received_at = Column(DateTime, nullable=False, server_default=func.now())
     __table_args__ = (UniqueConstraint("connection_id", "external_event_id", name="uq_integration_event_external_id"),)
 
-
 class IntegrationMapping(Base):
     __tablename__ = "integration_mappings"
     id = Column(Integer, primary_key=True)
@@ -51,13 +47,13 @@ class IntegrationMapping(Base):
         UniqueConstraint("connection_id", "entity_type", "local_id", name="uq_integration_mapping_local"),
     )
 
-
 class IntegrationProductMapping(Base):
     __tablename__ = "integration_product_mappings"
     id = Column(Integer, primary_key=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     connection_id = Column(Integer, ForeignKey("integration_connections.id", ondelete="CASCADE"), nullable=False, index=True)
     product_id = Column(Integer, ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False)
+    catalog_product_id = Column(Integer, ForeignKey("catalog_products.id", ondelete="RESTRICT"), nullable=True, index=True)
     variant_id = Column(Integer, ForeignKey("product_variants.id", ondelete="RESTRICT"), nullable=True)
     entity_type = Column(String(20), nullable=False, server_default="product")
     external_id = Column(String(160), nullable=False)
