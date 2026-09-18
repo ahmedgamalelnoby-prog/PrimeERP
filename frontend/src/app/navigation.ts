@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { BadgeDollarSign, Banknote, BarChart3, Boxes, Building2, Calculator, CalendarRange, ChartNoAxesCombined, CheckSquare, ClipboardCheck, ContactRound, FileCheck2, FileText, Gauge, HandCoins, Hotel, Landmark, LayoutDashboard, Package, Settings, ShieldCheck, ShoppingCart, Store, Truck, UserCog, Users, UsersRound, WalletCards, Warehouse } from "lucide-react";
+import { BadgeDollarSign, Banknote, BarChart3, Boxes, Building2, Calculator, CalendarRange, ChartNoAxesCombined, CheckSquare, ClipboardCheck, Contact, FileCheck2, FileText, Gauge, HandCoins, Hotel, Landmark, LayoutDashboard, Package, Settings, ShieldCheck, ShoppingCart, Store, Truck, UserCog, Users, UsersRound, WalletCards, Warehouse } from "lucide-react";
 
 export type NavigationItemType = "item" | "group" | "separator";
 export interface NavigationItem { id:string; label:string; labelAr:string; type:NavigationItemType; path?:string; icon?:LucideIcon; children?:NavigationItem[]; permission?:string; module?:string; visible?:boolean; disabled?:boolean; isNew?:boolean; comingSoon?:boolean; order?:number; }
@@ -7,7 +7,7 @@ export interface NavigationItem { id:string; label:string; labelAr:string; type:
 export const navigationItems: NavigationItem[] = [
  {id:"dashboard",label:"Dashboard",labelAr:"لوحة التحكم",type:"item",path:"/dashboard",icon:LayoutDashboard,module:"dashboard",visible:true,order:1},
  {id:"module-catalog",label:"Module Catalog",labelAr:"كتالوج الموديولات",type:"item",path:"/modules",icon:Boxes,module:"platform",visible:true,isNew:true,order:2},
- {id:"helpdesk",label:"AI Help Desk",labelAr:"الدعم الفني بالـAI",type:"item",path:"/helpdesk",icon:ContactRound,module:"helpdesk",visible:true,isNew:true,order:3},
+ {id:"helpdesk",label:"AI Help Desk",labelAr:"الدعم الفني بالـAI",type:"item",path:"/helpdesk",icon:Contact,module:"helpdesk",visible:true,isNew:true,order:3},
  {id:"identity",label:"Identity & Access",labelAr:"المستخدمون والصلاحيات",type:"group",icon:ShieldCheck,module:"identity",visible:true,order:4,children:[
   {id:"users",label:"Users",labelAr:"المستخدمون",type:"item",path:"/identity/users",icon:Users,permission:"users.view",module:"identity",visible:true,order:1},
   {id:"roles",label:"Roles",labelAr:"الأدوار",type:"item",path:"/identity/roles",icon:UserCog,permission:"roles.view",module:"identity",visible:true,order:2},
@@ -31,7 +31,7 @@ export const navigationItems: NavigationItem[] = [
   {id:"sales-orders",label:"Sales Orders",labelAr:"أوامر البيع",type:"item",path:"/sales/orders",icon:FileCheck2,permission:"sales_orders.view",module:"sales",visible:true,order:2},
   {id:"sales-invoices",label:"Sales Invoices",labelAr:"فواتير المبيعات",type:"item",path:"/sales/invoices",icon:FileText,permission:"sales_invoices.view",module:"sales",visible:true,order:3}]},
  {id:"purchasing",label:"Purchasing",labelAr:"المشتريات",type:"group",icon:Truck,module:"purchasing",visible:true,order:9,children:[
-  {id:"suppliers",label:"Suppliers",labelAr:"الموردون",type:"item",path:"/purchasing/suppliers",icon:ContactRound,permission:"suppliers.view",module:"purchasing",visible:true,order:1},
+  {id:"suppliers",label:"Suppliers",labelAr:"الموردون",type:"item",path:"/purchasing/suppliers",icon:Contact,permission:"suppliers.view",module:"purchasing",visible:true,order:1},
   {id:"purchase-orders",label:"Purchase Orders",labelAr:"أوامر الشراء",type:"item",path:"/purchases/orders",icon:ClipboardCheck,permission:"purchase_orders.view",module:"purchasing",visible:true,order:2},
   {id:"purchase-invoices",label:"Purchase Invoices",labelAr:"فواتير المشتريات",type:"item",path:"/purchasing/invoices",icon:FileText,permission:"purchase_invoices.view",module:"purchasing",visible:true,order:3}]},
  {id:"inventory",label:"Inventory",labelAr:"المخزون",type:"group",icon:Boxes,module:"inventory",visible:true,order:10,children:[
