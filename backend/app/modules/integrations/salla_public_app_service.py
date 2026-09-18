@@ -27,7 +27,7 @@ SALLA_USER_INFO_URL = "https://accounts.salla.sa/oauth2/user/info"
 
 
 class SallaPublicAppError(RuntimeError):
-    pass
+    """Raised when the Salla public-app handshake cannot be completed safely."""
 
 
 def _payload_data(payload: dict[str, Any]) -> dict[str, Any]:
