@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import env from "@/shared/config/env";
+import client from "@/shared/api/client";
 import { storage } from "@/shared/utils/storage";
 
 type SallaEmbedded = {
@@ -50,31 +51,20 @@ export default function SallaEmbeddedPage() {
         const token = embedded.auth.getToken();
         if (!token) throw new Error("Salla session token is missing.");
 
-        const response = await fetch(
-          `${env.API_BASE_URL}/salla-app/embedded/session`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ salla_token: token }),
-          },
+        const response = await client.post(
+          "/salla-app/embedded/session",
+          { salla_token: token },
         );
-
-        if (!response.ok) {
-          throw new Error("PrimeERP could not verify the Salla session.");
-        }
-
-        const payload = await response.json();
+        const payload = response.data;
         const ticket = payload?.sso_ticket;
         if (!ticket) throw new Error("PrimeERP did not return an SSO ticket.");
 
-        const exchange = await fetch(
-          `${env.API_BASE_URL}/salla-app/sso/exchange?ticket=${encodeURIComponent(ticket)}`,
-          { method: "POST" },
+        const exchange = await client.post(
+          "/salla-app/sso/exchange",
+          null,
+          { params: { ticket } },
         );
-
-        if (!exchange.ok) throw new Error("PrimeERP SSO exchange failed.");
-
-        const session = await exchange.json();
+        const session = exchange.data;
         if (!session?.access_token) {
           throw new Error("PrimeERP did not return an access token.");
         }
