@@ -26,7 +26,7 @@ DEFAULT_STATUSES = [
     ("out_for_delivery", "Out for Delivery", "خارج للتوصيل", "delivering", 61, []),
     ("delivered", "Delivered", "تم التسليم", None, 70, [
         "recognize_revenue", "recognize_shipping_revenue", "recognize_shipping_cost", "create_cod_receivable",
-        "recognize_cod_fee"
+        "recognize_cod_fee", "recognize_payment_withdrawal_fee"
     ]),
     ("returning", "Returning", "قيد الاسترجاع", None, 80, []),
     ("returned", "Returned", "مرتجع", None, 90, [
