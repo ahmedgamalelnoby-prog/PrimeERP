@@ -178,6 +178,7 @@ def shipment(payload: ShipmentCreate, current_user: User = Depends(get_current_u
         storage_days=payload.storage_days,
         exchange_requested=payload.exchange_requested,
         shipping_fee=fee,
+        customer_shipping_fee=payload.customer_shipping_fee,
         customer_name=payload.customer_name,
         phone=payload.phone,
         address=payload.address,
