@@ -13,6 +13,7 @@ class SallaAppInstallation(Base):
 
     id = Column(Integer, primary_key=True)
     merchant_id = Column(String(160), nullable=False, index=True)
+    salla_user_id = Column(String(160), nullable=True, index=True)
     tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     connection_id = Column(Integer, ForeignKey("integration_connections.id", ondelete="SET NULL"), nullable=True, unique=True, index=True)
