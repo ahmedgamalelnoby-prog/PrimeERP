@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { BadgeDollarSign, Banknote, BarChart3, Boxes, Building2, Calculator, CalendarRange, CheckSquare, ClipboardCheck, Contact, FileCheck2, FileText, Gauge, HandCoins, Hotel, Landmark, LayoutDashboard, Package, Settings, ShieldCheck, ShoppingCart, Store, Truck, UserCog, Users, UsersRound, Wallet, Warehouse } from "lucide-react";
+import { BadgeDollarSign, Banknote, BarChart3, Boxes, Building2, Calculator, CalendarRange, CheckSquare, ClipboardCheck, Contact, FileCheck2, FileText, Gauge, Hotel, Landmark, LayoutDashboard, Package, Settings, ShieldCheck, ShoppingCart, Store, Truck, UserCog, Users, UsersRound, Wallet, Warehouse } from "lucide-react";
 
 export type NavigationItemType = "item" | "group" | "separator";
 export interface NavigationItem { id:string; label:string; labelAr:string; type:NavigationItemType; path?:string; icon?:LucideIcon; children?:NavigationItem[]; permission?:string; module?:string; visible?:boolean; disabled?:boolean; isNew?:boolean; comingSoon?:boolean; order?:number; }
@@ -41,7 +41,7 @@ export const navigationItems: NavigationItem[] = [
   {id:"stock-transactions",label:"Stock Transactions",labelAr:"حركات المخزون",type:"item",path:"/inventory/transactions",icon:Boxes,permission:"stock_transactions.view",module:"inventory",visible:true,order:4},
   {id:"transfers",label:"Transfers",labelAr:"تحويلات المخزون",type:"item",path:"/inventory/transfers",icon:Truck,permission:"inventory.write",module:"inventory",visible:true,order:5},
   {id:"reservations",label:"Reservations",labelAr:"حجوزات المخزون",type:"item",path:"/inventory/reservations",icon:ClipboardCheck,permission:"inventory.access",module:"inventory",visible:true,order:6}]},
- {id:"commercial-leasing",label:"Commercial Leasing",labelAr:"الإيجارات التجارية",type:"group",icon:HandCoins,module:"commercial_leasing",visible:true,order:11,children:[
+ {id:"commercial-leasing",label:"Commercial Leasing",labelAr:"الإيجارات التجارية",type:"group",icon:Banknote,module:"commercial_leasing",visible:true,order:11,children:[
   {id:"lease-contracts",label:"Lease Contracts",labelAr:"عقود الإيجار",type:"item",path:"/commercial-leasing/contracts",icon:FileText,permission:"lease_contracts.view",module:"commercial_leasing",visible:true,order:1},
   {id:"installments",label:"Installments",labelAr:"الاستحقاقات",type:"item",path:"/commercial-leasing/installments",icon:BadgeDollarSign,permission:"installments.view",module:"commercial_leasing",visible:true,order:2},
   {id:"revenue-share",label:"Revenue Share",labelAr:"نسب الإيرادات",type:"item",path:"/commercial-leasing/revenue-share",icon:BarChart3,permission:"revenue_share.view",module:"commercial_leasing",visible:true,order:3}]},
