@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 
 import "@/shared/i18n/i18n";
+import "@/shared/api/interceptors";
 
 import App from "./App";
 import "../index.css";
