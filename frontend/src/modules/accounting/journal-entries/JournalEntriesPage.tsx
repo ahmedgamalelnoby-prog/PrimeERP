@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import client from "@/shared/api/client";
 import PageHeader from "@/components/layout/PageHeader";
 
-const API_BASE = import.meta.env.VITE_API_URL ?? "/api/v1";
+
 
 type JournalLine = {
   id: number; line_number: number; account_combination_id: number; department_id: number | null; cost_center_id: number | null;
@@ -64,8 +65,8 @@ export default function JournalEntriesPage() {
     if (!companyId) { setJournals([]); setAccounts([]); return; }
     setOptionsLoading(true);
     Promise.all([
-      fetch(API_BASE + "/accounting/journal-entries/journals?company_id=" + companyId),
-      fetch(API_BASE + "/accounting/chart-of-accounts/combinations?company_id=" + companyId),
+      client.get<JournalOption>("/accounting/journal-entries/journals",{params:{company_id:companyId}}),
+      client.get<AccountOption[]>("/chart-of-accounts/combinations",{params:{company_id:companyId}}),
     ])
       .then(async ([journalResponse, accountResponse]) => {
         if (!journalResponse.ok) throw new Error((await journalResponse.text()) || "تعذر تحميل اليوميات المحاسبية");
