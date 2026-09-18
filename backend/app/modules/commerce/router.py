@@ -102,6 +102,16 @@ def create_purchase(payload: DocumentCreate, current_user: User = Depends(get_cu
     obj = _run(lambda: commerce_service.create_document(db, payload)); db.commit(); db.refresh(obj); return obj
 
 
+@router.get("/payments")
+def list_payments(company_id: int = Query(..., gt=0), document_kind: str | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company_for_user(db, company_id, current_user)
+    stmt = select(CommercePayment).where(CommercePayment.company_id == company_id).order_by(CommercePayment.id.desc())
+    if document_kind is not None:
+        if document_kind not in {"sale", "purchase"}: raise HTTPException(422, "document_kind must be sale or purchase")
+        stmt = stmt.where(CommercePayment.document_kind == document_kind)
+    return list(db.scalars(stmt.limit(500)).all())
+
+
 @router.get("/sales/documents", response_model=list[DocumentResponse])
 def sales(company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user); return commerce_service.list_documents(db, company_id, "sale")
