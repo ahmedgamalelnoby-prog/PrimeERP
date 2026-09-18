@@ -72,7 +72,7 @@ def calculate_next_run(schedule: str, now: datetime | None = None) -> datetime:
         hour, minute = _parse_time(raw_time)
         if not 1 <= day <= 31:
             raise ValueError("Schedule day must be between 1 and 31")
-            if quarterly:
+        if quarterly:
             quarter_start_month = ((now.month - 1) // 3) * 3 + 1
             candidate = now.replace(month=quarter_start_month, day=min(day, 28), hour=hour, minute=minute, second=0, microsecond=0)
             if candidate <= now:
