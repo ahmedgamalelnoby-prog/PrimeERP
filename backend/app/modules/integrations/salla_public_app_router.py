@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 import os
+import requests
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Header, HTTPException, Request
@@ -71,6 +72,44 @@ async def receive_salla_app_event(
         raise HTTPException(502, str(exc)) from exc
     finally:
         db.close()
+
+
+
+
+@router.post("/embedded/session")
+def establish_embedded_session(
+    salla_token: str,
+    db: Session = __import__("fastapi").Depends(get_db),
+):
+    """Verify Salla Embedded SDK token and mint a short-lived PrimeERP JWT."""
+    app_id = os.getenv("SALLA_APP_ID")
+    if not app_id:
+        raise HTTPException(503, "SALLA_APP_ID is not configured")
+    if not salla_token or len(salla_token) > 4096:
+        raise HTTPException(400, "Invalid Salla embedded token")
+    response = requests.post(
+        "https://api.salla.dev/exchange-authority/v1/introspect",
+        headers={"S-Source": app_id, "Content-Type": "application/json"},
+        json={"token": salla_token},
+        timeout=15,
+    )
+    if response.status_code >= 400:
+        raise HTTPException(401, "Salla embedded token verification failed")
+    body = response.json()
+    data = body.get("data") if isinstance(body, dict) else None
+    if not isinstance(data, dict) or data.get("merchant_id") is None:
+        raise HTTPException(401, "Salla embedded token did not identify a merchant")
+    merchant_id = str(data["merchant_id"])
+    installation = db.scalar(
+        select(SallaAppInstallation).where(
+            SallaAppInstallation.merchant_id == merchant_id,
+            SallaAppInstallation.status == "active",
+        )
+    )
+    if installation is None or installation.user_id is None:
+        raise HTTPException(409, "Salla store is not provisioned in PrimeERP yet")
+    ticket = issue_sso_ticket(db, installation)
+    return {"sso_ticket": ticket, "expires_in": 120, "merchant_id": merchant_id}
 
 
 @router.get("/launch")
