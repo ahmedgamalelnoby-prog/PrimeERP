@@ -238,6 +238,8 @@ class Subscription(Base):
     next_billing_date = Column(DateTime(timezone=True), nullable=True)
     cancelled_at = Column(DateTime(timezone=True), nullable=True)
     is_auto_renew = Column(Boolean, nullable=False, default=False)
+    external_provider = Column(String(40), nullable=True, index=True)
+    external_subscription_id = Column(String(160), nullable=True, index=True)
     custom_max_users = Column(Integer, nullable=True)
     custom_max_companies = Column(Integer, nullable=True)
     custom_max_branches = Column(Integer, nullable=True)
