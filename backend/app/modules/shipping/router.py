@@ -232,7 +232,7 @@ def status(shipment_id: int, value: str = Query(...), company_id: int = Query(..
     if value == obj.status:
         return obj
     try:
-        shipping_status_service.apply_transition(db, obj, value)
+        shipping_status_service.apply_transition(db, obj, value, user_id=current_user.id)
         db.commit(); db.refresh(obj)
         return obj
     except ValueError as exc:
