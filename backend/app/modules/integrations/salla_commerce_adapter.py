@@ -55,7 +55,7 @@ class SallaCommerceAdapter(CommerceAdapter):
                 unit_price=Decimal(item.price or 0),
                 discount=Decimal(item.discount or 0),
                 tax=Decimal(item.tax or 0),
-                metadata={"name": item.name},
+                metadata={"name": item.name, "tax_rate_ids": [], "external_product_id": str(item.product_external_id) if item.product_external_id else None},
             )
             for item in items
         )
@@ -111,5 +111,5 @@ class SallaCommerceAdapter(CommerceAdapter):
             lines=lines,
             payments=tuple(payments),
             shipments=canonical_shipments,
-            metadata={"store_id": payload.get("store_id")},
+            metadata={"store_id": payload.get("store_id"), "warehouse_id": payload.get("warehouse_id"), "customer_name": payload.get("customer_name")},
         )
