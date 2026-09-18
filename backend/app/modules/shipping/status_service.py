@@ -7,6 +7,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.modules.shipping.accounting_service import shipping_accounting_service
 from app.modules.shipping.cost_models import ShippingShipmentCost
 from app.modules.shipping.models import Shipment
 from app.modules.shipping.pricing_schemas import ShippingCostInput
@@ -66,7 +67,7 @@ class ShippingStatusService:
                     current.financial_actions = json.dumps(actions)
         db.flush()
 
-    def apply_transition(self, db: Session, shipment: Shipment, new_status: str, changed_on: date | None = None) -> list[ShippingFinancialEvent]:
+    def apply_transition(self, db: Session, shipment: Shipment, new_status: str, changed_on: date | None = None, user_id: int | None = None) -> list[ShippingFinancialEvent]:
         changed_on = changed_on or date.today()
         self.ensure_defaults(db, shipment.company_id)
         status = db.scalar(select(ShippingOrderStatus).where(
@@ -156,6 +157,12 @@ class ShippingStatusService:
                 is_reversal=is_reversal, description=f"Shipping financial event: {action}",
             )
             db.add(event); events.append(event)
+        db.flush()
+        if events:
+            if user_id is None:
+                raise ValueError("User identity is required to post shipping financial events")
+            for event in events:
+                shipping_accounting_service.post_financial_event(db, event_id=event.id, user_id=user_id)
         db.flush()
         return events
 
