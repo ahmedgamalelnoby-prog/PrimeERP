@@ -34,7 +34,7 @@ class ShippingShipmentSettlement(Base):
     shipment_id = Column(Integer, ForeignKey("shipments.id", ondelete="RESTRICT"), nullable=False, unique=True)
     expected_amount = Column(Numeric(18, 4), server_default="0", nullable=False)
     collected_amount = Column(Numeric(18, 4), server_default="0", nullable=False)
-    carrier_fee = Column(Numeric(18, 4), server_default="0", nullable=False)
+    carrier_fee = Column(Numeric(18, 4), server_default="0", nullable=False)\n    cod_commission = Column(Numeric(18, 4), server_default="0", nullable=False)\n    withdrawal_fee = Column(Numeric(18, 4), server_default="0", nullable=False)\n    other_fee = Column(Numeric(18, 4), server_default="0", nullable=False)
     net_amount = Column(Numeric(18, 4), server_default="0", nullable=False)
     variance = Column(Numeric(18, 4), server_default="0", nullable=False)
     reconciled = Column(Boolean, server_default="false", nullable=False)
