@@ -18,7 +18,8 @@ export const navigationItems: NavigationItem[] = [
   {id:"fiscal-years",label:"Fiscal Years",labelAr:"السنوات المالية",type:"item",path:"/accounting/fiscal-years",icon:CalendarRange,permission:"fiscal_years.view",module:"accounting",visible:true,order:2},
   {id:"journals",label:"Journals",labelAr:"دفاتر اليومية",type:"item",path:"/accounting/journals",icon:FileText,permission:"journals.view",module:"accounting",visible:true,order:3},
   {id:"journal-entries",label:"Journal Entries",labelAr:"القيود اليومية",type:"item",path:"/accounting/journal-entries",icon:FileText,permission:"journal_entries.view",module:"accounting",visible:true,order:4},
-  {id:"cost-centers",label:"Cost Centers",labelAr:"مراكز التكلفة",type:"item",path:"/accounting/cost-centers",icon:Gauge,permission:"cost_centers.view",module:"accounting",visible:true,order:5}]},
+  {id:"cost-centers",label:"Cost Centers",labelAr:"مراكز التكلفة",type:"item",path:"/accounting/cost-centers",icon:Gauge,permission:"cost_centers.view",module:"accounting",visible:true,order:5},
+  {id:"financial-reports",label:"Financial Reports",labelAr:"التقارير المالية",type:"item",path:"/accounting/reports",icon:BarChart3,permission:"reports.view",module:"accounting",visible:true,order:6}]},
  {id:"treasury",label:"Treasury",labelAr:"الخزينة والبنوك",type:"group",icon:Landmark,module:"treasury",visible:true,order:7,children:[
   {id:"banks",label:"Banks",labelAr:"البنوك",type:"item",path:"/treasury/banks",icon:Landmark,permission:"banks.view",module:"treasury",visible:true,order:1},
   {id:"cash",label:"Cash",labelAr:"الخزن النقدية",type:"item",path:"/treasury/cash",icon:Banknote,permission:"cash.view",module:"treasury",visible:true,order:2},
@@ -33,8 +34,11 @@ export const navigationItems: NavigationItem[] = [
   {id:"purchase-invoices",label:"Purchase Invoices",labelAr:"فواتير المشتريات",type:"item",path:"/purchasing/invoices",icon:FileText,permission:"purchase_invoices.view",module:"purchasing",visible:true,order:3}]},
  {id:"inventory",label:"Inventory",labelAr:"المخزون",type:"group",icon:Boxes,module:"inventory",visible:true,order:10,children:[
   {id:"warehouses",label:"Warehouses",labelAr:"المخازن",type:"item",path:"/inventory/warehouses",icon:Warehouse,permission:"warehouses.view",module:"inventory",visible:true,order:1},
-  {id:"products",label:"Products",labelAr:"الأصناف",type:"item",path:"/products",icon:Package,permission:"products.view",module:"inventory",visible:true,order:2},
-  {id:"stock-transactions",label:"Stock Transactions",labelAr:"حركات المخزون",type:"item",path:"/inventory/transactions",icon:Boxes,permission:"stock_transactions.view",module:"inventory",visible:true,order:3}]},
+  {id:"locations",label:"Locations",labelAr:"مواقع التخزين",type:"item",path:"/inventory/locations",icon:Warehouse,permission:"locations.view",module:"inventory",visible:true,order:2},
+  {id:"products",label:"Products",labelAr:"الأصناف",type:"item",path:"/products",icon:Package,permission:"products.view",module:"inventory",visible:true,order:3},
+  {id:"stock-transactions",label:"Stock Transactions",labelAr:"حركات المخزون",type:"item",path:"/inventory/transactions",icon:Boxes,permission:"stock_transactions.view",module:"inventory",visible:true,order:4},
+  {id:"transfers",label:"Transfers",labelAr:"تحويلات المخزون",type:"item",path:"/inventory/transfers",icon:Truck,permission:"inventory.write",module:"inventory",visible:true,order:5},
+  {id:"reservations",label:"Reservations",labelAr:"حجوزات المخزون",type:"item",path:"/inventory/reservations",icon:ClipboardCheck,permission:"inventory.access",module:"inventory",visible:true,order:6}]},
  {id:"commercial-leasing",label:"Commercial Leasing",labelAr:"الإيجارات التجارية",type:"group",icon:HandCoins,module:"commercial_leasing",visible:true,order:11,children:[
   {id:"lease-contracts",label:"Lease Contracts",labelAr:"عقود الإيجار",type:"item",path:"/commercial-leasing/contracts",icon:FileText,permission:"lease_contracts.view",module:"commercial_leasing",visible:true,order:1},
   {id:"installments",label:"Installments",labelAr:"الاستحقاقات",type:"item",path:"/commercial-leasing/installments",icon:BadgeDollarSign,permission:"installments.view",module:"commercial_leasing",visible:true,order:2},
