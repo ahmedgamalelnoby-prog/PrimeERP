@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.modules.integrations.models import IntegrationMapping
 from app.modules.integrations.salla_models import SallaCustomer, SallaOrder, SallaShipment
 from app.modules.shipping.models import ShippingCarrier, ShippingMethod, Shipment
+from app.modules.shipping.integration import find_mapped_carrier, link_carrier
 
 
 _STATUS_MAP = {
@@ -71,20 +72,14 @@ def _carrier(db: Session, company_id: int, shipment: SallaShipment) -> ShippingC
     # bootstrap fallback when the store was linked before the mapping existed.
     courier_id = str(shipment.courier_id or "").strip()
     if courier_id:
-        mapped = db.scalar(select(IntegrationMapping).where(
-            IntegrationMapping.company_id == company_id,
-            IntegrationMapping.connection_id == shipment.connection_id,
-            IntegrationMapping.entity_type == "salla_shipping_company",
-            IntegrationMapping.external_id == courier_id,
-        ))
-        if mapped:
-            carrier = db.scalar(select(ShippingCarrier).where(
-                ShippingCarrier.id == mapped.local_id,
-                ShippingCarrier.company_id == company_id,
-                ShippingCarrier.is_active.is_(True),
-            ))
-            if carrier:
-                return carrier
+        carrier = find_mapped_carrier(
+            db,
+            company_id=company_id,
+            connection_id=shipment.connection_id,
+            external_carrier_id=courier_id,
+        )
+        if carrier:
+            return carrier
 
     for name in (shipment.courier_name, shipment.external_company_name):
         candidate = str(name or "").strip()
@@ -100,7 +95,7 @@ def _carrier(db: Session, company_id: int, shipment: SallaShipment) -> ShippingC
                 existing = db.scalar(select(IntegrationMapping).where(
                     IntegrationMapping.company_id == company_id,
                     IntegrationMapping.connection_id == shipment.connection_id,
-                    IntegrationMapping.entity_type == "salla_shipping_company",
+                    IntegrationMapping.entity_type == "shipping_carrier",
                     IntegrationMapping.external_id == courier_id,
                 ))
                 if existing:
