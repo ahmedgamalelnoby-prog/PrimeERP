@@ -1,27 +1,16 @@
-"""support one payment allocated to multiple AR/AP documents"""
+"""Compatibility marker for the historical split-payment migration.
 
-from alembic import op
-import sqlalchemy as sa
-
+The actual constraint correction is performed by
+20260919_payment_allocation_split_fix. This revision remains as a no-op
+compatibility node so existing migration references stay resolvable.
+"""
 revision = "20260919_split_payment_allocations"
-down_revision = "20260919_payment_allocations"
+down_revision = "20260919_payment_allocation_split_fix"
 branch_labels = None
 depends_on = None
 
-
 def upgrade() -> None:
-    op.drop_constraint("uq_commerce_payment_allocation_payment", "commerce_payment_allocations", type_="unique")
-    op.create_unique_constraint(
-        "uq_commerce_payment_allocation_document",
-        "commerce_payment_allocations",
-        ["company_id", "payment_id", "document_kind", "document_id"],
-    )
-
+    pass
 
 def downgrade() -> None:
-    op.drop_constraint("uq_commerce_payment_allocation_document", "commerce_payment_allocations", type_="unique")
-    op.create_unique_constraint(
-        "uq_commerce_payment_allocation_payment",
-        "commerce_payment_allocations",
-        ["payment_id"],
-    )
+    pass
