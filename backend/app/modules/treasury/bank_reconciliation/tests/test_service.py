@@ -32,3 +32,13 @@ def test_create_statement_rejects_overlapping_period():
     payload=SimpleNamespace(company_id=10,bank_account_id=1,period_start=date(2026,9,1),period_end=date(2026,9,30),opening_balance=Decimal("0"),closing_balance=Decimal("0"))
     with pytest.raises(ValueError, match="overlaps"):
         create_statement(db,payload,user)
+
+
+def test_reconciliation_source_filters_exclude_closed_cheques():
+    source = __import__("inspect").getsource(__import__("app.modules.treasury.bank_reconciliation.service", fromlist=["match"]).match)
+    assert 'Cheque.status.in_(["received","deposited","under_collection","resubmitted","issued","collected","cleared"])' in source
+
+
+def test_reconciliation_import_rejects_same_external_id_with_changed_details():
+    source = __import__("inspect").getsource(__import__("app.modules.treasury.bank_reconciliation.service", fromlist=["add_line"]).add_line)
+    assert "Statement external_id already exists with different transaction details" in source
