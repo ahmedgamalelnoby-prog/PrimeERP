@@ -362,3 +362,35 @@ def test_commerce_payment_retry_does_not_duplicate_cheque_side_effect():
     assert "Payment idempotency can return the already-posted payment" in source
     assert "Cheque.source_payment_id == payment.id" in source
     assert "if existing_cheque is None:" in source
+
+
+def test_payment_schema_supports_split_allocations_and_requires_primary_document():
+    from app.modules.commerce.schemas import PaymentCreate
+    payload = PaymentCreate(
+        company_id=7,
+        document_id=10,
+        payment_date=date(2026, 9, 19),
+        amount=Decimal("1500"),
+        method="bank_transfer",
+        allocations=[
+            {"document_id": 10, "amount": Decimal("900")},
+            {"document_id": 11, "amount": Decimal("600")},
+        ],
+    )
+    assert len(payload.allocations) == 2
+
+
+def test_payment_allocation_model_allows_multiple_documents_per_payment():
+    from app.modules.commerce.models import CommercePaymentAllocation
+    constraints = {c.name for c in CommercePaymentAllocation.__table__.constraints}
+    assert "uq_commerce_payment_allocation_document" in constraints
+    assert "uq_commerce_payment_allocation_payment" not in constraints
+
+
+def test_payment_reverse_handles_all_active_allocations():
+    import inspect
+    from app.modules.commerce.payment_workflow import reverse_payment
+    source = inspect.getsource(reverse_payment)
+    assert "CommercePaymentAllocation.status == \"active\"" in source
+    assert "target.paid_total" in source
+    assert "allocation.status = \"reversed\"" in source
