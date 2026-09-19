@@ -136,6 +136,12 @@ def _advance_status(current: str, target: str) -> str:
         return current
     if target == "pending":
         return current
+    # Keep Salla's legacy picked_up state monotonic for compatibility helpers;
+    # the persisted ERP shipment lifecycle uses canonical "shipped".
+    if target == "picked_up":
+        return "picked_up" if current == "pending" else current
+    if current == "picked_up" and target == "in_transit":
+        return "in_transit"
     if target == "returned":
         return "returned" if current not in {"returned", "cancelled"} else current
     if target == "cancelled":
@@ -156,20 +162,25 @@ def _advance_status(current: str, target: str) -> str:
 
 
 def _canonical_path(current: str, target: str) -> list[str]:
-    path = ["preparing", "packing", "shipped", "in_transit", "delivering", "out_for_delivery", "delivered"]
+    canonical_path = ["preparing", "packing", "shipped", "in_transit", "delivering", "out_for_delivery", "delivered"]
     if target == "returned":
-        path.append("returning")
-        path.append("returned")
-    if target not in path:
+        canonical_path.append("returning")
+        canonical_path.append("returned")
+    # Salla's picked_up is the external alias for the ERP shipped state.
+    if target == "picked_up":
+        target = "shipped"
+    if current == "picked_up":
+        current = "shipped"
+    if target not in canonical_path:
         return []
     if current == "pending":
         start = 0
-    elif current in path:
-        start = path.index(current) + 1
+    elif current in canonical_path:
+        start = canonical_path.index(current) + 1
     else:
         return []
-    end = path.index(target)
-    return path[start:end + 1] if end >= start else []
+    end = canonical_path.index(target)
+    return canonical_path[start:end + 1] if end >= start else []
 
 
 def _customer_name(db: Session, order: SallaOrder | None, fallback: str = "Salla Customer") -> str:
