@@ -52,6 +52,7 @@ async def receive_salla_app_event(
     request: Request,
     x_salla_security_strategy: str | None = Header(default=None, alias="X-Salla-Security-Strategy"),
     x_salla_signature: str | None = Header(default=None, alias="X-Salla-Signature"),
+    x_salla_event_id: str | None = Header(default=None, alias="X-Salla-Event-ID"),
 ):
     raw = await request.body()
     if len(raw) > 1_048_576:
@@ -65,7 +66,7 @@ async def receive_salla_app_event(
         raise HTTPException(422, "Webhook payload must be an object")
     db = next(get_db())
     try:
-        result = handle_app_event(db, payload)
+        result = handle_app_event(db, payload, event_id=x_salla_event_id)
         return {"accepted": True, "result": result}
     except SallaPublicAppError as exc:
         db.rollback()
@@ -74,12 +75,10 @@ async def receive_salla_app_event(
         db.close()
 
 
-
-
 @router.post("/embedded/session")
 def establish_embedded_session(
     salla_token: str,
-    db: Session = __import__("fastapi").Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Verify Salla Embedded SDK token and mint a short-lived PrimeERP JWT."""
     app_id = os.getenv("SALLA_APP_ID")
