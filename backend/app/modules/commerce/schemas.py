@@ -159,3 +159,25 @@ class AgingSummary(BaseModel):
     payable: Decimal
     net: Decimal
     rows: list[AgingRow]
+
+
+class StatementRow(BaseModel):
+    date: date
+    document_type: str
+    document_id: int | None
+    reference: str
+    debit: Decimal
+    credit: Decimal
+    balance: Decimal
+
+
+class PartnerStatement(BaseModel):
+    company_id: int
+    partner_id: int
+    direction: Literal["customer", "vendor"]
+    from_date: date | None
+    to_date: date | None
+    as_of: date
+    opening_balance: Decimal
+    closing_balance: Decimal
+    rows: list[StatementRow]
