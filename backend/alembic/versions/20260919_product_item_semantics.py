@@ -97,13 +97,17 @@ def upgrade() -> None:
     """))
     conn.execute(sa.text("""
         UPDATE sales_lines sl SET catalog_product_id = p.id
-        FROM catalog_products p JOIN sales_documents sd ON sd.id = sl.document_id
-        WHERE p.company_id = sd.company_id AND p.item_id = sl.item_id
+        FROM catalog_products p, sales_documents sd
+        WHERE sd.id = sl.document_id
+          AND p.company_id = sd.company_id
+          AND p.item_id = sl.item_id
     """))
     conn.execute(sa.text("""
         UPDATE purchase_lines pl SET catalog_product_id = p.id
-        FROM catalog_products p JOIN purchase_documents pd ON pd.id = pl.document_id
-        WHERE p.company_id = pd.company_id AND p.item_id = pl.item_id
+        FROM catalog_products p, purchase_documents pd
+        WHERE pd.id = pl.document_id
+          AND p.company_id = pd.company_id
+          AND p.item_id = pl.item_id
     """))
     conn.execute(sa.text("""
         UPDATE integration_product_mappings ipm SET catalog_product_id = p.id
