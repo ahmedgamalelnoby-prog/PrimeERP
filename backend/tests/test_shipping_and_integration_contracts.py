@@ -68,12 +68,10 @@ def test_salla_shipping_status_does_not_move_backwards():
     assert _advance_status("delivered", "in_transit") == "delivered"
     assert _advance_status("out_for_delivery", "pending") == "out_for_delivery"
     assert _advance_status("in_transit", "returned") == "returned"
-    assert _advance_status("delivered", "cancelled") == "cancelled"
+    assert _advance_status("delivered", "cancelled") == "delivered"
 
 
 def test_salla_shipping_payment_method_mapping_is_not_cross_bound():
-    # The bridge deliberately requires a compatible ERP method instead of
-    # falling back to the first carrier method, preventing COD/prepaid mixups.
     from app.modules.integrations.salla_shipping_service import _method
     class FakeDB:
         def scalar(self, stmt):
