@@ -7,7 +7,7 @@ from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.treasury.bank_reconciliation.models import BankAccount, BankStatement, BankStatementLine, ReconciliationSession, ReconciliationMatch
 from app.modules.treasury.bank_reconciliation.schemas import *
-from app.modules.treasury.bank_reconciliation.service import ensure_company, create_account, create_statement, add_line, create_session, match, auto_match, close_session
+from app.modules.treasury.bank_reconciliation.service import ensure_company, create_account, create_statement, add_line, create_session, match, auto_match, close_session, unmatch
 
 router=APIRouter(prefix="/treasury/reconciliation",tags=["Treasury Bank Reconciliation"],dependencies=[Depends(require_permission("treasury.access"))])
 
@@ -82,3 +82,13 @@ def session_close(session_id:int,current_user:User=Depends(get_current_user),db:
     if not s: raise HTTPException(404,"Reconciliation session not found")
     try:ensure_company(db,s.company_id,current_user);o=close_session(db,s,current_user);db.commit();db.refresh(o);return o
     except ValueError as e:db.rollback();fail(e)
+
+
+@router.delete("/sessions/{session_id}/matches/{match_id}", status_code=204, dependencies=[Depends(require_permission("treasury.write"))])
+def session_unmatch(session_id:int, match_id:int, current_user:User=Depends(get_current_user), db:Session=Depends(get_db)):
+    s=db.get(ReconciliationSession,session_id)
+    if not s: raise HTTPException(404,"Reconciliation session not found")
+    try:
+        ensure_company(db,s.company_id,current_user); unmatch(db,s,match_id); db.commit()
+    except ValueError as e:
+        db.rollback(); fail(e)
