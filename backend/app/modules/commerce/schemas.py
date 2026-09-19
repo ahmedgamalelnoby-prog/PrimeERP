@@ -93,6 +93,11 @@ class DocumentResponse(BaseModel):
     discount_total: Decimal
     paid_total: Decimal
     total: Decimal
+ 
+
+class PaymentAllocationCreate(BaseModel):
+    document_id: int = Field(gt=0)
+    amount: Decimal = Field(gt=0)
 
 
 class PaymentCreate(BaseModel):
@@ -110,11 +115,21 @@ class PaymentCreate(BaseModel):
     cheque_bank_name: str | None = Field(default=None, max_length=150)
     cheque_account_number: str | None = Field(default=None, max_length=100)
     cheque_due_date: date | None = None
+    allocations: list[PaymentAllocationCreate] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_wht(self):
         if self.wht_amount > self.amount:
             raise ValueError("WHT amount cannot exceed payment amount")
+        if self.allocations:
+            ids = [a.document_id for a in self.allocations]
+            if len(ids) != len(set(ids)):
+                raise ValueError("Duplicate payment allocation documents are not allowed")
+            total = sum((a.amount for a in self.allocations), Decimal("0"))
+            if total > self.amount:
+                raise ValueError("Payment allocations cannot exceed payment amount")
+            if self.document_id not in ids:
+                raise ValueError("The primary document must be included in payment allocations")
         return self
 
 
