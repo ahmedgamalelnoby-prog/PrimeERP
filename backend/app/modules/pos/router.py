@@ -433,6 +433,20 @@ def checkout(payload: Checkout, current_user: User = Depends(get_current_user), 
         warehouse_id=payload.warehouse_id,
         lines=lines,
     ))
+    # POS checkout is a sell + immediate fulfillment: the invoice handles revenue/AR,
+    # while a paired delivery performs the physical issue from the outlet warehouse.
+    delivery = commerce_service.create_document(db, DocumentCreate(
+        company_id=payload.company_id,
+        partner_id=payload.partner_id,
+        document_type="delivery",
+        number=f"POSD-{doc.id}",
+        document_date=payload.payment_date,
+        warehouse_id=payload.warehouse_id,
+        lines=lines,
+    ))
+    commerce_service.confirm(db, payload.company_id, delivery.id, "sale", current_user.id)
+    commerce_service.post_inventory(db, payload.company_id, delivery.id, "sale", user_id=current_user.id)
+
     snapshot = capture_document_tax_snapshot(db, doc, kind="sale")
     if snapshot is None:
         raise HTTPException(422, "A jurisdiction tax snapshot is required before posting this POS invoice")
