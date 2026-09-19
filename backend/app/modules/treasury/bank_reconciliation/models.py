@@ -15,7 +15,7 @@ class BankAccount(Base):
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
-    __table_args__ = (UniqueConstraint("company_id", "name", name="uq_treasury_bank_account_company_name"))
+    __table_args__ = (UniqueConstraint("company_id", "name", name="uq_treasury_bank_account_company_name"),)
 
 class BankStatement(Base):
     __tablename__ = "treasury_bank_statements"
