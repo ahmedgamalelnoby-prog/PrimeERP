@@ -45,6 +45,13 @@ def add_line(db, statement, payload):
     obj=BankStatementLine(statement_id=statement.id,company_id=statement.company_id,fingerprint=fingerprint_line(payload),**payload.model_dump())
     existing=db.scalar(select(BankStatementLine).where(BankStatementLine.statement_id==statement.id,BankStatementLine.fingerprint==obj.fingerprint))
     if existing: return existing, False
+    if payload.external_id:
+        duplicate_external=db.scalar(select(BankStatementLine).where(
+            BankStatementLine.statement_id==statement.id,
+            BankStatementLine.external_id==payload.external_id,
+        ))
+        if duplicate_external:
+            raise ValueError("Statement external_id already exists with different transaction details")
     db.add(obj); db.flush(); return obj, True
 
 def create_session(db,payload,user):
@@ -70,7 +77,11 @@ def match(db, session, payload, user):
     if payload.source_type=="payment":
         source=db.scalar(select(CommercePayment).where(CommercePayment.id==payload.source_id,CommercePayment.company_id==session.company_id,CommercePayment.status=="posted"))
     else:
-        source=db.scalar(select(Cheque).where(Cheque.id==payload.source_id,Cheque.company_id==session.company_id))
+        source=db.scalar(select(Cheque).where(
+            Cheque.id==payload.source_id,
+            Cheque.company_id==session.company_id,
+            Cheque.status.in_(["received","deposited","under_collection","resubmitted","issued","collected","cleared"]),
+        ))
     if not source: raise ValueError("Source transaction not found")
     if payload.source_type=="payment":
         if payload.amount > source.amount: raise ValueError("Match exceeds payment amount")
@@ -100,7 +111,12 @@ def candidates(db, session, line_id):
         payment_query=payment_query.where(CommercePayment.reference==line.reference)
     payments=[p for p in db.scalars(payment_query.order_by(CommercePayment.payment_date.desc()).limit(20)).all() if ("payment",p.id) not in used_set]
     cheque_direction="received" if side=="credit" else "issued"
-    cheque_query=select(Cheque).where(Cheque.company_id==session.company_id,Cheque.direction==cheque_direction,Cheque.amount==amount)
+    cheque_query=select(Cheque).where(
+        Cheque.company_id==session.company_id,
+        Cheque.direction==cheque_direction,
+        Cheque.amount==amount,
+        Cheque.status.in_(["received","deposited","under_collection","resubmitted","issued","collected","cleared"]),
+    )
     if line.cheque_number:
         cheque_query=cheque_query.where(Cheque.cheque_number==line.cheque_number)
     cheques=[q for q in db.scalars(cheque_query.order_by(Cheque.due_date.desc()).limit(20)).all() if ("cheque",q.id) not in used_set]
