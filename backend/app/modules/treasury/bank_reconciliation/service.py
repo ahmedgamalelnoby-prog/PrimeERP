@@ -31,6 +31,9 @@ def create_statement(db, payload, user):
     account=db.scalar(select(BankAccount).where(BankAccount.id==payload.bank_account_id,BankAccount.company_id==payload.company_id))
     if not account: raise ValueError("Bank account not found")
     if payload.period_end < payload.period_start: raise ValueError("Statement period is invalid")
+    previous=db.scalar(select(BankStatement).where(BankStatement.bank_account_id==payload.bank_account_id,BankStatement.company_id==payload.company_id,BankStatement.period_end < payload.period_start).order_by(BankStatement.period_end.desc()))
+    if not previous and payload.opening_balance != account.opening_balance: raise ValueError("First statement opening balance must equal the bank account opening balance")
+    if previous and payload.opening_balance != previous.closing_balance: raise ValueError("Statement opening balance must equal the previous statement closing balance")
     obj=BankStatement(**payload.model_dump()); db.add(obj); db.flush(); return obj
 
 def add_line(db, statement, payload):
@@ -107,6 +110,10 @@ def auto_match(db,session,user):
             except ValueError: pass
     return matched,candidates
 
+def statement_is_balanced(statement, db):
+    net=db.scalar(select(func.coalesce(func.sum(BankStatementLine.credit-BankStatementLine.debit),0)).where(BankStatementLine.statement_id==statement.id)) or Decimal("0")
+    return statement.opening_balance + net == statement.closing_balance
+
 def refresh_session(session, db=None):
     session.difference=session.book_balance-session.bank_balance
     if session.status!="closed":
@@ -119,6 +126,9 @@ def refresh_session(session, db=None):
         session.status="balanced" if session.difference==0 and unmatched==0 else "open"
 
 def close_session(db,session,user):
+    statement=db.get(BankStatement,session.statement_id)
+    if not statement: raise ValueError("Bank statement not found")
+    if not statement_is_balanced(statement, db): raise ValueError("Bank statement opening balance plus net transactions does not equal closing balance")
     refresh_session(session, db)
     if session.status!="balanced": raise ValueError("Reconciliation can only be closed when balanced and all statement lines are matched")
     session.status="closed"; session.closed_by=user.id; session.closed_at=datetime.utcnow()
