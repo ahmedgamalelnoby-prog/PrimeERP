@@ -222,6 +222,7 @@ def reconcile_salla_product_mapping(
     )
     # Every Salla SKU is a first-class recipe identity. Parent and variant SKUs
     # may point to the same recipe when their ERP composition is shared.
+    # Recipe.code remains the ERP-internal code.
     salla_sku = _first_text(salla_product.sku)
     active_recipe = db.scalar(
         select(Recipe).where(
