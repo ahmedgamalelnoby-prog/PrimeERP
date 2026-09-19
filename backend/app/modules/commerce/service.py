@@ -8,7 +8,7 @@ from app.modules.companies.models import Company
 from app.modules.identity.models import User
 from app.modules.accounting.tax_engine import calculate_taxes
 from app.modules.commerce.accounting_service import commerce_accounting_service
-from app.modules.catalog.models import ProductVariant
+from app.modules.catalog.models import ProductVariant, Recipe
 from app.modules.commerce.models import BusinessPartner, CommercePayment, CommercePaymentAllocation, PurchaseBillReceiptLink, PurchaseDocument, PurchaseLine, SalesDocument, SalesLine
 from app.modules.commerce.payment_workflow import post_payment, reverse_payment
 from app.modules.inventory.items.models import InventoryItem
@@ -219,16 +219,81 @@ class CommerceService:
         locations = list(db.scalars(select(InventoryLocation).where(InventoryLocation.warehouse_id == obj.warehouse_id, InventoryLocation.company_id == company_id, InventoryLocation.is_active.is_(True)).order_by(InventoryLocation.id)).all())
         if not locations: raise ValueError("Warehouse has no active location")
         loc = locations[0]; source_entity = "sales_delivery" if kind == "sale" else "purchase_receipt"
+
+        def active_recipe(product_id: int, variant_id: int | None):
+            recipes = list(db.scalars(select(Recipe).where(
+                Recipe.company_id == company_id,
+                Recipe.product_id == product_id,
+                Recipe.is_active.is_(True),
+            ).order_by(Recipe.version.desc())).all())
+            if variant_id is not None:
+                for recipe in recipes:
+                    if recipe.variant_id == variant_id:
+                        return recipe
+            return next((recipe for recipe in recipes if recipe.variant_id is None), None)
+
+        def expand_recipe(product_id: int, variant_id: int | None, quantity: Decimal, visited: set[tuple[int, int | None]]):
+            recipe = active_recipe(product_id, variant_id)
+            if recipe is None:
+                return [(product_id, variant_id, quantity)]
+            key = (product_id, variant_id)
+            if key in visited:
+                raise ValueError(f"Recipe cycle detected while posting inventory for item {product_id}")
+            visited = set(visited)
+            visited.add(key)
+            multiplier = quantity / Decimal(recipe.yield_quantity)
+            multiplier *= Decimal("1") + Decimal(recipe.waste_percentage or 0) / Decimal("100")
+            expanded = []
+            for recipe_line in recipe.lines:
+                line_qty = multiplier * Decimal(recipe_line.quantity)
+                line_qty *= Decimal("1") + Decimal(recipe_line.waste_percentage or 0) / Decimal("100")
+                expanded.extend(expand_recipe(recipe_line.ingredient_product_id, None, line_qty, visited))
+            return expanded
+
         for line in obj.lines:
-            source_id = f"{obj.id}:{line.id}"
-            existing = db.scalar(select(InventoryStockMove).where(InventoryStockMove.company_id == company_id, InventoryStockMove.source_module == "commerce", InventoryStockMove.source_entity == source_entity, InventoryStockMove.source_id == source_id, InventoryStockMove.status.in_(["draft", "posted"])))
-            if existing: continue
-            if kind == "sale": payload = StockMoveCreate(company_id=company_id, item_id=line.item_id, variant_id=line.variant_id, movement_type="issue", source_location_id=loc.id, destination_location_id=None, quantity=line.quantity, unit_cost=0, transaction_date=obj.document_date, reference=obj.number, source_module="commerce", source_entity=source_entity, source_id=source_id, notes="Sales delivery")
+            if kind == "sale":
+                components = expand_recipe(line.item_id, line.variant_id, Decimal(line.quantity), set())
+                for component_item_id, component_variant_id, component_qty in components:
+                    source_id = f"{obj.id}:{line.id}:component:{component_item_id}:{component_variant_id or 0}"
+                    existing = db.scalar(select(InventoryStockMove).where(
+                        InventoryStockMove.company_id == company_id,
+                        InventoryStockMove.source_module == "commerce",
+                        InventoryStockMove.source_entity == source_entity,
+                        InventoryStockMove.source_id == source_id,
+                        InventoryStockMove.status.in_(["draft", "posted"]),
+                    ))
+                    if existing:
+                        continue
+                    payload = StockMoveCreate(
+                        company_id=company_id, item_id=component_item_id, variant_id=component_variant_id,
+                        movement_type="issue", source_location_id=loc.id, destination_location_id=None,
+                        quantity=component_qty, unit_cost=0, transaction_date=obj.document_date,
+                        reference=obj.number, source_module="commerce", source_entity=source_entity,
+                        source_id=source_id, notes=f"Sales delivery component for line {line.id}",
+                    )
+                    move = inventory_stock_move_service.create_draft(db, payload)
+                    inventory_stock_move_service.post(db, tenant_id=tenant_id, company_id=company_id, move_id=move.id, user_id=user_id)
             else:
+                source_id = f"{obj.id}:{line.id}"
+                existing = db.scalar(select(InventoryStockMove).where(
+                    InventoryStockMove.company_id == company_id,
+                    InventoryStockMove.source_module == "commerce",
+                    InventoryStockMove.source_entity == source_entity,
+                    InventoryStockMove.source_id == source_id,
+                    InventoryStockMove.status.in_(["draft", "posted"]),
+                ))
+                if existing:
+                    continue
                 net_unit_cost = Decimal(line.unit_price) * (Decimal("100") - Decimal(line.discount_percent or 0)) / Decimal("100")
-                payload = StockMoveCreate(company_id=company_id, item_id=line.item_id, variant_id=getattr(line, "variant_id", None), movement_type="receipt", source_location_id=None, destination_location_id=loc.id, quantity=line.quantity, unit_cost=net_unit_cost, transaction_date=obj.document_date, reference=obj.number, source_module="commerce", source_entity=source_entity, source_id=source_id, notes="Purchase receipt")
-            move = inventory_stock_move_service.create_draft(db, payload)
-            inventory_stock_move_service.post(db, tenant_id=tenant_id, company_id=company_id, move_id=move.id, user_id=user_id)
+                payload = StockMoveCreate(
+                    company_id=company_id, item_id=line.item_id, variant_id=getattr(line, "variant_id", None),
+                    movement_type="receipt", source_location_id=None, destination_location_id=loc.id,
+                    quantity=line.quantity, unit_cost=net_unit_cost, transaction_date=obj.document_date,
+                    reference=obj.number, source_module="commerce", source_entity=source_entity,
+                    source_id=source_id, notes="Purchase receipt",
+                )
+                move = inventory_stock_move_service.create_draft(db, payload)
+                inventory_stock_move_service.post(db, tenant_id=tenant_id, company_id=company_id, move_id=move.id, user_id=user_id)
         if kind == "sale":
             commerce_accounting_service.post_sales_delivery_cogs(db, obj, user_id)
         else:
