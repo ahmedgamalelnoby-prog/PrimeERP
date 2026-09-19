@@ -16,6 +16,7 @@ from app.modules.commerce.service import commerce_service
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models.user import User
 from app.modules.inventory.items.models import InventoryItem
+from app.modules.inventory.warehouses.models import InventoryWarehouse
 from app.modules.jurisdiction.commerce_guard import capture_document_tax_snapshot, validate_document_tax_snapshot
 from app.modules.restaurant.models import (
     PreparationStation,
@@ -36,6 +37,7 @@ class OutletCreate(BaseModel):
     code: str = Field(min_length=1, max_length=40)
     name: str = Field(min_length=1, max_length=160)
     outlet_type: str = Field(default="restaurant", min_length=2, max_length=30)
+    warehouse_id: int | None = Field(default=None, gt=0)
 
 
 class StationCreate(BaseModel):
@@ -155,6 +157,10 @@ def list_outlets(company_id: int = Query(..., gt=0), current_user: User = Depend
 def create_outlet(payload: OutletCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company(db, payload.company_id, current_user)
     _branch(db, payload.company_id, payload.branch_id)
+    if payload.warehouse_id is not None:
+        warehouse = db.scalar(select(InventoryWarehouse).where(InventoryWarehouse.id == payload.warehouse_id, InventoryWarehouse.company_id == payload.company_id, InventoryWarehouse.is_active.is_(True)))
+        if warehouse is None or warehouse.branch_id != payload.branch_id:
+            raise HTTPException(422, "Outlet warehouse must belong to the same company and branch")
     if db.scalar(select(PosOutlet).where(PosOutlet.company_id == payload.company_id, PosOutlet.code == payload.code)):
         raise HTTPException(409, "Outlet code already exists")
     obj = PosOutlet(**payload.model_dump())
@@ -162,6 +168,19 @@ def create_outlet(payload: OutletCreate, current_user: User = Depends(get_curren
     db.commit()
     db.refresh(obj)
     return obj
+
+
+@router.patch("/outlets/{outlet_id}/warehouse", dependencies=[Depends(require_permission("inventory.write"))])
+def assign_outlet_warehouse(outlet_id: int, warehouse_id: int = Query(..., gt=0), company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company(db, company_id, current_user)
+    outlet = db.scalar(select(PosOutlet).where(PosOutlet.id == outlet_id, PosOutlet.company_id == company_id, PosOutlet.is_active.is_(True)).with_for_update())
+    warehouse = db.scalar(select(InventoryWarehouse).where(InventoryWarehouse.id == warehouse_id, InventoryWarehouse.company_id == company_id, InventoryWarehouse.is_active.is_(True)))
+    if outlet is None or warehouse is None or outlet.branch_id != warehouse.branch_id:
+        raise HTTPException(422, "Outlet and warehouse must belong to the same company and branch")
+    outlet.warehouse_id = warehouse.id
+    db.commit()
+    db.refresh(outlet)
+    return outlet
 
 
 @router.get("/stations")
@@ -345,6 +364,12 @@ def _menu_price(db: Session, company_id: int, menu_item: MenuItem, price_list_id
 def checkout(payload: Checkout, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company(db, payload.company_id, current_user)
     terminal = _terminal(db, payload.company_id, payload.terminal_id) if payload.terminal_id else None
+    if terminal is not None:
+        outlet = db.get(PosOutlet, terminal.outlet_id)
+        if outlet is None or outlet.warehouse_id is None:
+            raise HTTPException(422, "The POS outlet must have a consumption warehouse before selling")
+        if payload.warehouse_id != outlet.warehouse_id:
+            raise HTTPException(422, "POS consumption warehouse must match the terminal outlet warehouse")
     lines: list[DocumentLineCreate] = []
     routes: list[int | None] = []
     for line in payload.lines:
