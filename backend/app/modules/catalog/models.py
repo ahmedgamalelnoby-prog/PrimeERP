@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -104,7 +104,13 @@ class Recipe(Base):
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
-    __table_args__ = (UniqueConstraint("company_id", "code", "version", name="uq_recipe_company_code_version"), UniqueConstraint("company_id", "product_id", "variant_id", "version", name="uq_recipe_company_product_variant_version"), CheckConstraint("yield_quantity > 0", name="ck_recipe_yield_positive"), CheckConstraint("waste_percentage >= 0 AND waste_percentage < 100", name="ck_recipe_waste_range"))
+    __table_args__ = (
+        UniqueConstraint("company_id", "code", "version", name="uq_recipe_company_code_version"),
+        Index("uq_recipe_company_product_version_parent", "company_id", "product_id", "version", unique=True, postgresql_where=(variant_id.is_(None))),
+        Index("uq_recipe_company_product_variant_version", "company_id", "product_id", "variant_id", "version", unique=True, postgresql_where=(variant_id.is_not(None))),
+        CheckConstraint("yield_quantity > 0", name="ck_recipe_yield_positive"),
+        CheckConstraint("waste_percentage >= 0 AND waste_percentage < 100", name="ck_recipe_waste_range"),
+    )
     product = relationship("InventoryItem")
     catalog_product = relationship("CatalogProduct")
     variant = relationship("ProductVariant", foreign_keys=[variant_id])
