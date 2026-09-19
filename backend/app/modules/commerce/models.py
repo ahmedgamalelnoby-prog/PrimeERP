@@ -128,6 +128,24 @@ class PurchaseBillReceiptAllocation(Base):
     )
 
 
+class CommercePaymentAllocation(Base):
+    __tablename__ = "commerce_payment_allocations"
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    payment_id = Column(Integer, ForeignKey("commerce_payments.id", ondelete="RESTRICT"), nullable=False, unique=True, index=True)
+    document_kind = Column(String(10), nullable=False)
+    document_id = Column(Integer, nullable=False, index=True)
+    amount = Column(Numeric(18, 4), nullable=False)
+    status = Column(String(20), nullable=False, default="active")
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default="CURRENT_TIMESTAMP")
+    reversed_at = Column(DateTime(timezone=True), nullable=True)
+    __table_args__ = (
+        CheckConstraint("document_kind IN ('sale','purchase')", name="ck_commerce_payment_allocation_kind"),
+        CheckConstraint("amount > 0", name="ck_commerce_payment_allocation_amount"),
+        CheckConstraint("status IN ('active','reversed')", name="ck_commerce_payment_allocation_status"),
+    )
+
+
 class CommercePayment(Base):
     __tablename__ = "commerce_payments"
     id = Column(Integer, primary_key=True)
