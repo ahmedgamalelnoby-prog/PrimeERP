@@ -573,7 +573,7 @@ def test_salla_imported_terminal_shipment_replays_canonical_lifecycle():
     from app.modules.integrations import salla_shipping_service
 
     source = inspect.getsource(salla_shipping_service.sync_salla_shipment)
-    assert "canonical_path = [" in source
+    assert "_canonical_path(" in source
     assert "shipping_status_service.apply_transition(" in source
     assert "obj.status = _advance_status(obj.status, target_status)" not in source
     assert '"shipped": "shipped"' in source
