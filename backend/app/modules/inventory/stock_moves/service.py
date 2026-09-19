@@ -18,6 +18,7 @@ from app.modules.inventory.locations.models import InventoryLocation
 from app.modules.inventory.stock_moves.location_stock import InventoryLocationStock
 from app.modules.inventory.stock_moves.models import InventoryAccountingConfig, InventoryCostLayer, InventoryStockMove, InventoryValuationAllocation
 from app.modules.inventory.stock_moves.repository import inventory_stock_move_repository
+from app.modules.inventory.reservations.models import InventoryReservation
 
 
 class InventoryStockMoveService:
@@ -118,6 +119,23 @@ class InventoryStockMoveService:
             raise ValueError("Company is outside the current tenant")
         if getattr(move, "source_entity", None) == "sales_delivery" and move.movement_type != "issue":
             raise ValueError("Sales delivery stock moves must be issue movements")
+        reservation = None
+        if move.reservation_id is not None:
+            reservation = db.scalar(
+                select(InventoryReservation)
+                .where(InventoryReservation.id == move.reservation_id, InventoryReservation.company_id == company_id)
+                .with_for_update()
+            )
+            if reservation is None:
+                raise ValueError("Reservation not found for stock movement")
+            if reservation.status != "active":
+                raise ValueError("Only active reservations can be consumed by a stock movement")
+            if reservation.item_id != move.item_id or reservation.variant_id != move.variant_id or reservation.location_id != move.source_location_id:
+                raise ValueError("Reservation does not match the stock movement item, variant, or source location")
+            if Decimal(reservation.quantity) != Decimal(move.quantity):
+                raise ValueError("Reservation quantity must exactly match the stock movement quantity")
+            if move.movement_type not in {"issue", "transfer", "return"}:
+                raise ValueError("Reservations can only be consumed by issue, transfer, or return movements")
         item = db.scalar(select(InventoryItem).where(InventoryItem.id == move.item_id, InventoryItem.company_id == company_id, InventoryItem.is_active.is_(True)))
         if item is None:
             raise ValueError("Item is unavailable for posting")
@@ -219,6 +237,18 @@ class InventoryStockMoveService:
             warehouse_source.quantity_on_hand += quantity
             self._restore_fifo_source_layers(db, allocations, item.costing_method)
             self._recalculate_average_cost(db, company_id, move.item_id, variant_id, source_warehouse_id, item)
+
+        if reservation is not None:
+            if source_balance is None:
+                raise ValueError("A reservation-backed movement requires a source location")
+            if Decimal(source_balance.quantity_reserved or 0) < quantity:
+                raise ValueError("Reservation balance is inconsistent at source location")
+            warehouse_source = self._warehouse_stock(db, company_id, move.item_id, variant_id, source_warehouse_id)
+            if Decimal(warehouse_source.quantity_reserved or 0) < quantity:
+                raise ValueError("Reservation balance is inconsistent at warehouse")
+            source_balance.quantity_reserved -= quantity
+            warehouse_source.quantity_reserved -= quantity
+            reservation.status = "consumed"
 
         if move.accounting_entry_id is not None:
             journal_service.reverse(db, tenant_id=tenant_id, entry_id=move.accounting_entry_id, user_id=user_id, reversal_date=reversal_date)
