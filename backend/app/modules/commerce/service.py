@@ -251,6 +251,9 @@ class CommerceService:
                 db.add(existing)
             elif existing.status != "active" or Decimal(existing.amount) != target_amount:
                 raise ValueError("Payment allocation already exists with a different amount")
+            else:
+                created.append(existing)
+                continue
             target_doc.paid_total = Decimal(target_doc.paid_total or 0) + target_amount
             created.append(existing)
         db.flush()
