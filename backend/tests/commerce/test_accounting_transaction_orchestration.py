@@ -14,7 +14,7 @@ def test_confirm_orchestrates_invoice_and_note_accounting_in_service():
 
 
 def test_delivery_orchestrates_cogs_after_inventory_in_same_service_call():
-    inventory_marker = 'inventory_stock_move_service.post(db, company_id=company_id, move_id=move.id)'
+    inventory_marker = 'inventory_stock_move_service.post(db, tenant_id=tenant_id, company_id=company_id, move_id=move.id, user_id=user_id)'
     cogs_marker = 'commerce_accounting_service.post_sales_delivery_cogs(db, obj, user_id)'
     assert inventory_marker in SERVICE
     assert cogs_marker in SERVICE
