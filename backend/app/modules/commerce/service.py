@@ -113,11 +113,40 @@ class CommerceService:
         model = SalesDocument if kind == "sale" else PurchaseDocument
         return list(db.scalars(select(model).where(model.company_id == company_id).order_by(model.document_date.desc(), model.id.desc())).all())
 
+    def partner_open_balance(self, db, company_id: int, partner_id: int, direction: str, *, before_date=None):
+        model = SalesDocument if direction == "customer" else PurchaseDocument
+        positive_type = "invoice" if direction == "customer" else "bill"
+        offset_type = "credit_note" if direction == "customer" else "debit_note"
+        q = select(model).where(model.company_id == company_id, model.partner_id == partner_id, model.status.in_({"confirmed", "posted"}), model.document_type.in_({positive_type, offset_type}))
+        if before_date is not None:
+            q = q.where(model.document_date < before_date)
+        total = Decimal("0")
+        for doc in db.scalars(q).all():
+            value = Decimal(doc.total or 0)
+            total += value if doc.document_type == positive_type else -value
+            if doc.document_type == positive_type:
+                total -= Decimal(doc.paid_total or 0)
+        return total
+
+    def enforce_credit_limit(self, db, company_id: int, document):
+        if document.document_type != "invoice":
+            return
+        partner = db.scalar(select(BusinessPartner).where(BusinessPartner.id == document.partner_id, BusinessPartner.company_id == company_id).with_for_update())
+        limit = Decimal(partner.credit_limit or 0) if partner else Decimal("0")
+        if limit <= 0:
+            return
+        existing = self.partner_open_balance(db, company_id, document.partner_id, "customer", before_date=None)
+        exposure = existing + Decimal(document.total or 0)
+        if exposure > limit:
+            raise ValueError(f"Customer credit limit exceeded: exposure {exposure} is above limit {limit}")
+
     def confirm(self, db, company_id, document_id, kind, user_id: int | None = None):
         model = SalesDocument if kind == "sale" else PurchaseDocument; obj = db.scalar(select(model).where(model.id == document_id, model.company_id == company_id).with_for_update())
         if not obj: raise ValueError("Document not found")
         if obj.status != "draft": raise ValueError("Only draft documents can be confirmed")
         if not obj.lines: raise ValueError("A document must contain at least one line before confirmation")
+        if kind == "sale":
+            self.enforce_credit_limit(db, company_id, obj)
         obj.status = "confirmed"; db.flush()
         if user_id is not None:
             if kind == "sale":
@@ -232,24 +261,86 @@ class CommerceService:
     def ar_ap_aging(self, db, company_id: int, as_of):
         rows = []
         for model, direction in ((SalesDocument, "receivable"), (PurchaseDocument, "payable")):
+            positive_type = "invoice" if direction == "receivable" else "bill"
+            offset_type = "credit_note" if direction == "receivable" else "debit_note"
             documents = db.scalars(select(model).where(
                 model.company_id == company_id,
-                model.document_type == ("invoice" if direction == "receivable" else "bill"),
+                model.document_type == positive_type,
                 model.status.in_({"confirmed", "posted"}),
                 model.total > model.paid_total,
             ).order_by(model.due_date, model.id)).all()
+            offsets = {}
+            for note in db.scalars(select(model).where(
+                model.company_id == company_id,
+                model.document_type == offset_type,
+                model.status.in_({"confirmed", "posted"}),
+            )).all():
+                offsets[note.partner_id] = offsets.get(note.partner_id, Decimal("0")) + Decimal(note.total or 0)
             for document in documents:
                 outstanding = Decimal(document.total or 0) - Decimal(document.paid_total or 0)
+                partner_offset = offsets.get(document.partner_id, Decimal("0"))
+                if partner_offset > 0:
+                    applied = min(outstanding, partner_offset)
+                    outstanding -= applied
+                    offsets[document.partner_id] = partner_offset - applied
+                if outstanding <= 0:
+                    continue
                 due_date = document.due_date or document.document_date
                 days_overdue = max((as_of - due_date).days, 0)
                 bucket = "current" if days_overdue == 0 else "1-30" if days_overdue <= 30 else "31-60" if days_overdue <= 60 else "61-90" if days_overdue <= 90 else "91+"
                 rows.append({
                     "direction": direction, "document_id": document.id, "document_number": document.number,
                     "partner_id": document.partner_id, "document_date": document.document_date, "due_date": due_date,
-                    "total": document.total, "paid_total": document.paid_total, "outstanding": outstanding,
+                    "total": document.total, "paid_total": Decimal(document.total or 0) - outstanding, "outstanding": outstanding,
                     "days_overdue": days_overdue, "bucket": bucket,
                 })
         return rows
+
+    def partner_statement(self, db, company_id: int, partner_id: int, direction: str, from_date=None, to_date=None, as_of=None):
+        if direction not in {"customer", "vendor"}:
+            raise ValueError("Invalid statement direction")
+        model = SalesDocument if direction == "customer" else PurchaseDocument
+        positive_type = "invoice" if direction == "customer" else "bill"
+        offset_type = "credit_note" if direction == "customer" else "debit_note"
+        cutoff = as_of or to_date
+        if cutoff is None:
+            from datetime import date
+            cutoff = date.today()
+        partner = db.scalar(select(BusinessPartner).where(BusinessPartner.id == partner_id, BusinessPartner.company_id == company_id, BusinessPartner.is_active.is_(True)))
+        if partner is None:
+            raise ValueError("Partner not found")
+        docs = list(db.scalars(select(model).where(
+            model.company_id == company_id, model.partner_id == partner_id,
+            model.document_type.in_({positive_type, offset_type}),
+            model.status.in_({"confirmed", "posted"}),
+            model.document_date <= cutoff,
+        ).order_by(model.document_date, model.id)).all())
+        payments = list(db.scalars(select(CommercePayment).where(
+            CommercePayment.company_id == company_id,
+            CommercePayment.document_kind == ("sale" if direction == "customer" else "purchase"),
+            CommercePayment.document_id.in_([d.id for d in docs] or [-1]),
+            CommercePayment.status == "posted",
+            CommercePayment.payment_date <= cutoff,
+        ).order_by(CommercePayment.payment_date, CommercePayment.id)).all())
+        events = []
+        for doc in docs:
+            is_positive = doc.document_type == positive_type
+            events.append((doc.document_date, doc.id, doc.document_type, doc.number, Decimal(doc.total or 0) if is_positive else -Decimal(doc.total or 0), 0))
+        for payment in payments:
+            events.append((payment.payment_date, 10_000_000 + payment.id, "payment", f"PAY-{payment.id}", 0, Decimal(payment.amount)))
+        events.sort(key=lambda x: (x[0], x[1]))
+        balance = Decimal("0")
+        opening = Decimal("0")
+        rows = []
+        for event_date, _, event_type, reference, debit_base, credit_base in events:
+            movement = debit_base - credit_base
+            if from_date is not None and event_date < from_date:
+                balance += movement
+                opening = balance
+                continue
+            balance += movement
+            rows.append({"date": event_date, "document_type": event_type, "document_id": None if event_type == "payment" else int(reference.split("-")[-1]) if reference.split("-")[-1].isdigit() else None, "reference": reference, "debit": debit_base, "credit": credit_base, "balance": balance})
+        return {"opening_balance": opening, "closing_balance": balance, "rows": rows}
 
 
 commerce_service = CommerceService()
