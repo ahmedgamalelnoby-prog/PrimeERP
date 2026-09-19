@@ -7,7 +7,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import IntegrationEvent
+from .models import IntegrationConnection, IntegrationEvent
 from .salla_models import SallaCustomer, SallaInvoice, SallaOrder, SallaOrderItem, SallaProduct, SallaProductVariant, SallaShipment
 from .salla_product_mapping_service import reconcile_salla_product_mapping
 
@@ -90,7 +90,28 @@ def _event_key(event_type: str) -> str:
 
 
 def _upsert(db: Session, model, connection_id: int, external_id: str, values: dict):
-    obj = db.scalar(select(model).where(model.connection_id == connection_id, model.external_id == external_id).with_for_update())
+    # A connection belongs to exactly one company. Keep the company scope in
+    # every read/update so a reused/misconfigured connection ID can never
+    # mutate another company's synchronized Salla records.
+    company_id = values.get("company_id")
+    if company_id is None:
+        raise ValueError("Salla synchronization requires a company scope")
+    connection = db.scalar(
+        select(IntegrationConnection).where(
+            IntegrationConnection.id == connection_id,
+            IntegrationConnection.company_id == company_id,
+            IntegrationConnection.is_active.is_(True),
+        )
+    )
+    if connection is None:
+        raise ValueError("Salla connection does not belong to the company or is inactive")
+    obj = db.scalar(
+        select(model).where(
+            model.connection_id == connection_id,
+            model.company_id == company_id,
+            model.external_id == external_id,
+        ).with_for_update()
+    )
     if obj is None:
         obj = model(connection_id=connection_id, external_id=external_id, **values)
         db.add(obj)
