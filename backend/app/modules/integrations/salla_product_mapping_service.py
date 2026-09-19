@@ -254,11 +254,13 @@ def reconcile_salla_product_mapping(
     mapped = 0
     for salla_variant in variants:
         local_variant = _find_local_variant(db, company_id, local_product.id, salla_variant)
-        if local_variant is None:
-            continue
         variant_external_id = _first_text(salla_variant.external_id)
         variant_sku = _first_text(salla_variant.sku, salla_variant.barcode, salla_variant.gtin)
-        if not variant_external_id:
+        if variant_sku and local_variant is None:
+            raise ValueError("Salla variant SKU requires a matching ERP product variant before mapping")
+        if variant_sku and not variant_external_id:
+            raise ValueError("Salla variant SKU requires an external variant identity before mapping")
+        if local_variant is None or not variant_external_id:
             continue
         _upsert_mapping(
             db,
