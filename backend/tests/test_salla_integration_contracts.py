@@ -36,8 +36,8 @@ def test_salla_shipping_terminal_events_do_not_get_lost():
 
 
 def test_salla_shipping_normal_progression_remains_ordered():
-    assert _advance_status("pending", "picked_up") == "picked_up"
-    assert _advance_status("picked_up", "in_transit") == "in_transit"
+    assert _advance_status("pending", "shipped") == "shipped"
+    assert _advance_status("shipped", "in_transit") == "in_transit"
     assert _advance_status("in_transit", "out_for_delivery") == "out_for_delivery"
     assert _advance_status("out_for_delivery", "delivered") == "delivered"
     assert _advance_status("delivered", "pending") == "delivered"
