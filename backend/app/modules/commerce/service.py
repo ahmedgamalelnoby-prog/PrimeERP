@@ -253,8 +253,8 @@ class CommerceService:
         for line in obj.lines:
             if kind == "sale":
                 components = expand_recipe(line.item_id, line.variant_id, Decimal(line.quantity), set())
-                for component_item_id, component_variant_id, component_qty in components:
-                    source_id = f"{obj.id}:{line.id}:component:{component_item_id}:{component_variant_id or 0}"
+                for component_index, (component_item_id, component_variant_id, component_qty) in enumerate(components, start=1):
+                    source_id = f"{obj.id}:{line.id}:component:{component_index}:{component_item_id}:{component_variant_id or 0}"
                     existing = db.scalar(select(InventoryStockMove).where(
                         InventoryStockMove.company_id == company_id,
                         InventoryStockMove.source_module == "commerce",
