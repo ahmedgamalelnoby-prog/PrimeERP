@@ -140,6 +140,7 @@ class CommercePaymentAllocation(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, server_default="CURRENT_TIMESTAMP")
     reversed_at = Column(DateTime(timezone=True), nullable=True)
     __table_args__ = (
+        UniqueConstraint("company_id", "payment_id", "document_kind", "document_id", name="uq_commerce_payment_allocation_document"),
         CheckConstraint("document_kind IN ('sale','purchase')", name="ck_commerce_payment_allocation_kind"),
         CheckConstraint("amount > 0", name="ck_commerce_payment_allocation_amount"),
         CheckConstraint("status IN ('active','reversed')", name="ck_commerce_payment_allocation_status"),
