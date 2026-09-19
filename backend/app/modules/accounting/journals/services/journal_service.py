@@ -49,17 +49,17 @@ class JournalService:
         if not (period.start_date <= entry_date <= period.end_date):
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Entry date is outside the selected accounting period")
         account_ids = {int(payload["account_combination_id"]) for payload in lines}
-        accounts = db.scalars(select(AccountCombination).where(AccountCombination.id.in_(account_ids), AccountCombination.company_id == company_id, AccountCombination.is_active.is_(True))).all()
+        accounts = db.scalars(select(AccountCombination).where(AccountCombination.id.in_(account_ids), AccountCombination.tenant_id == tenant_id, AccountCombination.company_id == company_id, AccountCombination.is_active.is_(True))).all()
         if len({account.id for account in accounts}) != len(account_ids):
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Every account combination must belong to the selected company and be active")
         department_ids = {int(payload["department_id"]) for payload in lines if payload.get("department_id") is not None}
         if department_ids:
-            departments = db.scalars(select(AccountingDepartment).where(AccountingDepartment.id.in_(department_ids), AccountingDepartment.company_id == company_id, AccountingDepartment.is_active.is_(True))).all()
+            departments = db.scalars(select(AccountingDepartment).where(AccountingDepartment.id.in_(department_ids), AccountingDepartment.tenant_id == tenant_id, AccountingDepartment.company_id == company_id, AccountingDepartment.is_active.is_(True))).all()
             if len(departments) != len(department_ids):
                 raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Every department must belong to the selected company and be active")
         cost_center_ids = {int(payload["cost_center_id"]) for payload in lines if payload.get("cost_center_id") is not None}
         if cost_center_ids:
-            cost_centers = db.scalars(select(AccountingCostCenter).where(AccountingCostCenter.id.in_(cost_center_ids), AccountingCostCenter.company_id == company_id, AccountingCostCenter.is_active.is_(True))).all()
+            cost_centers = db.scalars(select(AccountingCostCenter).where(AccountingCostCenter.id.in_(cost_center_ids), AccountingCostCenter.tenant_id == tenant_id, AccountingCostCenter.company_id == company_id, AccountingCostCenter.is_active.is_(True))).all()
             if len(cost_centers) != len(cost_center_ids):
                 raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Every cost center must belong to the selected company and be active")
         posting_lines = [
@@ -123,7 +123,7 @@ class JournalService:
         if entry.status == "approved" and entry.approved_by is not None and entry.approved_by == user_id:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The user who approved the journal entry cannot post it")
         period = fiscal_year_repository.get_period_by_id(db, entry.period_id, tenant_id, for_update=True)
-        if period is None or period.status != "open" or not period.allow_posting:
+        if period is None or period.company_id != entry.company_id or period.fiscal_year_id != entry.fiscal_year_id or period.status != "open" or not period.allow_posting:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Accounting period is not open for posting")
         if not (period.start_date <= entry.entry_date <= period.end_date):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Entry date is outside the posting period")
