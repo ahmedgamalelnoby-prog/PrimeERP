@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from enum import StrEnum
+from enum import Enum
 from typing import Callable, Mapping
 
 
@@ -11,10 +11,6 @@ class LifecycleError(ValueError):
 
 
 class InvalidTransitionError(LifecycleError):
-    pass
-
-
-class ApprovalRequiredError(LifecycleError):
     pass
 
 
@@ -30,7 +26,7 @@ class MissingReasonError(LifecycleError):
     pass
 
 
-class DocumentStatus(StrEnum):
+class DocumentStatus(str, Enum):
     DRAFT = "draft"
     PENDING_APPROVAL = "pending_approval"
     APPROVED = "approved"
@@ -68,14 +64,17 @@ TransitionGuard = Callable[[TransactionDocument, str], None]
 class TransactionLifecycle:
     """Provider-neutral lifecycle state machine for transactional ERP documents.
 
-    The engine is intentionally persistence-agnostic. Database transactions,
-    authorization, audit persistence and accounting posting remain adapters,
-    while every adapter uses the same transition contract.
+    Persistence, authorization, audit storage, and accounting posting remain
+    adapters. Every adapter can use the same transition contract.
     """
 
     DEFAULT_TRANSITIONS: Mapping[DocumentStatus, frozenset[DocumentStatus]] = {
         DocumentStatus.DRAFT: frozenset(
-            {DocumentStatus.PENDING_APPROVAL, DocumentStatus.APPROVED, DocumentStatus.CANCELLED}
+            {
+                DocumentStatus.PENDING_APPROVAL,
+                DocumentStatus.APPROVED,
+                DocumentStatus.CANCELLED,
+            }
         ),
         DocumentStatus.PENDING_APPROVAL: frozenset(
             {DocumentStatus.APPROVED, DocumentStatus.CANCELLED}
@@ -91,8 +90,12 @@ class TransactionLifecycle:
     def __init__(
         self,
         *,
-        transitions: Mapping[DocumentStatus, frozenset[DocumentStatus]] | None = None,
-        guards: Mapping[tuple[DocumentStatus, DocumentStatus], tuple[TransitionGuard, ...]] | None = None,
+        transitions: Mapping[
+            DocumentStatus, frozenset[DocumentStatus]
+        ] | None = None,
+        guards: Mapping[
+            tuple[DocumentStatus, DocumentStatus], tuple[TransitionGuard, ...]
+        ] | None = None,
     ) -> None:
         self._transitions = transitions or self.DEFAULT_TRANSITIONS
         self._guards = guards or {}
@@ -115,8 +118,8 @@ class TransactionLifecycle:
             if prior:
                 if prior != (document.document_id, target):
                     raise DuplicateIdempotencyKeyError(
-                        f"Idempotency key {idempotency_key!r} was already used for "
-                        f"another transition."
+                        f"Idempotency key {idempotency_key!r} was already used "
+                        "for another transition."
                     )
                 for event in reversed(document.events):
                     if event.idempotency_key == idempotency_key:
@@ -129,14 +132,18 @@ class TransactionLifecycle:
                 f"from {current.value} to {target.value}"
             )
 
-        if current in {DocumentStatus.POSTED, DocumentStatus.REVERSED, DocumentStatus.CANCELLED}:
-            if current == DocumentStatus.POSTED and target == DocumentStatus.REVERSED:
-                if not reason or not reason.strip():
-                    raise MissingReasonError("A reversal reason is required.")
-            else:
-                raise PostedDocumentError(
-                    f"{current.value} documents are immutable except explicit reversal."
-                )
+        if current == DocumentStatus.POSTED and target == DocumentStatus.REVERSED:
+            if not reason or not reason.strip():
+                raise MissingReasonError("A reversal reason is required.")
+
+        if current in {
+            DocumentStatus.POSTED,
+            DocumentStatus.REVERSED,
+            DocumentStatus.CANCELLED,
+        }:
+            raise PostedDocumentError(
+                f"{current.value} documents are immutable except explicit reversal."
+            )
 
         if target == DocumentStatus.POSTED and not reason:
             reason = "posted"
