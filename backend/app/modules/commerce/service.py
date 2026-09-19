@@ -150,7 +150,7 @@ class CommerceService:
                 net_unit_cost = Decimal(line.unit_price) * (Decimal("100") - Decimal(line.discount_percent or 0)) / Decimal("100")
                 payload = StockMoveCreate(company_id=company_id, item_id=line.item_id, variant_id=getattr(line, "variant_id", None), movement_type="receipt", source_location_id=None, destination_location_id=loc.id, quantity=line.quantity, unit_cost=net_unit_cost, transaction_date=obj.document_date, reference=obj.number, source_module="commerce", source_entity=source_entity, source_id=source_id, notes="Purchase receipt")
             move = inventory_stock_move_service.create_draft(db, payload)
-            inventory_stock_move_service.post(db, tenant_id=tenant_id, company_id=company_id, move_id=move.id, user_id=user_id or 0)
+            inventory_stock_move_service.post(db, tenant_id=tenant_id, company_id=company_id, move_id=move.id, user_id=user_id)
         if kind == "sale":
             commerce_accounting_service.post_sales_delivery_cogs(db, obj, user_id)
         else:
