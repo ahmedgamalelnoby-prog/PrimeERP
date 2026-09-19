@@ -128,13 +128,21 @@ def reverse_payment(db: Session, *, company_id: int, payment_id: int, reversal_d
     payment.reversed_at = reversal_date
     reversal = CommercePayment(company_id=company_id, document_kind=payment.document_kind, document_id=payment.document_id, payment_date=reversal_date, amount=payment.amount, wht_amount=payment.wht_amount, method=payment.method, reference=f"REV-{payment.id}", notes=notes or f"Reversal of payment {payment.id}", status="reversed", reversed_of_id=payment.id, reversed_at=reversal_date)
     db.add(reversal)
-    allocation = db.scalar(select(CommercePaymentAllocation).where(
+    allocations = list(db.scalars(select(CommercePaymentAllocation).where(
         CommercePaymentAllocation.company_id == company_id,
         CommercePaymentAllocation.payment_id == payment.id,
-    ).with_for_update())
-    if allocation is not None:
+        CommercePaymentAllocation.status == "active",
+    ).with_for_update()).all())
+    for allocation in allocations:
+        target_model = SalesDocument if allocation.document_kind == "sale" else PurchaseDocument
+        target = db.scalar(select(target_model).where(
+            target_model.id == allocation.document_id,
+            target_model.company_id == company_id,
+        ).with_for_update())
+        if target is None or Decimal(target.paid_total or 0) < Decimal(allocation.amount):
+            raise ValueError("Payment allocation is inconsistent with document paid total")
+        target.paid_total = Decimal(target.paid_total or 0) - Decimal(allocation.amount)
         allocation.status = "reversed"
         allocation.reversed_at = reversal_date
-    document.paid_total = Decimal(document.paid_total or 0) - Decimal(payment.amount)
     db.flush()
     return document, payment, reversal
