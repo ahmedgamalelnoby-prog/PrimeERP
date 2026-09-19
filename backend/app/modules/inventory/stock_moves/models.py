@@ -49,6 +49,7 @@ class InventoryStockMove(Base):
     posted_at = Column(DateTime(timezone=True), nullable=True, index=True)
     accounting_entry_id = Column(Integer, ForeignKey("journal_entries.id", ondelete="RESTRICT"), nullable=True, index=True)
     reversed_by_move_id = Column(Integer, ForeignKey("inventory_stock_moves.id", ondelete="RESTRICT"), nullable=True, index=True)
+    reservation_id = Column(Integer, ForeignKey("inventory_reservations.id", ondelete="RESTRICT"), nullable=True, index=True)
 
     item = relationship("InventoryItem")
     variant = relationship("ProductVariant")
@@ -56,6 +57,7 @@ class InventoryStockMove(Base):
     destination_location = relationship("InventoryLocation", foreign_keys=[destination_location_id])
     accounting_entry = relationship("JournalEntry", foreign_keys=[accounting_entry_id])
     reversed_by_move = relationship("InventoryStockMove", remote_side=[id], foreign_keys=[reversed_by_move_id], uselist=False)
+    reservation = relationship("InventoryReservation", foreign_keys=[reservation_id])
     valuation_allocations = relationship("InventoryValuationAllocation", back_populates="stock_move", cascade="all, delete-orphan")
 
     __table_args__ = (
