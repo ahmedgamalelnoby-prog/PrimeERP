@@ -86,6 +86,19 @@ def match(db, session, payload, user):
     line.status="matched" if line.matched_amount==total else "partial"
     db.flush(); return obj
 
+def candidates(db, session, line_id):
+    line=_line(db,session,line_id)
+    amount=line.debit if line.debit else line.credit
+    payment_query=select(CommercePayment).where(CommercePayment.company_id==session.company_id,CommercePayment.status=="posted",CommercePayment.amount==amount)
+    if line.reference:
+        payment_query=payment_query.where(CommercePayment.reference==line.reference)
+    payments=db.scalars(payment_query.order_by(CommercePayment.payment_date.desc()).limit(20)).all()
+    cheque_query=select(Cheque).where(Cheque.company_id==session.company_id,Cheque.amount==amount)
+    if line.cheque_number:
+        cheque_query=cheque_query.where(Cheque.cheque_number==line.cheque_number)
+    cheques=db.scalars(cheque_query.order_by(Cheque.due_date.desc()).limit(20)).all()
+    return payments, cheques
+
 def auto_match(db,session,user):
     lines=db.scalars(select(BankStatementLine).where(BankStatementLine.company_id==session.company_id,BankStatementLine.statement_id==session.statement_id,BankStatementLine.status!="matched")).all()
     matched=0; candidates=0
