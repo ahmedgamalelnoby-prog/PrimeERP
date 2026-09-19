@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.modules.branches.models import Branch
-from app.modules.catalog.models import Menu, MenuItem, ProductCategory, ProductCostHistory, ProductPrice, ProductPriceList, Recipe, RecipeLine
+from app.modules.catalog.models import CatalogProduct, Menu, MenuItem, ProductCategory, ProductCostHistory, ProductPrice, ProductPriceList, Recipe, RecipeLine
 from app.modules.companies.models import Company
 from app.modules.inventory.items.models import InventoryItem, InventoryStock
 from app.modules.uom.models import UnitOfMeasure
@@ -194,7 +194,10 @@ class CatalogService:
 
     def create_recipe(self, db: Session, payload):
         self._locked_company(db, payload.company_id)
-        self._product(db, payload.company_id, payload.product_id)
+        product = self._product(db, payload.company_id, payload.product_id)
+        catalog_product = db.scalar(select(CatalogProduct).where(CatalogProduct.company_id == payload.company_id, CatalogProduct.item_id == product.id, CatalogProduct.is_active.is_(True)))
+        if catalog_product is None:
+            raise ValueError("A catalog product identity is required before creating a recipe")
         ingredient_ids = [line.ingredient_product_id for line in payload.lines]
         if len(ingredient_ids) != len(set(ingredient_ids)):
             raise ValueError("Duplicate ingredient products are not allowed in one recipe")
@@ -210,7 +213,7 @@ class CatalogService:
         version = (current.version + 1) if current else 1
         if current:
             current.is_active = False
-        recipe = Recipe(company_id=payload.company_id, product_id=payload.product_id, code=payload.code, name_ar=payload.name_ar, name_en=payload.name_en, yield_quantity=payload.yield_quantity, waste_percentage=payload.waste_percentage, version=version, is_active=True)
+        recipe = Recipe(company_id=payload.company_id, product_id=payload.product_id, catalog_product_id=catalog_product.id, code=payload.code, name_ar=payload.name_ar, name_en=payload.name_en, yield_quantity=payload.yield_quantity, waste_percentage=payload.waste_percentage, version=version, is_active=True)
         for line_no, line in enumerate(payload.lines, start=1):
             factor = self._recipe_line_conversion(db, payload.company_id, ingredient_by_id[line.ingredient_product_id], line.uom_id)
             recipe.lines.append(RecipeLine(line_no=line_no, **line.model_dump(), conversion_factor_to_product_uom=factor))
