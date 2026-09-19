@@ -1,15 +1,14 @@
 """add Salla public app event idempotency ledger
 
 Revision ID: 20260919_salla_app_event_idempotency
-Revises: 20260919_merge_reconciliation_recipe_heads
+Revises: 20260919_merge_global_gap_heads
 """
 
 from alembic import op
 import sqlalchemy as sa
 
-
 revision = "20260919_salla_app_event_idempotency"
-down_revision = "20260919_merge_reconciliation_recipe_heads"
+down_revision = "20260919_merge_global_gap_heads"
 branch_labels = None
 depends_on = None
 
