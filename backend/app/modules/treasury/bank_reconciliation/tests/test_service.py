@@ -42,3 +42,13 @@ def test_reconciliation_source_filters_exclude_closed_cheques():
 def test_reconciliation_import_rejects_same_external_id_with_changed_details():
     source = __import__("inspect").getsource(__import__("app.modules.treasury.bank_reconciliation.service", fromlist=["add_line"]).add_line)
     assert "Statement external_id already exists with different transaction details" in source
+
+
+def test_reconciliation_line_is_locked_before_matching():
+    source = __import__("inspect").getsource(__import__("app.modules.treasury.bank_reconciliation.service", fromlist=["_line"])._line)
+    assert ".with_for_update()" in source
+
+
+def test_reconciliation_source_uniqueness_matches_database_constraint():
+    source = __import__("inspect").getsource(__import__("app.modules.treasury.bank_reconciliation.models", fromlist=["ReconciliationMatch"]).ReconciliationMatch)
+    assert 'UniqueConstraint("session_id", "source_type", "source_id", name="uq_treasury_reconciliation_match_session_source")' in source
