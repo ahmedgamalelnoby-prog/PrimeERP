@@ -41,3 +41,16 @@ def test_recipe_supports_multi_component_uom_and_cycle_controls():
     assert "conversion_factor_to_product_uom=factor" in service
     assert "lines: list[RecipeLineCreate]" in schemas
     assert "uom_id: Optional[int]" in schemas
+
+
+def test_recipe_sku_mapping_supports_parent_and_variant_skus():
+    service = (ROOT / "modules/catalog/service.py").read_text(encoding="utf-8")
+    model = (ROOT / "modules/catalog/models.py").read_text(encoding="utf-8")
+    mapping = (ROOT / "modules/integrations/salla_product_mapping_service.py").read_text(encoding="utf-8")
+    assert "class RecipeSkuMapping(Base):" in model
+    assert 'UniqueConstraint("company_id", "sku"' in model
+    assert "def bind_recipe_sku" in service
+    assert "variant_id: int | None = None" in service
+    assert "Salla product SKU requires an active ERP recipe" in mapping
+    assert "Salla variant SKU requires an active ERP recipe" in mapping
+    assert "bind_recipe_sku" in mapping
