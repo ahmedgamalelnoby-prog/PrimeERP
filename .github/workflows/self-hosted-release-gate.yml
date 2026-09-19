@@ -156,6 +156,13 @@ jobs:
           $code = $LASTEXITCODE
           if ($code -ne 0) { throw "pytest failed with exit code $code" }
 
+      - name: Salla and shipping contract tests
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+        working-directory: backend
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pytest -q tests/integrations/test_salla_public_app_contract.py tests/integrations/test_salla_erp_state_machine.py tests/integrations/test_salla_webhook_security.py tests/shipping
+
       - name: Backend diagnostics after failure
         if: always()
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
