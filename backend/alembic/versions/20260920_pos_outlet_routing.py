@@ -1,0 +1,108 @@
+"""Add multi-outlet POS terminal and kitchen/bar routing.
+
+Revision ID: 20260920_pos_outlet_routing
+Revises: 20260919_merge_global_gap_heads, 20260919_merge_reconciliation_recipe_heads
+"""
+from alembic import op
+import sqlalchemy as sa
+
+revision = "20260920_pos_outlet_routing"
+down_revision = ("20260919_merge_global_gap_heads", "20260919_merge_reconciliation_recipe_heads")
+branch_labels = None
+depends_on = None
+
+
+def upgrade() -> None:
+    op.create_table(
+        "pos_outlets",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("company_id", sa.Integer(), sa.ForeignKey("companies.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("branch_id", sa.Integer(), sa.ForeignKey("branches.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("code", sa.String(40), nullable=False),
+        sa.Column("name", sa.String(160), nullable=False),
+        sa.Column("outlet_type", sa.String(30), nullable=False, server_default="restaurant"),
+        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.true()),
+        sa.Column("created_at", sa.TIMESTAMP(), nullable=False, server_default=sa.func.now()),
+        sa.UniqueConstraint("company_id", "code", name="uq_pos_outlet_company_code"),
+    )
+    op.create_index("ix_pos_outlets_company_id", "pos_outlets", ["company_id"])
+    op.create_index("ix_pos_outlets_branch_id", "pos_outlets", ["branch_id"])
+
+    op.create_table(
+        "pos_outlet_stations",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("outlet_id", sa.Integer(), sa.ForeignKey("pos_outlets.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("station_id", sa.Integer(), sa.ForeignKey("preparation_stations.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.true()),
+        sa.UniqueConstraint("outlet_id", "station_id", name="uq_pos_outlet_station"),
+    )
+    op.create_index("ix_pos_outlet_stations_outlet_id", "pos_outlet_stations", ["outlet_id"])
+    op.create_index("ix_pos_outlet_stations_station_id", "pos_outlet_stations", ["station_id"])
+
+    op.create_table(
+        "pos_terminals",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("company_id", sa.Integer(), sa.ForeignKey("companies.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("branch_id", sa.Integer(), sa.ForeignKey("branches.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("outlet_id", sa.Integer(), sa.ForeignKey("pos_outlets.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("code", sa.String(60), nullable=False),
+        sa.Column("name", sa.String(160), nullable=False),
+        sa.Column("device_identifier", sa.String(160), nullable=True),
+        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.true()),
+        sa.UniqueConstraint("company_id", "code", name="uq_pos_terminal_company_code"),
+        sa.UniqueConstraint("company_id", "device_identifier", name="uq_pos_terminal_company_device"),
+    )
+    op.create_index("ix_pos_terminals_company_id", "pos_terminals", ["company_id"])
+    op.create_index("ix_pos_terminals_branch_id", "pos_terminals", ["branch_id"])
+    op.create_index("ix_pos_terminals_outlet_id", "pos_terminals", ["outlet_id"])
+
+    op.create_table(
+        "pos_terminal_menus",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("terminal_id", sa.Integer(), sa.ForeignKey("pos_terminals.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("menu_id", sa.Integer(), sa.ForeignKey("menus.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("price_list_id", sa.Integer(), sa.ForeignKey("product_price_lists.id", ondelete="RESTRICT"), nullable=True),
+        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.true()),
+        sa.UniqueConstraint("terminal_id", "menu_id", name="uq_pos_terminal_menu"),
+    )
+    op.create_index("ix_pos_terminal_menus_terminal_id", "pos_terminal_menus", ["terminal_id"])
+    op.create_index("ix_pos_terminal_menus_menu_id", "pos_terminal_menus", ["menu_id"])
+
+    op.create_table(
+        "pos_menu_item_routes",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("terminal_id", sa.Integer(), sa.ForeignKey("pos_terminals.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("menu_item_id", sa.Integer(), sa.ForeignKey("menu_items.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("station_id", sa.Integer(), sa.ForeignKey("preparation_stations.id", ondelete="RESTRICT"), nullable=False),
+        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.true()),
+        sa.UniqueConstraint("terminal_id", "menu_item_id", name="uq_pos_terminal_menu_item_route"),
+    )
+    op.create_index("ix_pos_menu_item_routes_terminal_id", "pos_menu_item_routes", ["terminal_id"])
+    op.create_index("ix_pos_menu_item_routes_menu_item_id", "pos_menu_item_routes", ["menu_item_id"])
+    op.create_index("ix_pos_menu_item_routes_station_id", "pos_menu_item_routes", ["station_id"])
+
+    op.create_table(
+        "pos_order_line_routes",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("sales_line_id", sa.Integer(), sa.ForeignKey("sales_lines.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("terminal_id", sa.Integer(), sa.ForeignKey("pos_terminals.id", ondelete="RESTRICT"), nullable=False),
+        sa.Column("station_id", sa.Integer(), sa.ForeignKey("preparation_stations.id", ondelete="RESTRICT"), nullable=False),
+        sa.Column("status", sa.String(20), nullable=False, server_default="queued"),
+        sa.Column("notes", sa.Text(), nullable=True),
+        sa.Column("created_at", sa.TIMESTAMP(), nullable=False, server_default=sa.func.now()),
+        sa.Column("updated_at", sa.TIMESTAMP(), nullable=False, server_default=sa.func.now()),
+        sa.UniqueConstraint("sales_line_id", name="uq_pos_order_line_route"),
+        sa.CheckConstraint("status IN ('queued','preparing','ready','served','cancelled')", name="ck_pos_order_line_route_status"),
+    )
+    op.create_index("ix_pos_order_line_routes_sales_line_id", "pos_order_line_routes", ["sales_line_id"])
+    op.create_index("ix_pos_order_line_routes_terminal_id", "pos_order_line_routes", ["terminal_id"])
+    op.create_index("ix_pos_order_line_routes_station_id", "pos_order_line_routes", ["station_id"])
+
+
+def downgrade() -> None:
+    op.drop_table("pos_order_line_routes")
+    op.drop_table("pos_menu_item_routes")
+    op.drop_table("pos_terminal_menus")
+    op.drop_table("pos_terminals")
+    op.drop_table("pos_outlet_stations")
+    op.drop_table("pos_outlets")
