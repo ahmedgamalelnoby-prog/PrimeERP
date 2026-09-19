@@ -70,7 +70,7 @@ const company = () => {
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
-const paymentKey = (kind: "sale" | "purchase", id: number, amount: number, method: string) => `${kind}-${id}-${today()}-${amount}-${method}`;
+const newPaymentIdempotencyKey = () => crypto.randomUUID();
 
 export const salesApi = {
   list: () => client.get<Document[]>("/commerce/sales/documents", { params: { company_id: company() } }).then(r => r.data),
@@ -78,7 +78,7 @@ export const salesApi = {
   create: (payload: Omit<DocumentCreate, "company_id">) => client.post<Document>("/commerce/sales/documents", { ...payload, company_id: company() }).then(r => r.data),
   confirm: (id: number) => client.post<Document>(`/commerce/sales/${id}/confirm`, null, { params: { company_id: company() } }).then(r => r.data),
   postInventory: (id: number) => client.post<Document>(`/commerce/sales/${id}/post-inventory`, null, { params: { company_id: company() } }).then(r => r.data),
-  pay: (id: number, amount: number, method: string) => client.post<Document>(`/commerce/sales/${id}/payments`, { company_id: company(), document_id: id, payment_date: today(), amount, method, auto_wht: true, idempotency_key: paymentKey("sale", id, amount, method) }).then(r => r.data),
+  pay: (id: number, amount: number, method: string, idempotencyKey = newPaymentIdempotencyKey()) => client.post<Document>(`/commerce/sales/${id}/payments`, { company_id: company(), document_id: id, payment_date: today(), amount, method, auto_wht: true, idempotency_key: idempotencyKey }).then(r => r.data),
   payments: (id?: number) => client.get("/commerce/payments", { params: { company_id: company(), document_kind: "sale", ...(id ? { document_id: id } : {}) } }).then(r => r.data),
   reversePayment: (paymentId: number) => client.post<Document>(`/commerce/payments/${paymentId}/reverse`, { company_id: company(), reversal_date: today() }).then(r => r.data),
 };
@@ -89,7 +89,7 @@ export const purchasingApi = {
   create: (payload: Omit<DocumentCreate, "company_id">) => client.post<Document>("/commerce/purchases/documents", { ...payload, company_id: company() }).then(r => r.data),
   confirm: (id: number) => client.post<Document>(`/commerce/purchases/${id}/confirm`, null, { params: { company_id: company() } }).then(r => r.data),
   receive: (id: number) => client.post<Document>(`/commerce/purchases/${id}/receive`, null, { params: { company_id: company() } }).then(r => r.data),
-  pay: (id: number, amount: number, method: string) => client.post<Document>(`/commerce/purchases/${id}/payments`, { company_id: company(), document_id: id, payment_date: today(), amount, method, auto_wht: true, idempotency_key: paymentKey("purchase", id, amount, method) }).then(r => r.data),
+  pay: (id: number, amount: number, method: string, idempotencyKey = newPaymentIdempotencyKey()) => client.post<Document>(`/commerce/purchases/${id}/payments`, { company_id: company(), document_id: id, payment_date: today(), amount, method, auto_wht: true, idempotency_key: idempotencyKey }).then(r => r.data),
   payments: (id?: number) => client.get("/commerce/payments", { params: { company_id: company(), document_kind: "purchase", ...(id ? { document_id: id } : {}) } }).then(r => r.data),
   reversePayment: (paymentId: number) => client.post<Document>(`/commerce/payments/${paymentId}/reverse`, { company_id: company(), reversal_date: today() }).then(r => r.data),
 };
