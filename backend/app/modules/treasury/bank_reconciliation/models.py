@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, CheckConstraint, Column, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Column, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, Index
 from sqlalchemy.sql import func
 from app.database.base import Base
 
@@ -51,6 +51,7 @@ class BankStatementLine(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     __table_args__ = (
         UniqueConstraint("statement_id", "fingerprint", name="uq_treasury_statement_line_fingerprint"),
+        Index("uq_treasury_statement_line_external_id", "statement_id", "external_id", unique=True, postgresql_where=external_id.isnot(None)),
         CheckConstraint("debit >= 0 AND credit >= 0", name="ck_treasury_statement_line_nonnegative"),
         CheckConstraint("NOT (debit > 0 AND credit > 0)", name="ck_treasury_statement_line_one_side"),
         CheckConstraint("matched_amount >= 0", name="ck_treasury_statement_line_matched"),
