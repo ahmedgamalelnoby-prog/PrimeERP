@@ -5,6 +5,7 @@ const areas = [
   ["القيود اليومية", "/accounting/journal-entries", "إنشاء ومراجعة وترحيل القيود"],
   ["التقارير المالية", "/accounting/reports", "التقارير والتحليلات المالية"],
   ["أعمار الذمم AR/AP", "/accounting/ar-ap-aging", "تحليل المستحقات المدينة والدائنة حسب تاريخ الاستحقاق"],
+  ["كشوف حسابات العملاء والموردين", "/accounting/partner-statements", "كشف حركة الذمم والمدفوعات والرصيد الجاري"],
 ];
 
 export default function AccountingPage() {
