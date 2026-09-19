@@ -114,6 +114,12 @@ def list_recipes(company_id: int = Query(..., gt=0), db: Session = Depends(get_d
     try: return [_recipe_response(db, company_id, r) for r in catalog_service.list_recipes(db, company_id)]
     except ValueError as exc: _error(exc)
 
+@router.get("/recipes/by-external-sku", response_model=RecipeResponse, dependencies=GUARDS)
+def get_recipe_by_external_sku(external_sku: str = Query(..., min_length=1), company_id: int = Query(..., gt=0), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _company_for_user(db, company_id, current_user)
+    try: return _recipe_response(db, company_id, catalog_service.get_recipe_by_external_sku(db, company_id, external_sku))
+    except ValueError as exc: _error(exc)
+
 @router.get("/recipes/{recipe_id}", response_model=RecipeResponse, dependencies=GUARDS)
 def get_recipe(recipe_id: int, company_id: int = Query(..., gt=0), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _company_for_user(db, company_id, current_user)
