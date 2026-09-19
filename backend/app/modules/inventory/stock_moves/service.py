@@ -4,6 +4,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.modules.accounting.chart_of_accounts.models import AccountCombination
@@ -330,13 +331,30 @@ class InventoryStockMoveService:
         if lock:
             stmt = stmt.with_for_update()
         balance = db.scalar(stmt)
+        if balance is not None:
+            return balance
+        location = db.scalar(select(InventoryLocation).where(InventoryLocation.id == location_id, InventoryLocation.company_id == company_id))
+        if location is None:
+            raise ValueError("Location not found")
+        values = {
+            "company_id": company_id, "item_id": item_id, "variant_id": variant_id,
+            "location_id": location_id, "quantity_on_hand": 0, "quantity_reserved": 0,
+        }
+        if variant_id is None:
+            insert = pg_insert(InventoryLocationStock).values(**values).on_conflict_do_nothing(
+                index_elements=[InventoryLocationStock.company_id, InventoryLocationStock.location_id, InventoryLocationStock.item_id],
+                index_where=InventoryLocationStock.variant_id.is_(None),
+            )
+        else:
+            insert = pg_insert(InventoryLocationStock).values(**values).on_conflict_do_nothing(
+                index_elements=[InventoryLocationStock.company_id, InventoryLocationStock.location_id, InventoryLocationStock.item_id, InventoryLocationStock.variant_id],
+                index_where=InventoryLocationStock.variant_id.is_not(None),
+            )
+        db.execute(insert)
+        db.flush()
+        balance = db.scalar(stmt)
         if balance is None:
-            location = db.scalar(select(InventoryLocation).where(InventoryLocation.id == location_id, InventoryLocation.company_id == company_id))
-            if location is None:
-                raise ValueError("Location not found")
-            balance = InventoryLocationStock(company_id=company_id, item_id=item_id, variant_id=variant_id, location_id=location_id, quantity_on_hand=0, quantity_reserved=0)
-            db.add(balance)
-            db.flush()
+            raise ValueError("Unable to create or lock inventory location balance")
         return balance
 
     @staticmethod
@@ -344,10 +362,27 @@ class InventoryStockMoveService:
         stmt = select(InventoryStock).where(InventoryStock.company_id == company_id, InventoryStock.item_id == item_id, InventoryStock.warehouse_id == warehouse_id)
         stmt = stmt.where(InventoryStock.variant_id == variant_id) if variant_id is not None else stmt.where(InventoryStock.variant_id.is_(None))
         stock = db.scalar(stmt.with_for_update())
+        if stock is not None:
+            return stock
+        values = {
+            "company_id": company_id, "item_id": item_id, "variant_id": variant_id,
+            "warehouse_id": warehouse_id, "quantity_on_hand": 0, "quantity_reserved": 0, "average_cost": 0,
+        }
+        if variant_id is None:
+            insert = pg_insert(InventoryStock).values(**values).on_conflict_do_nothing(
+                index_elements=[InventoryStock.company_id, InventoryStock.item_id, InventoryStock.warehouse_id],
+                index_where=InventoryStock.variant_id.is_(None),
+            )
+        else:
+            insert = pg_insert(InventoryStock).values(**values).on_conflict_do_nothing(
+                index_elements=[InventoryStock.company_id, InventoryStock.item_id, InventoryStock.variant_id, InventoryStock.warehouse_id],
+                index_where=InventoryStock.variant_id.is_not(None),
+            )
+        db.execute(insert)
+        db.flush()
+        stock = db.scalar(stmt.with_for_update())
         if stock is None:
-            stock = InventoryStock(company_id=company_id, item_id=item_id, variant_id=variant_id, warehouse_id=warehouse_id, quantity_on_hand=0, quantity_reserved=0, average_cost=0)
-            db.add(stock)
-            db.flush()
+            raise ValueError("Unable to create or lock inventory warehouse stock")
         return stock
 
     def _consume_fifo_layers(self, db, company_id, item_id, variant_id, warehouse_id, quantity):
