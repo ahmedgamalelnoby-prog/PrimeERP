@@ -121,7 +121,7 @@ def main() -> None:
     # as shell/public-only. This prevents silent UI/backend drift.
     backend_modules = {
         path.name for path in (BACKEND / "modules").iterdir()
-        if path.is_dir() and path.name != "ADDON_TEMPLATE"
+        if path.is_dir() and path.name != "ADDON_TEMPLATE" and path.name != "__pycache__"
     }
     frontend_modules = {
         path.name for path in (FRONTEND / "modules").iterdir()
