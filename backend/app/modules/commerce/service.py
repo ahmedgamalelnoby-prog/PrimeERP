@@ -425,30 +425,79 @@ class CommerceService:
         offset_type = "credit_note" if direction == "customer" else "debit_note"
         cutoff = as_of or to_date
         if cutoff is None:
-            from datetime import date
             cutoff = date.today()
-        partner = db.scalar(select(BusinessPartner).where(BusinessPartner.id == partner_id, BusinessPartner.company_id == company_id, BusinessPartner.is_active.is_(True)))
+        partner = db.scalar(select(BusinessPartner).where(
+            BusinessPartner.id == partner_id,
+            BusinessPartner.company_id == company_id,
+            BusinessPartner.is_active.is_(True),
+        ))
         if partner is None:
             raise ValueError("Partner not found")
+
         docs = list(db.scalars(select(model).where(
-            model.company_id == company_id, model.partner_id == partner_id,
+            model.company_id == company_id,
+            model.partner_id == partner_id,
             model.document_type.in_({positive_type, offset_type}),
             model.status.in_({"confirmed", "posted"}),
             model.document_date <= cutoff,
         ).order_by(model.document_date, model.id)).all())
-        payments = list(db.scalars(select(CommercePayment).where(
-            CommercePayment.company_id == company_id,
-            CommercePayment.document_kind == ("sale" if direction == "customer" else "purchase"),
-            CommercePayment.document_id.in_([d.id for d in docs] or [-1]),
-            CommercePayment.status == "posted",
-            CommercePayment.payment_date <= cutoff,
-        ).order_by(CommercePayment.payment_date, CommercePayment.id)).all())
+        doc_ids = {d.id for d in docs}
+
         events = []
         for doc in docs:
             is_positive = doc.document_type == positive_type
-            events.append((doc.document_date, doc.id, doc.document_type, doc.number, Decimal(doc.total or 0) if is_positive else -Decimal(doc.total or 0), 0))
+            events.append((
+                doc.document_date,
+                doc.id,
+                doc.document_type,
+                doc.number,
+                Decimal(doc.total or 0) if is_positive else -Decimal(doc.total or 0),
+                Decimal("0"),
+            ))
+
+        payments = list(db.scalars(select(CommercePayment).where(
+            CommercePayment.company_id == company_id,
+            CommercePayment.document_kind == ("sale" if direction == "customer" else "purchase"),
+            CommercePayment.status == "posted",
+            CommercePayment.payment_date <= cutoff,
+        ).order_by(CommercePayment.payment_date, CommercePayment.id)).all())
+
+        payment_ids = [p.id for p in payments]
+        allocations = list(db.scalars(select(CommercePaymentAllocation).where(
+            CommercePaymentAllocation.company_id == company_id,
+            CommercePaymentAllocation.payment_id.in_(payment_ids or [-1]),
+            CommercePaymentAllocation.status == "active",
+            CommercePaymentAllocation.document_kind == ("sale" if direction == "customer" else "purchase"),
+            CommercePaymentAllocation.document_id.in_(list(doc_ids) or [-1]),
+        )).all())
+
+        allocation_by_payment = {}
+        for allocation in allocations:
+            allocation_by_payment.setdefault(allocation.payment_id, []).append(allocation)
+
         for payment in payments:
-            events.append((payment.payment_date, 10_000_000 + payment.id, "payment", f"PAY-{payment.id}", 0, Decimal(payment.amount)))
+            targets = allocation_by_payment.get(payment.id)
+            if targets:
+                for allocation in targets:
+                    events.append((
+                        payment.payment_date,
+                        10_000_000 + payment.id,
+                        "payment",
+                        f"PAY-{payment.id}/{allocation.document_id}",
+                        Decimal("0"),
+                        Decimal(allocation.amount),
+                    ))
+            elif payment.document_id in doc_ids:
+                # Legacy payment records may have no allocation row.
+                events.append((
+                    payment.payment_date,
+                    10_000_000 + payment.id,
+                    "payment",
+                    f"PAY-{payment.id}",
+                    Decimal("0"),
+                    Decimal(payment.amount),
+                ))
+
         events.sort(key=lambda x: (x[0], x[1]))
         balance = Decimal("0")
         opening = Decimal("0")
@@ -460,8 +509,25 @@ class CommerceService:
                 opening = balance
                 continue
             balance += movement
-            rows.append({"date": event_date, "document_type": event_type, "document_id": None if event_type == "payment" else int(reference.split("-")[-1]) if reference.split("-")[-1].isdigit() else None, "reference": reference, "debit": debit_base, "credit": credit_base, "balance": balance})
-        return {"opening_balance": opening, "closing_balance": balance, "rows": rows}
+            rows.append({
+                "date": event_date,
+                "document_type": event_type,
+                "document_id": (
+                    None if event_type == "payment"
+                    else int(reference.split("-")[-1])
+                    if reference.split("-")[-1].isdigit()
+                    else None
+                ),
+                "reference": reference,
+                "debit": debit_base,
+                "credit": credit_base,
+                "balance": balance,
+            })
+        return {
+            "opening_balance": opening,
+            "closing_balance": balance,
+            "rows": rows,
+        }
 
 
 commerce_service = CommerceService()
