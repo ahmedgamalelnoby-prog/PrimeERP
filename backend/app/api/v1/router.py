@@ -38,6 +38,7 @@ from app.modules.uom.router import router as uom_router
 from app.modules.companies.router import router as companies_router
 from app.modules.branches.router import router as branches_router
 from app.modules.treasury.router import router as treasury_router
+from app.modules.treasury.bank_reconciliation.router import router as bank_reconciliation_router
 from app.modules.egyptian_einvoice.router import router as egyptian_einvoice_router
 from app.modules.audit.router import router as audit_router
 from app.modules.roles.router import router as roles_router
@@ -88,6 +89,7 @@ def build_router() -> APIRouter:
     api_router.include_router(companies_router)
     api_router.include_router(branches_router)
     api_router.include_router(treasury_router)
+    api_router.include_router(bank_reconciliation_router)
     api_router.include_router(egyptian_einvoice_router, dependencies=[Depends(require_module("einvoice"))])
     api_router.include_router(reports_router)
     api_router.include_router(audit_router)
