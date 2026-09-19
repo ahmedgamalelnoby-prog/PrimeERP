@@ -11,6 +11,7 @@ export default function PosPage() {
   const [terminals, setTerminals] = useState<AnyRow[]>([]);
   const [menus, setMenus] = useState<AnyRow[]>([]);
   const [sales, setSales] = useState<AnyRow[]>([]);
+  const [warehouses, setWarehouses] = useState<AnyRow[]>([]);
   const [queue, setQueue] = useState<AnyRow[]>([]);
   const [error, setError] = useState("");
   const [branchId, setBranchId] = useState("");
@@ -29,6 +30,7 @@ export default function PosPage() {
   const [stationForm, setStationForm] = useState({ code: "", name: "", station_type: "kitchen" });
   const [terminalForm, setTerminalForm] = useState({ code: "", name: "", device_identifier: "" });
   const [priceListId, setPriceListId] = useState("");
+  const [outletWarehouseId, setOutletWarehouseId] = useState("");
 
   const activeMenu = useMemo(() => menus.find(x => String(x.id) === selectedMenu), [menus, selectedMenu]);
   const activeMenuItem = useMemo(() => activeMenu?.items?.find((x: AnyRow) => String(x.id) === selectedMenuItem), [activeMenu, selectedMenuItem]);
@@ -36,14 +38,15 @@ export default function PosPage() {
   async function load() {
     if (!cid) return;
     try {
-      const [o, s, t, m, v] = await Promise.all([
+      const [o, s, t, m, v, w] = await Promise.all([
         client.get("/pos/outlets", { params: { company_id: cid } }),
         client.get("/pos/stations", { params: { company_id: cid } }),
         client.get("/pos/terminals", { params: { company_id: cid } }),
         client.get("/catalog/menus", { params: { company_id: cid } }),
         client.get("/pos/sales", { params: { company_id: cid } }),
+        client.get("/pos/warehouses", { params: { company_id: cid } }),
       ]);
-      setOutlets(o.data); setStations(s.data); setTerminals(t.data); setMenus(m.data); setSales(v.data);
+      setOutlets(o.data); setStations(s.data); setTerminals(t.data); setMenus(m.data); setSales(v.data); setWarehouses(w.data);
     } catch (e: any) { setError(e?.response?.data?.detail || "تعذر تحميل بيانات POS"); }
   }
   useEffect(() => { void load(); }, [cid]);
@@ -52,6 +55,11 @@ export default function PosPage() {
     e.preventDefault();
     try { await client.post("/pos/outlets", { company_id: cid, branch_id: Number(branchId), ...outletForm }); setOutletForm({ code: "", name: "", outlet_type: "restaurant" }); await load(); }
     catch (e: any) { setError(e?.response?.data?.detail || "فشل إنشاء المكان"); }
+  }
+  async function assignWarehouse(e: any) {
+    e.preventDefault();
+    try { await client.patch(`/pos/outlets/${selectedOutlet}/warehouse`, null, { params: { company_id: cid, warehouse_id: Number(outletWarehouseId) } }); setError(""); await load(); }
+    catch (e: any) { setError(e?.response?.data?.detail || "فشل ربط مخزن الاستهلاك"); }
   }
   async function createStation(e: any) {
     e.preventDefault();
@@ -116,6 +124,13 @@ export default function PosPage() {
         <input required value={outletForm.name} onChange={e => setOutletForm({...outletForm,name:e.target.value})} placeholder="مطعم البحر" className="w-full rounded-lg border px-3 py-2"/>
         <select value={outletForm.outlet_type} onChange={e => setOutletForm({...outletForm,outlet_type:e.target.value})} className="w-full rounded-lg border px-3 py-2"><option value="restaurant">Restaurant</option><option value="bar">Bar</option><option value="cafe">Cafe</option><option value="pool">Pool</option><option value="room_service">Room Service</option></select>
         <button className="rounded-lg bg-primary px-4 py-2 text-primary-foreground">إضافة المكان</button>
+      </form>
+      <form onSubmit={assignWarehouse} className="rounded-2xl border bg-card p-5 space-y-3">
+        <h2 className="font-bold">ربط مخزن الاستهلاك بالمكان</h2>
+        <select required value={selectedOutlet} onChange={e => setSelectedOutlet(e.target.value)} className="w-full rounded-lg border px-3 py-2"><option value="">اختر المكان</option>{outlets.map(x => <option key={x.id} value={x.id}>{x.name} — Warehouse {x.warehouse_id || "غير محدد"}</option>)}</select>
+        <select required value={outletWarehouseId} onChange={e => setOutletWarehouseId(e.target.value)} className="w-full rounded-lg border px-3 py-2"><option value="">اختر المخزن الفرعي</option>{warehouses.filter(x => !x.is_central).map(x => <option key={x.id} value={x.id}>{x.name} — {x.code}</option>)}</select>
+        <button className="rounded-lg bg-primary px-4 py-2 text-primary-foreground">حفظ مخزن الاستهلاك</button>
+      </form>
       </form>
 
       <form onSubmit={createStation} className="rounded-2xl border bg-card p-5 space-y-3">
