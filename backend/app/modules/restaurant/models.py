@@ -425,6 +425,7 @@ class PosOutlet(Base):
     id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     branch_id = Column(Integer, ForeignKey("branches.id", ondelete="CASCADE"), nullable=False, index=True)
+    warehouse_id = Column(Integer, ForeignKey("inventory_warehouses.id", ondelete="RESTRICT"), nullable=True, index=True)
     code = Column(String(40), nullable=False)
     name = Column(String(160), nullable=False)
     outlet_type = Column(String(30), nullable=False, default="restaurant")
