@@ -576,7 +576,7 @@ def test_salla_imported_terminal_shipment_replays_canonical_lifecycle():
     assert "_canonical_path(" in source
     assert "shipping_status_service.apply_transition(" in source
     assert "obj.status = _advance_status(obj.status, target_status)" not in source
-    assert '"shipped": "shipped"' in source
+    assert salla_shipping_service._STATUS_MAP.get("shipped") == "shipped"
     assert '"picked_up": "shipped"' in source
 
 
