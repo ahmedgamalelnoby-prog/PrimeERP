@@ -201,32 +201,60 @@ class CommerceService:
             return payment.get(key)
         return getattr(payment, key, None)
 
-    def _ensure_payment_allocation(self, db, payment, document):
+    def _ensure_payment_allocation(self, db, payment, document, allocations=None):
         company_id = self._payment_value(payment, "company_id")
         payment_id = self._payment_value(payment, "id")
         document_kind = self._payment_value(payment, "document_kind")
-        document_id = self._payment_value(payment, "document_id")
-        amount = self._payment_value(payment, "amount")
-        if company_id is None or payment_id is None or document_kind is None or document_id is None or amount is None:
+        amount = Decimal(self._payment_value(payment, "amount") or 0)
+        if company_id is None or payment_id is None or document_kind is None or amount <= 0:
             raise ValueError("Payment result is missing allocation identity fields")
-        allocation = db.scalar(select(CommercePaymentAllocation).where(
-            CommercePaymentAllocation.company_id == company_id,
-            CommercePaymentAllocation.payment_id == payment_id,
-        ).with_for_update())
-        if allocation is None:
-            allocation = CommercePaymentAllocation(
-                company_id=company_id,
-                payment_id=payment_id,
-                document_kind=document_kind,
-                document_id=document_id,
-                amount=Decimal(amount),
-                status="active",
-            )
-            db.add(allocation)
-            db.flush()
-        elif allocation.document_id != document.id or allocation.document_kind != document_kind:
-            raise ValueError("Payment allocation is inconsistent with its source document")
-        return allocation
+        targets = allocations or [{"document_id": document.id, "amount": amount}]
+        allocation_total = sum((Decimal(a["amount"]) for a in targets), Decimal("0"))
+        if allocation_total > amount:
+            raise ValueError("Payment allocations cannot exceed payment amount")
+        model = SalesDocument if document_kind == "sale" else PurchaseDocument
+        positive_type = "invoice" if document_kind == "sale" else "bill"
+        payment_partner = db.scalar(select(model.partner_id).where(model.id == document.id, model.company_id == company_id))
+        if payment_partner is None:
+            raise ValueError("Payment source document not found")
+        created = []
+        for target in targets:
+            target_id = int(target["document_id"])
+            target_amount = Decimal(target["amount"])
+            target_doc = db.scalar(select(model).where(
+                model.id == target_id,
+                model.company_id == company_id,
+                model.partner_id == payment_partner,
+                model.document_type == positive_type,
+                model.status.in_({"confirmed", "posted"}),
+            ).with_for_update())
+            if target_doc is None:
+                raise ValueError("Payment allocation document must be an open invoice/bill for the same partner")
+            outstanding = Decimal(target_doc.total or 0) - Decimal(target_doc.paid_total or 0)
+            if target_amount > outstanding:
+                raise ValueError("Payment allocation exceeds document outstanding balance")
+            existing = db.scalar(select(CommercePaymentAllocation).where(
+                CommercePaymentAllocation.company_id == company_id,
+                CommercePaymentAllocation.payment_id == payment_id,
+                CommercePaymentAllocation.document_kind == document_kind,
+                CommercePaymentAllocation.document_id == target_id,
+            ).with_for_update())
+            if existing is None:
+                existing = CommercePaymentAllocation(
+                    company_id=company_id,
+                    payment_id=payment_id,
+                    document_kind=document_kind,
+                    document_id=target_id,
+                    amount=target_amount,
+                    status="active",
+                )
+                db.add(existing)
+            elif existing.status != "active" or Decimal(existing.amount) != target_amount:
+                raise ValueError("Payment allocation already exists with a different amount")
+            target_doc.paid_total = Decimal(target_doc.paid_total or 0) + target_amount
+            created.append(existing)
+        db.flush()
+        return created
 
     def pay(self, db, payload, kind, user_id: int | None = None):
         model = SalesDocument if kind == "sale" else PurchaseDocument; allowed_types = {"invoice"} if kind == "sale" else {"bill"}
@@ -238,12 +266,12 @@ class CommerceService:
         if document_status not in {"confirmed", "posted"}: raise ValueError("Document must be confirmed or posted before payment")
         wht_amount = Decimal(payload.wht_amount or 0)
         if wht_amount == 0 and getattr(payload, "auto_wht", True): wht_amount = self._auto_payment_wht(db, document=document, company_id=payload.company_id, amount=Decimal(payload.amount), document_kind=kind)
-        payment_result = post_payment(db, company_id=payload.company_id, document_kind=kind, document_id=payload.document_id, amount=payload.amount, payment_date=payload.payment_date, method=payload.method, wht_amount=wht_amount, reference=payload.reference, notes=payload.notes, idempotency_key=payload.idempotency_key)
+        payment_result = post_payment(db, company_id=payload.company_id, document_kind=kind, document_id=payload.document_id, amount=payload.amount, payment_date=payload.payment_date, method=payload.method, wht_amount=wht_amount, reference=payload.reference, notes=payload.notes, idempotency_key=payload.idempotency_key, update_document_paid_total=not bool(payload.allocations))
         if isinstance(payment_result, tuple) and len(payment_result) == 2:
             document, payment = payment_result
         else:
             payment = payment_result
-        self._ensure_payment_allocation(db, payment, document)
+        self._ensure_payment_allocation(db, payment, document, [a.model_dump() for a in payload.allocations] if payload.allocations else None)
         if payload.method.lower() == "cheque":
             # Payment idempotency can return the already-posted payment on a
             # retry. The cheque is a side effect of that payment, so it must
