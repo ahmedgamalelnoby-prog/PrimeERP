@@ -1,3 +1,4 @@
+from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -11,7 +12,7 @@ from app.modules.branches.models import Branch
 from app.modules.commerce.accounting_models import CommerceAccountingSettings
 from app.modules.commerce.accounting_schemas import CommerceAccountingSettingsCreate
 from app.modules.commerce.models import CommercePayment, SalesDocument, PurchaseDocument
-from app.modules.commerce.schemas import PartnerCreate, PartnerResponse, DocumentCreate, DocumentResponse, PaymentCreate, PaymentResponse, PaymentReverse
+from app.modules.commerce.schemas import PartnerCreate, PartnerResponse, DocumentCreate, DocumentResponse, PaymentCreate, PaymentResponse, PaymentReverse, AgingSummary
 from app.modules.commerce.sales_return_schemas import SalesReturnCreate
 from app.modules.commerce.sales_return_service import sales_return_service
 from app.modules.commerce.service import commerce_service
@@ -101,6 +102,15 @@ def create_purchase(payload: DocumentCreate, current_user: User = Depends(get_cu
     if payload.document_type not in {"requisition", "rfq", "order", "receipt", "bill", "debit_note"}: raise HTTPException(400, "Invalid purchase document type")
     obj = _run(lambda: commerce_service.create_document(db, payload)); db.commit(); db.refresh(obj); return obj
 
+
+@router.get("/ar-ap/aging", response_model=AgingSummary)
+def ar_ap_aging(company_id: int = Query(..., gt=0), as_of: date | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company_for_user(db, company_id, current_user)
+    cutoff = as_of or date.today()
+    rows = commerce_service.ar_ap_aging(db, company_id, cutoff)
+    receivable = sum((r["outstanding"] for r in rows if r["direction"] == "receivable"), 0)
+    payable = sum((r["outstanding"] for r in rows if r["direction"] == "payable"), 0)
+    return {"as_of": cutoff, "receivable": receivable, "payable": payable, "net": receivable - payable, "rows": rows}
 
 @router.get("/sales/documents", response_model=list[DocumentResponse])
 def sales(company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
