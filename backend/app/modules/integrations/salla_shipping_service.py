@@ -9,6 +9,8 @@ from app.modules.integrations.models import IntegrationMapping
 from app.modules.integrations.salla_models import SallaCustomer, SallaOrder, SallaShipment
 from app.modules.shipping.models import ShippingCarrier, ShippingMethod, Shipment
 from app.modules.shipping.integration import find_mapped_carrier, link_carrier
+from app.modules.shipping.status_service import shipping_status_service
+from app.modules.integrations.salla_erp_service import _system_user_id
 
 
 _STATUS_MAP = {
@@ -186,7 +188,13 @@ def sync_salla_shipment(db: Session, salla_shipment: SallaShipment) -> dict:
         if existing:
             target = _STATUS_MAP.get(str(salla_shipment.status or "").lower().replace(" ", "_"))
             if target:
-                existing.status = _advance_status(existing.status, target)
+                target = _advance_status(existing.status, target)
+                if target != existing.status:
+                    shipping_status_service.apply_transition(
+                        db, existing, target,
+                        changed_on=salla_shipment.created_at_salla.date() if salla_shipment.created_at_salla else None,
+                        user_id=_system_user_id(db, salla_shipment.company_id),
+                    )
             if salla_shipment.tracking_number and existing.tracking_no != salla_shipment.tracking_number:
                 existing.tracking_no = salla_shipment.tracking_number[:100]
             existing.cod_amount = Decimal(salla_shipment.cash_on_delivery or 0)
