@@ -52,3 +52,17 @@ def test_reconciliation_line_is_locked_before_matching():
 def test_reconciliation_source_uniqueness_matches_database_constraint():
     source = __import__("inspect").getsource(__import__("app.modules.treasury.bank_reconciliation.models", fromlist=["ReconciliationMatch"]).ReconciliationMatch)
     assert 'UniqueConstraint("session_id", "source_type", "source_id", name="uq_treasury_reconciliation_match_session_source")' in source
+
+
+def test_close_session_locks_company_scoped_statement():
+    source = __import__("inspect").getsource(__import__("app.modules.treasury.bank_reconciliation.service", fromlist=["close_session"]).close_session)
+    assert "BankStatement.company_id==session.company_id" in source
+    assert "BankStatement.bank_account_id==session.bank_account_id" in source
+    assert ".with_for_update()" in source
+
+
+def test_unmatch_locks_company_scoped_statement_line():
+    source = __import__("inspect").getsource(__import__("app.modules.treasury.bank_reconciliation.service", fromlist=["unmatch"]).unmatch)
+    assert "BankStatementLine.company_id==session.company_id" in source
+    assert "BankStatementLine.statement_id==session.statement_id" in source
+    assert ".with_for_update()" in source
