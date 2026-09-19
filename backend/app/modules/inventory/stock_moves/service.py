@@ -241,14 +241,35 @@ class InventoryStockMoveService:
         if reservation is not None:
             if source_balance is None:
                 raise ValueError("A reservation-backed movement requires a source location")
-            if Decimal(source_balance.quantity_reserved or 0) < quantity:
-                raise ValueError("Reservation balance is inconsistent at source location")
             warehouse_source = self._warehouse_stock(db, company_id, move.item_id, variant_id, source_warehouse_id)
-            if Decimal(warehouse_source.quantity_reserved or 0) < quantity:
-                raise ValueError("Reservation balance is inconsistent at warehouse")
-            source_balance.quantity_reserved -= quantity
-            warehouse_source.quantity_reserved -= quantity
-            reservation.status = "consumed"
+            if reservation.status == "active":
+                if Decimal(source_balance.quantity_reserved or 0) < quantity:
+                    raise ValueError("Reservation balance is inconsistent at source location")
+                if Decimal(warehouse_source.quantity_reserved or 0) < quantity:
+                    raise ValueError("Reservation balance is inconsistent at warehouse")
+                source_balance.quantity_reserved -= quantity
+                warehouse_source.quantity_reserved -= quantity
+                reservation.status = "consumed"
+
+        if move.reservation_id is not None:
+            reservation = db.scalar(
+                select(InventoryReservation)
+                .where(
+                    InventoryReservation.id == move.reservation_id,
+                    InventoryReservation.company_id == company_id,
+                )
+                .with_for_update()
+            )
+            if reservation is None:
+                raise ValueError("Linked reservation is missing")
+            if reservation.status != "consumed":
+                raise ValueError("Linked reservation must be consumed before movement reversal")
+            if source_balance is None:
+                raise ValueError("A reservation-backed movement requires a source location")
+            warehouse_source = self._warehouse_stock(db, company_id, move.item_id, variant_id, source_warehouse_id)
+            source_balance.quantity_reserved += quantity
+            warehouse_source.quantity_reserved += quantity
+            reservation.status = "active"
 
         if move.accounting_entry_id is not None:
             journal_service.reverse(db, tenant_id=tenant_id, entry_id=move.accounting_entry_id, user_id=user_id, reversal_date=reversal_date)
