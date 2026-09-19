@@ -127,7 +127,7 @@ def main() -> None:
         path.name for path in (FRONTEND / "modules").iterdir()
         if path.is_dir()
     }
-    aliases = {"egyptian_einvoice": "egyptian-einvoice", "catalog": "products", "helpdesk_ai": "helpdesk", "uom": "products"}
+    aliases = {"egyptian_einvoice": "egyptian-einvoice", "catalog": "products", "helpdesk_ai": "helpdesk", "uom": "products", "approvals": "operations", "workflow": "operations", "customers": "commerce"}
     backend_frontend_names = {
         aliases.get(name, name) for name in backend_modules
     }
@@ -135,7 +135,7 @@ def main() -> None:
         "assets", "checks", "cost-centers", "expenses", "hotels", "insurance",
         "language", "permissions", "real-estate", "reservations",
         "restaurant", "saas", "suppliers", "time-tracking", "users",
-        "work-orders",
+        "work-orders", "public",
     }
     backend_only_allowed = {
         "organization", "jurisdiction", "notifications", "operations",
