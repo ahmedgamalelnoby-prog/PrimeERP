@@ -125,6 +125,28 @@ class RecipeLine(Base):
     recipe = relationship("Recipe", back_populates="lines")
     # Both columns point to inventory_items; keep the legacy ingredient relationship\n    # explicitly bound to ingredient_product_id and expose the canonical item link separately.\n    ingredient = relationship("InventoryItem", foreign_keys=[ingredient_product_id])\n    ingredient_item = relationship("InventoryItem", foreign_keys=[ingredient_item_id])\n
 
+class RecipeSkuMapping(Base):
+    __tablename__ = "recipe_sku_mappings"
+    id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    recipe_id = Column(Integer, ForeignKey("recipes.id", ondelete="CASCADE"), nullable=False, index=True)
+    product_id = Column(Integer, ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False, index=True)
+    variant_id = Column(Integer, ForeignKey("product_variants.id", ondelete="RESTRICT"), nullable=True, index=True)
+    sku = Column(String(160), nullable=False)
+    source = Column(String(40), nullable=False, default="salla")
+    external_id = Column(String(160), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+    __table_args__ = (
+        UniqueConstraint("company_id", "sku", name="uq_recipe_sku_mapping_company_sku"),
+        UniqueConstraint("company_id", "source", "external_id", name="uq_recipe_sku_mapping_source_external"),
+    )
+    recipe = relationship("Recipe")
+    product = relationship("InventoryItem")
+    variant = relationship("ProductVariant", foreign_keys=[variant_id])
+
+
 class Menu(Base):
     __tablename__ = "menus"
     id = Column(Integer, primary_key=True, index=True)
