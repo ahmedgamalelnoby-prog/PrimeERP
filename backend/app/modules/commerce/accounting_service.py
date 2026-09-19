@@ -99,6 +99,11 @@ class CommerceAccountingService:
         settings = self._settings(db, document.company_id)
         moves = list(db.scalars(select(InventoryStockMove).where(InventoryStockMove.company_id == document.company_id, InventoryStockMove.source_module == "commerce", InventoryStockMove.source_entity == "purchase_receipt", InventoryStockMove.source_id.like(f"{document.id}:%"), InventoryStockMove.status == "posted")))
         inventory_value = sum((Decimal(move.quantity) * Decimal(move.unit_cost or 0) for move in moves), Decimal("0"))
+        # InventoryStockMove.post() already posts the receipt valuation using the
+        # configured inventory clearing account. Keep this hook for the commerce
+        # transaction boundary without creating a second inventory journal entry.
+        if moves and all(m.accounting_entry_id is not None for m in moves):
+            return None
         if inventory_value <= 0: return None
         return self._post(db, company_id=document.company_id, user_id=user_id, entry_date=document.document_date, journal_id=settings.purchase_journal_id, entry_number=f"GRN-{document.id}", description=f"Goods receipt {document.number}", lines=[{"account_combination_id": settings.inventory_account_id, "debit": inventory_value, "credit": 0, "description": f"Inventory receipt {document.number}"}, {"account_combination_id": settings.grni_account_id, "debit": 0, "credit": inventory_value, "description": f"GRNI {document.number}"}], source_entity="purchase_receipt_accounting", source_id=document.id)
 
@@ -141,6 +146,11 @@ class CommerceAccountingService:
         settings = self._settings(db, document.company_id)
         moves = list(db.scalars(select(InventoryStockMove).where(InventoryStockMove.company_id == document.company_id, InventoryStockMove.source_module == "commerce", InventoryStockMove.source_entity == "sales_delivery", InventoryStockMove.source_id.like(f"{document.id}:%"), InventoryStockMove.status == "posted")))
         total = sum((Decimal(m.quantity) * Decimal(m.unit_cost or 0) for m in moves), Decimal("0"))
+        # InventoryStockMove.post() already posts the authoritative COGS/Inventory
+        # entry for each delivery move. This method remains the commerce-level
+        # orchestration hook but must never duplicate that valuation.
+        if moves and all(m.accounting_entry_id is not None for m in moves):
+            return None
         if total <= 0: return None
         return self._post(db, company_id=document.company_id, user_id=user_id, entry_date=document.document_date, journal_id=settings.sales_journal_id, entry_number=f"COGS-{document.id}", description=f"COGS for delivery {document.number}", lines=[{"account_combination_id": settings.cogs_account_id, "debit": total, "credit": 0}, {"account_combination_id": settings.inventory_account_id, "debit": 0, "credit": total}], source_entity="sales_cogs", source_id=document.id)
 
