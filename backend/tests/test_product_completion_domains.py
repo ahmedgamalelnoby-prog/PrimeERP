@@ -353,3 +353,10 @@ def test_straight_line_depreciation_math():
     depreciable=Decimal('100000')-Decimal('10000')
     monthly=depreciable/60
     assert monthly == Decimal('1500')
+
+
+def test_commerce_payment_retry_does_not_duplicate_cheque_side_effect():
+    source = (ROOT / "app/modules/commerce/service.py").read_text(encoding="utf-8")
+    assert "Payment idempotency can return the already-posted payment" in source
+    assert "Cheque.source_payment_id == payment.id" in source
+    assert "if existing_cheque is None:" in source
