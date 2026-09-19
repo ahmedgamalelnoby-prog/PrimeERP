@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.modules.branches.models import Branch
-from app.modules.catalog.models import CatalogProduct, Menu, MenuItem, ProductCategory, ProductCostHistory, ProductPrice, ProductPriceList, Recipe, RecipeLine
+from app.modules.catalog.models import CatalogProduct, Menu, MenuItem, ProductCategory, ProductCostHistory, ProductPrice, ProductPriceList, ProductVariant, Recipe, RecipeLine, RecipeSkuMapping
 from app.modules.companies.models import Company
 from app.modules.inventory.items.models import InventoryItem, InventoryStock
 from app.modules.uom.models import UnitOfMeasure
@@ -227,17 +227,38 @@ class CatalogService:
         value = (external_sku or "").strip()
         if not value:
             raise ValueError("External SKU is required")
-        recipe = db.scalar(
-            select(Recipe)
-            .options(selectinload(Recipe.lines))
+        mapping = db.scalar(
+            select(RecipeSkuMapping)
             .where(
-                Recipe.company_id == company_id,
-                Recipe.external_sku == value,
-                Recipe.is_active.is_(True),
+                RecipeSkuMapping.company_id == company_id,
+                RecipeSkuMapping.sku == value,
+                RecipeSkuMapping.is_active.is_(True),
             )
-            .order_by(Recipe.version.desc())
-            .limit(1)
+            .with_for_update()
         )
+        recipe = None
+        if mapping is not None:
+            recipe = db.scalar(
+                select(Recipe)
+                .options(selectinload(Recipe.lines))
+                .where(
+                    Recipe.id == mapping.recipe_id,
+                    Recipe.company_id == company_id,
+                    Recipe.is_active.is_(True),
+                )
+            )
+        if recipe is None:
+            recipe = db.scalar(
+                select(Recipe)
+                .options(selectinload(Recipe.lines))
+                .where(
+                    Recipe.company_id == company_id,
+                    Recipe.external_sku == value,
+                    Recipe.is_active.is_(True),
+                )
+                .order_by(Recipe.version.desc())
+                .limit(1)
+            )
         if recipe is None:
             raise ValueError("Active recipe not found for external SKU")
         product = self._product(db, company_id, recipe.product_id)
@@ -251,6 +272,30 @@ class CatalogService:
             if catalog_product is None:
                 raise ValueError("Recipe commercial product identity is invalid")
         return recipe
+
+    def bind_recipe_sku(self, db: Session, company_id: int, recipe_id: int, sku: str, *, variant_id: int | None = None, source: str = "salla", external_id: str | None = None):
+        self._company(db, company_id)
+        value = (sku or "").strip()
+        if not value:
+            raise ValueError("Recipe SKU is required")
+        recipe = self.get_recipe(db, company_id, recipe_id)
+        if variant_id is not None:
+            variant = db.scalar(select(ProductVariant).where(ProductVariant.id == variant_id, ProductVariant.company_id == company_id, ProductVariant.product_id == recipe.product_id, ProductVariant.is_active.is_(True)))
+            if variant is None:
+                raise ValueError("Recipe variant does not belong to the recipe product")
+        existing = db.scalar(select(RecipeSkuMapping).where(RecipeSkuMapping.company_id == company_id, RecipeSkuMapping.sku == value).with_for_update())
+        if existing is not None:
+            if existing.recipe_id != recipe.id or existing.variant_id != variant_id:
+                raise ValueError("SKU is already bound to another active recipe")
+            existing.source = source
+            existing.external_id = external_id
+            existing.is_active = True
+            db.flush()
+            return existing
+        mapping = RecipeSkuMapping(company_id=company_id, recipe_id=recipe.id, product_id=recipe.product_id, variant_id=variant_id, sku=value, source=source, external_id=external_id, is_active=True)
+        db.add(mapping)
+        db.flush()
+        return mapping
 
     def get_recipe(self, db: Session, company_id: int, recipe_id: int):
         recipe = db.scalar(select(Recipe).options(selectinload(Recipe.lines)).where(Recipe.id == recipe_id, Recipe.company_id == company_id))
