@@ -418,7 +418,7 @@ def test_ar_ap_aging_uses_split_payment_allocations_as_of_cutoff():
     assert "CommercePaymentAllocation" in source
     assert "allocation.document_id" in source
     assert "allocation.amount" in source
-    assert 'allocation.status == "active"' in source
+    assert 'CommercePaymentAllocation.status == "active"' in source
     assert "allocated_payment_ids" in source
     assert "Legacy payments created before allocation tracking remain" in source
 
@@ -429,7 +429,7 @@ def test_partner_open_balance_is_allocation_aware_and_historical():
     assert "payments_by_document" in source
     assert "allocation.document_id" in source
     assert "allocation.amount" in source
-    assert "payment.payment_date < before_date" in source
+    assert "CommercePayment.payment_date < before_date" in source
     assert "paid_total" not in source
 
 
