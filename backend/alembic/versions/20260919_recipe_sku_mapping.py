@@ -41,7 +41,7 @@ def upgrade() -> None:
         INSERT INTO recipe_sku_mappings
             (company_id, recipe_id, product_id, variant_id, sku, source, is_active)
         SELECT DISTINCT ON (r.company_id, r.external_sku)
-            r.company_id, r.id, r.product_id, r.variant_id, r.external_sku, 'legacy', true
+            r.company_id, r.id, r.product_id, NULL, r.external_sku, 'legacy', true
         FROM recipes r
         WHERE r.external_sku IS NOT NULL
           AND btrim(r.external_sku) <> ''
