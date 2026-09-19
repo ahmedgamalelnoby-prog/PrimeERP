@@ -92,8 +92,8 @@ def post_entry(entry_id: int, current_user: User = Depends(get_current_user), db
 
 
 @router.post("/{entry_id}/reverse", response_model=JournalEntryResponse, dependencies=[Depends(require_permission("accounting.post"))])
-def reverse_entry(entry_id: int, payload: JournalReversalRequest | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    request = payload or JournalReversalRequest()
+def reverse_entry(entry_id: int, payload: JournalReversalRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    request = payload
     return journal_service.reverse(
         db,
         tenant_id=_tenant_id(current_user),
