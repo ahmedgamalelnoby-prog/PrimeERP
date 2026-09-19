@@ -98,8 +98,8 @@ class InventoryStockMoveService:
         if payload.movement_type == "transfer":
             source = locations[payload.source_location_id]
             destination = locations[payload.destination_location_id]
-            if source.warehouse_id == destination.warehouse_id:
-                raise ValueError("Use a direct stock move for an intra-warehouse location transfer")
+            if source.warehouse_id == destination.warehouse_id and source.id == destination.id:
+                raise ValueError("Source and destination locations must differ")
         values = payload.model_dump(exclude_none=True)
         move = InventoryStockMove(**values, status="draft")
         db.add(move)
