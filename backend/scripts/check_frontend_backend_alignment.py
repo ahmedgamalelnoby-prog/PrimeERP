@@ -115,6 +115,48 @@ def main() -> None:
     if "/roles/permissions" not in normalized_roles_api and "BASE_URL}/permissions" not in roles_api:
         raise SystemExit("Roles frontend is not aligned with the backend /roles contract")
 
+
+    # Every backend module must have a discoverable frontend module, and every
+    # frontend module must map to a backend namespace unless explicitly marked
+    # as shell/public-only. This prevents silent UI/backend drift.
+    backend_modules = {
+        path.name for path in (BACKEND / "modules").iterdir()
+        if path.is_dir() and path.name != "ADDON_TEMPLATE"
+    }
+    frontend_modules = {
+        path.name for path in (FRONTEND / "modules").iterdir()
+        if path.is_dir()
+    }
+    aliases = {"egyptian_einvoice": "egyptian-einvoice"}
+    backend_frontend_names = {
+        aliases.get(name, name) for name in backend_modules
+    }
+    frontend_only_allowed = {
+        "assets", "checks", "cost-centers", "expenses", "hotels", "insurance",
+        "language", "permissions", "products", "real-estate", "reservations",
+        "restaurant", "saas", "suppliers", "time-tracking", "users",
+        "work-orders",
+    }
+    backend_only_allowed = {
+        "organization", "jurisdiction", "notifications", "operations",
+    }
+    missing_frontend = sorted(
+        name for name in backend_frontend_names
+        if name not in frontend_modules and name not in backend_only_allowed
+    )
+    missing_backend = sorted(
+        name for name in frontend_modules
+        if name not in backend_frontend_names and name not in frontend_only_allowed
+    )
+    if missing_frontend:
+        raise SystemExit(
+            "Backend modules missing frontend modules:\n" + "\n".join(missing_frontend)
+        )
+    if missing_backend:
+        raise SystemExit(
+            "Frontend modules missing backend modules:\n" + "\n".join(missing_backend)
+        )
+
     print(f"Frontend/backend alignment audit: PASS ({len(nav_paths)} navigation paths; {len(required_contracts)} critical API contracts)")
 
 
