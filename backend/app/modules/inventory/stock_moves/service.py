@@ -121,10 +121,11 @@ class InventoryStockMoveService:
         if getattr(move, "source_entity", None) == "sales_delivery" and move.movement_type != "issue":
             raise ValueError("Sales delivery stock moves must be issue movements")
         reservation = None
-        if move.reservation_id is not None:
+        reservation_id = getattr(move, "reservation_id", None)
+        if reservation_id is not None:
             reservation = db.scalar(
                 select(InventoryReservation)
-                .where(InventoryReservation.id == move.reservation_id, InventoryReservation.company_id == company_id)
+                .where(InventoryReservation.id == reservation_id, InventoryReservation.company_id == company_id)
                 .with_for_update()
             )
             if reservation is None:
