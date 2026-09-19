@@ -131,7 +131,6 @@ export default function PosPage() {
         <select required value={outletWarehouseId} onChange={e => setOutletWarehouseId(e.target.value)} className="w-full rounded-lg border px-3 py-2"><option value="">اختر المخزن الفرعي</option>{warehouses.filter(x => !x.is_central).map(x => <option key={x.id} value={x.id}>{x.name} — {x.code}</option>)}</select>
         <button className="rounded-lg bg-primary px-4 py-2 text-primary-foreground">حفظ مخزن الاستهلاك</button>
       </form>
-      </form>
 
       <form onSubmit={createStation} className="rounded-2xl border bg-card p-5 space-y-3">
         <h2 className="font-bold">2. إضافة محطة إخراج</h2>
@@ -174,7 +173,7 @@ export default function PosPage() {
         <h2 className="font-bold">طلب من المنيو</h2>
         <div className="grid gap-3 md:grid-cols-2">
           <input required value={partnerId} onChange={e => setPartnerId(e.target.value)} placeholder="Customer/Partner ID" className="rounded-lg border px-3 py-2"/>
-          <input required value={warehouseId} onChange={e => setWarehouseId(e.target.value)} placeholder="Warehouse ID" className="rounded-lg border px-3 py-2"/>
+          <input required value={warehouseId} readOnly placeholder="Consumption Warehouse (auto from outlet)" className="rounded-lg border bg-muted px-3 py-2"/>
           <select required value={selectedTerminal} onChange={e => setSelectedTerminal(e.target.value)} className="rounded-lg border px-3 py-2"><option value="">POS / المكان</option>{terminals.map(x => <option key={x.id} value={x.id}>{x.name} — Outlet {x.outlet_id}</option>)}</select>
           <select required value={selectedMenu} onChange={e => {setSelectedMenu(e.target.value);setSelectedMenuItem("")}} className="rounded-lg border px-3 py-2"><option value="">Menu</option>{menus.map(x => <option key={x.id} value={x.id}>{x.name_ar}</option>)}</select>
           <select required value={selectedMenuItem} onChange={e => setSelectedMenuItem(e.target.value)} className="rounded-lg border px-3 py-2 md:col-span-2"><option value="">اختر من المنيو</option>{activeMenu?.items?.map((x:AnyRow) => <option key={x.id} value={x.id}>#{x.id} Product {x.product_id}{x.sale_price_override != null ? ` — ${x.sale_price_override}` : ""}</option>)}</select>
