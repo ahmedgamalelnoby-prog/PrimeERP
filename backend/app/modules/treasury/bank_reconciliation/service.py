@@ -31,6 +31,8 @@ def create_statement(db, payload, user):
     account=db.scalar(select(BankAccount).where(BankAccount.id==payload.bank_account_id,BankAccount.company_id==payload.company_id))
     if not account: raise ValueError("Bank account not found")
     if payload.period_end < payload.period_start: raise ValueError("Statement period is invalid")
+    overlap=db.scalar(select(BankStatement).where(BankStatement.bank_account_id==payload.bank_account_id,BankStatement.company_id==payload.company_id,BankStatement.period_start <= payload.period_end,BankStatement.period_end >= payload.period_start))
+    if overlap: raise ValueError("Statement period overlaps an existing statement")
     previous=db.scalar(select(BankStatement).where(BankStatement.bank_account_id==payload.bank_account_id,BankStatement.company_id==payload.company_id,BankStatement.period_end < payload.period_start).order_by(BankStatement.period_end.desc()))
     if not previous and payload.opening_balance != account.opening_balance: raise ValueError("First statement opening balance must equal the bank account opening balance")
     if previous and payload.opening_balance != previous.closing_balance: raise ValueError("Statement opening balance must equal the previous statement closing balance")
@@ -78,8 +80,8 @@ def match(db, session, payload, user):
         expected_side = "credit" if source.direction == "received" else "debit"
     if expected_side == "credit" and line.credit <= 0: raise ValueError("Received/sales sources can only match bank credits")
     if expected_side == "debit" and line.debit <= 0: raise ValueError("Issued/purchase sources can only match bank debits")
-    existing=db.scalar(select(ReconciliationMatch).where(ReconciliationMatch.statement_line_id==line.id,ReconciliationMatch.source_type==payload.source_type,ReconciliationMatch.source_id==payload.source_id))
-    if existing: raise ValueError("Source transaction is already matched to this statement line")
+    existing=db.scalar(select(ReconciliationMatch).where(ReconciliationMatch.session_id==session.id,ReconciliationMatch.source_type==payload.source_type,ReconciliationMatch.source_id==payload.source_id))
+    if existing: raise ValueError("Source transaction is already matched in this reconciliation session")
     obj=ReconciliationMatch(company_id=session.company_id,session_id=session.id,statement_line_id=line.id,source_type=payload.source_type,source_id=payload.source_id,amount=payload.amount,created_by=user.id)
     db.add(obj); line.matched_amount += payload.amount
     total=(line.debit if line.debit else line.credit)
@@ -89,39 +91,38 @@ def match(db, session, payload, user):
 def candidates(db, session, line_id):
     line=_line(db,session,line_id)
     amount=line.debit if line.debit else line.credit
-    payment_query=select(CommercePayment).where(CommercePayment.company_id==session.company_id,CommercePayment.status=="posted",CommercePayment.amount==amount)
+    side="credit" if line.credit > 0 else "debit"
+    used=db.scalars(select(ReconciliationMatch.source_type, ReconciliationMatch.source_id).where(ReconciliationMatch.session_id==session.id)).all()
+    used_set={(t,i) for t,i in used}
+    payment_kind="sale" if side=="credit" else "purchase"
+    payment_query=select(CommercePayment).where(CommercePayment.company_id==session.company_id,CommercePayment.status=="posted",CommercePayment.document_kind==payment_kind,CommercePayment.amount==amount)
     if line.reference:
         payment_query=payment_query.where(CommercePayment.reference==line.reference)
-    payments=db.scalars(payment_query.order_by(CommercePayment.payment_date.desc()).limit(20)).all()
-    cheque_query=select(Cheque).where(Cheque.company_id==session.company_id,Cheque.amount==amount)
+    payments=[p for p in db.scalars(payment_query.order_by(CommercePayment.payment_date.desc()).limit(20)).all() if ("payment",p.id) not in used_set]
+    cheque_direction="received" if side=="credit" else "issued"
+    cheque_query=select(Cheque).where(Cheque.company_id==session.company_id,Cheque.direction==cheque_direction,Cheque.amount==amount)
     if line.cheque_number:
         cheque_query=cheque_query.where(Cheque.cheque_number==line.cheque_number)
-    cheques=db.scalars(cheque_query.order_by(Cheque.due_date.desc()).limit(20)).all()
+    cheques=[q for q in db.scalars(cheque_query.order_by(Cheque.due_date.desc()).limit(20)).all() if ("cheque",q.id) not in used_set]
     return payments, cheques
 
 def auto_match(db,session,user):
     lines=db.scalars(select(BankStatementLine).where(BankStatementLine.company_id==session.company_id,BankStatementLine.statement_id==session.statement_id,BankStatementLine.status!="matched")).all()
-    matched=0; candidates=0
+    matched=0; candidates_count=0
     for line in lines:
         amount=line.debit if line.debit else line.credit
         if amount <= line.matched_amount: continue
-        q=select(CommercePayment).where(CommercePayment.company_id==session.company_id,CommercePayment.status=="posted",CommercePayment.amount==amount)
-        if line.reference: q=q.where(CommercePayment.reference==line.reference)
-        candidates_list=db.scalars(q.limit(2)).all()
-        candidates += len(candidates_list)
-        if len(candidates_list)==1:
+        payments, cheques=candidates(db,session,line.id)
+        candidates_count += len(payments) + len(cheques)
+        options=payments if payments else cheques
+        if len(options)==1:
+            source=options[0]
+            source_type="payment" if payments else "cheque"
             try:
-                match(db,session,type("P",(),{"statement_line_id":line.id,"source_type":"payment","source_id":candidates_list[0].id,"amount":amount})(),user); matched+=1
-            except ValueError: pass
-            continue
-        cq=select(Cheque).where(Cheque.company_id==session.company_id,Cheque.amount==amount)
-        if line.cheque_number: cq=cq.where(Cheque.cheque_number==line.cheque_number)
-        cs=db.scalars(cq.limit(2)).all(); candidates += len(cs)
-        if len(cs)==1:
-            try:
-                match(db,session,type("P",(),{"statement_line_id":line.id,"source_type":"cheque","source_id":cs[0].id,"amount":amount})(),user); matched+=1
-            except ValueError: pass
-    return matched,candidates
+                match(db,session,type("P",(),{"statement_line_id":line.id,"source_type":source_type,"source_id":source.id,"amount":amount})(),user); matched+=1
+            except ValueError:
+                pass
+    return matched,candidates_count
 
 def statement_is_balanced(statement, db):
     net=db.scalar(select(func.coalesce(func.sum(BankStatementLine.credit-BankStatementLine.debit),0)).where(BankStatementLine.statement_id==statement.id)) or Decimal("0")
