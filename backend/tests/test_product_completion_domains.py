@@ -499,3 +499,13 @@ def test_stock_move_reversal_restores_consumed_reservation():
     assert "source_balance.quantity_reserved += quantity" in source
     assert "warehouse_source.quantity_reserved += quantity" in source
     assert 'reservation.status = "active"' in source
+
+
+def test_inventory_transfer_allows_distinct_locations_in_same_warehouse():
+    import inspect
+    from app.modules.inventory.stock_moves.service import InventoryStockMoveService
+
+    source = inspect.getsource(InventoryStockMoveService.create_draft)
+    assert 'if source.warehouse_id == destination.warehouse_id and source.id == destination.id:' in source
+    assert 'raise ValueError("Source and destination locations must differ")' in source
+    assert 'Use a direct stock move for an intra-warehouse location transfer' not in source
