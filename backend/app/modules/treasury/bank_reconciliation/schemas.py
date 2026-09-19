@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -60,7 +60,7 @@ class ReconciliationResponse(ReconciliationCreate):
     difference: Decimal
     status: str
     closed_by: int | None
-    closed_at: object | None
+    closed_at: datetime | None
     model_config = ConfigDict(from_attributes=True)
 
 class MatchCreate(BaseModel):
