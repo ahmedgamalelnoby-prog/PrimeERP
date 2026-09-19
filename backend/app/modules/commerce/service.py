@@ -269,12 +269,12 @@ class CommerceService:
         if document_status not in {"confirmed", "posted"}: raise ValueError("Document must be confirmed or posted before payment")
         wht_amount = Decimal(payload.wht_amount or 0)
         if wht_amount == 0 and getattr(payload, "auto_wht", True): wht_amount = self._auto_payment_wht(db, document=document, company_id=payload.company_id, amount=Decimal(payload.amount), document_kind=kind)
-        payment_result = post_payment(db, company_id=payload.company_id, document_kind=kind, document_id=payload.document_id, amount=payload.amount, payment_date=payload.payment_date, method=payload.method, wht_amount=wht_amount, reference=payload.reference, notes=payload.notes, idempotency_key=payload.idempotency_key, update_document_paid_total=not bool(payload.allocations))
+        payment_result = post_payment(db, company_id=payload.company_id, document_kind=kind, document_id=payload.document_id, amount=payload.amount, payment_date=payload.payment_date, method=payload.method, wht_amount=wht_amount, reference=payload.reference, notes=payload.notes, idempotency_key=payload.idempotency_key, update_document_paid_total=not bool(getattr(payload, "allocations", None)))
         if isinstance(payment_result, tuple) and len(payment_result) == 2:
             document, payment = payment_result
         else:
             payment = payment_result
-        self._ensure_payment_allocation(db, payment, document, [a.model_dump() for a in payload.allocations] if payload.allocations else None)
+        allocations = getattr(payload, "allocations", None) or None\n        self._ensure_payment_allocation(db, payment, document, [a.model_dump() for a in allocations] if allocations else None)
         if payload.method.lower() == "cheque":
             # Payment idempotency can return the already-posted payment on a
             # retry. The cheque is a side effect of that payment, so it must
