@@ -109,9 +109,12 @@ class CommerceService:
             db.flush()
         return obj
 
-    def list_documents(self, db, company_id, kind):
+    def list_documents(self, db, company_id, kind, document_type=None):
         model = SalesDocument if kind == "sale" else PurchaseDocument
-        return list(db.scalars(select(model).where(model.company_id == company_id).order_by(model.document_date.desc(), model.id.desc())).all())
+        query = select(model).where(model.company_id == company_id)
+        if document_type is not None:
+            query = query.where(model.document_type == document_type)
+        return list(db.scalars(query.order_by(model.document_date.desc(), model.id.desc())).all())
 
     def partner_open_balance(self, db, company_id: int, partner_id: int, direction: str, *, before_date=None):
         model = SalesDocument if direction == "customer" else PurchaseDocument
