@@ -411,3 +411,13 @@ def test_payment_reverse_handles_all_active_allocations():
     assert "CommercePaymentAllocation.status == \"active\"" in source
     assert "target.paid_total" in source
     assert "allocation.status = \"reversed\"" in source
+
+def test_ar_ap_aging_uses_split_payment_allocations_as_of_cutoff():
+    import inspect
+    source = inspect.getsource(CommerceService.ar_ap_aging)
+    assert "CommercePaymentAllocation" in source
+    assert "allocation.document_id" in source
+    assert "allocation.amount" in source
+    assert 'allocation.status == "active"' in source
+    assert "allocated_payment_ids" in source
+    assert "Legacy payments created before allocation tracking remain" in source
