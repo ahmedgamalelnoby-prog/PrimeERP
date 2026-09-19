@@ -296,9 +296,20 @@ def test_payment_auto_wht_uses_product_tax_profile_result(monkeypatch):
     captured = {}
 
     monkeypatch.setattr(service, '_auto_payment_wht', lambda db, **kwargs: Decimal('11.40'))
+    payment = SimpleNamespace(
+        id=77,
+        company_id=7,
+        document_kind='sale',
+        document_id=55,
+        amount=Decimal('1140.00'),
+    )
+    def fake_post_payment(db, **kwargs):
+        captured.update(kwargs)
+        return document, payment
+
     monkeypatch.setattr(
         'app.modules.commerce.service.post_payment',
-        lambda db, **kwargs: captured.update(kwargs) or kwargs,
+        fake_post_payment,
     )
 
     payload = SimpleNamespace(
