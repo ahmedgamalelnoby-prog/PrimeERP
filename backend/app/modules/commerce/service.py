@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -81,7 +81,7 @@ class CommerceService:
         if payload.receipt_ids:
             receipts = list(db.scalars(select(PurchaseDocument).where(PurchaseDocument.id.in_(payload.receipt_ids), PurchaseDocument.company_id == payload.company_id, PurchaseDocument.partner_id == payload.partner_id, PurchaseDocument.document_type == "receipt", PurchaseDocument.status.in_(["received", "partially_received"]))).all()); found = {r.id for r in receipts}; missing = [r for r in payload.receipt_ids if r not in found]
             if missing: raise ValueError(f"Receipt(s) not found, not received, or not owned by the vendor/company: {missing}")
-        obj = model(company_id=payload.company_id, partner_id=payload.partner_id, document_type=payload.document_type, number=payload.number, document_date=payload.document_date, warehouse_id=payload.warehouse_id, notes=payload.notes)
+        obj = model(company_id=payload.company_id, partner_id=payload.partner_id, document_type=payload.document_type, number=payload.number, document_date=payload.document_date, warehouse_id=payload.warehouse_id, due_date=payload.due_date or (payload.document_date + timedelta(days=partner.payment_terms_days) if payload.document_type in {"invoice", "bill"} else None), notes=payload.notes)
         subtotal = Decimal("0"); tax = Decimal("0"); discount = Decimal("0")
         for p in payload.lines:
             item = db.scalar(select(InventoryItem).where(InventoryItem.id == p.item_id, InventoryItem.company_id == payload.company_id, InventoryItem.is_active.is_(True)))
@@ -222,3 +222,25 @@ class CommerceService:
 
 
 commerce_service = CommerceService()
+
+    def ar_ap_aging(self, db, company_id: int, as_of):
+        rows = []
+        for model, direction in ((SalesDocument, "receivable"), (PurchaseDocument, "payable")):
+            documents = db.scalars(select(model).where(
+                model.company_id == company_id,
+                model.document_type == ("invoice" if direction == "receivable" else "bill"),
+                model.status.in_({"confirmed", "posted"}),
+                model.total > model.paid_total,
+            ).order_by(model.due_date, model.id)).all()
+            for document in documents:
+                outstanding = Decimal(document.total or 0) - Decimal(document.paid_total or 0)
+                due_date = document.due_date or document.document_date
+                days_overdue = max((as_of - due_date).days, 0)
+                bucket = "current" if days_overdue == 0 else "1-30" if days_overdue <= 30 else "31-60" if days_overdue <= 60 else "61-90" if days_overdue <= 90 else "91+"
+                rows.append({
+                    "direction": direction, "document_id": document.id, "document_number": document.number,
+                    "partner_id": document.partner_id, "document_date": document.document_date, "due_date": due_date,
+                    "total": document.total, "paid_total": document.paid_total, "outstanding": outstanding,
+                    "days_overdue": days_overdue, "bucket": bucket,
+                })
+        return rows
