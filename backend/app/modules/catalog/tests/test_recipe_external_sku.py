@@ -51,6 +51,8 @@ def test_recipe_sku_mapping_supports_parent_and_variant_skus():
     assert 'UniqueConstraint("company_id", "sku"' in model
     assert "def bind_recipe_sku" in service
     assert "variant_id: int | None = None" in service
+    assert "class RecipeSkuMapping(Base):" in model
+    assert "Recipe.variant_id == local_variant.id" in mapping
     assert "Salla product SKU requires an active ERP recipe" in mapping
     assert "Salla variant SKU requires an active ERP recipe" in mapping
     assert "bind_recipe_sku" in mapping
