@@ -143,8 +143,7 @@ def sales(
     allowed = {"quotation", "order", "delivery", "invoice", "credit_note"}
     if document_type is not None and document_type not in allowed:
         raise HTTPException(400, "Invalid sales document type")
-    rows = commerce_service.list_documents(db, company_id, "sale")
-    return [row for row in rows if document_type is None or row.document_type == document_type]
+    return commerce_service.list_documents(db, company_id, "sale", document_type)
 
 
 @router.get("/purchases/documents", response_model=list[DocumentResponse])
@@ -158,8 +157,7 @@ def purchases(
     allowed = {"requisition", "rfq", "order", "receipt", "bill", "debit_note"}
     if document_type is not None and document_type not in allowed:
         raise HTTPException(400, "Invalid purchase document type")
-    rows = commerce_service.list_documents(db, company_id, "purchase")
-    return [row for row in rows if document_type is None or row.document_type == document_type]
+    return commerce_service.list_documents(db, company_id, "purchase", document_type)
 
 @router.post("/sales/{document_id}/confirm", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def confirm_sale(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
