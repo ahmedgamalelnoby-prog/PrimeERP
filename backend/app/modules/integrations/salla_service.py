@@ -150,6 +150,17 @@ def _normalize_product(db: Session, company_id: int, connection_id: int, data: d
     try:
         reconcile_result = reconcile_salla_product_mapping(db, company_id=company_id, connection_id=connection_id, salla_product_id=obj.id)
     except ValueError as exc:
+        # A SKU-bearing commerce product is not a successfully synchronized
+        # product until its ERP recipe identity is resolved. Let the event
+        # processor retry the transaction instead of silently recording a
+        # partial product with a mapping error.
+        variant_rows = _list(data.get("skus") or data.get("variants"))
+        sku_bearing = bool(data.get("sku")) or any(
+            isinstance(row, dict) and (row.get("sku") or row.get("barcode") or row.get("gtin"))
+            for row in variant_rows
+        )
+        if sku_bearing:
+            raise
         reconcile_result = {"product_mapped": 0, "variants_mapped": 0, "product_id": None, "reason": str(exc)}
     setattr(obj, "_mapping_result", reconcile_result)
     return obj
