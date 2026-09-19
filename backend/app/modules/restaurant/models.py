@@ -429,7 +429,7 @@ class PosOutlet(Base):
     name = Column(String(160), nullable=False)
     outlet_type = Column(String(30), nullable=False, default="restaurant")
     is_active = Column(Boolean, nullable=False, default=True)
-    created_at = TIMESTAMP()
+    created_at = Column(TIMESTAMP, server_default=func.now(), nullable=False)
 
     __table_args__ = (UniqueConstraint("company_id", "code", name="uq_pos_outlet_company_code"),)
 
