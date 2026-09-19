@@ -380,6 +380,23 @@ def test_payment_schema_supports_split_allocations_and_requires_primary_document
     assert len(payload.allocations) == 2
 
 
+def test_payment_schema_rejects_unallocated_payment_remainder():
+    from app.modules.commerce.schemas import PaymentCreate
+
+    with pytest.raises(ValueError, match="must equal the payment amount"):
+        PaymentCreate(
+            company_id=7,
+            document_id=10,
+            payment_date=date(2026, 9, 19),
+            amount=Decimal("1500"),
+            method="bank_transfer",
+            allocations=[
+                {"document_id": 10, "amount": Decimal("900")},
+                {"document_id": 11, "amount": Decimal("500")},
+            ],
+        )
+
+
 def test_payment_allocation_model_allows_multiple_documents_per_payment():
     from app.modules.commerce.models import CommercePaymentAllocation
     constraints = {c.name for c in CommercePaymentAllocation.__table__.constraints}
