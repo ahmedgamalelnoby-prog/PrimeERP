@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.modules.accounting.models import TaxRate
+from app.modules.companies.models import Company
 from app.modules.accounting.tax_engine import calculate_taxes
 from app.modules.commerce.accounting_service import commerce_accounting_service
 from app.modules.catalog.models import ProductVariant
@@ -127,6 +128,10 @@ class CommerceService:
             if obj.status in ("fulfilled", "received"): return obj
             raise ValueError("Document must be confirmed before inventory posting")
         if not obj.warehouse_id: raise ValueError("Warehouse is required")
+        company = db.scalar(select(Company).where(Company.id == company_id))
+        if company is None or company.tenant_id is None:
+            raise ValueError("Company tenant context is missing")
+        tenant_id = company.tenant_id
         locations = list(db.scalars(select(InventoryLocation).where(InventoryLocation.warehouse_id == obj.warehouse_id, InventoryLocation.company_id == company_id, InventoryLocation.is_active.is_(True)).order_by(InventoryLocation.id)).all())
         if not locations: raise ValueError("Warehouse has no active location")
         loc = locations[0]; source_entity = "sales_delivery" if kind == "sale" else "purchase_receipt"
@@ -138,7 +143,8 @@ class CommerceService:
             else:
                 net_unit_cost = Decimal(line.unit_price) * (Decimal("100") - Decimal(line.discount_percent or 0)) / Decimal("100")
                 payload = StockMoveCreate(company_id=company_id, item_id=line.item_id, variant_id=getattr(line, "variant_id", None), movement_type="receipt", source_location_id=None, destination_location_id=loc.id, quantity=line.quantity, unit_cost=net_unit_cost, reference=obj.number, source_module="commerce", source_entity=source_entity, source_id=source_id, notes="Purchase receipt")
-            move = inventory_stock_move_service.create_draft(db, payload); inventory_stock_move_service.post(db, company_id=company_id, move_id=move.id)
+            move = inventory_stock_move_service.create_draft(db, payload)
+            inventory_stock_move_service.post(db, tenant_id=tenant_id, company_id=company_id, move_id=move.id, user_id=user_id or 0)
         obj.status = "fulfilled" if kind == "sale" else "received"; db.flush()
         if kind == "sale" and user_id is not None: commerce_accounting_service.post_sales_delivery_cogs(db, obj, user_id)
         if kind == "purchase" and user_id is not None and obj.document_type == "receipt": commerce_accounting_service.post_purchase_receipt(db, obj, user_id)
