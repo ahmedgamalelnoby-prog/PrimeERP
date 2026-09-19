@@ -104,7 +104,7 @@ def _carrier(db: Session, company_id: int, shipment: SallaShipment) -> ShippingC
                     db.add(IntegrationMapping(
                         company_id=company_id,
                         connection_id=shipment.connection_id,
-                        entity_type="salla_shipping_company",
+                        entity_type="shipping_carrier",
                         external_id=courier_id,
                         local_id=obj.id,
                     ))
@@ -142,7 +142,9 @@ def _advance_status(current: str, target: str) -> str:
     if target == "returned":
         return "returned" if current not in {"returned", "cancelled"} else current
     if target == "cancelled":
-        return "cancelled" if current not in {"returned", "cancelled"} else current
+        # Delivered/returned are terminal and must not be downgraded by a
+        # late cancellation webhook.
+        return "cancelled" if current not in {"delivered", "returned", "cancelled"} else current
     path = {
         "pending": ["picked_up", "in_transit", "out_for_delivery", "delivered"],
         "picked_up": ["in_transit", "out_for_delivery", "delivered"],
