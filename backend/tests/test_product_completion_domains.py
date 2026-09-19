@@ -534,3 +534,24 @@ def test_inventory_reservation_variant_validation_uses_product_variant_is_active
     source = inspect.getsource(InventoryReservationService._validate_variant)
     assert "ProductVariant.is_active.is_(True)" in source
     assert "ProductVariant.active.is_(True)" not in source
+
+
+def test_stock_move_reversal_loads_linked_reservation_before_access():
+    import inspect
+    from app.modules.inventory.stock_moves.service import InventoryStockMoveService
+
+    source = inspect.getsource(InventoryStockMoveService.reverse)
+    reservation_load = source.index("if move.reservation_id is not None:")
+    reservation_use = source.index("reservation.status", reservation_load)
+    assert reservation_load < reservation_use
+    assert "if reservation is not None:" not in source
+
+
+def test_stock_move_reversal_is_guarded_by_single_reversal_lineage():
+    import inspect
+    from app.modules.inventory.stock_moves.service import InventoryStockMoveService
+
+    source = inspect.getsource(InventoryStockMoveService.reverse)
+    assert "move.reversed_by_move_id is not None" in source
+    assert "InventoryStockMove.reversed_by_move_id == move.id" in source
+    assert 'raise ValueError("Stock move already has a reversal movement")' in source
