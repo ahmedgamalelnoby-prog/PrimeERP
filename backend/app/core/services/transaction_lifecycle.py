@@ -179,7 +179,8 @@ class TransactionLifecycle:
             actor_id=actor_id,
             occurred_at=now,
             reason=reason,
-            idempotency_key=idempotency_key,
+            idempotency_key=idempotency_key,,
+            expected_version=expected_version,
         )
         document.status = target
         document.version += 1
@@ -204,12 +205,14 @@ class TransactionLifecycle:
         *,
         actor_id: str,
         idempotency_key: str | None = None,
+        expected_version: int | None = None,
     ) -> LifecycleEvent:
         return self.transition(
             document,
             DocumentStatus.APPROVED,
             actor_id=actor_id,
-            idempotency_key=idempotency_key,
+            idempotency_key=idempotency_key,,
+            expected_version=expected_version,
         )
 
     def post(
@@ -218,12 +221,14 @@ class TransactionLifecycle:
         *,
         actor_id: str,
         idempotency_key: str | None = None,
+        expected_version: int | None = None,
     ) -> LifecycleEvent:
         return self.transition(
             document,
             DocumentStatus.POSTED,
             actor_id=actor_id,
-            idempotency_key=idempotency_key,
+            idempotency_key=idempotency_key,,
+            expected_version=expected_version,
         )
 
     def reverse(
@@ -233,6 +238,7 @@ class TransactionLifecycle:
         actor_id: str,
         reason: str,
         idempotency_key: str | None = None,
+        expected_version: int | None = None,
     ) -> LifecycleEvent:
         return self.transition(
             document,
