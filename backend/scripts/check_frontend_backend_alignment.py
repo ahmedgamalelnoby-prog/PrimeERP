@@ -151,6 +151,9 @@ def main() -> None:
         "helpdesk": "helpdesk_ai",
         "operations": "operations",
         "commerce": "commerce",
+        "approvals": "operations",
+        "workflow": "operations",
+        "customers": "commerce",
     }
     frontend_backend_names = {frontend_to_backend.get(name, name) for name in frontend_modules}
     missing_backend = sorted(
