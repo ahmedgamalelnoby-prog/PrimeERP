@@ -145,7 +145,14 @@ def main() -> None:
         name for name in backend_frontend_names
         if name not in frontend_modules and name not in backend_only_allowed
     )
-    frontend_backend_names = {aliases.get(name, name) for name in frontend_modules}
+    frontend_to_backend = {
+        "egyptian-einvoice": "egyptian_einvoice",
+        "products": "catalog",
+        "helpdesk": "helpdesk_ai",
+        "operations": "operations",
+        "commerce": "commerce",
+    }
+    frontend_backend_names = {frontend_to_backend.get(name, name) for name in frontend_modules}
     missing_backend = sorted(
         name for name in frontend_backend_names
         if name not in backend_modules and name not in frontend_only_allowed
