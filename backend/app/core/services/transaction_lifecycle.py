@@ -137,12 +137,11 @@ class TransactionLifecycle:
                 raise MissingReasonError("A reversal reason is required.")
 
         if current in {
-            DocumentStatus.POSTED,
             DocumentStatus.REVERSED,
             DocumentStatus.CANCELLED,
         }:
             raise PostedDocumentError(
-                f"{current.value} documents are immutable except explicit reversal."
+                f"{current.value} documents are immutable."
             )
 
         if target == DocumentStatus.POSTED and not reason:
