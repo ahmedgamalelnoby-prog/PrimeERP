@@ -123,8 +123,7 @@ class RecipeLine(Base):
     notes = Column(String(500), nullable=True)
     __table_args__ = (UniqueConstraint("recipe_id", "line_no", name="uq_recipe_line_no"), CheckConstraint("line_no > 0", name="ck_recipe_line_no_positive"), CheckConstraint("quantity > 0", name="ck_recipe_line_quantity_positive"), CheckConstraint("waste_percentage >= 0 AND waste_percentage < 100", name="ck_recipe_line_waste_range"), CheckConstraint("conversion_factor_to_product_uom > 0", name="ck_recipe_line_conversion_positive"))
     recipe = relationship("Recipe", back_populates="lines")
-    ingredient = relationship("InventoryItem")
-
+    # Both columns point to inventory_items; keep the legacy ingredient relationship\n    # explicitly bound to ingredient_product_id and expose the canonical item link separately.\n    ingredient = relationship("InventoryItem", foreign_keys=[ingredient_product_id])\n    ingredient_item = relationship("InventoryItem", foreign_keys=[ingredient_item_id])\n
 
 class Menu(Base):
     __tablename__ = "menus"
