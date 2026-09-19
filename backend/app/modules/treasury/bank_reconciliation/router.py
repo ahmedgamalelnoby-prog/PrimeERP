@@ -53,6 +53,20 @@ def session_create(payload:ReconciliationCreate,current_user:User=Depends(get_cu
 def sessions(company_id:int=Query(...,gt=0),bank_account_id:int=Query(...,gt=0),current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
     ensure_company(db,company_id,current_user);return db.scalars(select(ReconciliationSession).where(ReconciliationSession.company_id==company_id,ReconciliationSession.bank_account_id==bank_account_id).order_by(ReconciliationSession.id.desc())).all()
 
+@router.get("/sessions/{session_id}/candidates", response_model=list[ReconciliationCandidate])
+def session_candidates(session_id:int, line_id:int=Query(...,gt=0), current_user:User=Depends(get_current_user), db:Session=Depends(get_db)):
+    s=db.get(ReconciliationSession,session_id)
+    if not s: raise HTTPException(404,"Reconciliation session not found")
+    try:
+        ensure_company(db,s.company_id,current_user)
+        payments, cheques=candidates(db,s,line_id)
+        return [
+            *[{"source_type":"payment","source_id":p.id,"amount":p.amount,"reference":p.reference,"transaction_date":p.payment_date} for p in payments],
+            *[{"source_type":"cheque","source_id":q.id,"amount":q.amount,"cheque_number":q.cheque_number,"transaction_date":q.cheque_date} for q in cheques],
+        ]
+    except ValueError as e:
+        fail(e)
+
 @router.post("/sessions/{session_id}/auto-match",response_model=AutoMatchResponse,dependencies=[Depends(require_permission("treasury.write"))])
 def session_auto(session_id:int,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
     s=db.get(ReconciliationSession,session_id)
