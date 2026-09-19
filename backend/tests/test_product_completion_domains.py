@@ -555,3 +555,14 @@ def test_stock_move_reversal_is_guarded_by_single_reversal_lineage():
     assert "move.reversed_by_move_id is not None" in source
     assert "InventoryStockMove.reversed_by_move_id == move.id" in source
     assert 'raise ValueError("Stock move already has a reversal movement")' in source
+
+
+
+def test_salla_shipment_updates_use_canonical_shipping_lifecycle():
+    import inspect
+    from app.modules.integrations import salla_shipping_service
+
+    source = inspect.getsource(salla_shipping_service.sync_salla_shipment)
+    assert "shipping_status_service.apply_transition" in source
+    assert "_system_user_id(db, salla_shipment.company_id)" in source
+    assert "existing.status = _advance_status" not in source
