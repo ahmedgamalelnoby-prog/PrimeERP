@@ -132,7 +132,7 @@ class CommercePaymentAllocation(Base):
     __tablename__ = "commerce_payment_allocations"
     id = Column(Integer, primary_key=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
-    payment_id = Column(Integer, ForeignKey("commerce_payments.id", ondelete="RESTRICT"), nullable=False, unique=True, index=True)
+    payment_id = Column(Integer, ForeignKey("commerce_payments.id", ondelete="RESTRICT"), nullable=False, index=True)
     document_kind = Column(String(10), nullable=False)
     document_id = Column(Integer, nullable=False, index=True)
     amount = Column(Numeric(18, 4), nullable=False)
