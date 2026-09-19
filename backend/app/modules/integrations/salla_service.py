@@ -153,7 +153,7 @@ def _normalize_product(db: Session, company_id: int, connection_id: int, data: d
         "urls": _dict(data.get("urls")), "images": _list(data.get("images")), "updated_at_salla": _dt(data.get("updated_at")), "raw_payload": data,
     })
     db.flush()
-    before = db.query(SallaProductVariant).filter(SallaProductVariant.connection_id == connection_id, SallaProductVariant.product_id == obj.id).count()
+    before = db.query(SallaProductVariant).filter(SallaProductVariant.company_id == company_id, SallaProductVariant.connection_id == connection_id, SallaProductVariant.product_id == obj.id).count()
     for variant in _list(data.get("skus") or data.get("variants")):
         variant = _dict(variant)
         variant_id = _id(variant.get("id") or variant.get("sku_id"))
@@ -229,7 +229,7 @@ def _normalize_shipment(db: Session, company_id: int, connection_id: int, data: 
     if not external_id:
         return None
     order_id = _id(data.get("order_id") or _dict(data.get("order")).get("id"))
-    order = db.scalar(select(SallaOrder).where(SallaOrder.connection_id == connection_id, SallaOrder.external_id == order_id)) if order_id else None
+    order = db.scalar(select(SallaOrder).where(SallaOrder.company_id == company_id, SallaOrder.connection_id == connection_id, SallaOrder.external_id == order_id)) if order_id else None
     courier = _dict(data.get("courier"))
     return _upsert(db, SallaShipment, connection_id, external_id, {
         "company_id": company_id, "order_id": order.id if order else None, "order_external_id": order_id,
@@ -269,7 +269,7 @@ def normalize_salla_event(db: Session, event: IntegrationEvent) -> dict[str, int
     if key == "order":
         obj = _normalize_order(db, event.company_id, event.connection_id, data)
         counters["orders"] = int(obj is not None)
-        counters["order_items"] = db.query(SallaOrderItem).filter(SallaOrderItem.connection_id == event.connection_id, SallaOrderItem.order_id == obj.id).count() if obj else 0
+        counters["order_items"] = db.query(SallaOrderItem).filter(SallaOrderItem.company_id == event.company_id, SallaOrderItem.connection_id == event.connection_id, SallaOrderItem.order_id == obj.id).count() if obj else 0
     elif key == "customer":
         counters["customers"] = int(_normalize_customer(db, event.company_id, event.connection_id, data) is not None)
     elif key == "product":
