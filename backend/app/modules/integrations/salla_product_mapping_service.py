@@ -6,7 +6,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.modules.catalog.models import ProductBarcode, ProductVariant
+from app.modules.catalog.models import ProductBarcode, ProductVariant, Recipe
 from app.modules.companies.models import Company
 from app.modules.inventory.items.models import InventoryItem
 from .models import IntegrationConnection, IntegrationProductMapping
@@ -193,7 +193,7 @@ def reconcile_salla_product_mapping(
         external_sku=_first_text(salla_product.sku),
         external_url=_url(salla_product.urls),
     )
-
+    # Bind every recipe version for this commercial Product to the same external SKU.\n    # Recipe.code remains the ERP-internal code.\n    salla_sku = _first_text(salla_product.sku)\n    if salla_sku:\n        from app.modules.catalog.models import CatalogProduct\n        catalog_product = db.scalar(select(CatalogProduct).where(\n            CatalogProduct.company_id == company_id,\n            CatalogProduct.item_id == local_product.id,\n            CatalogProduct.is_active.is_(True),\n        ))\n        if catalog_product is not None:\n            recipes = db.scalars(select(Recipe).where(\n                Recipe.company_id == company_id,\n                Recipe.catalog_product_id == catalog_product.id,\n            ).with_for_update()).all()\n            for recipe in recipes:\n                recipe.external_sku = salla_sku\n
     variants = list(
         db.scalars(
             select(SallaProductVariant)
