@@ -17,9 +17,9 @@ _STATUS_MAP = {
     "pending": "pending",
     "created": "pending",
     "ready": "pending",
-    "picked_up": "picked_up",
+    "picked_up": "shipped",
     "pickedup": "picked_up",
-    "shipped": "picked_up",
+    "shipped": "shipped",
     "in_transit": "in_transit",
     "intransit": "in_transit",
     "received_at_final_hub": "in_transit",
@@ -255,7 +255,38 @@ def sync_salla_shipment(db: Session, salla_shipment: SallaShipment) -> dict:
     )
     db.add(obj)
     db.flush()
-    obj.status = _advance_status(obj.status, target_status)
+
+    # A newly imported Salla shipment may arrive at a terminal/intermediate
+    # state without its earlier webhooks. Replay the canonical ERP transition
+    # path instead of mutating status directly, so status history and financial
+    # events are generated exactly as for native ERP shipments.
+    target_status = _advance_status(obj.status, target_status)
+    canonical_path = [
+        "preparing",
+        "packing",
+        "shipped",
+        "in_transit",
+        "delivering",
+        "out_for_delivery",
+        "delivered",
+        "returning",
+        "returned",
+    ]
+    if target_status == "cancelled":
+        shipping_status_service.apply_transition(
+            db, obj, "cancelled",
+            changed_on=salla_shipment.created_at_salla.date() if salla_shipment.created_at_salla else None,
+            user_id=_system_user_id(db, salla_shipment.company_id),
+        )
+    else:
+        target_index = canonical_path.index(target_status) if target_status in canonical_path else -1
+        if target_index >= 0:
+            for status_code in canonical_path[: target_index + 1]:
+                shipping_status_service.apply_transition(
+                    db, obj, status_code,
+                    changed_on=salla_shipment.created_at_salla.date() if salla_shipment.created_at_salla else None,
+                    user_id=_system_user_id(db, salla_shipment.company_id),
+                )
     db.add(
         IntegrationMapping(
             company_id=salla_shipment.company_id,
