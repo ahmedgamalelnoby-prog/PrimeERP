@@ -4,6 +4,7 @@ const areas = [
   ["دليل الحسابات", "/accounting/chart-of-accounts", "الحسابات والأقسام ومراكز التكلفة"],
   ["القيود اليومية", "/accounting/journal-entries", "إنشاء ومراجعة وترحيل القيود"],
   ["التقارير المالية", "/accounting/reports", "التقارير والتحليلات المالية"],
+  ["أعمار الذمم AR/AP", "/accounting/ar-ap-aging", "تحليل المستحقات المدينة والدائنة حسب تاريخ الاستحقاق"],
 ];
 
 export default function AccountingPage() {
