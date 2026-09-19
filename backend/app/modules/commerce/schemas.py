@@ -60,6 +60,7 @@ class DocumentCreate(BaseModel):
     document_type: SaleType | PurchaseType
     number: str = Field(min_length=1, max_length=60)
     document_date: date
+    due_date: date | None = None
     warehouse_id: int | None = Field(default=None, gt=0)
     notes: str | None = None
     lines: list[DocumentLineCreate] = Field(min_length=1)
@@ -84,6 +85,7 @@ class DocumentResponse(BaseModel):
     document_type: str
     number: str
     document_date: date
+    due_date: date | None
     status: str
     warehouse_id: int | None
     subtotal: Decimal
@@ -136,3 +138,24 @@ class PaymentReverse(BaseModel):
     company_id: int = Field(gt=0)
     reversal_date: date
     notes: str | None = None
+
+
+class AgingRow(BaseModel):
+    direction: str
+    document_id: int
+    document_number: str
+    partner_id: int
+    document_date: date
+    due_date: date
+    total: Decimal
+    paid_total: Decimal
+    outstanding: Decimal
+    days_overdue: int
+    bucket: str
+
+class AgingSummary(BaseModel):
+    as_of: date
+    receivable: Decimal
+    payable: Decimal
+    net: Decimal
+    rows: list[AgingRow]
