@@ -326,8 +326,18 @@ def test_payment_auto_wht_uses_product_tax_profile_result(monkeypatch):
     )
 
     class FakeDB:
+        def __init__(self):
+            self.calls = 0
+
         def scalar(self, _query):
-            return document
+            self.calls += 1
+            return document if self.calls == 1 else None
+
+        def add(self, _value):
+            pass
+
+        def flush(self):
+            pass
 
     service.pay(FakeDB(), payload, 'sale')
     assert captured['wht_amount'] == Decimal('11.40')
