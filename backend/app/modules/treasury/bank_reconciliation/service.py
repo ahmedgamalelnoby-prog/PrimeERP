@@ -92,8 +92,8 @@ def candidates(db, session, line_id):
     line=_line(db,session,line_id)
     amount=line.debit if line.debit else line.credit
     side="credit" if line.credit > 0 else "debit"
-    used=db.scalars(select(ReconciliationMatch.source_type, ReconciliationMatch.source_id).where(ReconciliationMatch.session_id==session.id)).all()
-    used_set={(t,i) for t,i in used}
+    used_rows=db.execute(select(ReconciliationMatch.source_type, ReconciliationMatch.source_id).where(ReconciliationMatch.session_id==session.id)).all()
+    used_set={(t,i) for t,i in used_rows}
     payment_kind="sale" if side=="credit" else "purchase"
     payment_query=select(CommercePayment).where(CommercePayment.company_id==session.company_id,CommercePayment.status=="posted",CommercePayment.document_kind==payment_kind,CommercePayment.amount==amount)
     if line.reference:
@@ -114,10 +114,9 @@ def auto_match(db,session,user):
         if amount <= line.matched_amount: continue
         payments, cheques=candidates(db,session,line.id)
         candidates_count += len(payments) + len(cheques)
-        options=payments if payments else cheques
+        options=[("payment", p) for p in payments] + [("cheque", q) for q in cheques]
         if len(options)==1:
-            source=options[0]
-            source_type="payment" if payments else "cheque"
+            source_type, source=options[0]
             try:
                 match(db,session,type("P",(),{"statement_line_id":line.id,"source_type":source_type,"source_id":source.id,"amount":amount})(),user); matched+=1
             except ValueError:
