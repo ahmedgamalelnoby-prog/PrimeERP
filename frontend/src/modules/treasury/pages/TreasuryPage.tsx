@@ -135,7 +135,7 @@ export default function TreasuryPage() {
           <input required type="date" value={date} onChange={e => setDate(e.target.value)} className="w-full rounded-lg border bg-background px-3 py-2" />
           <input required type="date" value={due} onChange={e => setDue(e.target.value)} className="w-full rounded-lg border bg-background px-3 py-2" />
           <input required type="number" min="0.01" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="المبلغ EGP" className="w-full rounded-lg border bg-background px-3 py-2" />
-          <button disabled={saving || !companyId} className="w-full rounded-lg bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50">
+          <button disabled={saving || !companyId || Number(amount) <= 0 || !number.trim()} className="w-full rounded-lg bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50">
             {saving ? "جارٍ الحفظ..." : "حفظ الشيك"}
           </button>
         </form>
