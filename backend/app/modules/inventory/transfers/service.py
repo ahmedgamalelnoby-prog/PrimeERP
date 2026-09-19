@@ -140,7 +140,7 @@ class InventoryTransferService:
                     source_id=str(transfer.id),
                 ),
             )
-            inventory_stock_move_service.post(db, company_id=company_id, move_id=move.id)
+            inventory_stock_move_service.post(db, tenant_id=tenant_id, company_id=company_id, move_id=move.id, user_id=user_id)
             line.received_quantity = line.shipped_quantity
 
         transfer.status = "received"
