@@ -19,8 +19,8 @@ from app.modules.companies.models import Company
 from app.modules.identity.models import User
 from app.modules.commerce.payment_workflow import post_payment
 from app.modules.commerce.accounting_service import commerce_accounting_service
-from app.modules.shipping.models import Shipment, ShippingMethod
-from app.modules.shipping.integration import find_mapped_carrier
+from app.modules.shipping.models import Shipment, ShippingMethod, ShippingCarrier
+from app.modules.shipping.integration import find_mapped_carrier, link_carrier
 
 def _date(value: Any) -> date:
     if isinstance(value, date): return value
@@ -143,10 +143,23 @@ class CommerceOrderOrchestrator:
         for shipment in canonical.shipments:
             if not shipment.external_shipment_id:
                 continue
-            carrier = find_mapped_carrier(
-                db, company_id=connection.company_id, connection_id=connection.id,
-                external_carrier_id=shipment.external_carrier_id or shipment.carrier_name or shipment.external_shipment_id,
-            )
+            carrier = None
+            if shipment.external_carrier_id:
+                carrier = find_mapped_carrier(
+                    db, company_id=connection.company_id, connection_id=connection.id,
+                    external_carrier_id=shipment.external_carrier_id,
+                )
+            if carrier is None and shipment.carrier_name:
+                carrier = db.scalar(select(ShippingCarrier).where(
+                    ShippingCarrier.company_id == connection.company_id,
+                    ShippingCarrier.name.ilike(str(shipment.carrier_name).strip()),
+                    ShippingCarrier.is_active.is_(True),
+                ).order_by(ShippingCarrier.id))
+                if carrier is not None and shipment.external_carrier_id:
+                    link_carrier(
+                        db, company_id=connection.company_id, connection_id=connection.id,
+                        external_carrier_id=shipment.external_carrier_id, carrier_id=carrier.id,
+                    )
             if carrier is None:
                 if shipment.external_carrier_id or shipment.carrier_name:
                     raise ValueError(f"Commerce shipment '{shipment.external_shipment_id}' has no mapped PrimeERP shipping carrier")
