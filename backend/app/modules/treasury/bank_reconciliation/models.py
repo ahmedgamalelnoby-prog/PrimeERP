@@ -85,6 +85,6 @@ class ReconciliationMatch(Base):
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     __table_args__ = (
-        UniqueConstraint("statement_line_id", "source_type", "source_id", name="uq_treasury_reconciliation_match_source"),
+        UniqueConstraint("session_id", "source_type", "source_id", name="uq_treasury_reconciliation_match_session_source"),
         CheckConstraint("amount > 0", name="ck_treasury_reconciliation_match_amount"),
     )
