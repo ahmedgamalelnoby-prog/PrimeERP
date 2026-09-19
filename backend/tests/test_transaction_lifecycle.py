@@ -2,6 +2,7 @@ from app.core.services.transaction_lifecycle import (
     DocumentStatus,
     DuplicateIdempotencyKeyError,
     InvalidTransitionError,
+    LifecycleError,
     MissingReasonError,
     PostedDocumentError,
     TransactionDocument,
@@ -137,3 +138,36 @@ def test_blank_actor_is_rejected():
         assert False
     except Exception as exc:
         assert "actor_id" in str(exc)
+
+
+
+def test_expected_version_prevents_stale_transition():
+    engine = TransactionLifecycle()
+    document = TransactionDocument("invoice", "INV-V1")
+    engine.approve(document, actor_id="u1")
+
+    try:
+        engine.post(document, actor_id="u2", expected_version=0)
+        assert False
+    except LifecycleError as exc:
+        assert "Stale transaction version" in str(exc)
+
+
+class InMemoryPersistentIdempotency:
+    def __init__(self):
+        self.data = {}
+
+    def get(self, key):
+        return self.data.get(key)
+
+    def put(self, key, document_id, target):
+        self.data[key] = (document_id, target)
+
+
+def test_injectable_idempotency_store_contract():
+    store = InMemoryPersistentIdempotency()
+    engine = TransactionLifecycle(idempotency_store=store)
+    document = TransactionDocument("invoice", "INV-P1")
+    event = engine.approve(document, actor_id="u1", idempotency_key="persistent-key")
+    assert store.get("persistent-key") == ("INV-P1", DocumentStatus.APPROVED)
+    assert event.to_status == DocumentStatus.APPROVED
