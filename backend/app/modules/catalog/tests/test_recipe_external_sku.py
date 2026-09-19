@@ -15,6 +15,15 @@ def test_recipe_external_sku_is_company_scoped_and_active_lookup_exists():
     assert '"/recipes/by-external-sku"' in router
 
 
+def test_recipe_creation_binds_catalog_product_identity():
+    service = (ROOT / "modules/catalog/service.py").read_text(encoding="utf-8")
+    assert "catalog_product = db.scalar(select(CatalogProduct)" in service
+    assert "CatalogProduct.company_id == payload.company_id" in service
+    assert "CatalogProduct.item_id == product.id" in service
+    assert "A catalog product identity is required before creating a recipe" in service
+    assert "catalog_product_id=catalog_product.id" in service
+
+
 def test_salla_mapping_binds_external_sku_to_recipe_without_replacing_internal_code():
     service = (ROOT / "modules/integrations/salla_product_mapping_service.py").read_text(encoding="utf-8")
     assert "recipe.external_sku = salla_sku" in service
