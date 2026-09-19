@@ -45,6 +45,7 @@ class LifecycleEvent:
     occurred_at: datetime
     reason: str | None = None
     idempotency_key: str | None = None
+    expected_version: int | None = None
 
 
 @dataclass
@@ -179,7 +180,7 @@ class TransactionLifecycle:
             actor_id=actor_id,
             occurred_at=now,
             reason=reason,
-            idempotency_key=idempotency_key,,
+            idempotency_key=idempotency_key,
             expected_version=expected_version,
         )
         document.status = target
@@ -193,9 +194,14 @@ class TransactionLifecycle:
 
         if idempotency_key:
             if self._idempotency_store is not None:
-                self._idempotency_store.put(idempotency_key, document.document_id, target)
+                self._idempotency_store.put(
+                    idempotency_key, document.document_id, target
+                )
             else:
-                self._idempotency[idempotency_key] = (document.document_id, target)
+                self._idempotency[idempotency_key] = (
+                    document.document_id,
+                    target,
+                )
 
         return event
 
@@ -211,7 +217,7 @@ class TransactionLifecycle:
             document,
             DocumentStatus.APPROVED,
             actor_id=actor_id,
-            idempotency_key=idempotency_key,,
+            idempotency_key=idempotency_key,
             expected_version=expected_version,
         )
 
@@ -227,7 +233,7 @@ class TransactionLifecycle:
             document,
             DocumentStatus.POSTED,
             actor_id=actor_id,
-            idempotency_key=idempotency_key,,
+            idempotency_key=idempotency_key,
             expected_version=expected_version,
         )
 
@@ -246,4 +252,5 @@ class TransactionLifecycle:
             actor_id=actor_id,
             reason=reason,
             idempotency_key=idempotency_key,
+            expected_version=expected_version,
         )
