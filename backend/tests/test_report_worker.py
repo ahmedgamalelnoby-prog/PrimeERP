@@ -31,9 +31,14 @@ def test_quarterly_schedule_targets_next_quarter_when_current_quarter_date_has_p
     assert calculate_next_run("quarterly:1@09:00", now) == datetime(2026, 10, 1, 9, 0, tzinfo=timezone.utc)
 
 
-def test_quarterly_schedule_targets_current_quarter_when_due_date_is_still_ahead():
+def test_quarterly_schedule_targets_current_quarter_start_month_when_due_date_is_still_ahead():
     now = datetime(2026, 7, 18, 10, 0, tzinfo=timezone.utc)
     assert calculate_next_run("quarterly:28@11:00", now) == datetime(2026, 7, 28, 11, 0, tzinfo=timezone.utc)
+
+
+def test_quarterly_schedule_does_not_use_a_later_month_inside_the_quarter():
+    now = datetime(2026, 9, 18, 10, 0, tzinfo=timezone.utc)
+    assert calculate_next_run("quarterly:28@11:00", now) == datetime(2026, 10, 28, 11, 0, tzinfo=timezone.utc)
 
 
 def test_invalid_schedule_rejected():
