@@ -82,7 +82,8 @@ class ShippingSettlementService:
             estimated_cod_fee = Decimal("0")
             estimated_withdrawal_fee = Decimal("0")
             cost = db.scalar(select(ShippingShipmentCost).where(
-                ShippingShipmentCost.shipment_id == shipment.id
+                ShippingShipmentCost.shipment_id == shipment.id,
+                ShippingShipmentCost.company_id == payload.company_id,
             ))
             if cost is not None:
                 estimated_cod_fee = Decimal(cost.cod_fee or 0) + Decimal(cost.cod_collected_fee or 0)
