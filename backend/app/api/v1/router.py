@@ -52,12 +52,20 @@ from app.modules.saas.entitlements import require_module
 from app.modules.jurisdiction.router import router as jurisdiction_router
 from app.modules.reports.router import router as reports_router
 from app.modules.helpdesk_ai.router import router as helpdesk_router
+from app.modules.crm.api import router as crm_router
+from app.modules.hr.router import router as hr_router
+from app.modules.pos.router import router as pos_router
+from app.modules.manufacturing.bom.router import router as manufacturing_router
 
 def build_router() -> APIRouter:
     api_router = APIRouter()
     api_router.include_router(identity_router, prefix="/identity", tags=["identity"])
     api_router.include_router(features_router)
     api_router.include_router(helpdesk_router)
+    api_router.include_router(crm_router)
+    api_router.include_router(hr_router)
+    api_router.include_router(pos_router)
+    api_router.include_router(manufacturing_router)
     api_router.include_router(platform_modules_router)
     api_router.include_router(saas_router, prefix="/saas", tags=["saas"])
     api_router.include_router(transactions_router, prefix="/transactions", tags=["transactions"])
