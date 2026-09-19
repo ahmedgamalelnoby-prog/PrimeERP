@@ -145,9 +145,10 @@ def main() -> None:
         name for name in backend_frontend_names
         if name not in frontend_modules and name not in backend_only_allowed
     )
+    frontend_backend_names = {aliases.get(name, name) for name in frontend_modules}
     missing_backend = sorted(
-        name for name in frontend_modules
-        if name not in backend_frontend_names and name not in frontend_only_allowed
+        name for name in frontend_backend_names
+        if name not in backend_modules and name not in frontend_only_allowed
     )
     if missing_frontend:
         raise SystemExit(
