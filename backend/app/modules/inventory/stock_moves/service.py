@@ -247,19 +247,6 @@ class InventoryStockMoveService:
             self._restore_fifo_source_layers(db, allocations, item.costing_method)
             self._recalculate_average_cost(db, company_id, move.item_id, variant_id, source_warehouse_id, item)
 
-        if reservation is not None:
-            if source_balance is None:
-                raise ValueError("A reservation-backed movement requires a source location")
-            warehouse_source = self._warehouse_stock(db, company_id, move.item_id, variant_id, source_warehouse_id)
-            if reservation.status == "active":
-                if Decimal(source_balance.quantity_reserved or 0) < quantity:
-                    raise ValueError("Reservation balance is inconsistent at source location")
-                if Decimal(warehouse_source.quantity_reserved or 0) < quantity:
-                    raise ValueError("Reservation balance is inconsistent at warehouse")
-                source_balance.quantity_reserved -= quantity
-                warehouse_source.quantity_reserved -= quantity
-                reservation.status = "consumed"
-
         if move.reservation_id is not None:
             reservation = db.scalar(
                 select(InventoryReservation)
