@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 import hashlib
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 from app.modules.commerce.models import CommercePayment
 from app.modules.treasury.models import Cheque
@@ -63,8 +63,14 @@ def match(db, session, payload, user):
     else:
         source=db.scalar(select(Cheque).where(Cheque.id==payload.source_id,Cheque.company_id==session.company_id))
     if not source: raise ValueError("Source transaction not found")
-    if payload.source_type=="payment" and payload.amount > source.amount: raise ValueError("Match exceeds payment amount")
-    if payload.source_type=="cheque" and payload.amount > source.amount: raise ValueError("Match exceeds cheque amount")
+    if payload.source_type=="payment":
+        if payload.amount > source.amount: raise ValueError("Match exceeds payment amount")
+        expected_side = "credit" if source.document_kind == "sale" else "debit"
+    else:
+        if payload.amount > source.amount: raise ValueError("Match exceeds cheque amount")
+        expected_side = "credit" if source.direction == "received" else "debit"
+    if expected_side == "credit" and line.credit <= 0: raise ValueError("Received/sales sources can only match bank credits")
+    if expected_side == "debit" and line.debit <= 0: raise ValueError("Issued/purchase sources can only match bank debits")
     existing=db.scalar(select(ReconciliationMatch).where(ReconciliationMatch.statement_line_id==line.id,ReconciliationMatch.source_type==payload.source_type,ReconciliationMatch.source_id==payload.source_id))
     if existing: raise ValueError("Source transaction is already matched to this statement line")
     obj=ReconciliationMatch(company_id=session.company_id,session_id=session.id,statement_line_id=line.id,source_type=payload.source_type,source_id=payload.source_id,amount=payload.amount,created_by=user.id)
@@ -97,13 +103,31 @@ def auto_match(db,session,user):
             except ValueError: pass
     return matched,candidates
 
-def refresh_session(session):
+def refresh_session(session, db=None):
     session.difference=session.book_balance-session.bank_balance
-    if session.status!="closed": session.status="balanced" if session.difference==0 else "open"
+    if session.status!="closed":
+        unmatched = 0
+        if db is not None:
+            unmatched = db.scalar(select(func.count(BankStatementLine.id)).where(
+                BankStatementLine.statement_id==session.statement_id,
+                BankStatementLine.status!="matched",
+            )) or 0
+        session.status="balanced" if session.difference==0 and unmatched==0 else "open"
 
 def close_session(db,session,user):
-    refresh_session(session)
-    if session.status!="balanced": raise ValueError("Reconciliation can only be closed when balanced")
+    refresh_session(session, db)
+    if session.status!="balanced": raise ValueError("Reconciliation can only be closed when balanced and all statement lines are matched")
     session.status="closed"; session.closed_by=user.id; session.closed_at=datetime.utcnow()
     st=db.get(BankStatement,session.statement_id); st.status="closed"
     db.flush(); return session
+
+
+def unmatch(db, session, match_id):
+    if session.status=="closed": raise ValueError("Closed reconciliation is immutable")
+    obj=db.scalar(select(ReconciliationMatch).where(ReconciliationMatch.id==match_id,ReconciliationMatch.session_id==session.id,ReconciliationMatch.company_id==session.company_id))
+    if not obj: raise ValueError("Reconciliation match not found")
+    line=db.get(BankStatementLine,obj.statement_line_id)
+    line.matched_amount -= obj.amount
+    total=(line.debit if line.debit else line.credit)
+    line.status="matched" if line.matched_amount==total else ("partial" if line.matched_amount>0 else "unmatched")
+    db.delete(obj); db.flush()
