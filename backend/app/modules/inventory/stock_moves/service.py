@@ -421,14 +421,38 @@ class InventoryStockMoveService:
             )
             stmt = stmt.where(InventoryStockMove.variant_id == variant_id) if variant_id is not None else stmt.where(InventoryStockMove.variant_id.is_(None))
             inbound = db.scalars(stmt).all()
-            qty = sum((Decimal(x.quantity) for x in inbound), Decimal("0"))
+
+            # A reversed outbound movement restores stock to its source
+            # warehouse. Its source-consumed valuation therefore becomes an
+            # inbound valuation for the reconstructed weighted-average cost.
+            restored_stmt = (
+                select(InventoryValuationAllocation)
+                .join(InventoryStockMove, InventoryStockMove.id == InventoryValuationAllocation.stock_move_id)
+                .join(InventoryLocation, InventoryLocation.id == InventoryStockMove.source_location_id)
+                .where(
+                    InventoryValuationAllocation.company_id == company_id,
+                    InventoryStockMove.company_id == company_id,
+                    InventoryStockMove.item_id == item_id,
+                    InventoryStockMove.status == "reversed",
+                    InventoryStockMove.source_location_id.is_not(None),
+                    InventoryLocation.warehouse_id == warehouse_id,
+                    InventoryValuationAllocation.allocation_role == "source_consumed",
+                )
+            )
+            restored_stmt = restored_stmt.where(InventoryStockMove.variant_id == variant_id) if variant_id is not None else restored_stmt.where(InventoryStockMove.variant_id.is_(None))
+            restored = db.scalars(restored_stmt).all()
+
+            qty = sum((Decimal(x.quantity) for x in inbound), Decimal("0")) + sum((Decimal(x.quantity) for x in restored), Decimal("0"))
             if Decimal(stock.quantity_on_hand or 0) <= 0:
                 stock.average_cost = Decimal("0")
             elif qty <= 0:
                 stock.average_cost = Decimal("0")
             else:
                 stock.average_cost = (
-                    sum((Decimal(x.quantity) * Decimal(x.unit_cost) for x in inbound), Decimal("0")) / qty
+                    (
+                        sum((Decimal(x.quantity) * Decimal(x.unit_cost) for x in inbound), Decimal("0"))
+                        + sum((Decimal(x.quantity) * Decimal(x.unit_cost) for x in restored), Decimal("0"))
+                    ) / qty
                 ).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
 
 
