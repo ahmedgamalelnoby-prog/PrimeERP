@@ -81,3 +81,11 @@ class MatchResponse(BaseModel):
 class AutoMatchResponse(BaseModel):
     matched: int
     candidates: int
+
+class ReconciliationCandidate(BaseModel):
+    source_type: str
+    source_id: int
+    amount: Decimal
+    reference: str | None = None
+    cheque_number: str | None = None
+    transaction_date: date | None = None
