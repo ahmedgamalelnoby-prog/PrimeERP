@@ -9,7 +9,7 @@ class BankAccountCreate(BaseModel):
     bank_name: str = Field(min_length=1, max_length=150)
     account_number: str | None = Field(default=None, max_length=100)
     currency: str = Field(default="EGP", max_length=10)
-    opening_balance: Decimal = Field(default=Decimal("0"), ge=0)
+    opening_balance: Decimal = Field(default=Decimal("0"))
 
 class BankAccountResponse(BankAccountCreate):
     id: int
