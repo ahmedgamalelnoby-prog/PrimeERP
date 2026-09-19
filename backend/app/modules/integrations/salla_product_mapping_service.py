@@ -176,13 +176,39 @@ def reconcile_salla_product_mapping(
     if salla_product is None:
         raise ValueError("Salla product not found for this company and connection")
 
-    local_product = _find_local_product(db, company_id, salla_product)
-    if local_product is None:
-        return {"product_mapped": 0, "variants_mapped": 0, "product_id": None, "reason": "no_matching_erp_product"}
-
     external_id = str(salla_product.external_id).strip()
     if not external_id:
         raise ValueError("Salla product has no external id")
+
+    # An explicit integration mapping is authoritative. SKU/GTIN matching is
+    # only the discovery fallback, so an ERP SKU may legitimately differ from
+    # the commerce-platform SKU.
+    existing_mapping = db.scalar(
+        select(IntegrationProductMapping)
+        .where(
+            IntegrationProductMapping.company_id == company_id,
+            IntegrationProductMapping.connection_id == connection_id,
+            IntegrationProductMapping.external_id == external_id,
+            IntegrationProductMapping.variant_id.is_(None),
+            IntegrationProductMapping.sync_status == "active",
+        )
+        .with_for_update()
+    )
+    if existing_mapping is not None:
+        local_product = db.scalar(
+            select(InventoryItem)
+            .where(
+                InventoryItem.id == existing_mapping.product_id,
+                InventoryItem.company_id == company_id,
+                InventoryItem.is_active.is_(True),
+            )
+            .with_for_update()
+        )
+    else:
+        local_product = _find_local_product(db, company_id, salla_product)
+    if local_product is None:
+        return {"product_mapped": 0, "variants_mapped": 0, "product_id": None, "reason": "no_matching_erp_product"}
+
     _upsert_mapping(
         db,
         company_id=company_id,
