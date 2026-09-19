@@ -401,6 +401,35 @@ class InventoryStockMoveService:
             layers = db.scalars(stmt.order_by(InventoryCostLayer.id).with_for_update()).all()
             qty = sum((Decimal(x.quantity_remaining) for x in layers), Decimal("0"))
             stock.average_cost = (sum((Decimal(x.quantity_remaining) * Decimal(x.unit_cost) for x in layers), Decimal("0")) / qty) if qty > 0 else Decimal("0")
+        elif item.costing_method == "weighted_average":
+            # Weighted-average cost must be reconstructable after a reversal.
+            # Destination valuation allocations are the authoritative inbound
+            # valuation history; outbound issues do not change average cost.
+            stmt = (
+                select(InventoryValuationAllocation)
+                .join(InventoryStockMove, InventoryStockMove.id == InventoryValuationAllocation.stock_move_id)
+                .join(InventoryLocation, InventoryLocation.id == InventoryStockMove.destination_location_id)
+                .where(
+                    InventoryValuationAllocation.company_id == company_id,
+                    InventoryStockMove.company_id == company_id,
+                    InventoryStockMove.item_id == item_id,
+                    InventoryStockMove.status == "posted",
+                    InventoryStockMove.destination_location_id.is_not(None),
+                    InventoryLocation.warehouse_id == warehouse_id,
+                    InventoryValuationAllocation.allocation_role == "destination_added",
+                )
+            )
+            stmt = stmt.where(InventoryStockMove.variant_id == variant_id) if variant_id is not None else stmt.where(InventoryStockMove.variant_id.is_(None))
+            inbound = db.scalars(stmt).all()
+            qty = sum((Decimal(x.quantity) for x in inbound), Decimal("0"))
+            if Decimal(stock.quantity_on_hand or 0) <= 0:
+                stock.average_cost = Decimal("0")
+            elif qty <= 0:
+                stock.average_cost = Decimal("0")
+            else:
+                stock.average_cost = (
+                    sum((Decimal(x.quantity) * Decimal(x.unit_cost) for x in inbound), Decimal("0")) / qty
+                ).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
 
 
 inventory_stock_move_service = InventoryStockMoveService()
