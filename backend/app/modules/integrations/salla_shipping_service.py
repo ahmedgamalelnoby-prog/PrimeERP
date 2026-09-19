@@ -18,7 +18,7 @@ _STATUS_MAP = {
     "created": "pending",
     "ready": "pending",
     "picked_up": "shipped",
-    "pickedup": "picked_up",
+    "pickedup": "shipped",
     "shipped": "shipped",
     "in_transit": "in_transit",
     "intransit": "in_transit",
@@ -32,7 +32,7 @@ _STATUS_MAP = {
     "returned": "returned",
     "return": "returned",
     "return_to_origin": "returned",
-    "return_in_progress": "returned",
+    "return_in_progress": "returning",
     "cancelled": "cancelled",
     "canceled": "cancelled",
 }
@@ -70,8 +70,6 @@ def _order(db: Session, shipment: SallaShipment) -> SallaOrder | None:
 
 
 def _carrier(db: Session, company_id: int, shipment: SallaShipment) -> ShippingCarrier | None:
-    # Prefer the immutable Salla courier/company id. Names are only a safe
-    # bootstrap fallback when the store was linked before the mapping existed.
     courier_id = str(shipment.courier_id or "").strip()
     if courier_id:
         carrier = find_mapped_carrier(
@@ -130,8 +128,6 @@ def _method(db: Session, carrier: ShippingCarrier, shipment: SallaShipment) -> S
         ).order_by(ShippingMethod.id))
         if method:
             return method
-    # Never silently bind a COD shipment to a prepaid-only method (or vice
-    # versa). Missing configuration is explicit and retryable.
     return None
 
 
@@ -140,22 +136,40 @@ def _advance_status(current: str, target: str) -> str:
         return current
     if target == "pending":
         return current
-    # Salla terminal events are authoritative and may arrive without intermediate events.
     if target == "returned":
         return "returned" if current not in {"returned", "cancelled"} else current
     if target == "cancelled":
-        # Delivered/returned are terminal and must not be downgraded by a
-        # late cancellation webhook.
         return "cancelled" if current not in {"delivered", "returned", "cancelled"} else current
     path = {
-        "pending": ["picked_up", "in_transit", "out_for_delivery", "delivered"],
-        "picked_up": ["in_transit", "out_for_delivery", "delivered"],
-        "in_transit": ["out_for_delivery", "delivered"],
+        "pending": ["preparing", "packing", "shipped", "in_transit", "delivering", "out_for_delivery", "delivered"],
+        "preparing": ["packing", "shipped", "in_transit", "delivering", "out_for_delivery", "delivered"],
+        "packing": ["shipped", "in_transit", "delivering", "out_for_delivery", "delivered"],
+        "shipped": ["in_transit", "delivering", "out_for_delivery", "delivered"],
+        "in_transit": ["delivering", "out_for_delivery", "delivered"],
+        "delivering": ["out_for_delivery", "delivered"],
         "out_for_delivery": ["delivered"],
+        "delivered": [],
     }.get(current, [])
     if target in path:
         return target
     return current
+
+
+def _canonical_path(current: str, target: str) -> list[str]:
+    path = ["preparing", "packing", "shipped", "in_transit", "delivering", "out_for_delivery", "delivered"]
+    if target == "returned":
+        path.append("returning")
+        path.append("returned")
+    if target not in path:
+        return []
+    if current == "pending":
+        start = 0
+    elif current in path:
+        start = path.index(current) + 1
+    else:
+        return []
+    end = path.index(target)
+    return path[start:end + 1] if end >= start else []
 
 
 def _customer_name(db: Session, order: SallaOrder | None, fallback: str = "Salla Customer") -> str:
@@ -190,11 +204,26 @@ def sync_salla_shipment(db: Session, salla_shipment: SallaShipment) -> dict:
             if target:
                 target = _advance_status(existing.status, target)
                 if target != existing.status:
-                    shipping_status_service.apply_transition(
-                        db, existing, target,
-                        changed_on=salla_shipment.created_at_salla.date() if salla_shipment.created_at_salla else None,
-                        user_id=_system_user_id(db, salla_shipment.company_id),
-                    )
+                    if target == "cancelled":
+                        shipping_status_service.apply_transition(
+                            db, existing, target,
+                            changed_on=salla_shipment.created_at_salla.date() if salla_shipment.created_at_salla else None,
+                            user_id=_system_user_id(db, salla_shipment.company_id),
+                        )
+                    elif target == "returned":
+                        for status_code in _canonical_path(existing.status, target):
+                            shipping_status_service.apply_transition(
+                                db, existing, status_code,
+                                changed_on=salla_shipment.created_at_salla.date() if salla_shipment.created_at_salla else None,
+                                user_id=_system_user_id(db, salla_shipment.company_id),
+                            )
+                    else:
+                        for status_code in _canonical_path(existing.status, target):
+                            shipping_status_service.apply_transition(
+                                db, existing, status_code,
+                                changed_on=salla_shipment.created_at_salla.date() if salla_shipment.created_at_salla else None,
+                                user_id=_system_user_id(db, salla_shipment.company_id),
+                            )
             if salla_shipment.tracking_number and existing.tracking_no != salla_shipment.tracking_number:
                 existing.tracking_no = salla_shipment.tracking_number[:100]
             existing.cod_amount = Decimal(salla_shipment.cash_on_delivery or 0)
@@ -205,16 +234,10 @@ def sync_salla_shipment(db: Session, salla_shipment: SallaShipment) -> dict:
 
     carrier = _carrier(db, salla_shipment.company_id, salla_shipment)
     if carrier is None:
-        return {
-            "status": "pending_configuration",
-            "reason": "No active ERP shipping carrier matches the Salla courier",
-        }
+        return {"status": "pending_configuration", "reason": "No active ERP shipping carrier matches the Salla courier"}
     method = _method(db, carrier, salla_shipment)
     if method is None:
-        return {
-            "status": "pending_configuration",
-            "reason": "No ERP shipping method is configured for the matched carrier",
-        }
+        return {"status": "pending_configuration", "reason": "No ERP shipping method is configured for the matched carrier"}
 
     order = _order(db, salla_shipment)
     sales_document_id = None
@@ -230,17 +253,10 @@ def sync_salla_shipment(db: Session, salla_shipment: SallaShipment) -> dict:
         )
         sales_document_id = mapping.local_id if mapping else None
 
-    tracking = (
-        salla_shipment.tracking_number
-        or salla_shipment.shipping_number
-        or f"SALLA-{salla_shipment.external_id}"
-    )[:100]
+    tracking = (salla_shipment.tracking_number or salla_shipment.shipping_number or f"SALLA-{salla_shipment.external_id}")[:100]
     cod = Decimal(salla_shipment.cash_on_delivery or 0)
     fee = Decimal(salla_shipment.total or 0)
-    target_status = _STATUS_MAP.get(
-        str(salla_shipment.status or "").lower().replace(" ", "_"),
-        "pending",
-    )
+    target_status = _STATUS_MAP.get(str(salla_shipment.status or "").lower().replace(" ", "_"), "pending")
     obj = Shipment(
         company_id=salla_shipment.company_id,
         carrier_id=carrier.id,
@@ -256,22 +272,7 @@ def sync_salla_shipment(db: Session, salla_shipment: SallaShipment) -> dict:
     db.add(obj)
     db.flush()
 
-    # A newly imported Salla shipment may arrive at a terminal/intermediate
-    # state without its earlier webhooks. Replay the canonical ERP transition
-    # path instead of mutating status directly, so status history and financial
-    # events are generated exactly as for native ERP shipments.
     target_status = _advance_status(obj.status, target_status)
-    canonical_path = [
-        "preparing",
-        "packing",
-        "shipped",
-        "in_transit",
-        "delivering",
-        "out_for_delivery",
-        "delivered",
-        "returning",
-        "returned",
-    ]
     if target_status == "cancelled":
         shipping_status_service.apply_transition(
             db, obj, "cancelled",
@@ -279,23 +280,19 @@ def sync_salla_shipment(db: Session, salla_shipment: SallaShipment) -> dict:
             user_id=_system_user_id(db, salla_shipment.company_id),
         )
     else:
-        target_index = canonical_path.index(target_status) if target_status in canonical_path else -1
-        if target_index >= 0:
-            for status_code in canonical_path[: target_index + 1]:
-                shipping_status_service.apply_transition(
-                    db, obj, status_code,
-                    changed_on=salla_shipment.created_at_salla.date() if salla_shipment.created_at_salla else None,
-                    user_id=_system_user_id(db, salla_shipment.company_id),
-                )
-    db.add(
-        IntegrationMapping(
-            company_id=salla_shipment.company_id,
-            connection_id=salla_shipment.connection_id,
-            entity_type="salla_shipment",
-            external_id=str(salla_shipment.external_id),
-            local_id=obj.id,
-        )
-    )
+        for status_code in _canonical_path(obj.status, target_status):
+            shipping_status_service.apply_transition(
+                db, obj, status_code,
+                changed_on=salla_shipment.created_at_salla.date() if salla_shipment.created_at_salla else None,
+                user_id=_system_user_id(db, salla_shipment.company_id),
+            )
+    db.add(IntegrationMapping(
+        company_id=salla_shipment.company_id,
+        connection_id=salla_shipment.connection_id,
+        entity_type="salla_shipment",
+        external_id=str(salla_shipment.external_id),
+        local_id=obj.id,
+    ))
     db.flush()
     return {"status": "created", "shipment_id": obj.id}
 
