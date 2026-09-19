@@ -94,6 +94,7 @@ class Recipe(Base):
     product_id = Column(Integer, ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False, index=True)
     catalog_product_id = Column(Integer, ForeignKey("catalog_products.id", ondelete="RESTRICT"), nullable=True, index=True)
     code = Column(String(60), nullable=False)
+    external_sku = Column(String(160), nullable=True, index=True)
     name_ar = Column(String(200), nullable=False)
     name_en = Column(String(200), nullable=True)
     yield_quantity = Column(Numeric(18, 4), nullable=False, default=1)
