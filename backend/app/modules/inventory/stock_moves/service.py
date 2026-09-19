@@ -207,6 +207,14 @@ class InventoryStockMoveService:
             raise ValueError("Only posted stock moves can be reversed")
         if move.reversed_by_move_id is not None:
             raise ValueError("Stock move has already been reversed")
+        linked_reversal = db.scalar(
+            select(InventoryStockMove.id).where(
+                InventoryStockMove.company_id == company_id,
+                InventoryStockMove.reversed_by_move_id == move.id,
+            ).limit(1)
+        )
+        if linked_reversal is not None:
+            raise ValueError("Stock move already has a reversal movement")
         allocations = db.scalars(select(InventoryValuationAllocation).where(InventoryValuationAllocation.stock_move_id == move.id, InventoryValuationAllocation.company_id == company_id).with_for_update()).all()
         item = db.scalar(select(InventoryItem).where(InventoryItem.id == move.item_id, InventoryItem.company_id == company_id, InventoryItem.is_active.is_(True)))
         if item is None:
