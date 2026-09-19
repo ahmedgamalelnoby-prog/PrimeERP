@@ -32,6 +32,9 @@ def checkout(payload:Checkout,current_user:User=Depends(get_current_user),db:Ses
     _company(db,payload.company_id,current_user)
     lines=[DocumentLineCreate(item_id=x.item_id,variant_id=x.variant_id,quantity=x.quantity,unit_price=x.unit_price,discount_percent=x.discount_percent) for x in payload.lines]
     doc=commerce_service.create_document(db,DocumentCreate(company_id=payload.company_id,partner_id=payload.partner_id,document_type="invoice",number=payload.number,document_date=payload.payment_date,warehouse_id=payload.warehouse_id,lines=lines))
+    snapshot=capture_document_tax_snapshot(db,doc,kind="sale")
+    if snapshot is None: raise HTTPException(422,"A jurisdiction tax snapshot is required before posting this POS invoice")
+    validate_document_tax_snapshot(doc,snapshot)
     commerce_service.confirm(db,payload.company_id,doc.id,"sale",current_user.id)
     commerce_service.post_inventory(db,payload.company_id,doc.id,"sale",user_id=current_user.id)
     commerce_service.pay(db,PaymentCreate(company_id=payload.company_id,document_id=doc.id,payment_date=payload.payment_date,amount=doc.total,method=payload.method), "sale", current_user.id)
