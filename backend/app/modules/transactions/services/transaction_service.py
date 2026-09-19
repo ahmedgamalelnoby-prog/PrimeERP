@@ -20,6 +20,7 @@ from app.modules.transactions.models import (
     BusinessTransaction,
     TransactionEvent,
 )
+from app.modules.transactions.lifecycle import LifecycleError, validate_transaction_transition
 from app.modules.transactions.repositories.transaction_repository import (
     transaction_repository,
 )
@@ -281,15 +282,17 @@ class TransactionService:
             current_user=current_user,
         )
 
-        if transaction.status != "pending":
-            self._raise_invalid_transition(
-                transaction.status,
-                "approved",
+        try:
+            validate_transaction_transition(
+                transaction.status, "approved"
             )
+        except LifecycleError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(exc),
+            ) from exc
 
-        previous_status = (
-            transaction.status
-        )
+        previous_status = transaction.status
 
         transaction.status = "approved"
         transaction.approved_by = (
@@ -334,15 +337,17 @@ class TransactionService:
             current_user=current_user,
         )
 
-        if transaction.status != "approved":
-            self._raise_invalid_transition(
-                transaction.status,
-                "posted",
+        try:
+            validate_transaction_transition(
+                transaction.status, "posted"
             )
+        except LifecycleError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(exc),
+            ) from exc
 
-        previous_status = (
-            transaction.status
-        )
+        previous_status = transaction.status
 
         transaction.status = "posted"
         transaction.posting_date = (
@@ -745,14 +750,16 @@ class TransactionService:
             current_user=current_user,
         )
 
-        if (
-            transaction.status
-            not in allowed_statuses
-        ):
-            self._raise_invalid_transition(
-                transaction.status,
-                new_status,
-            )
+        if transaction.status not in allowed_statuses:
+            try:
+                validate_transaction_transition(
+                    transaction.status, new_status
+                )
+            except LifecycleError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=str(exc),
+                ) from exc
 
         previous_status = (
             transaction.status
