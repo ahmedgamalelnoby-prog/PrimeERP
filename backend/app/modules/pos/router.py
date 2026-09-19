@@ -265,6 +265,8 @@ def link_terminal_menu(payload: TerminalMenuLink, company_id: int = Query(..., g
     _company(db, company_id, current_user)
     terminal = _terminal(db, company_id, payload.terminal_id)
     menu = db.scalar(select(Menu).where(Menu.id == payload.menu_id, Menu.company_id == company_id, Menu.is_active.is_(True)))
+    if payload.price_list_id is not None and db.scalar(select(ProductPrice.id).where(ProductPrice.company_id == company_id, ProductPrice.price_list_id == payload.price_list_id).limit(1)) is None:
+        raise HTTPException(422, "Price list does not belong to the company")
     if menu is None:
         raise HTTPException(422, "Menu does not belong to the company or is inactive")
     if menu.branch_id is not None and menu.branch_id != terminal.branch_id:
@@ -322,6 +324,7 @@ def route_menu_item(payload: MenuItemRouteCreate, company_id: int = Query(..., g
 def _menu_price(db: Session, company_id: int, menu_item: MenuItem, price_list_id: int | None, quantity: Decimal) -> Decimal:
     if menu_item.sale_price_override is not None:
         return Decimal(menu_item.sale_price_override)
+    price_list_id = price_list_id or menu_item.price_list_id
     if price_list_id:
         price = db.scalar(select(ProductPrice).where(
             ProductPrice.company_id == company_id,
