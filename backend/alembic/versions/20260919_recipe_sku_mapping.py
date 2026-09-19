@@ -35,6 +35,20 @@ def upgrade() -> None:
     op.create_index("ix_recipe_sku_mappings_variant_id", "recipe_sku_mappings", ["variant_id"])
     op.create_index("ix_recipe_sku_mappings_sku", "recipe_sku_mappings", ["sku"])
 
+    # Preserve legacy recipe.external_sku values while collapsing historical
+    # versions to the active recipe identity used by the new mapping table.
+    op.execute(sa.text("""
+        INSERT INTO recipe_sku_mappings
+            (company_id, recipe_id, product_id, variant_id, sku, source, is_active)
+        SELECT DISTINCT ON (r.company_id, r.external_sku)
+            r.company_id, r.id, r.product_id, r.variant_id, r.external_sku, 'legacy', true
+        FROM recipes r
+        WHERE r.external_sku IS NOT NULL
+          AND btrim(r.external_sku) <> ''
+        ORDER BY r.company_id, r.external_sku, r.is_active DESC, r.version DESC, r.id DESC
+        ON CONFLICT (company_id, sku) DO NOTHING
+    """))
+
 
 def downgrade() -> None:
     op.drop_table("recipe_sku_mappings")
