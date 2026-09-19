@@ -155,7 +155,20 @@ def _provision_or_reuse_account(db: Session, merchant_id: str, merchant: dict[st
 
 
 def _ensure_connection(db: Session, installation: SallaAppInstallation) -> IntegrationConnection:
-    connection = db.scalar(select(IntegrationConnection).where(IntegrationConnection.id == installation.connection_id)) if installation.connection_id else None
+    connection = None
+    if installation.connection_id:
+        connection = db.scalar(
+            select(IntegrationConnection)
+            .join(Company, Company.id == IntegrationConnection.company_id)
+            .where(
+                IntegrationConnection.id == installation.connection_id,
+                IntegrationConnection.company_id == installation.company_id,
+                Company.tenant_id == installation.tenant_id,
+                IntegrationConnection.provider == "salla",
+                IntegrationConnection.is_active.is_(True),
+            )
+            .with_for_update()
+        )
     if connection is None:
         connection = IntegrationConnection(
             company_id=installation.company_id,
@@ -215,6 +228,15 @@ def handle_authorize_event(db: Session, payload: dict[str, Any]) -> dict[str, An
     installation.store_domain = _text(merchant, "domain", "store_url", "url")
     installation.merchant_email = _text(merchant, "email", "merchant_email", "owner_email")
     installation.metadata_json = merchant
+
+    if db.scalar(
+        select(Company.id).where(
+            Company.id == installation.company_id,
+            Company.tenant_id == installation.tenant_id,
+            Company.is_active.is_(True),
+        )
+    ) is None:
+        raise SallaPublicAppError("Salla installation company does not belong to its tenant")
 
     connection = _ensure_connection(db, installation)
     connection.credential_ref = None
