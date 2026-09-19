@@ -38,7 +38,7 @@ def create_settlement(
 ):
     _company_for_user(db, payload.company_id, current_user)
     try:
-        batch = shipping_settlement_service.create_batch(db, payload)
+        batch = shipping_settlement_service.create_batch(db, payload, user_id=current_user.id)
         db.commit()
         db.refresh(batch)
         return batch

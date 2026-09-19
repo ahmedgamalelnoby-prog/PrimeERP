@@ -1,3 +1,6 @@
+from datetime import date, datetime, time
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -13,7 +16,11 @@ from app.modules.identity.models import User
 from app.modules.saas.entitlements import require_module
 from app.modules.commerce.models import SalesDocument
 from app.modules.shipping.models import ShippingCarrier, ShippingMethod, Shipment
+from app.modules.shipping.cost_models import ShippingShipmentCost
 from app.modules.shipping.schemas import CarrierCreate, CarrierResponse, MethodCreate, MethodResponse, ShipmentCreate, ShipmentResponse
+from app.modules.shipping.pricing_schemas import ShippingCostInput
+from app.modules.shipping.pricing_service import shipping_pricing_service
+from app.modules.shipping.status_service import shipping_status_service
 
 router = APIRouter(prefix="/shipping", tags=["Shipping"], dependencies=[Depends(require_permission("shipping.access")), Depends(require_module("shipping"))])
 
@@ -60,7 +67,8 @@ def carrier(payload: CarrierCreate, current_user: User = Depends(get_current_use
     _validate_account(db, company.id, payload.cash_account_id, "Carrier cash account")
     _validate_account(db, company.id, payload.fee_account_id, "Carrier fee account")
     _validate_journal_and_branch(db, company.id, payload.settlement_journal_id, payload.branch_id, _tenant_id(current_user))
-    if not all((payload.settlement_account_id, payload.cash_account_id, payload.fee_account_id)):
+    account_fields = (payload.settlement_account_id, payload.cash_account_id, payload.fee_account_id)
+    if any(account_fields) and not all(account_fields):
         raise HTTPException(422, "Settlement, cash and fee accounts must be configured together")
     if (payload.settlement_journal_id is None) != (payload.branch_id is None):
         raise HTTPException(422, "Settlement journal and branch must be configured together")
@@ -122,34 +130,111 @@ def shipment(payload: ShipmentCreate, current_user: User = Depends(get_current_u
     fee = payload.shipping_fee if payload.shipping_fee > 0 else method_obj.base_fee
     if method_obj.payment_method in {"cod", "mixed"} and payload.cod_amount:
         fee += payload.cod_amount * method_obj.cod_fee_percent / 100
-    obj = Shipment(**payload.model_dump(), shipping_fee=fee)
-    db.add(obj); db.commit(); db.refresh(obj)
+
+    shipment_date = payload.shipment_date or date.today()
+    order_date = payload.order_date
+    if order_date is None and payload.sales_document_id is not None:
+        order_date = sales_document.document_date
+
+    pricing_result = None
+    try:
+        pricing_result = shipping_pricing_service.calculate(
+            db,
+            ShippingCostInput(
+                company_id=payload.company_id,
+                carrier_id=payload.carrier_id,
+                calculation_date=shipment_date,
+                zone_code=payload.zone_code,
+                weight_kg=payload.weight_kg,
+                pieces=payload.pieces,
+                order_value=payload.order_value,
+                cod_amount=payload.cod_amount,
+                cod_collected=payload.cod_collected,
+                card_amount=payload.card_amount,
+                remote_area=payload.remote_area,
+                storage_days=payload.storage_days,
+                exchange_requested=payload.exchange_requested,
+            ),
+        )
+        fee = pricing_result.total_cost
+    except ValueError:
+        pass
+
+    obj = Shipment(
+        company_id=payload.company_id,
+        carrier_id=payload.carrier_id,
+        method_id=payload.method_id,
+        sales_document_id=payload.sales_document_id,
+        tracking_no=payload.tracking_no,
+        order_date=order_date,
+        shipment_date=shipment_date,
+        zone_code=payload.zone_code,
+        weight_kg=payload.weight_kg,
+        pieces=payload.pieces,
+        order_value=payload.order_value,
+        cod_amount=payload.cod_amount,
+        cod_collected=payload.cod_collected,
+        card_amount=payload.card_amount,
+        remote_area=payload.remote_area,
+        storage_days=payload.storage_days,
+        exchange_requested=payload.exchange_requested,
+        shipping_fee=fee,
+        customer_shipping_fee=payload.customer_shipping_fee,
+        customer_name=payload.customer_name,
+        phone=payload.phone,
+        address=payload.address,
+        notes=payload.notes,
+    )
+    db.add(obj)
+    db.flush()
+
+    if pricing_result is not None:
+        db.add(ShippingShipmentCost(
+            shipment_id=obj.id,
+            profile_id=pricing_result.profile_id,
+            order_date=order_date,
+            shipment_date=shipment_date,
+            calculated_at=datetime.combine(shipment_date, time.min),
+            base_shipping=pricing_result.base_shipping,
+            cod_fee=pricing_result.cod_fee,
+            cod_collected_fee=pricing_result.cod_collected_fee,
+            card_fee=pricing_result.card_fee,
+            remote_fee=pricing_result.surcharge_remote,
+            rto_fee=pricing_result.surcharge_rto,
+            exchange_fee=pricing_result.surcharge_exchange,
+            storage_fee=pricing_result.storage_fee,
+            other_fees=pricing_result.other_fees,
+            minimum_adjustment=pricing_result.minimum_adjustment,
+            total_cost=pricing_result.total_cost,
+            calculation_breakdown=json.dumps(pricing_result.breakdown, ensure_ascii=False),
+        ))
+    db.commit(); db.refresh(obj)
     return obj
 
 
 @router.get("/shipments", response_model=list[ShipmentResponse])
-def shipments(company_id: int = Query(..., gt=0), status: str | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def shipments(company_id: int = Query(..., gt=0), status: str | None = None, carrier_id: int | None = Query(default=None, gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
     stmt = select(Shipment).where(Shipment.company_id == company_id)
     if status:
         stmt = stmt.where(Shipment.status == status)
+    if carrier_id:
+        stmt = stmt.where(Shipment.carrier_id == carrier_id)
     return list(db.scalars(stmt.order_by(Shipment.id.desc())).all())
 
 
-_TRANSITIONS = {"pending": {"picked_up", "cancelled"}, "picked_up": {"in_transit", "cancelled"}, "in_transit": {"out_for_delivery", "returned"}, "out_for_delivery": {"delivered", "returned"}, "delivered": {"returned"}, "returned": set(), "cancelled": set()}
-
-
-@router.post("/shipments/{shipment_id}/status", response_model=ShipmentResponse, dependencies=[Depends(require_permission("shipping.post"))])
+@router.post("/shipments/{shipment_id}/status", response_model=ShipmentResponse, dependencies=[Depends(require_permission("shipping.write"))])
 def status(shipment_id: int, value: str = Query(...), company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
     obj = db.scalar(select(Shipment).where(Shipment.id == shipment_id, Shipment.company_id == company_id).with_for_update())
     if obj is None:
         raise HTTPException(404, "Shipment not found")
-    if value not in _TRANSITIONS:
-        raise HTTPException(400, "Invalid shipment status")
     if value == obj.status:
         return obj
-    if value not in _TRANSITIONS[obj.status]:
-        raise HTTPException(409, f"Invalid shipment transition: {obj.status} -> {value}")
-    obj.status = value; db.commit(); db.refresh(obj)
-    return obj
+    try:
+        shipping_status_service.apply_transition(db, obj, value, user_id=current_user.id)
+        db.commit(); db.refresh(obj)
+        return obj
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc)) from exc

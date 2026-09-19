@@ -42,8 +42,20 @@ class ShipmentCreate(BaseModel):
     method_id: int = Field(gt=0)
     sales_document_id: int | None = Field(default=None, gt=0)
     tracking_no: str
+    order_date: date | None = None
+    shipment_date: date | None = None
+    zone_code: str | None = None
+    weight_kg: Decimal = Field(default=0, ge=0)
+    pieces: Decimal = Field(default=1, gt=0)
+    order_value: Decimal = Field(default=0, ge=0)
     cod_amount: Decimal = Field(default=0, ge=0)
+    cod_collected: Decimal = Field(default=0, ge=0)
+    card_amount: Decimal = Field(default=0, ge=0)
+    remote_area: bool = False
+    storage_days: Decimal = Field(default=0, ge=0)
+    exchange_requested: bool = False
     shipping_fee: Decimal = Field(default=0, ge=0)
+    customer_shipping_fee: Decimal = Field(default=0, ge=0)
     customer_name: str
     phone: str | None = None
     address: str | None = None
@@ -60,6 +72,9 @@ class SettlementLineCreate(BaseModel):
     shipment_id: int = Field(gt=0)
     collected_amount: Decimal = Field(ge=0)
     carrier_fee: Decimal = Field(default=0, ge=0)
+    cod_commission: Decimal = Field(default=0, ge=0)
+    withdrawal_fee: Decimal = Field(default=0, ge=0)
+    other_fee: Decimal = Field(default=0, ge=0)
 
 
 class SettlementBatchCreate(BaseModel):

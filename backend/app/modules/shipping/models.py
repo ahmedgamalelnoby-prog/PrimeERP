@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Column, Date, ForeignKey, Integer, Numeric, String, Text
 
 from app.database.base import Base
 
@@ -42,16 +42,27 @@ class Shipment(Base):
     method_id = Column(Integer, ForeignKey("shipping_methods.id", ondelete="RESTRICT"), nullable=False)
     sales_document_id = Column(Integer, ForeignKey("sales_documents.id", ondelete="RESTRICT"), nullable=True)
     tracking_no = Column(String(100), nullable=False, index=True)
-    status = Column(String(30), server_default="pending", nullable=False)
+    order_date = Column(Date)
+    shipment_date = Column(Date)
+    zone_code = Column(String(80))
+    weight_kg = Column(Numeric(18, 6), server_default="0", nullable=False)
+    pieces = Column(Numeric(18, 6), server_default="1", nullable=False)
+    order_value = Column(Numeric(18, 4), server_default="0", nullable=False)
     cod_amount = Column(Numeric(18, 4), server_default="0", nullable=False)
+    cod_collected = Column(Numeric(18, 4), server_default="0", nullable=False)
+    card_amount = Column(Numeric(18, 4), server_default="0", nullable=False)
+    remote_area = Column(Boolean, server_default="false", nullable=False)
+    storage_days = Column(Numeric(18, 6), server_default="0", nullable=False)
+    exchange_requested = Column(Boolean, server_default="false", nullable=False)
+    status = Column(String(30), server_default="pending", nullable=False)
     shipping_fee = Column(Numeric(18, 4), server_default="0", nullable=False)
+    customer_shipping_fee = Column(Numeric(18, 4), server_default="0", nullable=False)
     customer_name = Column(String(200), nullable=False)
     phone = Column(String(50))
     address = Column(Text)
     notes = Column(Text)
 
     __table_args__ = (
-        CheckConstraint("status IN ('pending','picked_up','in_transit','out_for_delivery','delivered','returned','cancelled')", name="ck_shipment_status"),
         CheckConstraint("cod_amount >= 0", name="ck_shipment_cod"),
         CheckConstraint("shipping_fee >= 0", name="ck_shipment_fee"),
     )

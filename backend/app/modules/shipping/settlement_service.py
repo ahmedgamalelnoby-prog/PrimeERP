@@ -3,13 +3,16 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.modules.shipping.accounting_service import shipping_accounting_service
 from app.modules.shipping.models import ShippingCarrier, Shipment
+from app.modules.shipping.cost_models import ShippingShipmentCost
 from app.modules.shipping.settlement_models import ShippingSettlementBatch, ShippingShipmentSettlement
 from app.modules.shipping.settlement_schemas import SettlementBatchCreate
+from app.modules.shipping.status_models import ShippingFinancialEvent
 
 
 class ShippingSettlementService:
-    def create_batch(self, db: Session, payload: SettlementBatchCreate) -> ShippingSettlementBatch:
+    def create_batch(self, db: Session, payload: SettlementBatchCreate, user_id: int | None = None) -> ShippingSettlementBatch:
         existing = db.scalar(select(ShippingSettlementBatch).where(
             ShippingSettlementBatch.company_id == payload.company_id,
             ShippingSettlementBatch.reference == payload.reference.strip(),
@@ -53,13 +56,17 @@ class ShippingSettlementService:
         fully_reconciled = True
         for line in payload.lines:
             shipment = by_id[line.shipment_id]
-            if shipment.status not in {"delivered", "returned"}:
-                raise ValueError(f"Shipment {shipment.id} is not eligible for settlement")
+            if shipment.status != "delivered":
+                raise ValueError(f"Shipment {shipment.id} must be delivered before COD settlement")
             if db.scalar(select(ShippingShipmentSettlement.id).where(ShippingShipmentSettlement.shipment_id == shipment.id)):
                 raise ValueError(f"Shipment {shipment.id} is already settled")
             expected = Decimal(shipment.cod_amount or 0)
             collected = Decimal(line.collected_amount)
-            fee = Decimal(line.carrier_fee)
+            breakdown_fee = Decimal(line.cod_commission) + Decimal(line.withdrawal_fee) + Decimal(line.other_fee)
+            declared_fee = Decimal(line.carrier_fee)
+            if declared_fee > 0 and breakdown_fee > 0 and declared_fee != breakdown_fee:
+                raise ValueError(f"Carrier fee breakdown must equal carrier_fee for shipment {shipment.id}")
+            fee = breakdown_fee if breakdown_fee > 0 else declared_fee
             if fee > collected:
                 raise ValueError(f"Carrier fee cannot exceed collected amount for shipment {shipment.id}")
             net = collected - fee
@@ -67,12 +74,72 @@ class ShippingSettlementService:
             fully_reconciled = fully_reconciled and variance == 0
             gross += collected
             fees += fee
+
+            # Settlement is the source of truth for the actual carrier fee
+            # breakdown. Pricing at delivery is an estimate, so only the
+            # delta is posted here; this prevents double-recognizing fees
+            # while still capturing actual COD/withdrawal/other charges.
+            estimated_cod_fee = Decimal("0")
+            estimated_withdrawal_fee = Decimal("0")
+            cost = db.scalar(select(ShippingShipmentCost).where(
+                ShippingShipmentCost.shipment_id == shipment.id
+            ))
+            if cost is not None:
+                estimated_cod_fee = Decimal(cost.cod_fee or 0) + Decimal(cost.cod_collected_fee or 0)
+                estimated_withdrawal_fee = Decimal(cost.card_fee or 0)
+
+            actual_fee_parts = {
+                "cod_commission": Decimal(line.cod_commission),
+                "withdrawal_fee": Decimal(line.withdrawal_fee),
+                "other_fee": Decimal(line.other_fee),
+            }
+            # If the carrier supplied only the legacy aggregate carrier_fee,
+            # preserve it as an actual "other" fee so it is still reconciled.
+            if breakdown_fee == 0 and declared_fee > 0:
+                actual_fee_parts["other_fee"] = declared_fee
+            estimated_fee_parts = {
+                "cod_commission": estimated_cod_fee,
+                "withdrawal_fee": estimated_withdrawal_fee,
+                "other_fee": Decimal("0"),
+            }
+            for fee_key, actual_part in actual_fee_parts.items():
+                delta = actual_part - estimated_fee_parts[fee_key]
+                if delta == 0:
+                    continue
+                expense_role = (
+                    "cod_commission_expense" if fee_key == "cod_commission"
+                    else "payment_withdrawal_fee_expense" if fee_key == "withdrawal_fee"
+                    else "shipping_other_fee_expense"
+                )
+                if delta > 0:
+                    debit_role, credit_role = expense_role, "carrier_payable"
+                else:
+                    debit_role, credit_role = "carrier_payable", expense_role
+                db.add(ShippingFinancialEvent(
+                    company_id=payload.company_id, carrier_id=payload.carrier_id, shipment_id=shipment.id,
+                    event_key=f"settlement_fee_adjustment:{payload.reference}:{fee_key}",
+                    event_type="settlement_fee_adjustment", event_date=payload.settlement_date,
+                    amount=abs(delta), debit_role=debit_role, credit_role=credit_role,
+                    source_status=shipment.status,
+                    is_reversal=delta < 0,
+                    description=f"Carrier settlement fee adjustment: {fee_key}",
+                ))
+
+            db.add(ShippingFinancialEvent(
+                company_id=payload.company_id, carrier_id=payload.carrier_id, shipment_id=shipment.id,
+                event_key=f"settlement:{payload.reference}", event_type="carrier_remittance", event_date=payload.settlement_date,
+                amount=net, debit_role="bank_cash", credit_role="carrier_cod_receivable", source_status=shipment.status,
+                description=f"Carrier remittance {payload.reference}",
+            ))
             db.add(ShippingShipmentSettlement(
                 batch_id=batch.id,
                 shipment_id=shipment.id,
                 expected_amount=expected,
                 collected_amount=collected,
                 carrier_fee=fee,
+                cod_commission=Decimal(line.cod_commission),
+                withdrawal_fee=Decimal(line.withdrawal_fee),
+                other_fee=Decimal(line.other_fee),
                 net_amount=net,
                 variance=variance,
                 reconciled=(variance == 0),
@@ -82,6 +149,23 @@ class ShippingSettlementService:
         batch.carrier_fees = fees
         batch.net_amount = gross - fees
         batch.status = "reconciled" if fully_reconciled else "open"
+        db.flush()
+        if user_id is None:
+            raise ValueError("User identity is required to post shipping settlement events")
+        events = db.scalars(select(ShippingFinancialEvent).where(
+            ShippingFinancialEvent.company_id == payload.company_id,
+            ShippingFinancialEvent.carrier_id == payload.carrier_id,
+            ShippingFinancialEvent.event_date == payload.settlement_date,
+        ).where(
+            ShippingFinancialEvent.event_key.like(f"settlement:{payload.reference}"),
+        )).all()
+        adjustment_events = db.scalars(select(ShippingFinancialEvent).where(
+            ShippingFinancialEvent.company_id == payload.company_id,
+            ShippingFinancialEvent.carrier_id == payload.carrier_id,
+            ShippingFinancialEvent.event_key.like(f"settlement_fee_adjustment:{payload.reference}:%"),
+        )).all()
+        for event in [*adjustment_events, *events]:
+            shipping_accounting_service.post_financial_event(db, event_id=event.id, user_id=user_id)
         db.flush()
         return batch
 
