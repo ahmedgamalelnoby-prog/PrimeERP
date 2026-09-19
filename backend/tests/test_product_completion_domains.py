@@ -509,3 +509,28 @@ def test_inventory_transfer_allows_distinct_locations_in_same_warehouse():
     assert 'if source.warehouse_id == destination.warehouse_id and source.id == destination.id:' in source
     assert 'raise ValueError("Source and destination locations must differ")' in source
     assert 'Use a direct stock move for an intra-warehouse location transfer' not in source
+
+
+def test_inventory_balance_creation_is_race_safe():
+    import inspect
+    from app.modules.inventory.stock_moves.service import InventoryStockMoveService
+    from app.modules.inventory.reservations.service import InventoryReservationService
+
+    stock_source = inspect.getsource(InventoryStockMoveService._location_balance)
+    warehouse_source = inspect.getsource(InventoryStockMoveService._warehouse_stock)
+    reservation_balance = inspect.getsource(InventoryReservationService._locked_balance)
+    reservation_warehouse = inspect.getsource(InventoryReservationService._locked_warehouse_stock)
+
+    for source in (stock_source, warehouse_source, reservation_balance, reservation_warehouse):
+        assert "on_conflict_do_nothing" in source
+        assert "pg_insert" in source
+        assert "Unable to create or lock" in source or "db.scalar(stmt.with_for_update())" in source
+
+
+def test_inventory_reservation_variant_validation_uses_product_variant_is_active():
+    import inspect
+    from app.modules.inventory.reservations.service import InventoryReservationService
+
+    source = inspect.getsource(InventoryReservationService._validate_variant)
+    assert "ProductVariant.is_active.is_(True)" in source
+    assert "ProductVariant.active.is_(True)" not in source
