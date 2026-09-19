@@ -7,6 +7,7 @@ from sqlalchemy import (
     String,
     Text,
     TIMESTAMP,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -415,3 +416,92 @@ class OrderType(Base):
 
     def __repr__(self) -> str:
         return f"<OrderType {self.name}>"
+
+class PosOutlet(Base):
+    """A food & beverage service location, e.g. Sea Restaurant or Pool Bar."""
+
+    __tablename__ = "pos_outlets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    branch_id = Column(Integer, ForeignKey("branches.id", ondelete="CASCADE"), nullable=False, index=True)
+    code = Column(String(40), nullable=False)
+    name = Column(String(160), nullable=False)
+    outlet_type = Column(String(30), nullable=False, default="restaurant")
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = TIMESTAMP()
+
+    __table_args__ = (UniqueConstraint("company_id", "code", name="uq_pos_outlet_company_code"),)
+
+
+class PosOutletStation(Base):
+    """Allowed production stations for an outlet."""
+
+    __tablename__ = "pos_outlet_stations"
+
+    id = Column(Integer, primary_key=True)
+    outlet_id = Column(Integer, ForeignKey("pos_outlets.id", ondelete="CASCADE"), nullable=False, index=True)
+    station_id = Column(Integer, ForeignKey("preparation_stations.id", ondelete="CASCADE"), nullable=False, index=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    __table_args__ = (UniqueConstraint("outlet_id", "station_id", name="uq_pos_outlet_station"),)
+
+
+class PosTerminal(Base):
+    """A physical POS machine/cashier terminal assigned to one outlet."""
+
+    __tablename__ = "pos_terminals"
+
+    id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    branch_id = Column(Integer, ForeignKey("branches.id", ondelete="CASCADE"), nullable=False, index=True)
+    outlet_id = Column(Integer, ForeignKey("pos_outlets.id", ondelete="CASCADE"), nullable=False, index=True)
+    code = Column(String(60), nullable=False)
+    name = Column(String(160), nullable=False)
+    device_identifier = Column(String(160), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    __table_args__ = (
+        UniqueConstraint("company_id", "code", name="uq_pos_terminal_company_code"),
+        UniqueConstraint("company_id", "device_identifier", name="uq_pos_terminal_company_device"),
+    )
+
+
+class PosTerminalMenu(Base):
+    """Menus enabled on a terminal; price list is authoritative for menu pricing."""
+
+    __tablename__ = "pos_terminal_menus"
+
+    id = Column(Integer, primary_key=True)
+    terminal_id = Column(Integer, ForeignKey("pos_terminals.id", ondelete="CASCADE"), nullable=False, index=True)
+    menu_id = Column(Integer, ForeignKey("menus.id", ondelete="CASCADE"), nullable=False, index=True)
+    price_list_id = Column(Integer, ForeignKey("product_price_lists.id", ondelete="RESTRICT"), nullable=True, index=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    __table_args__ = (UniqueConstraint("terminal_id", "menu_id", name="uq_pos_terminal_menu"),)
+
+
+class PosMenuItemRoute(Base):
+    """Routes a menu item from a terminal to the station that produces it."""
+
+    __tablename__ = "pos_menu_item_routes"
+
+    id = Column(Integer, primary_key=True)
+    terminal_id = Column(Integer, ForeignKey("pos_terminals.id", ondelete="CASCADE"), nullable=False, index=True)
+    menu_item_id = Column(Integer, ForeignKey("menu_items.id", ondelete="CASCADE"), nullable=False, index=True)
+    station_id = Column(Integer, ForeignKey("preparation_stations.id", ondelete="RESTRICT"), nullable=False, index=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    __table_args__ = (UniqueConstraint("terminal_id", "menu_item_id", name="uq_pos_terminal_menu_item_route"),)
+
+
+class PosOrderLineRoute(Base):
+    """Production routing/status for a POS sales line."""
+
+    __tablename__ = "pos_order_line_routes"
+
+    id = Column(Integer, primary_key=True)
+    sales_line_id = Column(Integer, ForeignKey("sales_lines.id", ondelete="CASCADE"), nullable=False, index=True)
+    terminal_id = Column(Integer, ForeignKey("pos_terminals.id", ondelete="RESTRICT"), nullable=False, index=True)
+    station_id = Column(Integer, ForeignKey("preparation_stations.id", ondelete="RESTRICT"), nullable=False, index=True)
+    status = Column(String(20), nullable=False, default="queued")
+    notes = Column(Text, nullable=True)
+    created_at = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now(), nullable=False)
+    __table_args__ = (UniqueConstraint("sales_line_id", name="uq_pos_order_line_route"),)
