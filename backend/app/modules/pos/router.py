@@ -353,9 +353,11 @@ def checkout(payload: Checkout, current_user: User = Depends(get_current_user), 
                 Menu.company_id == payload.company_id,
                 MenuItem.is_available.is_(True),
             ))
+            if menu_item is None:
+                raise HTTPException(422, "Menu item does not exist or is unavailable")
             terminal_menu = db.scalar(select(PosTerminalMenu).where(
                 PosTerminalMenu.terminal_id == terminal.id,
-                PosTerminalMenu.menu_id == menu_item.menu_id if menu_item else -1,
+                PosTerminalMenu.menu_id == menu_item.menu_id,
                 PosTerminalMenu.is_active.is_(True),
             ))
             route = db.scalar(select(PosMenuItemRoute).where(
@@ -444,7 +446,7 @@ def station_queue(
             PosOrderLineRoute.status == status,
             Branch.company_id == company_id,
         )
-        .order_by(PosDocument.document_date.desc() if False else SalesDocument.id.desc(), SalesLine.id.asc())
+        .order_by(SalesDocument.document_date.desc(), SalesDocument.id.desc(), SalesLine.id.asc())
         .limit(500)
     ).all()
     return [{
