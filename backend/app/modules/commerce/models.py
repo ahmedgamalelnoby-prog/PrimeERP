@@ -164,6 +164,7 @@ class CommercePayment(Base):
     reversed_of_id = Column(Integer, ForeignKey("commerce_payments.id", ondelete="RESTRICT"), nullable=True, index=True)
     reversed_at = Column(DateTime(timezone=True), nullable=True)
     __table_args__ = (
+        UniqueConstraint("company_id", "idempotency_key", name="uq_commerce_payment_idempotency"),
         CheckConstraint("document_kind IN ('sale','purchase')", name="ck_commerce_payment_kind"),
         CheckConstraint("amount > 0", name="ck_commerce_payment_amount"),
         CheckConstraint("wht_amount >= 0 AND wht_amount <= amount", name="ck_commerce_payment_wht"),
