@@ -106,6 +106,8 @@ class JournalService:
         entry = self._locked_entry(db, tenant_id, entry_id)
         if entry.status != "pending":
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only pending entries can be approved")
+        if entry.submitted_by is not None and entry.submitted_by == user_id:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The user who submitted the journal entry cannot approve it")
         entry.status = "approved"; entry.approved_by = user_id; entry.approved_at = datetime.now(timezone.utc)
         db.flush()
         if commit:
@@ -118,6 +120,8 @@ class JournalService:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only approved or pending entries can be posted")
         if entry.status == "pending" and entry.journal.requires_approval:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Journal approval is required before posting")
+        if entry.status == "approved" and entry.approved_by is not None and entry.approved_by == user_id:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The user who approved the journal entry cannot post it")
         period = fiscal_year_repository.get_period_by_id(db, entry.period_id, tenant_id, for_update=True)
         if period is None or period.status != "open" or not period.allow_posting:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Accounting period is not open for posting")
@@ -157,13 +161,17 @@ class JournalService:
             db.commit(); db.refresh(entry)
         return entry
 
-    def reverse(self, db: Session, *, tenant_id: int, entry_id: int, user_id: int, reversal_date: date | None = None, description: str | None = None) -> JournalEntry:
+    def reverse(self, db: Session, *, tenant_id: int, entry_id: int, user_id: int, reversal_date: date | None = None, description: str | None = None, reason: str | None = None) -> JournalEntry:
         """Create and atomically post a balanced reversal for a posted entry."""
         original = self._locked_entry(db, tenant_id, entry_id)
         if original.status != "posted":
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only posted entries can be reversed")
         if original.reversal_entry_id is not None:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Journal entry has already been reversed")
+        if original.posted_by is not None and original.posted_by == user_id:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The user who posted the journal entry cannot reverse it")
+        if not reason or not reason.strip():
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="A reversal reason is required")
 
         target_date = reversal_date or date.today()
 
@@ -219,7 +227,7 @@ class JournalService:
             entry_date=target_date,
             posting_date=target_date,
             reference=original.entry_number,
-            description=description or f"Reversal of {original.entry_number}",
+            description=description or f"Reversal of {original.entry_number}: {reason.strip()}",
             currency_code=original.currency_code,
             exchange_rate=original.exchange_rate,
             source_module="journal_reversal",
