@@ -22,6 +22,14 @@ from app.modules.treasury.models import Cheque, ChequeEvent
 SALE_TYPES = {"quotation", "order", "delivery", "invoice", "credit_note"}
 PURCHASE_TYPES = {"requisition", "rfq", "order", "receipt", "bill", "debit_note"}
 
+def resolve_due_date(document_type: str, document_date, explicit_due_date, payment_terms_days: int):
+    if explicit_due_date is not None:
+        if explicit_due_date < document_date:
+            raise ValueError("Due date cannot be earlier than document date")
+        return explicit_due_date
+    if document_type in {"invoice", "bill"}:
+        return document_date + timedelta(days=payment_terms_days)
+    return None
 
 class CommerceService:
     def create_partner(self, db: Session, payload):
@@ -81,7 +89,7 @@ class CommerceService:
         if payload.receipt_ids:
             receipts = list(db.scalars(select(PurchaseDocument).where(PurchaseDocument.id.in_(payload.receipt_ids), PurchaseDocument.company_id == payload.company_id, PurchaseDocument.partner_id == payload.partner_id, PurchaseDocument.document_type == "receipt", PurchaseDocument.status.in_(["received", "partially_received"]))).all()); found = {r.id for r in receipts}; missing = [r for r in payload.receipt_ids if r not in found]
             if missing: raise ValueError(f"Receipt(s) not found, not received, or not owned by the vendor/company: {missing}")
-        obj = model(company_id=payload.company_id, partner_id=payload.partner_id, document_type=payload.document_type, number=payload.number, document_date=payload.document_date, warehouse_id=payload.warehouse_id, due_date=payload.due_date or (payload.document_date + timedelta(days=partner.payment_terms_days) if payload.document_type in {"invoice", "bill"} else None), notes=payload.notes)
+        obj = model(company_id=payload.company_id, partner_id=payload.partner_id, document_type=payload.document_type, number=payload.number, document_date=payload.document_date, warehouse_id=payload.warehouse_id, due_date=resolve_due_date(payload.document_type, payload.document_date, payload.due_date, partner.payment_terms_days), notes=payload.notes)
         subtotal = Decimal("0"); tax = Decimal("0"); discount = Decimal("0")
         for p in payload.lines:
             item = db.scalar(select(InventoryItem).where(InventoryItem.id == p.item_id, InventoryItem.company_id == payload.company_id, InventoryItem.is_active.is_(True)))
