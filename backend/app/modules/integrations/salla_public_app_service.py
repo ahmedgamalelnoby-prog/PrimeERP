@@ -262,7 +262,7 @@ def consume_sso_ticket(db: Session, ticket: str) -> str:
 
 
 def get_salla_access_token(db: Session, connection: IntegrationConnection) -> str:
-    installation = db.scalar(select(SallaAppInstallation).where(SallaAppInstallation.connection_id == connection.id).with_for_update())
+    installation = db.scalar(select(SallaAppInstallation).where(SallaAppInstallation.connection_id == connection.id, SallaAppInstallation.company_id == connection.company_id, SallaAppInstallation.tenant_id == connection.tenant_id).with_for_update())
     if installation is None:
         raise SallaPublicAppError("Salla public-app installation not found")
     token = decrypt_token(installation.access_token_ciphertext)
@@ -316,6 +316,7 @@ def _activate_primeerp_subscription(db: Session, installation: SallaAppInstallat
 
     external_id = _text(data, "subscription_id") or _text(data, "id")
     existing = db.scalar(select(Subscription).where(
+        Subscription.tenant_id == installation.tenant_id,
         Subscription.external_provider == "salla",
         Subscription.external_subscription_id == external_id,
     )) if external_id else None
