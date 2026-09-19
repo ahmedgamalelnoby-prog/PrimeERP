@@ -104,8 +104,9 @@ def finalize_salla_order(db: Session, order: SallaOrder, user_id: int | None = N
             delivery.status = "confirmed"
             db.flush()
         if delivery.status in ("confirmed", "partially_fulfilled"):
-            commerce_service.post_inventory(db, company_id=order.company_id, document_id=delivery.id, kind="sale")
-            commerce_accounting_service.post_sales_delivery_cogs(db, delivery, effective_user_id)
+            # Inventory posting owns the stock valuation/COGS journal. Do not
+            # post the same COGS again through the commerce accounting layer.
+            commerce_service.post_inventory(db, company_id=order.company_id, document_id=delivery.id, kind="sale", user_id=effective_user_id)
     result["delivery_document_id"] = delivery.id if delivery is not None else None
     result["shipping"] = sync_salla_shipments_for_order(db, order)
     return result
