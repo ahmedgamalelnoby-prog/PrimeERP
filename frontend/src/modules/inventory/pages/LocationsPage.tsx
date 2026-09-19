@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import client from "@/shared/api/client";
 
 interface Location {
   id: number;
@@ -12,16 +13,15 @@ interface Location {
 }
 
 export default function LocationsPage() {
-  const [companyId, setCompanyId] = useState("1");
+  const [companyId, setCompanyId] = useState(() => localStorage.getItem("company_id") || "");
   const [warehouseId, setWarehouseId] = useState("");
   const [locations, setLocations] = useState<Location[]>([]);
 
   useEffect(() => {
     if (!warehouseId) return;
     const params = new URLSearchParams({ company_id: companyId, warehouse_id: warehouseId });
-    fetch(`/api/v1/inventory/locations?${params.toString()}`)
-      .then((response) => (response.ok ? response.json() : []))
-      .then(setLocations)
+    client.get<Location[]>("/inventory/locations", { params: Object.fromEntries(params) })
+      .then((response) => setLocations(response.data))
       .catch(() => setLocations([]));
   }, [companyId, warehouseId]);
 

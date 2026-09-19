@@ -13,6 +13,7 @@ from app.modules.inventory.stock_moves.router import router as inventory_stock_m
 from app.modules.inventory.transfers.router import router as inventory_transfers_router
 from app.modules.inventory.warehouses.router import router as inventory_warehouses_router
 from app.modules.legal.router import router as legal_router
+from app.modules.platform.api.router import router as platform_modules_router
 from app.modules.platform.entitlements.router import router as entitlements_router
 from app.modules.platform.features.router import router as features_router
 from app.modules.platform.plans.router import router as plans_router
@@ -45,12 +46,14 @@ from app.modules.commissions.router import router as commissions_router
 from app.modules.saas.entitlements import require_module
 from app.modules.jurisdiction.router import router as jurisdiction_router
 from app.modules.reports.router import router as reports_router
-
+from app.modules.helpdesk_ai.router import router as helpdesk_router
 
 def build_router() -> APIRouter:
     api_router = APIRouter()
     api_router.include_router(identity_router, prefix="/identity", tags=["identity"])
     api_router.include_router(features_router)
+    api_router.include_router(helpdesk_router)
+    api_router.include_router(platform_modules_router)
     api_router.include_router(saas_router, prefix="/saas", tags=["saas"])
     api_router.include_router(transactions_router, prefix="/transactions", tags=["transactions"])
     api_router.include_router(fiscal_years_router, prefix="/accounting/fiscal-years", tags=["accounting-fiscal-years"], dependencies=[Depends(require_module("accounting"))])

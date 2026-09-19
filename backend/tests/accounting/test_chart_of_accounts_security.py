@@ -35,7 +35,12 @@ def _source_contains_call(node: ast.AST, name: str) -> bool:
 def test_chart_of_accounts_reads_require_authenticated_tenant_context() -> None:
     tree = _tree()
     routes = _route_functions(tree)
-    assert set(routes) == {"list_departments", "list_cost_centers", "list_natural_accounts"}
+    assert set(routes) == {
+        "list_departments",
+        "list_cost_centers",
+        "list_natural_accounts",
+        "list_account_combinations",
+    }
 
     source = ROUTER.read_text(encoding="utf-8")
     assert "get_current_user" in source

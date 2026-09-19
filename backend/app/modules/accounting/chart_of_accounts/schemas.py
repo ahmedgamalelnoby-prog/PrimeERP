@@ -422,3 +422,16 @@ class AccountingSettingsResponse(BaseModel):
     model_config = ConfigDict(
         from_attributes=True
     )
+
+class AccountCombinationListResponse(BaseModel):
+    id: int
+    company_id: int
+    department_id: int
+    cost_center_id: int
+    natural_account_id: int
+    code: str
+    name_ar: str
+    name_en: Optional[str] = None
+    is_active: bool
+
+    model_config = ConfigDict(from_attributes=True)

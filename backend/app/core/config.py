@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
     AI_MODEL: str = "gpt-5.6-luna"
+    AI_KNOWLEDGE_VERSION: str = "module-registry-v1"
+    AI_ADVISORY_ENABLED: bool = True
+    AI_MAX_OUTPUT_TOKENS: int = 1200
 
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587

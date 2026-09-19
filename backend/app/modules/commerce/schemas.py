@@ -104,12 +104,32 @@ class PaymentCreate(BaseModel):
     reference: str | None = None
     idempotency_key: str | None = Field(default=None, min_length=1, max_length=100)
     notes: str | None = None
+    cheque_number: str | None = Field(default=None, min_length=1, max_length=100)
+    cheque_bank_name: str | None = Field(default=None, max_length=150)
+    cheque_account_number: str | None = Field(default=None, max_length=100)
+    cheque_due_date: date | None = None
 
     @model_validator(mode="after")
     def validate_wht(self):
         if self.wht_amount > self.amount:
             raise ValueError("WHT amount cannot exceed payment amount")
         return self
+
+
+class PaymentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    company_id: int
+    document_kind: str
+    document_id: int
+    payment_date: date
+    amount: Decimal
+    wht_amount: Decimal
+    method: str
+    reference: str | None
+    notes: str | None
+    status: str
+    reversed_of_id: int | None
 
 
 class PaymentReverse(BaseModel):

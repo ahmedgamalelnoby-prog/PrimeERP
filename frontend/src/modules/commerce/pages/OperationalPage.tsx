@@ -4,11 +4,15 @@ import client from "@/shared/api/client";
 import "@/shared/api/interceptors";
 
 type Row = Record<string, unknown>;
-const config: Record<string, { title: string; endpoint: string; kind: "partners" | "documents" | "shipping" }> = {
-  "/customers": { title: "العملاء والموردون", endpoint: "/commerce/partners", kind: "partners" },
+type RouteConfig = { title: string; endpoint: string; kind: "partners" | "documents" | "shipping"; partnerType?: "customer" | "vendor"; documentKind?: "sale" | "purchase" };
+const config: Record<string, RouteConfig> = {
+  "/customers": { title: "العملاء", endpoint: "/commerce/partners", kind: "partners", partnerType: "customer" },
+  "/purchasing/suppliers": { title: "الموردون", endpoint: "/commerce/partners", kind: "partners", partnerType: "vendor" },
   "/sales/quotations": { title: "عروض المبيعات", endpoint: "/commerce/sales/documents", kind: "documents" },
-  "/sales/orders": { title: "طلبات المبيعات", endpoint: "/commerce/sales/documents", kind: "documents" },
-  "/purchases/orders": { title: "طلبات المشتريات", endpoint: "/commerce/purchases/documents", kind: "documents" },
+  "/sales/orders": { title: "طلبات المبيعات", endpoint: "/commerce/sales/documents", kind: "documents", documentKind: "sale" },
+  "/sales/invoices": { title: "فواتير المبيعات", endpoint: "/commerce/sales/documents", kind: "documents", documentKind: "sale" },
+  "/purchases/orders": { title: "طلبات المشتريات", endpoint: "/commerce/purchases/documents", kind: "documents", documentKind: "purchase" },
+  "/purchasing/invoices": { title: "فواتير المشتريات", endpoint: "/commerce/purchases/documents", kind: "documents", documentKind: "purchase" },
   "/shipping": { title: "الشحن واللوجستيات", endpoint: "/shipping/carriers", kind: "shipping" },
 };
 
@@ -31,10 +35,76 @@ export default function OperationalPage() {
   const [partnerId, setPartnerId] = useState("");
   const [itemId, setItemId] = useState("");
   const [number, setNumber] = useState("");
-  const [type, setType] = useState(path.startsWith("/purchases") ? "order" : path.includes("quotations") ? "quotation" : "order");
+  const [type, setType] = useState(path === "/sales/invoices" ? "invoice" : path === "/purchasing/invoices" ? "bill" : path.startsWith("/purchases") ? "order" : path.includes("quotations") ? "quotation" : "order");
   const [amount, setAmount] = useState("");
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("bank");
+  const [chequeNumber, setChequeNumber] = useState("");
+  const [chequeBank, setChequeBank] = useState("");
+  const [chequeDueDate, setChequeDueDate] = useState(new Date().toISOString().slice(0, 10));
+  const [payments, setPayments] = useState<Row[]>([]);
   const companyId = selectedCompanyId();
   const query = useMemo(() => companyId ? `?company_id=${companyId}` : "", [companyId]);
+  const isSale = meta.endpoint === "/commerce/sales/documents";
+  const isPurchase = meta.endpoint === "/commerce/purchases/documents";
+
+  async function actionDocument(id: number, action: string) {
+    if (!companyId) return;
+    setError("");
+    try {
+      const endpoint = isSale
+        ? action === "confirm" ? `/commerce/sales/${id}/confirm?company_id=${companyId}`
+          : action === "inventory" ? `/commerce/sales/${id}/post-inventory?company_id=${companyId}` : null
+        : isPurchase
+          ? action === "confirm" ? `/commerce/purchases/${id}/confirm?company_id=${companyId}`
+            : action === "inventory" ? `/commerce/purchases/${id}/receive?company_id=${companyId}` : null
+          : null;
+      if (!endpoint) return;
+      await client.post(endpoint);
+      await load();
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || "تعذر تنفيذ العملية");
+    }
+  }
+
+  async function loadPayments() {
+    if (!companyId || (!isSale && !isPurchase)) { setPayments([]); return; }
+    try {
+      const r = await client.get(`/commerce/payments?company_id=${companyId}&document_kind=${isSale ? "sale" : "purchase"}`);
+      setPayments(Array.isArray(r.data) ? r.data : []);
+    } catch { setPayments([]); }
+  }
+
+  async function recordPayment(id: number) {
+    if (!companyId || !paymentAmount) return;
+    setError("");
+    try {
+      await client.post(`/commerce/${isSale ? "sales" : "purchases"}/${id}/payments`, {
+        company_id: companyId,
+        document_id: id,
+        payment_date: new Date().toISOString().slice(0, 10),
+        amount: Number(paymentAmount),
+        method: paymentMethod,
+        ...(paymentMethod === "cheque" ? { cheque_number: chequeNumber, cheque_bank_name: chequeBank || null, cheque_due_date: chequeDueDate } : {}),
+      });
+      setPaymentAmount("");
+      setChequeNumber("");
+      setChequeBank("");
+      await Promise.all([load(), loadPayments()]);
+    } catch (e: any) { setError(e?.response?.data?.detail || "تعذر تسجيل الدفعة"); }
+  }
+
+  async function reversePayment(paymentId: number) {
+    if (!companyId) return;
+    setError("");
+    try {
+      await client.post(`/commerce/payments/${paymentId}/reverse`, {
+        company_id: companyId,
+        reversal_date: new Date().toISOString().slice(0, 10),
+      });
+      await Promise.all([load(), loadPayments()]);
+    } catch (e: any) { setError(e?.response?.data?.detail || "تعذر عكس الدفعة"); }
+  }
 
   async function load() {
     setLoading(true);
@@ -46,7 +116,7 @@ export default function OperationalPage() {
       return;
     }
     try {
-      const r = await client.get(`${meta.endpoint}${query}`);
+      const r = await client.get(`${meta.endpoint}${query}${meta.partnerType ? `&partner_type=${meta.partnerType}` : ""}`);
       setRows(Array.isArray(r.data) ? r.data : []);
     } catch (e: any) {
       setError(e?.response?.data?.detail || "تعذر تحميل البيانات");
@@ -55,7 +125,7 @@ export default function OperationalPage() {
     }
   }
 
-  useEffect(() => { void load(); }, [meta.endpoint, query]);
+  useEffect(() => { void load(); void loadPayments(); }, [meta.endpoint, query]);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -67,7 +137,7 @@ export default function OperationalPage() {
     setError("");
     try {
       if (meta.kind === "partners") {
-        await client.post("/commerce/partners", { company_id: companyId, code, name, partner_type: "customer" });
+        await client.post("/commerce/partners", { company_id: companyId, code, name, partner_type: meta.partnerType || "customer" });
       } else if (meta.kind === "documents") {
         await client.post(meta.endpoint, {
           company_id: companyId,
@@ -113,7 +183,7 @@ export default function OperationalPage() {
       </form>
       <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
         <div className="flex items-center justify-between border-b p-4"><h2 className="font-semibold">السجلات</h2><button onClick={() => void load()} className="rounded-lg border px-3 py-1.5 text-sm">تحديث</button></div>
-        {loading ? <div className="p-8 text-center text-sm text-muted-foreground">جارٍ التحميل...</div> : rows.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">لا توجد سجلات.</div> : <div className="overflow-auto"><table className="w-full text-sm"><thead><tr className="border-b bg-muted/40">{Object.keys(rows[0]).slice(0, 8).map(k => <th key={k} className="whitespace-nowrap px-4 py-3 text-right font-semibold">{k}</th>)}</tr></thead><tbody>{rows.map((r, i) => <tr key={String(r.id ?? i)} className="border-b last:border-0">{Object.keys(rows[0]).slice(0, 8).map(k => <td key={k} className="whitespace-nowrap px-4 py-3">{String(r[k] ?? "—")}</td>)}</tr>)}</tbody></table></div>}
+        {loading ? <div className="p-8 text-center text-sm text-muted-foreground">جارٍ التحميل...</div> : rows.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">لا توجد سجلات.</div> : <div className="overflow-auto"><table className="w-full text-sm"><thead><tr className="border-b bg-muted/40">{Object.keys(rows[0]).slice(0, 8).map(k => <th key={k} className="whitespace-nowrap px-4 py-3 text-right font-semibold">{k}</th>)}{(isSale || isPurchase) && <th className="whitespace-nowrap px-4 py-3 text-right font-semibold">إجراءات</th>}</tr></thead><tbody>{rows.map((r, i) => <tr key={String(r.id ?? i)} className="border-b last:border-0">{Object.keys(rows[0]).slice(0, 8).map(k => <td key={k} className="whitespace-nowrap px-4 py-3">{String(r[k] ?? "—")}</td>)}{(isSale || isPurchase) && <td className="whitespace-nowrap px-4 py-3"><div className="flex gap-2"><button type="button" onClick={() => void actionDocument(Number(r.id), "confirm")} className="rounded border px-2 py-1 text-xs">اعتماد</button><button type="button" onClick={() => void actionDocument(Number(r.id), "inventory")} className="rounded border px-2 py-1 text-xs">مخزون</button><div className="mt-2 flex gap-1"><input type="number" min="0.01" step="0.01" value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} placeholder="مبلغ" className="w-20 rounded border px-1 py-1 text-xs" /><select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className="rounded border px-1 py-1 text-xs"><option value="bank">Bank</option><option value="cash">Cash</option><option value="cheque">Cheque</option><option value="transfer">Transfer</option></select>{paymentMethod === "cheque" && <><input value={chequeNumber} onChange={e => setChequeNumber(e.target.value)} placeholder="رقم الشيك" className="w-24 rounded border px-1 py-1 text-xs" /><input value={chequeBank} onChange={e => setChequeBank(e.target.value)} placeholder="البنك" className="w-20 rounded border px-1 py-1 text-xs" /><input type="date" value={chequeDueDate} onChange={e => setChequeDueDate(e.target.value)} className="rounded border px-1 py-1 text-xs" /></>}<button type="button" onClick={() => void recordPayment(Number(r.id))} className="rounded border px-2 py-1 text-xs">دفع</button></div>{payments.filter(p => Number(p.document_id) === Number(r.id) && p.status === "posted").map(p => <button key={String(p.id)} type="button" onClick={() => void reversePayment(Number(p.id))} className="mt-1 block rounded border border-destructive/40 px-2 py-1 text-xs text-destructive">عكس دفعة {String(p.amount)}</button>)}</div></td>}</tr>)}</tbody></table></div>}
       </div>
     </div>
   </section>;

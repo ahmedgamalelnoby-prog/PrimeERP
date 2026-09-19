@@ -11,7 +11,7 @@ from app.modules.branches.models import Branch
 from app.modules.commerce.accounting_models import CommerceAccountingSettings
 from app.modules.commerce.accounting_schemas import CommerceAccountingSettingsCreate
 from app.modules.commerce.models import CommercePayment, SalesDocument, PurchaseDocument
-from app.modules.commerce.schemas import PartnerCreate, PartnerResponse, DocumentCreate, DocumentResponse, PaymentCreate, PaymentReverse
+from app.modules.commerce.schemas import PartnerCreate, PartnerResponse, DocumentCreate, DocumentResponse, PaymentCreate, PaymentResponse, PaymentReverse
 from app.modules.commerce.sales_return_schemas import SalesReturnCreate
 from app.modules.commerce.sales_return_service import sales_return_service
 from app.modules.commerce.service import commerce_service
@@ -146,6 +146,17 @@ def post_sale(document_id: int, company_id: int = Query(..., gt=0), current_user
 @router.post("/purchases/{document_id}/receive", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def receive_purchase(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user); obj = _run(lambda: commerce_service.post_inventory(db, company_id, document_id, "purchase", user_id=current_user.id)); db.commit(); db.refresh(obj); return obj
+
+
+@router.get("/payments", response_model=list[PaymentResponse])
+def list_payments(company_id: int = Query(..., gt=0), document_kind: str | None = Query(default=None, pattern="^(sale|purchase)$"), document_id: int | None = Query(default=None, gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company_for_user(db, company_id, current_user)
+    query = select(CommercePayment).where(CommercePayment.company_id == company_id)
+    if document_kind:
+        query = query.where(CommercePayment.document_kind == document_kind)
+    if document_id:
+        query = query.where(CommercePayment.document_id == document_id)
+    return list(db.scalars(query.order_by(CommercePayment.id.desc()).limit(500)).all())
 
 
 @router.post("/sales/{document_id}/payments", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.payment"))])

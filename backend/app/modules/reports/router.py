@@ -19,7 +19,9 @@ from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.reports.models import ReportDefinition, ReportDelivery
+from app.modules.accounting.reports.service import financial_report_service
 from app.modules.reports.worker import calculate_next_run
+from app.modules.platform.module_registry import REGISTRY_VERSION, knowledge_context
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -52,9 +54,12 @@ class ScheduleRequest(BaseModel):
 
 
 class AIAnalysisRequest(BaseModel):
+    company_id: int = Field(gt=0)
     domain: str = Field(default="general", min_length=1, max_length=80)
-    metrics: dict[str, Any]
+    metrics: dict[str, Any] = Field(default_factory=dict)
     question: str | None = Field(default=None, max_length=2000)
+    from_date: str | None = None
+    to_date: str | None = None
 
 
 def _company_for_user(db: Session, company_id: int, user: User) -> Company:
@@ -112,15 +117,15 @@ def _deterministic_analysis(metrics: dict[str, Any]) -> dict[str, Any]:
 def _ai_analysis(request: AIAnalysisRequest) -> dict[str, Any]:
     fallback = _deterministic_analysis(request.metrics)
     if not settings.OPENAI_API_KEY:
-        return {**fallback, "ai_provider": "not_configured"}
-    prompt = "You are PrimeERP's financial and operational analyst. Analyze the supplied ERP metrics. Do not invent missing values. Return strict JSON with keys executive_summary, risks, recommendations, questions_for_controller. Domain=" + request.domain + "\nMetrics=" + json.dumps(request.metrics, ensure_ascii=False, default=str) + ("\nQuestion=" + request.question if request.question else "")
+        return {**fallback, "ai_provider": "not_configured", "knowledge_version": REGISTRY_VERSION}
+    prompt = "You are PrimeERP's financial and operational analyst. Analyze only supplied live metrics and current module knowledge. Do not invent missing values, features, policies or implementation status. Return strict JSON with keys executive_summary, risks, recommendations, questions_for_controller. Knowledge version=" + REGISTRY_VERSION + " Modules=" + knowledge_context() + " Domain=" + request.domain + "\nMetrics=" + json.dumps(request.metrics, ensure_ascii=False, default=str) + ("\nQuestion=" + request.question if request.question else "")
     try:
-        response = requests.post(f"{settings.OPENAI_BASE_URL.rstrip('/')}/chat/completions", headers={"Authorization": f"Bearer {settings.OPENAI_API_KEY}", "Content-Type": "application/json"}, json={"model": settings.AI_MODEL, "messages": [{"role": "user", "content": prompt}], "temperature": 0.1, "response_format": {"type": "json_object"}}, timeout=60)
+        response = requests.post(f"{settings.OPENAI_BASE_URL.rstrip('/')}/chat/completions", headers={"Authorization": f"Bearer {settings.OPENAI_API_KEY}", "Content-Type": "application/json"}, json={"model": settings.AI_MODEL, "messages": [{"role": "user", "content": prompt}], "temperature": 0.1, "max_tokens": settings.AI_MAX_OUTPUT_TOKENS, "response_format": {"type": "json_object"}}, timeout=60)
         response.raise_for_status()
         content = response.json()["choices"][0]["message"]["content"]
-        return {"engine": "llm", "ai_provider": "openai_compatible", "analysis": json.loads(content), "rule_checks": fallback}
+        return {"engine": "llm", "ai_provider": "openai_compatible", "knowledge_version": REGISTRY_VERSION, "analysis": json.loads(content), "rule_checks": fallback}
     except (requests.RequestException, KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
-        return {**fallback, "ai_provider": "fallback_after_provider_error", "provider_error": str(exc)[:500]}
+        return {**fallback, "ai_provider": "fallback_after_provider_error", "knowledge_version": REGISTRY_VERSION, "provider_error": str(exc)[:500]}
 
 
 @router.post("/preview")
@@ -166,5 +171,50 @@ def list_schedules(company_id: int, current_user: User = Depends(get_current_use
 
 
 @router.post("/ai/analyze")
-def analyze_report(request: AIAnalysisRequest, current_user: User = Depends(get_current_user)) -> dict[str, Any]:
-    return _ai_analysis(request)
+def analyze_report(
+    request: AIAnalysisRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    _company_for_user(db, request.company_id, current_user)
+    from datetime import date
+
+    try:
+        from_date = date.fromisoformat(request.from_date) if request.from_date else None
+        to_date = date.fromisoformat(request.to_date) if request.to_date else None
+    except ValueError as exc:
+        raise HTTPException(422, "from_date and to_date must use YYYY-MM-DD") from exc
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(422, "from_date cannot be after to_date")
+
+    summary = financial_report_service.financial_summary(
+        db,
+        tenant_id=get_effective_tenant_id(current_user),
+        company_id=request.company_id,
+        from_date=from_date,
+        to_date=to_date,
+    )
+    actual_metrics = {
+        "revenue": float(summary.revenue),
+        "expenses": float(summary.expenses),
+        "net_profit": float(summary.net_profit),
+        "assets": float(summary.assets),
+        "liabilities": float(summary.liabilities),
+        "equity": float(summary.equity),
+    }
+    if actual_metrics["revenue"]:
+        actual_metrics["net_margin_pct"] = round(actual_metrics["net_profit"] / actual_metrics["revenue"] * 100, 2)
+    actual_metrics.update(request.metrics)
+    enriched = AIAnalysisRequest(
+        company_id=request.company_id,
+        domain=request.domain,
+        metrics=actual_metrics,
+        question=request.question,
+        from_date=request.from_date,
+        to_date=request.to_date,
+    )
+    result = _ai_analysis(enriched)
+    result["company_id"] = request.company_id
+    result["period"] = {"from_date": request.from_date, "to_date": request.to_date}
+    result["actual_financial_metrics"] = actual_metrics
+    return result
