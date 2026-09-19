@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.accounting.models import TaxRate
 from app.modules.companies.models import Company
+from app.modules.identity.models import User
 from app.modules.accounting.tax_engine import calculate_taxes
 from app.modules.commerce.accounting_service import commerce_accounting_service
 from app.modules.catalog.models import ProductVariant
@@ -132,6 +133,11 @@ class CommerceService:
         if company is None or company.tenant_id is None:
             raise ValueError("Company tenant context is missing")
         tenant_id = company.tenant_id
+        if user_id is None:
+            user = db.scalar(select(User).where(User.tenant_id == tenant_id, User.is_active.is_(True)).order_by(User.id))
+            if user is None:
+                raise ValueError("No active tenant user is available for inventory posting")
+            user_id = user.id
         locations = list(db.scalars(select(InventoryLocation).where(InventoryLocation.warehouse_id == obj.warehouse_id, InventoryLocation.company_id == company_id, InventoryLocation.is_active.is_(True)).order_by(InventoryLocation.id)).all())
         if not locations: raise ValueError("Warehouse has no active location")
         loc = locations[0]; source_entity = "sales_delivery" if kind == "sale" else "purchase_receipt"
@@ -139,15 +145,16 @@ class CommerceService:
             source_id = f"{obj.id}:{line.id}"
             existing = db.scalar(select(InventoryStockMove).where(InventoryStockMove.company_id == company_id, InventoryStockMove.source_module == "commerce", InventoryStockMove.source_entity == source_entity, InventoryStockMove.source_id == source_id, InventoryStockMove.status.in_(["draft", "posted"])))
             if existing: continue
-            if kind == "sale": payload = StockMoveCreate(company_id=company_id, item_id=line.item_id, variant_id=line.variant_id, movement_type="issue", source_location_id=loc.id, destination_location_id=None, quantity=line.quantity, unit_cost=0, reference=obj.number, source_module="commerce", source_entity=source_entity, source_id=source_id, notes="Sales delivery")
+            if kind == "sale": payload = StockMoveCreate(company_id=company_id, item_id=line.item_id, variant_id=line.variant_id, movement_type="issue", source_location_id=loc.id, destination_location_id=None, quantity=line.quantity, unit_cost=0, transaction_date=obj.document_date, reference=obj.number, source_module="commerce", source_entity=source_entity, source_id=source_id, notes="Sales delivery")
             else:
                 net_unit_cost = Decimal(line.unit_price) * (Decimal("100") - Decimal(line.discount_percent or 0)) / Decimal("100")
-                payload = StockMoveCreate(company_id=company_id, item_id=line.item_id, variant_id=getattr(line, "variant_id", None), movement_type="receipt", source_location_id=None, destination_location_id=loc.id, quantity=line.quantity, unit_cost=net_unit_cost, reference=obj.number, source_module="commerce", source_entity=source_entity, source_id=source_id, notes="Purchase receipt")
+                payload = StockMoveCreate(company_id=company_id, item_id=line.item_id, variant_id=getattr(line, "variant_id", None), movement_type="receipt", source_location_id=None, destination_location_id=loc.id, quantity=line.quantity, unit_cost=net_unit_cost, transaction_date=obj.document_date, reference=obj.number, source_module="commerce", source_entity=source_entity, source_id=source_id, notes="Purchase receipt")
             move = inventory_stock_move_service.create_draft(db, payload)
             inventory_stock_move_service.post(db, tenant_id=tenant_id, company_id=company_id, move_id=move.id, user_id=user_id or 0)
         obj.status = "fulfilled" if kind == "sale" else "received"; db.flush()
-        if kind == "sale" and user_id is not None: commerce_accounting_service.post_sales_delivery_cogs(db, obj, user_id)
-        if kind == "purchase" and user_id is not None and obj.document_type == "receipt": commerce_accounting_service.post_purchase_receipt(db, obj, user_id)
+        # InventoryStockMove.post() already creates the inventory/COGS or
+        # inventory/clearing journal entry atomically. Do not repost the same
+        # valuation through CommerceAccountingService.
         return obj
 
     def pay(self, db, payload, kind, user_id: int | None = None):
