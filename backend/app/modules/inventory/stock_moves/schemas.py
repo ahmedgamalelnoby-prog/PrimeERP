@@ -21,6 +21,7 @@ class StockMoveCreate(BaseModel):
     source_module: str | None = Field(default=None, max_length=80)
     source_entity: str | None = Field(default=None, max_length=80)
     source_id: str | None = Field(default=None, max_length=80)
+    reservation_id: int | None = Field(default=None, gt=0)
     notes: str | None = None
 
 
