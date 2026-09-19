@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Callable, Mapping
+from typing import Callable, Mapping, Protocol
 
 
 class LifecycleError(ValueError):
@@ -61,6 +61,14 @@ class TransactionDocument:
 TransitionGuard = Callable[[TransactionDocument, str], None]
 
 
+class IdempotencyStore(Protocol):
+    """Persistent idempotency contract for multi-process deployments."""
+
+    def get(self, key: str) -> tuple[str, DocumentStatus] | None: ...
+
+    def put(self, key: str, document_id: str, target: DocumentStatus) -> None: ...
+
+
 class TransactionLifecycle:
     """Provider-neutral lifecycle state machine for transactional ERP documents.
 
@@ -96,9 +104,11 @@ class TransactionLifecycle:
         guards: Mapping[
             tuple[DocumentStatus, DocumentStatus], tuple[TransitionGuard, ...]
         ] | None = None,
+        idempotency_store: IdempotencyStore | None = None,
     ) -> None:
         self._transitions = transitions or self.DEFAULT_TRANSITIONS
         self._guards = guards or {}
+        self._idempotency_store = idempotency_store
         self._idempotency: dict[str, tuple[str, DocumentStatus]] = {}
 
     def transition(
@@ -109,12 +119,22 @@ class TransactionLifecycle:
         actor_id: str,
         reason: str | None = None,
         idempotency_key: str | None = None,
+        expected_version: int | None = None,
     ) -> LifecycleEvent:
         if not actor_id.strip():
             raise LifecycleError("actor_id is required")
 
+        if expected_version is not None and document.version != expected_version:
+            raise LifecycleError(
+                f"Stale transaction version: expected {expected_version}, current {document.version}"
+            )
+
         if idempotency_key:
-            prior = self._idempotency.get(idempotency_key)
+            prior = (
+                self._idempotency_store.get(idempotency_key)
+                if self._idempotency_store is not None
+                else self._idempotency.get(idempotency_key)
+            )
             if prior:
                 if prior != (document.document_id, target):
                     raise DuplicateIdempotencyKeyError(
@@ -171,7 +191,10 @@ class TransactionLifecycle:
             document.reversed_by = actor_id
 
         if idempotency_key:
-            self._idempotency[idempotency_key] = (document.document_id, target)
+            if self._idempotency_store is not None:
+                self._idempotency_store.put(idempotency_key, document.document_id, target)
+            else:
+                self._idempotency[idempotency_key] = (document.document_id, target)
 
         return event
 
