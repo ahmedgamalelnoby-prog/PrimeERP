@@ -66,7 +66,7 @@ def create_session(db,payload,user):
     db.add(obj); db.flush(); return obj
 
 def _line(db, session, line_id):
-    line=db.scalar(select(BankStatementLine).where(BankStatementLine.id==line_id,BankStatementLine.company_id==session.company_id,BankStatementLine.statement_id==session.statement_id))
+    line=db.scalar(select(BankStatementLine).where(BankStatementLine.id==line_id,BankStatementLine.company_id==session.company_id,BankStatementLine.statement_id==session.statement_id).with_for_update())
     if not line: raise ValueError("Statement line not found")
     return line
 
