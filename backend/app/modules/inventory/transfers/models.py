@@ -35,6 +35,8 @@ class InventoryTransferLine(Base):
     destination_location_id = Column(Integer, ForeignKey("inventory_locations.id", ondelete="RESTRICT"), nullable=False)
     quantity = Column(Numeric(18, 4), nullable=False)
     unit_cost = Column(Numeric(18, 4), nullable=False, default=0)
+    shipped_quantity = Column(Numeric(18, 4), nullable=False, default=0)
+    received_quantity = Column(Numeric(18, 4), nullable=False, default=0)
 
     transfer = relationship("InventoryTransfer", back_populates="lines")
     item = relationship("InventoryItem")
