@@ -210,8 +210,8 @@ class CommerceService:
             raise ValueError("Payment result is missing allocation identity fields")
         targets = allocations or [{"document_id": document.id, "amount": amount}]
         allocation_total = sum((Decimal(a["amount"]) for a in targets), Decimal("0"))
-        if allocation_total > amount:
-            raise ValueError("Payment allocations cannot exceed payment amount")
+        if allocation_total != amount:
+            raise ValueError("Payment allocations must equal the payment amount")
         model = SalesDocument if document_kind == "sale" else PurchaseDocument
         positive_type = "invoice" if document_kind == "sale" else "bill"
         # The source document was already locked and validated by pay(). Reuse it
