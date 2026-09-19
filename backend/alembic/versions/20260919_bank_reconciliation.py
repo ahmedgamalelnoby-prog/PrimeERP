@@ -34,6 +34,7 @@ def upgrade():
         sa.Column("currency",sa.String(10),server_default="EGP",nullable=False),sa.Column("matched_amount",sa.Numeric(18,4),server_default="0",nullable=False),sa.Column("status",sa.String(20),server_default="unmatched",nullable=False),sa.Column("created_at",sa.DateTime(timezone=True),server_default=sa.func.now(),nullable=False),
         sa.UniqueConstraint("statement_id","fingerprint",name="uq_treasury_statement_line_fingerprint"),sa.CheckConstraint("debit >= 0 AND credit >= 0",name="ck_treasury_statement_line_nonnegative"),sa.CheckConstraint("NOT (debit > 0 AND credit > 0)",name="ck_treasury_statement_line_one_side"),sa.CheckConstraint("matched_amount >= 0",name="ck_treasury_statement_line_matched"),sa.CheckConstraint("status IN ('unmatched','partial','matched')",name="ck_treasury_statement_line_status"))
     op.create_index("ix_treasury_bank_statement_lines_company_id","treasury_bank_statement_lines",["company_id"])
+    op.create_index("uq_treasury_statement_line_external_id","treasury_bank_statement_lines",["statement_id","external_id"],unique=True,postgresql_where=sa.text("external_id IS NOT NULL"))
     op.create_table("treasury_reconciliation_sessions",
         sa.Column("id",sa.Integer(),primary_key=True),sa.Column("company_id",sa.Integer(),sa.ForeignKey("companies.id",ondelete="CASCADE"),nullable=False),
         sa.Column("bank_account_id",sa.Integer(),sa.ForeignKey("treasury_bank_accounts.id",ondelete="RESTRICT"),nullable=False),sa.Column("statement_id",sa.Integer(),sa.ForeignKey("treasury_bank_statements.id",ondelete="RESTRICT"),nullable=False,unique=True),
@@ -48,4 +49,5 @@ def upgrade():
         sa.UniqueConstraint("statement_line_id","source_type","source_id",name="uq_treasury_reconciliation_match_source"),sa.CheckConstraint("amount > 0",name="ck_treasury_reconciliation_match_amount"))
     op.create_index("ix_treasury_reconciliation_matches_session_id","treasury_reconciliation_matches",["session_id"])
 def downgrade():
+    op.drop_index("uq_treasury_statement_line_external_id",table_name="treasury_bank_statement_lines")
     op.drop_table("treasury_reconciliation_matches");op.drop_table("treasury_reconciliation_sessions");op.drop_table("treasury_bank_statement_lines");op.drop_table("treasury_bank_statements");op.drop_table("treasury_bank_accounts")
