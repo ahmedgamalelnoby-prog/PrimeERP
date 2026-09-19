@@ -357,22 +357,44 @@ class CommerceService:
                 model.document_date <= as_of,
             ).order_by(model.due_date, model.id)).all())
 
-            # Aging is an as-of report. Do not use the document's current
-            # paid_total because that includes payments posted after as_of.
+            # Aging is an as-of report. Never use current paid_total and never
+            # assume the payment's primary document is its accounting target:
+            # one payment may be split across multiple invoices/bills.
             payments_by_document = {}
             if documents:
                 document_ids = [d.id for d in documents]
-                payments = db.scalars(select(CommercePayment).where(
+                document_kind = "sale" if direction == "receivable" else "purchase"
+                payments = list(db.scalars(select(CommercePayment).where(
                     CommercePayment.company_id == company_id,
-                    CommercePayment.document_kind == ("sale" if direction == "receivable" else "purchase"),
-                    CommercePayment.document_id.in_(document_ids),
+                    CommercePayment.document_kind == document_kind,
                     CommercePayment.status == "posted",
                     CommercePayment.payment_date <= as_of,
-                )).all()
+                )).all())
+                payment_ids = [p.id for p in payments]
+                allocations = list(db.scalars(select(CommercePaymentAllocation).where(
+                    CommercePaymentAllocation.company_id == company_id,
+                    CommercePaymentAllocation.payment_id.in_(payment_ids or [-1]),
+                    CommercePaymentAllocation.document_kind == document_kind,
+                    CommercePaymentAllocation.document_id.in_(document_ids),
+                    CommercePaymentAllocation.status == "active",
+                )).all())
+                allocated_payment_ids = set()
+                for allocation in allocations:
+                    allocated_payment_ids.add(allocation.payment_id)
+                    payments_by_document[allocation.document_id] = (
+                        payments_by_document.get(allocation.document_id, Decimal("0"))
+                        + Decimal(allocation.amount or 0)
+                    )
+                # Legacy payments created before allocation tracking remain
+                # supported, but only when they have no allocation rows.
                 for payment in payments:
-                    payments_by_document[payment.document_id] = payments_by_document.get(
-                        payment.document_id, Decimal("0")
-                    ) + Decimal(payment.amount or 0)
+                    if payment.id in allocated_payment_ids:
+                        continue
+                    if payment.document_id in document_ids:
+                        payments_by_document[payment.document_id] = (
+                            payments_by_document.get(payment.document_id, Decimal("0"))
+                            + Decimal(payment.amount or 0)
+                        )
 
             offsets = {}
             for note in db.scalars(select(model).where(
