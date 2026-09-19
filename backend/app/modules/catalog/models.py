@@ -93,6 +93,7 @@ class Recipe(Base):
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     product_id = Column(Integer, ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False, index=True)
     catalog_product_id = Column(Integer, ForeignKey("catalog_products.id", ondelete="RESTRICT"), nullable=True, index=True)
+    variant_id = Column(Integer, ForeignKey("product_variants.id", ondelete="RESTRICT"), nullable=True, index=True)
     code = Column(String(60), nullable=False)
     external_sku = Column(String(160), nullable=True, index=True)
     name_ar = Column(String(200), nullable=False)
@@ -103,9 +104,10 @@ class Recipe(Base):
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
-    __table_args__ = (UniqueConstraint("company_id", "code", "version", name="uq_recipe_company_code_version"), UniqueConstraint("company_id", "product_id", "version", name="uq_recipe_company_product_version"), CheckConstraint("yield_quantity > 0", name="ck_recipe_yield_positive"), CheckConstraint("waste_percentage >= 0 AND waste_percentage < 100", name="ck_recipe_waste_range"))
+    __table_args__ = (UniqueConstraint("company_id", "code", "version", name="uq_recipe_company_code_version"), UniqueConstraint("company_id", "product_id", "variant_id", "version", name="uq_recipe_company_product_variant_version"), CheckConstraint("yield_quantity > 0", name="ck_recipe_yield_positive"), CheckConstraint("waste_percentage >= 0 AND waste_percentage < 100", name="ck_recipe_waste_range"))
     product = relationship("InventoryItem")
     catalog_product = relationship("CatalogProduct")
+    variant = relationship("ProductVariant", foreign_keys=[variant_id])
     lines = relationship("RecipeLine", back_populates="recipe", cascade="all, delete-orphan", order_by="RecipeLine.line_no")
 
 
