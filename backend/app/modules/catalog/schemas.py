@@ -43,10 +43,10 @@ class CostHistoryCreate(BaseModel):
 class RecipeLineCreate(BaseModel):
     ingredient_product_id: int = Field(gt=0); quantity: Decimal = Field(gt=0); waste_percentage: Decimal = Field(default=0, ge=0, lt=100); uom_id: Optional[int] = Field(default=None, gt=0); notes: Optional[str] = Field(default=None, max_length=500)
 class RecipeCreate(BaseModel):
-    company_id: int = Field(gt=0); product_id: int = Field(gt=0); code: str = Field(min_length=1, max_length=60); name_ar: str = Field(min_length=1, max_length=200); name_en: Optional[str] = Field(default=None, max_length=200); yield_quantity: Decimal = Field(default=1, gt=0); waste_percentage: Decimal = Field(default=0, ge=0, lt=100); lines: list[RecipeLineCreate] = Field(min_length=1)
+    company_id: int = Field(gt=0); product_id: int = Field(gt=0); variant_id: Optional[int] = Field(default=None, gt=0); code: str = Field(min_length=1, max_length=60); name_ar: str = Field(min_length=1, max_length=200); name_en: Optional[str] = Field(default=None, max_length=200); yield_quantity: Decimal = Field(default=1, gt=0); waste_percentage: Decimal = Field(default=0, ge=0, lt=100); lines: list[RecipeLineCreate] = Field(min_length=1)
 class RecipeResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    id: int; company_id: int; product_id: int; code: str; name_ar: str; name_en: Optional[str]; yield_quantity: Decimal; waste_percentage: Decimal; version: int; is_active: bool; lines: list[dict]; total_cost: Decimal; cost_per_yield: Decimal
+    id: int; company_id: int; product_id: int; variant_id: Optional[int]; code: str; external_sku: Optional[str]; name_ar: str; name_en: Optional[str]; yield_quantity: Decimal; waste_percentage: Decimal; version: int; is_active: bool; lines: list[dict]; total_cost: Decimal; cost_per_yield: Decimal
 class MenuCreate(BaseModel):
     company_id: int = Field(gt=0); branch_id: Optional[int] = Field(default=None, gt=0); code: str = Field(min_length=1, max_length=60); name_ar: str = Field(min_length=1, max_length=200); name_en: Optional[str] = Field(default=None, max_length=200); description: Optional[str] = None
 class MenuItemCreate(BaseModel):
