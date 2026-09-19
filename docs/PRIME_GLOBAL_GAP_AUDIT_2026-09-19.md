@@ -155,3 +155,6 @@ It is complete only when all applicable layers exist:
 Do not add another large module until its upstream/downstream business loop is connected and tested.
 
 PrimeERP should optimize for end-to-end transaction integrity and operational usability rather than raw module count.
+
+
+<!-- Global lifecycle hardening batch applied 2026-09-19 -->
