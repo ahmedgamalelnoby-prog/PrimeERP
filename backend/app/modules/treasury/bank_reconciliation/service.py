@@ -19,6 +19,10 @@ def ensure_company(db, company_id, user):
 
 def create_account(db, payload, user):
     ensure_company(db,payload.company_id,user)
+    if payload.account_combination_id is not None:
+        from app.modules.accounting.chart_of_accounts.models import AccountCombination
+        combination=db.scalar(select(AccountCombination).where(AccountCombination.id==payload.account_combination_id, AccountCombination.company_id==payload.company_id, AccountCombination.is_active.is_(True)))
+        if not combination: raise ValueError("Account combination is outside the company or inactive")
     obj=BankAccount(**payload.model_dump())
     db.add(obj); db.flush(); return obj
 
