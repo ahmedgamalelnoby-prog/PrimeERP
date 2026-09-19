@@ -245,44 +245,54 @@ class CommerceService:
             payment = payment_result
         self._ensure_payment_allocation(db, payment, document)
         if payload.method.lower() == "cheque":
-            if not payload.cheque_number:
-                raise ValueError("Cheque number is required for cheque payments")
-            due_date = payload.cheque_due_date or payload.payment_date
-            if due_date < payload.payment_date:
-                raise ValueError("Cheque due date cannot be earlier than payment date")
-            direction = "received" if kind == "sale" else "issued"
-            now = datetime.now(timezone.utc)
-            cheque = Cheque(
-                company_id=payload.company_id,
-                partner_id=document.partner_id,
-                direction=direction,
-                cheque_number=payload.cheque_number,
-                bank_name=payload.cheque_bank_name,
-                account_number=payload.cheque_account_number,
-                cheque_date=payload.payment_date,
-                due_date=due_date,
-                amount=payload.amount,
-                currency="EGP",
-                status=direction,
-                source_payment_id=payment.id,
-                notes=payload.notes,
-                created_at=now,
-                updated_at=now,
+            # Payment idempotency can return the already-posted payment on a
+            # retry. The cheque is a side effect of that payment, so it must
+            # be created exactly once as well.
+            existing_cheque = db.scalar(
+                select(Cheque).where(
+                    Cheque.company_id == payload.company_id,
+                    Cheque.source_payment_id == payment.id,
+                ).with_for_update()
             )
-            db.add(cheque)
-            db.flush()
-            db.add(ChequeEvent(
-                company_id=payload.company_id,
-                cheque_id=cheque.id,
-                event_type="created_from_payment",
-                from_status=None,
-                to_status=direction,
-                event_date=payload.payment_date,
-                reference=payload.reference,
-                notes=payload.notes,
-                created_by=user_id,
-                created_at=now,
-            ))
+            if existing_cheque is None:
+                if not payload.cheque_number:
+                    raise ValueError("Cheque number is required for cheque payments")
+                due_date = payload.cheque_due_date or payload.payment_date
+                if due_date < payload.payment_date:
+                    raise ValueError("Cheque due date cannot be earlier than payment date")
+                direction = "received" if kind == "sale" else "issued"
+                now = datetime.now(timezone.utc)
+                cheque = Cheque(
+                    company_id=payload.company_id,
+                    partner_id=document.partner_id,
+                    direction=direction,
+                    cheque_number=payload.cheque_number,
+                    bank_name=payload.cheque_bank_name,
+                    account_number=payload.cheque_account_number,
+                    cheque_date=payload.payment_date,
+                    due_date=due_date,
+                    amount=payload.amount,
+                    currency="EGP",
+                    status=direction,
+                    source_payment_id=payment.id,
+                    notes=payload.notes,
+                    created_at=now,
+                    updated_at=now,
+                )
+                db.add(cheque)
+                db.flush()
+                db.add(ChequeEvent(
+                    company_id=payload.company_id,
+                    cheque_id=cheque.id,
+                    event_type="created_from_payment",
+                    from_status=None,
+                    to_status=direction,
+                    event_date=payload.payment_date,
+                    reference=payload.reference,
+                    notes=payload.notes,
+                    created_by=user_id,
+                    created_at=now,
+                ))
         if user_id is not None: commerce_accounting_service.post_payment(db, payment, document, user_id)
         return document, payment
 
