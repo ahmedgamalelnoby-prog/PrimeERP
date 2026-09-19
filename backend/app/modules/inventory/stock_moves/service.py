@@ -173,6 +173,17 @@ class InventoryStockMoveService:
                 raise ValueError("A positive inventory valuation is required before changing stock")
             source_balance.quantity_on_hand -= quantity
             warehouse_source.quantity_on_hand -= quantity
+            if reservation is not None:
+                # Consume the reservation atomically with the physical issue.
+                # The reservation was locked above, so no second reservation
+                # service transaction can race this decrement.
+                if Decimal(source_balance.quantity_reserved or 0) < quantity:
+                    raise ValueError("Reserved stock is insufficient for the linked reservation")
+                if Decimal(warehouse_source.quantity_reserved or 0) < quantity:
+                    raise ValueError("Warehouse reserved stock is insufficient for the linked reservation")
+                source_balance.quantity_reserved -= quantity
+                warehouse_source.quantity_reserved -= quantity
+                reservation.status = "consumed"
 
         if destination_balance:
             warehouse_destination = self._warehouse_stock(db, company_id, move.item_id, variant_id, destination_warehouse_id)
