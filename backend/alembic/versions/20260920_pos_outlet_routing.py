@@ -18,6 +18,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("company_id", sa.Integer(), sa.ForeignKey("companies.id", ondelete="CASCADE"), nullable=False),
         sa.Column("branch_id", sa.Integer(), sa.ForeignKey("branches.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("warehouse_id", sa.Integer(), sa.ForeignKey("inventory_warehouses.id", ondelete="RESTRICT"), nullable=True),
         sa.Column("code", sa.String(40), nullable=False),
         sa.Column("name", sa.String(160), nullable=False),
         sa.Column("outlet_type", sa.String(30), nullable=False, server_default="restaurant"),
