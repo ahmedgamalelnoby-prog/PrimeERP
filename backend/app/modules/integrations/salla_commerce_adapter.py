@@ -66,6 +66,8 @@ class SallaCommerceAdapter(CommerceAdapter):
             raw_methods = [raw_methods]
         total = Decimal(payload.get("total") or 0)
         cod = Decimal(payload.get("cod_amount") or 0)
+        payment_status = str(payload.get("payment_status") or "").strip().lower().replace("-", "_").replace(" ", "_")
+        order_is_paid = payment_status in {"paid", "completed", "success", "successful"}
         if raw_methods:
             for method in raw_methods:
                 if isinstance(method, dict):
@@ -74,10 +76,10 @@ class SallaCommerceAdapter(CommerceAdapter):
                     name = str(method)
                 normalized = normalize_payment_method(name)
                 amount = cod if normalized == "cod" else total
-                payments.append(CanonicalPayment(method=normalized, amount=amount, cod_amount=cod if normalized == "cod" else Decimal("0")))
+                payments.append(CanonicalPayment(method=normalized, amount=amount, paid_amount=(Decimal("0") if normalized == "cod" else amount) if order_is_paid else Decimal("0"), cod_amount=cod if normalized == "cod" else Decimal("0")))
         elif total:
             normalized = normalize_payment_method(payload.get("payment_method"))
-            payments.append(CanonicalPayment(method=normalized, amount=total, cod_amount=cod))
+            payments.append(CanonicalPayment(method=normalized, amount=total, paid_amount=(Decimal("0") if normalized == "cod" else total) if order_is_paid else Decimal("0"), cod_amount=cod))
 
         shipments = db.scalars(select(SallaShipment).where(
             SallaShipment.connection_id == connection.id,
