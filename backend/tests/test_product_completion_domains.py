@@ -292,7 +292,7 @@ def test_purchase_payment_reversal_is_exact_accounting_opposite(monkeypatch):
 
 def test_payment_auto_wht_uses_product_tax_profile_result(monkeypatch):
     service = CommerceService()
-    document = SimpleNamespace(id=55)
+    document = SimpleNamespace(id=55, total=Decimal('1140.00'), paid_total=Decimal('0'))
     captured = {}
 
     monkeypatch.setattr(service, '_auto_payment_wht', lambda db, **kwargs: Decimal('11.40'))
