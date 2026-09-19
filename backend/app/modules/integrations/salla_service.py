@@ -276,7 +276,7 @@ def normalize_salla_event(db: Session, event: IntegrationEvent) -> dict[str, int
         before = db.query(SallaProductVariant).filter(SallaProductVariant.company_id == event.company_id, SallaProductVariant.connection_id == event.connection_id).count()
         obj = _normalize_product(db, event.company_id, event.connection_id, data)
         counters["products"] = int(obj is not None)
-        counters["variants"] = db.query(SallaProductVariant).filter(SallaProductVariant.connection_id == event.connection_id).count() - before
+        counters["variants"] = db.query(SallaProductVariant).filter(SallaProductVariant.company_id == event.company_id, SallaProductVariant.connection_id == event.connection_id).count() - before
         mapping_result = getattr(obj, "_mapping_result", {}) if obj else {}
         counters["product_mapped"] = int(mapping_result.get("product_mapped", 0))
         counters["variants_mapped"] = int(mapping_result.get("variants_mapped", 0))
