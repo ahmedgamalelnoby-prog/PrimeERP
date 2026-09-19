@@ -473,3 +473,18 @@ def test_inventory_fifo_recalculation_and_destination_reversal_are_variant_scope
     assert "InventoryCostLayer.variant_id == variant_id" in reverse
     assert "InventoryCostLayer.variant_id.is_(None)" in recalc
     assert "InventoryCostLayer.variant_id.is_(None)" in reverse
+
+
+def test_stock_move_reservation_contract_is_atomic_and_exact():
+    import inspect
+    from app.modules.inventory.stock_moves.service import InventoryStockMoveService
+
+    source = inspect.getsource(InventoryStockMoveService.post)
+    assert "InventoryReservation" in source
+    assert "with_for_update()" in source
+    assert "reservation.status != " + '"active"' in source
+    assert "reservation.item_id != move.item_id" in source
+    assert "Decimal(reservation.quantity) != Decimal(move.quantity)" in source
+    assert "source_balance.quantity_reserved -= quantity" in source
+    assert "warehouse_source.quantity_reserved -= quantity" in source
+    assert 'reservation.status = "consumed"' in source
