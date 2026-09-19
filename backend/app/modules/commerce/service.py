@@ -229,8 +229,6 @@ class CommerceService:
         return document, payment, reversal
 
 
-commerce_service = CommerceService()
-
     def ar_ap_aging(self, db, company_id: int, as_of):
         rows = []
         for model, direction in ((SalesDocument, "receivable"), (PurchaseDocument, "payable")):
@@ -252,3 +250,6 @@ commerce_service = CommerceService()
                     "days_overdue": days_overdue, "bucket": bucket,
                 })
         return rows
+
+
+commerce_service = CommerceService()
