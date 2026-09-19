@@ -350,21 +350,42 @@ class CommerceService:
         for model, direction in ((SalesDocument, "receivable"), (PurchaseDocument, "payable")):
             positive_type = "invoice" if direction == "receivable" else "bill"
             offset_type = "credit_note" if direction == "receivable" else "debit_note"
-            documents = db.scalars(select(model).where(
+            documents = list(db.scalars(select(model).where(
                 model.company_id == company_id,
                 model.document_type == positive_type,
                 model.status.in_({"confirmed", "posted"}),
-                model.total > model.paid_total,
-            ).order_by(model.due_date, model.id)).all()
+                model.document_date <= as_of,
+            ).order_by(model.due_date, model.id)).all())
+
+            # Aging is an as-of report. Do not use the document's current
+            # paid_total because that includes payments posted after as_of.
+            payments_by_document = {}
+            if documents:
+                document_ids = [d.id for d in documents]
+                payments = db.scalars(select(CommercePayment).where(
+                    CommercePayment.company_id == company_id,
+                    CommercePayment.document_kind == ("sale" if direction == "receivable" else "purchase"),
+                    CommercePayment.document_id.in_(document_ids),
+                    CommercePayment.status == "posted",
+                    CommercePayment.payment_date <= as_of,
+                )).all()
+                for payment in payments:
+                    payments_by_document[payment.document_id] = payments_by_document.get(
+                        payment.document_id, Decimal("0")
+                    ) + Decimal(payment.amount or 0)
+
             offsets = {}
             for note in db.scalars(select(model).where(
                 model.company_id == company_id,
                 model.document_type == offset_type,
                 model.status.in_({"confirmed", "posted"}),
+                model.document_date <= as_of,
             )).all():
                 offsets[note.partner_id] = offsets.get(note.partner_id, Decimal("0")) + Decimal(note.total or 0)
+
             for document in documents:
-                outstanding = Decimal(document.total or 0) - Decimal(document.paid_total or 0)
+                paid_as_of = payments_by_document.get(document.id, Decimal("0"))
+                outstanding = Decimal(document.total or 0) - paid_as_of
                 partner_offset = offsets.get(document.partner_id, Decimal("0"))
                 if partner_offset > 0:
                     applied = min(outstanding, partner_offset)
@@ -374,12 +395,25 @@ class CommerceService:
                     continue
                 due_date = document.due_date or document.document_date
                 days_overdue = max((as_of - due_date).days, 0)
-                bucket = "current" if days_overdue == 0 else "1-30" if days_overdue <= 30 else "31-60" if days_overdue <= 60 else "61-90" if days_overdue <= 90 else "91+"
+                bucket = (
+                    "current" if days_overdue == 0 else
+                    "1-30" if days_overdue <= 30 else
+                    "31-60" if days_overdue <= 60 else
+                    "61-90" if days_overdue <= 90 else
+                    "91+"
+                )
                 rows.append({
-                    "direction": direction, "document_id": document.id, "document_number": document.number,
-                    "partner_id": document.partner_id, "document_date": document.document_date, "due_date": due_date,
-                    "total": document.total, "paid_total": Decimal(document.total or 0) - outstanding, "outstanding": outstanding,
-                    "days_overdue": days_overdue, "bucket": bucket,
+                    "direction": direction,
+                    "document_id": document.id,
+                    "document_number": document.number,
+                    "partner_id": document.partner_id,
+                    "document_date": document.document_date,
+                    "due_date": due_date,
+                    "total": document.total,
+                    "paid_total": paid_as_of,
+                    "outstanding": outstanding,
+                    "days_overdue": days_overdue,
+                    "bucket": bucket,
                 })
         return rows
 
