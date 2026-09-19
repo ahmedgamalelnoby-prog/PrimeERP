@@ -577,7 +577,7 @@ def test_salla_imported_terminal_shipment_replays_canonical_lifecycle():
     assert "shipping_status_service.apply_transition(" in source
     assert "obj.status = _advance_status(obj.status, target_status)" not in source
     assert salla_shipping_service._STATUS_MAP.get("shipped") == "shipped"
-    assert '"picked_up": "shipped"' in source
+    assert salla_shipping_service._STATUS_MAP.get("picked_up") == "shipped"
 
 
 def test_salla_sync_upsert_enforces_company_scoped_active_connection():
