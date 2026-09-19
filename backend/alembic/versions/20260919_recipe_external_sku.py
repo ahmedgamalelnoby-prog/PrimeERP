@@ -10,7 +10,6 @@ depends_on = None
 def upgrade() -> None:
     op.add_column("recipes", sa.Column("external_sku", sa.String(160), nullable=True))
     op.create_index("ix_recipes_company_external_sku", "recipes", ["company_id", "external_sku"])
-    op.create_unique_constraint("uq_recipe_company_external_sku", "recipes", ["company_id", "external_sku"])
 
     # Existing commercial-product recipes inherit the external SKU already
     # captured by an integration product mapping. This is intentionally
@@ -34,6 +33,5 @@ def upgrade() -> None:
     """))
 
 def downgrade() -> None:
-    op.drop_constraint("uq_recipe_company_external_sku", "recipes", type_="unique")
     op.drop_index("ix_recipes_company_external_sku", table_name="recipes")
     op.drop_column("recipes", "external_sku")
