@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.modules.accounting.chart_of_accounts.models import AccountCombination, AccountingCostCenter, AccountingDepartment
+from app.modules.accounting.posting_engine import PostingLine, PostingValidationError, reversal_lines, validate_balanced
 from app.modules.accounting.fiscal_years.repositories.fiscal_year_repository import fiscal_year_repository
 from app.modules.accounting.journals.models import JournalEntry, JournalEntryLine
 from app.modules.accounting.journals.repositories.journal_repository import journal_repository
@@ -61,19 +62,27 @@ class JournalService:
             cost_centers = db.scalars(select(AccountingCostCenter).where(AccountingCostCenter.id.in_(cost_center_ids), AccountingCostCenter.company_id == company_id, AccountingCostCenter.is_active.is_(True))).all()
             if len(cost_centers) != len(cost_center_ids):
                 raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Every cost center must belong to the selected company and be active")
-        debit = Decimal("0")
-        credit = Decimal("0")
+        posting_lines = [
+            PostingLine(
+                account_combination_id=int(payload["account_combination_id"]),
+                debit=Decimal(str(payload.get("debit", 0))),
+                credit=Decimal(str(payload.get("credit", 0))),
+                department_id=payload.get("department_id"),
+                cost_center_id=payload.get("cost_center_id"),
+            )
+            for payload in lines
+        ]
+        try:
+            debit, credit = validate_balanced(posting_lines)
+        except PostingValidationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
+
         entry = JournalEntry(tenant_id=tenant_id, company_id=company_id, branch_id=branch_id, journal_id=journal_id, fiscal_year_id=fiscal_year_id, period_id=period_id, entry_number=entry_number.strip(), entry_date=entry_date, description=description.strip(), currency_code=currency_code.upper(), exchange_rate=exchange_rate, reference=reference.strip() if reference else None, source_module=source_module, source_entity=source_entity, source_id=source_id, created_by=user_id, status="draft")
-        for number, payload in enumerate(lines, start=1):
-            line_debit = Decimal(str(payload.get("debit", 0)))
-            line_credit = Decimal(str(payload.get("credit", 0)))
-            if line_debit < 0 or line_credit < 0 or (line_debit > 0 and line_credit > 0) or (line_debit == 0 and line_credit == 0):
-                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid amount on journal line {number}")
-            debit += line_debit
-            credit += line_credit
-            entry.lines.append(JournalEntryLine(tenant_id=tenant_id, company_id=company_id, line_number=number, account_combination_id=int(payload["account_combination_id"]), department_id=payload.get("department_id"), cost_center_id=payload.get("cost_center_id"), description=payload.get("description"), reference=payload.get("reference"), debit=line_debit, credit=line_credit, currency_code=currency_code.upper(), exchange_rate=exchange_rate, base_debit=line_debit * exchange_rate, base_credit=line_credit * exchange_rate))
-        if debit != credit:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Journal entry must be balanced: total debit must equal total credit")
+        for number, (payload, posting_line) in enumerate(zip(lines, posting_lines), start=1):
+            entry.lines.append(JournalEntryLine(tenant_id=tenant_id, company_id=company_id, line_number=number, account_combination_id=posting_line.account_combination_id, department_id=posting_line.department_id, cost_center_id=posting_line.cost_center_id, description=payload.get("description"), reference=payload.get("reference"), debit=posting_line.debit, credit=posting_line.credit, currency_code=currency_code.upper(), exchange_rate=exchange_rate, base_debit=posting_line.debit * exchange_rate, base_credit=posting_line.credit * exchange_rate))
         entry.total_debit = debit
         entry.total_credit = credit
         db.add(entry)
@@ -115,22 +124,31 @@ class JournalService:
         if not (period.start_date <= entry.entry_date <= period.end_date):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Entry date is outside the posting period")
 
-        debit, credit = db.execute(
-            select(
-                func.coalesce(func.sum(JournalEntryLine.debit), 0),
-                func.coalesce(func.sum(JournalEntryLine.credit), 0),
-            ).where(
+        db_lines = db.scalars(
+            select(JournalEntryLine)
+            .where(
                 JournalEntryLine.tenant_id == tenant_id,
                 JournalEntryLine.company_id == entry.company_id,
                 JournalEntryLine.entry_id == entry.id,
             )
-        ).one()
-        debit = Decimal(str(debit))
-        credit = Decimal(str(credit))
-        if debit != credit:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Cannot post an unbalanced journal entry")
-        if debit < 0 or credit < 0:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Journal totals cannot be negative")
+            .order_by(JournalEntryLine.line_number)
+        ).all()
+        try:
+            debit, credit = validate_balanced([
+                PostingLine(
+                    account_combination_id=line.account_combination_id,
+                    debit=Decimal(str(line.debit or 0)),
+                    credit=Decimal(str(line.credit or 0)),
+                    department_id=line.department_id,
+                    cost_center_id=line.cost_center_id,
+                )
+                for line in db_lines
+            ])
+        except PostingValidationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
         entry.total_debit = debit
         entry.total_credit = credit
         entry.status = "posted"; entry.posting_date = entry.entry_date; entry.posted_by = user_id; entry.posted_at = datetime.now(timezone.utc)
@@ -192,29 +210,40 @@ class JournalService:
             posted_at=datetime.now(timezone.utc),
             status="posted",
         )
-        debit = Decimal("0")
-        credit = Decimal("0")
-        for number, line in enumerate(lines, start=1):
-            debit += Decimal(str(line.credit or 0))
-            credit += Decimal(str(line.debit or 0))
+        try:
+            reversed_payload = reversal_lines([
+                PostingLine(
+                    account_combination_id=line.account_combination_id,
+                    debit=Decimal(str(line.debit or 0)),
+                    credit=Decimal(str(line.credit or 0)),
+                    department_id=line.department_id,
+                    cost_center_id=line.cost_center_id,
+                )
+                for line in lines
+            ])
+            debit, credit = validate_balanced(reversed_payload)
+        except PostingValidationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
+        for number, (line, reversed_line) in enumerate(zip(lines, reversed_payload), start=1):
             reversal.lines.append(JournalEntryLine(
                 tenant_id=tenant_id,
                 company_id=original.company_id,
                 line_number=number,
-                account_combination_id=line.account_combination_id,
-                department_id=line.department_id,
-                cost_center_id=line.cost_center_id,
+                account_combination_id=reversed_line.account_combination_id,
+                department_id=reversed_line.department_id,
+                cost_center_id=reversed_line.cost_center_id,
                 description=f"Reversal: {line.description}" if line.description else "Reversal",
                 reference=original.entry_number,
-                debit=Decimal(str(line.credit or 0)),
-                credit=Decimal(str(line.debit or 0)),
+                debit=reversed_line.debit,
+                credit=reversed_line.credit,
                 currency_code=line.currency_code,
                 exchange_rate=line.exchange_rate,
                 base_debit=Decimal(str(line.base_credit or 0)),
                 base_credit=Decimal(str(line.base_debit or 0)),
             ))
-        if debit != credit:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Reversal entry is not balanced")
         reversal.total_debit = debit
         reversal.total_credit = credit
         db.add(reversal)
