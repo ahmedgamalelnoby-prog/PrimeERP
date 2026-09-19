@@ -150,18 +150,23 @@ def refresh_session(session, db=None):
         if db is not None:
             unmatched = db.scalar(select(func.count(BankStatementLine.id)).where(
                 BankStatementLine.statement_id==session.statement_id,
+                BankStatementLine.company_id==session.company_id,
                 BankStatementLine.status!="matched",
             )) or 0
         session.status="balanced" if session.difference==0 and unmatched==0 else "open"
 
 def close_session(db,session,user):
-    statement=db.get(BankStatement,session.statement_id)
+    statement=db.scalar(select(BankStatement).where(
+        BankStatement.id==session.statement_id,
+        BankStatement.company_id==session.company_id,
+        BankStatement.bank_account_id==session.bank_account_id,
+    ).with_for_update())
     if not statement: raise ValueError("Bank statement not found")
     if not statement_is_balanced(statement, db): raise ValueError("Bank statement opening balance plus net transactions does not equal closing balance")
     refresh_session(session, db)
     if session.status!="balanced": raise ValueError("Reconciliation can only be closed when balanced and all statement lines are matched")
     session.status="closed"; session.closed_by=user.id; session.closed_at=datetime.utcnow()
-    st=db.get(BankStatement,session.statement_id); st.status="closed"
+    st=statement; st.status="closed"
     db.flush(); return session
 
 
@@ -169,7 +174,12 @@ def unmatch(db, session, match_id):
     if session.status=="closed": raise ValueError("Closed reconciliation is immutable")
     obj=db.scalar(select(ReconciliationMatch).where(ReconciliationMatch.id==match_id,ReconciliationMatch.session_id==session.id,ReconciliationMatch.company_id==session.company_id))
     if not obj: raise ValueError("Reconciliation match not found")
-    line=db.get(BankStatementLine,obj.statement_line_id)
+    line=db.scalar(select(BankStatementLine).where(
+        BankStatementLine.id==obj.statement_line_id,
+        BankStatementLine.company_id==session.company_id,
+        BankStatementLine.statement_id==session.statement_id,
+    ).with_for_update())
+    if not line: raise ValueError("Statement line not found")
     line.matched_amount -= obj.amount
     total=(line.debit if line.debit else line.credit)
     line.status="matched" if line.matched_amount==total else ("partial" if line.matched_amount>0 else "unmatched")
