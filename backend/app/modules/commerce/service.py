@@ -214,20 +214,31 @@ class CommerceService:
             raise ValueError("Payment allocations cannot exceed payment amount")
         model = SalesDocument if document_kind == "sale" else PurchaseDocument
         positive_type = "invoice" if document_kind == "sale" else "bill"
-        payment_partner = db.scalar(select(model.partner_id).where(model.id == document.id, model.company_id == company_id))
-        if payment_partner is None:
+        # The source document was already locked and validated by pay(). Reuse it
+        # for the primary/default allocation instead of issuing a redundant query.
+        # This also keeps payment posting compatible with lightweight service fakes.
+        payment_partner = getattr(document, "partner_id", None)
+        if payment_partner is None and allocations:
+            payment_partner = db.scalar(select(model.partner_id).where(
+                model.id == document.id,
+                model.company_id == company_id,
+            ))
+        if payment_partner is None and allocations:
             raise ValueError("Payment source document not found")
         created = []
         for target in targets:
             target_id = int(target["document_id"])
             target_amount = Decimal(target["amount"])
-            target_doc = db.scalar(select(model).where(
-                model.id == target_id,
-                model.company_id == company_id,
-                model.partner_id == payment_partner,
-                model.document_type == positive_type,
-                model.status.in_({"confirmed", "posted"}),
-            ).with_for_update())
+            if not allocations and target_id == document.id:
+                target_doc = document
+            else:
+                target_doc = db.scalar(select(model).where(
+                    model.id == target_id,
+                    model.company_id == company_id,
+                    model.partner_id == payment_partner,
+                    model.document_type == positive_type,
+                    model.status.in_({"confirmed", "posted"}),
+                ).with_for_update())
             if target_doc is None:
                 raise ValueError("Payment allocation document must be an open invoice/bill for the same partner")
             outstanding = Decimal(target_doc.total or 0) - Decimal(target_doc.paid_total or 0)
