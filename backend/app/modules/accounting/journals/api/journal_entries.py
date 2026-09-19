@@ -21,6 +21,7 @@ router = APIRouter(
 
 class JournalReversalRequest(BaseModel):
     reversal_date: date | None = None
+    reason: str = Field(min_length=1, max_length=1000)
     description: str | None = Field(default=None, max_length=2000)
 
 
@@ -100,6 +101,7 @@ def reverse_entry(entry_id: int, payload: JournalReversalRequest | None = None, 
         user_id=current_user.id,
         reversal_date=request.reversal_date,
         description=request.description,
+        reason=request.reason,
     )
 
 
