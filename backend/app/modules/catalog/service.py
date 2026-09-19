@@ -219,6 +219,36 @@ class CatalogService:
         db.refresh(recipe)
         return self.get_recipe(db, payload.company_id, recipe.id)
 
+    def get_recipe_by_external_sku(self, db: Session, company_id: int, external_sku: str):
+        self._company(db, company_id)
+        value = (external_sku or "").strip()
+        if not value:
+            raise ValueError("External SKU is required")
+        recipe = db.scalar(
+            select(Recipe)
+            .options(selectinload(Recipe.lines))
+            .where(
+                Recipe.company_id == company_id,
+                Recipe.external_sku == value,
+                Recipe.is_active.is_(True),
+            )
+            .order_by(Recipe.version.desc())
+            .limit(1)
+        )
+        if recipe is None:
+            raise ValueError("Active recipe not found for external SKU")
+        product = self._product(db, company_id, recipe.product_id)
+        if recipe.catalog_product_id is not None:
+            catalog_product = db.scalar(select(CatalogProduct).where(
+                CatalogProduct.id == recipe.catalog_product_id,
+                CatalogProduct.company_id == company_id,
+                CatalogProduct.item_id == product.id,
+                CatalogProduct.is_active.is_(True),
+            ))
+            if catalog_product is None:
+                raise ValueError("Recipe commercial product identity is invalid")
+        return recipe
+
     def get_recipe(self, db: Session, company_id: int, recipe_id: int):
         recipe = db.scalar(select(Recipe).options(selectinload(Recipe.lines)).where(Recipe.id == recipe_id, Recipe.company_id == company_id))
         if recipe is None:
