@@ -9,7 +9,7 @@ from app.modules.identity.models import User
 from app.modules.accounting.tax_engine import calculate_taxes
 from app.modules.commerce.accounting_service import commerce_accounting_service
 from app.modules.catalog.models import ProductVariant
-from app.modules.commerce.models import BusinessPartner, CommercePayment, PurchaseBillReceiptLink, PurchaseDocument, PurchaseLine, SalesDocument, SalesLine
+from app.modules.commerce.models import BusinessPartner, CommercePayment, CommercePaymentAllocation, PurchaseBillReceiptLink, PurchaseDocument, PurchaseLine, SalesDocument, SalesLine
 from app.modules.commerce.payment_workflow import post_payment, reverse_payment
 from app.modules.inventory.items.models import InventoryItem
 from app.modules.inventory.locations.models import InventoryLocation
@@ -195,6 +195,26 @@ class CommerceService:
         obj.status = "fulfilled" if kind == "sale" else "received"; db.flush()
         return obj
 
+    def _ensure_payment_allocation(self, db, payment, document):
+        allocation = db.scalar(select(CommercePaymentAllocation).where(
+            CommercePaymentAllocation.company_id == payment.company_id,
+            CommercePaymentAllocation.payment_id == payment.id,
+        ).with_for_update())
+        if allocation is None:
+            allocation = CommercePaymentAllocation(
+                company_id=payment.company_id,
+                payment_id=payment.id,
+                document_kind=payment.document_kind,
+                document_id=payment.document_id,
+                amount=Decimal(payment.amount),
+                status="active",
+            )
+            db.add(allocation)
+            db.flush()
+        elif allocation.document_id != document.id or allocation.document_kind != payment.document_kind:
+            raise ValueError("Payment allocation is inconsistent with its source document")
+        return allocation
+
     def pay(self, db, payload, kind, user_id: int | None = None):
         model = SalesDocument if kind == "sale" else PurchaseDocument; allowed_types = {"invoice"} if kind == "sale" else {"bill"}
         document = db.scalar(select(model).where(model.id == payload.document_id, model.company_id == payload.company_id).with_for_update())
@@ -210,6 +230,7 @@ class CommerceService:
             document, payment = payment_result
         else:
             payment = payment_result
+        self._ensure_payment_allocation(db, payment, document)
         if payload.method.lower() == "cheque":
             if not payload.cheque_number:
                 raise ValueError("Cheque number is required for cheque payments")
