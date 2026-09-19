@@ -1,7 +1,7 @@
 # PrimeERP Global Gap Audit — 2026-09-19
 
 ## Scope
-Audited the current PrimeERP source tree on `feature/salla-public-app-primeerp-20260919` (commit `8530c9bf40f4c9b0d8883addab1f37b205653426`) against the functional surfaces expected in mature ERP products such as Odoo, Microsoft Dynamics 365 Business Central, SAP Business One and Oracle NetSuite.
+Initial audit snapshot was taken from `feature/salla-public-app-primeerp-20260919` (commit `8530c9bf40f4c9b0d8883addab1f37b205653426`). This branch now carries the follow-up global-gap implementation work. against the functional surfaces expected in mature ERP products such as Odoo, Microsoft Dynamics 365 Business Central, SAP Business One and Oracle NetSuite.
 
 This is a product/architecture gap analysis, not a claim of feature parity.
 
@@ -35,7 +35,8 @@ Complete invoice -> receivable/payable -> payment -> allocation -> reconciliatio
 Add credit/debit notes, write-off approval, residual calculation and automatic matching.
 
 ### 4. Bank/cash reconciliation
-Status: GAP/PARTIAL
+Status: PARTIAL — foundation implemented in this phase
+Implemented in the current phase: bank accounts, statements, statement lines, reconciliation sessions, matching candidates, manual matching primitives, duplicate fingerprints, tenant/company scope and reconciliation APIs/UI. Remaining: bank fees/transfers accounting, richer tolerance/partner matching, immutable accounting linkage and full integration/E2E coverage.
 Need statement import, matching rules, manual matching, unmatched queue, bank fees, transfers and reconciliation close.
 
 ### 5. Inventory/WMS integrity
@@ -44,7 +45,8 @@ Complete receipt, putaway, picking, packing, dispatch, transfer, returns, cycle 
 Costing must be explicit and tested for FIFO, weighted average, standard/actual cost and inventory revaluation/adjustment.
 
 ### 6. Master Product/SKU engine
-Status: PARTIAL
+Status: PARTIAL — strengthened in this phase
+Implemented in the current phase: commercial catalog identity binding for recipes, dedicated company-scoped Recipe SKU mappings, parent/variant recipe identity, Salla parent/variant SKU reconciliation, retry-on-failure for SKU-bearing Salla products, and concurrency-safe SKU binding. Remaining: supplier/channel mappings beyond Salla, packaging/accounting mappings, and full end-to-end database integration coverage.
 SKU must be the stable identity across product, variants, barcode, UOM, price, tax, recipe/BOM, inventory, sales, purchasing, POS and external channels.
 Add supplier mappings, channel mappings, packaging and accounting mappings.
 
