@@ -16,7 +16,7 @@ def upgrade():
         sa.Column("account_number",sa.String(100)),sa.Column("currency",sa.String(10),server_default="EGP",nullable=False),
         sa.Column("opening_balance",sa.Numeric(18,4),server_default="0",nullable=False),sa.Column("is_active",sa.Boolean(),server_default=sa.true(),nullable=False),
         sa.Column("created_at",sa.DateTime(timezone=True),server_default=sa.func.now(),nullable=False),sa.Column("updated_at",sa.DateTime(timezone=True),server_default=sa.func.now(),nullable=False),
-        sa.UniqueConstraint("company_id","name",name="uq_treasury_bank_account_company_name"),sa.CheckConstraint("opening_balance >= 0",name="ck_treasury_bank_account_opening_balance"))
+        sa.UniqueConstraint("company_id","name",name="uq_treasury_bank_account_company_name"))
     op.create_index("ix_treasury_bank_accounts_company_id","treasury_bank_accounts",["company_id"])
     op.create_table("treasury_bank_statements",
         sa.Column("id",sa.Integer(),primary_key=True),sa.Column("company_id",sa.Integer(),sa.ForeignKey("companies.id",ondelete="CASCADE"),nullable=False),
