@@ -58,7 +58,7 @@ class ShippingSettlementService:
             shipment = by_id[line.shipment_id]
             if shipment.status != "delivered":
                 raise ValueError(f"Shipment {shipment.id} must be delivered before COD settlement")
-            if db.scalar(select(ShippingShipmentSettlement.id).where(ShippingShipmentSettlement.shipment_id == shipment.id)):
+            if db.scalar(select(ShippingShipmentSettlement.id).where(ShippingShipmentSettlement.shipment_id == shipment.id, ShippingShipmentSettlement.batch_id.in_(select(ShippingSettlementBatch.id).where(ShippingSettlementBatch.company_id == payload.company_id)))):
                 raise ValueError(f"Shipment {shipment.id} is already settled")
             expected = Decimal(shipment.cod_amount or 0)
             collected = Decimal(line.collected_amount)
