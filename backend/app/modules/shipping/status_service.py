@@ -69,6 +69,10 @@ class ShippingStatusService:
 
     def apply_transition(self, db: Session, shipment: Shipment, new_status: str, changed_on: date | None = None, user_id: int | None = None) -> list[ShippingFinancialEvent]:
         changed_on = changed_on or date.today()
+        shipment_locked = db.scalar(select(Shipment).where(Shipment.id == shipment.id, Shipment.company_id == shipment.company_id).with_for_update())
+        if shipment_locked is None:
+            raise ValueError("Shipment not found")
+        shipment = shipment_locked
         self.ensure_defaults(db, shipment.company_id)
         status = db.scalar(select(ShippingOrderStatus).where(
             ShippingOrderStatus.company_id == shipment.company_id,
