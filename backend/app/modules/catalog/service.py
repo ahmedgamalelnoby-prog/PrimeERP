@@ -198,6 +198,16 @@ class CatalogService:
         catalog_product = db.scalar(select(CatalogProduct).where(CatalogProduct.company_id == payload.company_id, CatalogProduct.item_id == product.id, CatalogProduct.is_active.is_(True)))
         if catalog_product is None:
             raise ValueError("A catalog product identity is required before creating a recipe")
+        variant = None
+        if payload.variant_id is not None:
+            variant = db.scalar(select(ProductVariant).where(
+                ProductVariant.id == payload.variant_id,
+                ProductVariant.company_id == payload.company_id,
+                ProductVariant.product_id == payload.product_id,
+                ProductVariant.is_active.is_(True),
+            ))
+            if variant is None:
+                raise ValueError("Recipe variant does not belong to the recipe product")
         ingredient_ids = [line.ingredient_product_id for line in payload.lines]
         if len(ingredient_ids) != len(set(ingredient_ids)):
             raise ValueError("Duplicate ingredient products are not allowed in one recipe")
@@ -209,11 +219,16 @@ class CatalogService:
         ingredient_by_id = {item.id: item for item in ingredients}
         if self._recipe_would_cycle(db, payload.company_id, payload.product_id, ingredient_ids):
             raise ValueError("Recipe would create an indirect product recipe cycle")
-        current = db.scalar(select(Recipe).where(Recipe.company_id == payload.company_id, Recipe.product_id == payload.product_id, Recipe.is_active.is_(True)).order_by(Recipe.version.desc()).limit(1).with_for_update())
+        current_query = select(Recipe).where(Recipe.company_id == payload.company_id, Recipe.product_id == payload.product_id, Recipe.is_active.is_(True))
+        if payload.variant_id is None:
+            current_query = current_query.where(Recipe.variant_id.is_(None))
+        else:
+            current_query = current_query.where(Recipe.variant_id == payload.variant_id)
+        current = db.scalar(current_query.order_by(Recipe.version.desc()).limit(1).with_for_update())
         version = (current.version + 1) if current else 1
         if current:
             current.is_active = False
-        recipe = Recipe(company_id=payload.company_id, product_id=payload.product_id, catalog_product_id=catalog_product.id, code=payload.code, name_ar=payload.name_ar, name_en=payload.name_en, yield_quantity=payload.yield_quantity, waste_percentage=payload.waste_percentage, version=version, is_active=True)
+        recipe = Recipe(company_id=payload.company_id, product_id=payload.product_id, variant_id=payload.variant_id, catalog_product_id=catalog_product.id, code=payload.code, name_ar=payload.name_ar, name_en=payload.name_en, yield_quantity=payload.yield_quantity, waste_percentage=payload.waste_percentage, version=version, is_active=True)
         for line_no, line in enumerate(payload.lines, start=1):
             factor = self._recipe_line_conversion(db, payload.company_id, ingredient_by_id[line.ingredient_product_id], line.uom_id)
             recipe.lines.append(RecipeLine(line_no=line_no, **line.model_dump(), conversion_factor_to_product_uom=factor))
