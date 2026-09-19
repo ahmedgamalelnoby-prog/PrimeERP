@@ -566,3 +566,25 @@ def test_salla_shipment_updates_use_canonical_shipping_lifecycle():
     assert "shipping_status_service.apply_transition" in source
     assert "_system_user_id(db, salla_shipment.company_id)" in source
     assert "existing.status = _advance_status" not in source
+
+
+def test_salla_imported_terminal_shipment_replays_canonical_lifecycle():
+    import inspect
+    from app.modules.integrations import salla_shipping_service
+
+    source = inspect.getsource(salla_shipping_service.sync_salla_shipment)
+    assert "canonical_path = [" in source
+    assert "shipping_status_service.apply_transition(" in source
+    assert "obj.status = _advance_status(obj.status, target_status)" not in source
+    assert '"shipped": "shipped"' in source
+    assert '"picked_up": "shipped"' in source
+
+
+def test_salla_sync_upsert_enforces_company_scoped_active_connection():
+    import inspect
+    from app.modules.integrations import salla_service
+
+    source = inspect.getsource(salla_service._upsert)
+    assert "IntegrationConnection.company_id == company_id" in source
+    assert "IntegrationConnection.is_active.is_(True)" in source
+    assert "model.company_id == company_id" in source
