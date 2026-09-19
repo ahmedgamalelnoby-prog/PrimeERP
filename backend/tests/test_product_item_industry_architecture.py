@@ -46,3 +46,8 @@ def test_integration_product_mapping_points_to_commercial_product_identity():
 def test_commerce_adapter_registry_is_provider_neutral_and_has_salla_builtin():
     from app.modules.integrations.commerce_registry import registry
     assert "salla" in registry.providers()
+
+
+def test_recipe_external_sku_is_part_of_recipe_identity_without_replacing_internal_code():
+    assert Recipe.__table__.c.external_sku is not None
+    assert Recipe.__table__.c.code is not None
