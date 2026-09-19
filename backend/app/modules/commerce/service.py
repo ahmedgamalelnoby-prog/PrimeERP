@@ -274,7 +274,8 @@ class CommerceService:
             document, payment = payment_result
         else:
             payment = payment_result
-        allocations = getattr(payload, "allocations", None) or None\n        self._ensure_payment_allocation(db, payment, document, [a.model_dump() for a in allocations] if allocations else None)
+        allocations = getattr(payload, "allocations", None) or None
+        self._ensure_payment_allocation(db, payment, document, [a.model_dump() for a in allocations] if allocations else None)
         if payload.method.lower() == "cheque":
             # Payment idempotency can return the already-posted payment on a
             # retry. The cheque is a side effect of that payment, so it must
