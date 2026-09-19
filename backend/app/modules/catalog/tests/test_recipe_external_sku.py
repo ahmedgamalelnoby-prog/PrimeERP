@@ -61,7 +61,7 @@ def test_recipe_sku_mapping_supports_parent_and_variant_skus():
 def test_recipe_sku_mapping_is_variant_aware_and_rejects_unmapped_sku_variants():
     mapping = (ROOT / "modules/integrations/salla_product_mapping_service.py").read_text(encoding="utf-8")
     model = (ROOT / "modules/catalog/models.py").read_text(encoding="utf-8")
-    migration = (ROOT / "../alembic/versions/20260919_recipe_variant_identity.py").read_text(encoding="utf-8")
+    migration = (ROOT / "../../../alembic/versions/20260919_recipe_variant_identity.py").read_text(encoding="utf-8")
     assert "Recipe.variant_id.is_(None)" in mapping
     assert "Salla variant SKU requires a matching ERP product variant before mapping" in mapping
     assert "Salla variant SKU requires an external variant identity before mapping" in mapping
