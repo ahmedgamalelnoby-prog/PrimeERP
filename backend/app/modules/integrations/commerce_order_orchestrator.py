@@ -17,6 +17,10 @@ from app.modules.integrations.commerce_registry import registry
 from app.modules.integrations.models import IntegrationConnection, IntegrationMapping, IntegrationProductMapping
 from app.modules.companies.models import Company
 from app.modules.identity.models import User
+from app.modules.commerce.payment_workflow import post_payment
+from app.modules.commerce.accounting_service import commerce_accounting_service
+from app.modules.shipping.models import Shipment, ShippingMethod
+from app.modules.shipping.integration import find_mapped_carrier
 
 def _date(value: Any) -> date:
     if isinstance(value, date): return value
@@ -109,6 +113,74 @@ class CommerceOrderOrchestrator:
                 raise ValueError("No active tenant user is available for ERP posting")
             user_id = user.id
         commerce_service.confirm(db, connection.company_id, document.id, "sale", user_id=user_id)
+        payment_ids = []
+        for payment in canonical.payments:
+            paid_amount = Decimal(payment.paid_amount or 0)
+            if paid_amount <= 0:
+                continue
+            idempotency = f"commerce:{canonical.platform}:{connection.id}:{canonical.external_order_id}:payment:{payment.method}"
+            existing_payment = db.scalar(select(__import__("app.modules.commerce.models", fromlist=["CommercePayment"]).CommercePayment).where(
+                __import__("app.modules.commerce.models", fromlist=["CommercePayment"]).CommercePayment.company_id == connection.company_id,
+                __import__("app.modules.commerce.models", fromlist=["CommercePayment"]).CommercePayment.document_id == document.id,
+                __import__("app.modules.commerce.models", fromlist=["CommercePayment"]).CommercePayment.document_kind == "sale",
+                __import__("app.modules.commerce.models", fromlist=["CommercePayment"]).CommercePayment.idempotency_key == idempotency,
+            ))
+            if existing_payment:
+                payment_ids.append(existing_payment.id)
+                continue
+            _, posted_payment = post_payment(
+                db, company_id=connection.company_id, document_kind="sale", document_id=document.id,
+                amount=min(paid_amount, Decimal(document.total) - Decimal(document.paid_total)),
+                payment_date=document.document_date, method=payment.method, wht_amount=Decimal("0"),
+                reference=str(payment.metadata.get("reference") or canonical.external_order_id)[:100],
+                notes=f"Imported from {canonical.platform} order {canonical.external_order_id}",
+                idempotency_key=idempotency,
+            )
+            commerce_accounting_service.post_payment(db, posted_payment, document, user_id)
+            payment_ids.append(posted_payment.id)
+
+        shipment_ids = []
+        for shipment in canonical.shipments:
+            if not shipment.external_shipment_id:
+                continue
+            carrier = find_mapped_carrier(
+                db, company_id=connection.company_id, connection_id=connection.id,
+                external_carrier_id=shipment.external_carrier_id or shipment.carrier_name or shipment.external_shipment_id,
+            )
+            if carrier is None:
+                if shipment.external_carrier_id or shipment.carrier_name:
+                    raise ValueError(f"Commerce shipment '{shipment.external_shipment_id}' has no mapped PrimeERP shipping carrier")
+                continue
+            method_payment = "cod" if shipment.payment_method == "cod" else "prepaid"
+            method = db.scalar(select(ShippingMethod).where(
+                ShippingMethod.carrier_id == carrier.id,
+                ShippingMethod.payment_method.in_((method_payment, "mixed")),
+            ).order_by(ShippingMethod.id))
+            if method is None:
+                raise ValueError(f"Shipping carrier '{carrier.name}' has no compatible {method_payment} shipping method")
+            tracking = shipment.tracking_number or shipment.external_shipment_id
+            existing_shipment = db.scalar(select(Shipment).where(
+                Shipment.company_id == connection.company_id,
+                Shipment.sales_document_id == document.id,
+                Shipment.tracking_no == tracking,
+            ))
+            if existing_shipment:
+                shipment_ids.append(existing_shipment.id)
+                continue
+            shipping_row = Shipment(
+                company_id=connection.company_id, carrier_id=carrier.id, method_id=method.id,
+                sales_document_id=document.id, tracking_no=tracking,
+                order_date=document.document_date, shipment_date=document.document_date,
+                order_value=Decimal(document.total), cod_amount=Decimal(shipment.cod_amount or 0),
+                card_amount=Decimal(document.total) - Decimal(shipment.cod_amount or 0),
+                status=shipment.status, shipping_fee=Decimal(shipment.shipping_fee or 0),
+                customer_shipping_fee=Decimal(shipment.customer_shipping_fee or 0),
+                customer_name=str(canonical.metadata.get("customer_name") or document.partner.name)[:200],
+                notes=f"{canonical.platform} shipment {shipment.external_shipment_id}",
+            )
+            db.add(shipping_row); db.flush()
+            shipment_ids.append(shipping_row.id)
+
         delivery_id = None
         if fulfill:
             delivery = SalesDocument(company_id=document.company_id, partner_id=document.partner_id, document_type="delivery",
@@ -126,7 +198,7 @@ class CommerceOrderOrchestrator:
         db.add(IntegrationMapping(company_id=connection.company_id, connection_id=connection.id, entity_type="commerce_order",
             external_id=canonical.external_order_id, local_id=document.id))
         db.commit()
-        return {"status":"processed","sales_document_id":document.id,"delivery_document_id":delivery_id,"external_order_id":canonical.external_order_id,
+        return {"status":"processed","sales_document_id":document.id,"delivery_document_id":delivery_id,"payment_ids":payment_ids,"shipment_ids":shipment_ids,"external_order_id":canonical.external_order_id,
                 "revenue":str(document.subtotal),"tax":str(document.tax_total)}
 
 commerce_order_orchestrator = CommerceOrderOrchestrator()
