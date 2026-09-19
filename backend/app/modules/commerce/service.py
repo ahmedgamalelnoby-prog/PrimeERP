@@ -195,23 +195,36 @@ class CommerceService:
         obj.status = "fulfilled" if kind == "sale" else "received"; db.flush()
         return obj
 
+    @staticmethod
+    def _payment_value(payment, key):
+        if isinstance(payment, dict):
+            return payment.get(key)
+        return getattr(payment, key, None)
+
     def _ensure_payment_allocation(self, db, payment, document):
+        company_id = self._payment_value(payment, "company_id")
+        payment_id = self._payment_value(payment, "id")
+        document_kind = self._payment_value(payment, "document_kind")
+        document_id = self._payment_value(payment, "document_id")
+        amount = self._payment_value(payment, "amount")
+        if company_id is None or payment_id is None or document_kind is None or document_id is None or amount is None:
+            raise ValueError("Payment result is missing allocation identity fields")
         allocation = db.scalar(select(CommercePaymentAllocation).where(
-            CommercePaymentAllocation.company_id == payment.company_id,
-            CommercePaymentAllocation.payment_id == payment.id,
+            CommercePaymentAllocation.company_id == company_id,
+            CommercePaymentAllocation.payment_id == payment_id,
         ).with_for_update())
         if allocation is None:
             allocation = CommercePaymentAllocation(
-                company_id=payment.company_id,
-                payment_id=payment.id,
-                document_kind=payment.document_kind,
-                document_id=payment.document_id,
-                amount=Decimal(payment.amount),
+                company_id=company_id,
+                payment_id=payment_id,
+                document_kind=document_kind,
+                document_id=document_id,
+                amount=Decimal(amount),
                 status="active",
             )
             db.add(allocation)
             db.flush()
-        elif allocation.document_id != document.id or allocation.document_kind != payment.document_kind:
+        elif allocation.document_id != document.id or allocation.document_kind != document_kind:
             raise ValueError("Payment allocation is inconsistent with its source document")
         return allocation
 
