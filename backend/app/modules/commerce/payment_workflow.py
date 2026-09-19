@@ -27,7 +27,7 @@ def _same_idempotent_payload(existing: CommercePayment, *, document_kind: str, d
     )
 
 
-def post_payment(db: Session, *, company_id: int, document_kind: str, document_id: int, amount: Decimal, payment_date: date, method: str, wht_amount: Decimal = Decimal("0"), reference: str | None = None, notes: str | None = None, idempotency_key: str | None = None):
+def post_payment(db: Session, *, company_id: int, document_kind: str, document_id: int, amount: Decimal, payment_date: date, method: str, wht_amount: Decimal = Decimal("0"), reference: str | None = None, notes: str | None = None, idempotency_key: str | None = None, update_document_paid_total: bool = True):
     if document_kind not in {"sale", "purchase"}:
         raise ValueError("Invalid document kind")
     if method not in PAYMENT_METHODS:
@@ -63,7 +63,7 @@ def post_payment(db: Session, *, company_id: int, document_kind: str, document_i
             return document, existing
 
     balance = Decimal(document.total or 0) - Decimal(document.paid_total or 0)
-    if amount > balance:
+    if update_document_paid_total and amount > balance:
         raise ValueError("Payment exceeds outstanding balance")
 
     candidate = CommercePayment(
@@ -88,7 +88,8 @@ def post_payment(db: Session, *, company_id: int, document_kind: str, document_i
         try:
             with db.begin_nested():
                 db.add(candidate)
-                document.paid_total = Decimal(document.paid_total or 0) + amount
+                if update_document_paid_total:
+                    document.paid_total = Decimal(document.paid_total or 0) + amount
                 db.flush()
         except IntegrityError as exc:
             existing = db.scalar(select(CommercePayment).where(
@@ -105,7 +106,8 @@ def post_payment(db: Session, *, company_id: int, document_kind: str, document_i
         return document, candidate
 
     db.add(candidate)
-    document.paid_total = Decimal(document.paid_total or 0) + amount
+    if update_document_paid_total:
+        document.paid_total = Decimal(document.paid_total or 0) + amount
     db.flush()
     return document, candidate
 
