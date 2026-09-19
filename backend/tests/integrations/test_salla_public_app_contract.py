@@ -34,8 +34,8 @@ def test_salla_authorization_requires_merchant_identity():
 @pytest.mark.parametrize(
     ("current", "target", "expected"),
     [
-        ("pending", "picked_up", "picked_up"),
-        ("picked_up", "in_transit", "in_transit"),
+        ("pending", "shipped", "shipped"),
+        ("shipped", "in_transit", "in_transit"),
         ("in_transit", "out_for_delivery", "out_for_delivery"),
         ("out_for_delivery", "delivered", "delivered"),
         ("delivered", "pending", "delivered"),
