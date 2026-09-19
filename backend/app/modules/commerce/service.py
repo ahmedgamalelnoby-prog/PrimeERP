@@ -120,12 +120,50 @@ class CommerceService:
         q = select(model).where(model.company_id == company_id, model.partner_id == partner_id, model.status.in_({"confirmed", "posted"}), model.document_type.in_({positive_type, offset_type}))
         if before_date is not None:
             q = q.where(model.document_date < before_date)
+        documents = list(db.scalars(q).all())
+        positive_docs = [doc for doc in documents if doc.document_type == positive_type]
+        payments_by_document = {}
+        if positive_docs:
+            document_ids = [doc.id for doc in positive_docs]
+            document_kind = "sale" if direction == "customer" else "purchase"
+            payment_query = select(CommercePayment).where(
+                CommercePayment.company_id == company_id,
+                CommercePayment.document_kind == document_kind,
+                CommercePayment.status == "posted",
+            )
+            if before_date is not None:
+                payment_query = payment_query.where(CommercePayment.payment_date < before_date)
+            payments = list(db.scalars(payment_query).all())
+            payment_ids = [payment.id for payment in payments]
+            allocations = list(db.scalars(select(CommercePaymentAllocation).where(
+                CommercePaymentAllocation.company_id == company_id,
+                CommercePaymentAllocation.payment_id.in_(payment_ids or [-1]),
+                CommercePaymentAllocation.document_kind == document_kind,
+                CommercePaymentAllocation.document_id.in_(document_ids),
+                CommercePaymentAllocation.status == "active",
+            )).all())
+            allocated_payment_ids = set()
+            for allocation in allocations:
+                allocated_payment_ids.add(allocation.payment_id)
+                payments_by_document[allocation.document_id] = (
+                    payments_by_document.get(allocation.document_id, Decimal("0"))
+                    + Decimal(allocation.amount or 0)
+                )
+            for payment in payments:
+                if payment.id in allocated_payment_ids:
+                    continue
+                if payment.document_id in document_ids:
+                    payments_by_document[payment.document_id] = (
+                        payments_by_document.get(payment.document_id, Decimal("0"))
+                        + Decimal(payment.amount or 0)
+                    )
+
         total = Decimal("0")
-        for doc in db.scalars(q).all():
+        for doc in documents:
             value = Decimal(doc.total or 0)
             total += value if doc.document_type == positive_type else -value
             if doc.document_type == positive_type:
-                total -= Decimal(doc.paid_total or 0)
+                total -= payments_by_document.get(doc.id, Decimal("0"))
         return total
 
     def enforce_credit_limit(self, db, company_id: int, document):
