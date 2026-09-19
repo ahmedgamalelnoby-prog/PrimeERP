@@ -144,8 +144,11 @@ class InventoryStockMoveService:
             if item.costing_method == "fifo":
                 fifo_allocations = self._consume_fifo_layers(db, company_id, move.item_id, variant_id, source_warehouse_id, quantity)
                 unit_cost = self._weighted_cost(fifo_allocations)
-            elif unit_cost == 0:
-                unit_cost = Decimal(item.standard_cost or item.purchase_price or 0) if item.costing_method == "standard" else Decimal(warehouse_source.average_cost or 0)
+            else:
+                # For outbound valuation, the costing policy is authoritative.
+                # A caller-supplied unit_cost must never override standard or
+                # weighted-average valuation and create an incorrect COGS value.
+                unit_cost = self._outbound_unit_cost(item, warehouse_source)
             if unit_cost <= 0:
                 raise ValueError("A positive inventory valuation is required before changing stock")
             source_balance.quantity_on_hand -= quantity
@@ -347,7 +350,14 @@ class InventoryStockMoveService:
         for allocation in rows:
             if remaining <= 0:
                 break
-            layer = db.scalar(select(InventoryCostLayer).where(InventoryCostLayer.id == allocation.cost_layer_id, InventoryCostLayer.company_id == company_id, InventoryCostLayer.item_id == item_id, InventoryCostLayer.warehouse_id == warehouse_id).with_for_update())
+            layer_query = select(InventoryCostLayer).where(
+                InventoryCostLayer.id == allocation.cost_layer_id,
+                InventoryCostLayer.company_id == company_id,
+                InventoryCostLayer.item_id == item_id,
+                InventoryCostLayer.warehouse_id == warehouse_id,
+            )
+            layer_query = layer_query.where(InventoryCostLayer.variant_id == variant_id) if variant_id is not None else layer_query.where(InventoryCostLayer.variant_id.is_(None))
+            layer = db.scalar(layer_query.with_for_update())
             if layer is None or Decimal(layer.quantity_remaining) < Decimal(allocation.quantity):
                 raise ValueError("Cannot reverse FIFO movement because its destination cost layer was consumed")
             take = min(remaining, Decimal(allocation.quantity))
@@ -370,10 +380,25 @@ class InventoryStockMoveService:
             layer.quantity_remaining += Decimal(allocation.quantity)
 
     @staticmethod
+    def _outbound_unit_cost(item, warehouse_stock):
+        if item.costing_method == "standard":
+            return Decimal(item.standard_cost or item.purchase_price or 0)
+        if item.costing_method == "weighted_average":
+            return Decimal(warehouse_stock.average_cost or 0)
+        raise ValueError("Unsupported outbound costing method")
+
+    @staticmethod
     def _recalculate_average_cost(db, company_id, item_id, variant_id, warehouse_id, item):
         stock = InventoryStockMoveService._warehouse_stock(db, company_id, item_id, variant_id, warehouse_id)
         if item.costing_method == "fifo":
-            layers = db.scalars(select(InventoryCostLayer).where(InventoryCostLayer.company_id == company_id, InventoryCostLayer.item_id == item_id, InventoryCostLayer.warehouse_id == warehouse_id, InventoryCostLayer.quantity_remaining > 0).order_by(InventoryCostLayer.id).with_for_update()).all()
+            stmt = select(InventoryCostLayer).where(
+                InventoryCostLayer.company_id == company_id,
+                InventoryCostLayer.item_id == item_id,
+                InventoryCostLayer.warehouse_id == warehouse_id,
+                InventoryCostLayer.quantity_remaining > 0,
+            )
+            stmt = stmt.where(InventoryCostLayer.variant_id == variant_id) if variant_id is not None else stmt.where(InventoryCostLayer.variant_id.is_(None))
+            layers = db.scalars(stmt.order_by(InventoryCostLayer.id).with_for_update()).all()
             qty = sum((Decimal(x.quantity_remaining) for x in layers), Decimal("0"))
             stock.average_cost = (sum((Decimal(x.quantity_remaining) * Decimal(x.unit_cost) for x in layers), Decimal("0")) / qty) if qty > 0 else Decimal("0")
 
