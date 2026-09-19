@@ -488,3 +488,14 @@ def test_stock_move_reservation_contract_is_atomic_and_exact():
     assert "source_balance.quantity_reserved -= quantity" in source
     assert "warehouse_source.quantity_reserved -= quantity" in source
     assert 'reservation.status = "consumed"' in source
+
+
+def test_stock_move_reversal_restores_consumed_reservation():
+    import inspect
+    from app.modules.inventory.stock_moves.service import InventoryStockMoveService
+
+    source = inspect.getsource(InventoryStockMoveService.reverse)
+    assert "Linked reservation must be consumed before movement reversal" in source
+    assert "source_balance.quantity_reserved += quantity" in source
+    assert "warehouse_source.quantity_reserved += quantity" in source
+    assert 'reservation.status = "active"' in source
