@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.modules.branches.models import Branch
@@ -307,9 +308,35 @@ class CatalogService:
             existing.is_active = True
             db.flush()
             return existing
-        mapping = RecipeSkuMapping(company_id=company_id, recipe_id=recipe.id, product_id=recipe.product_id, variant_id=variant_id, sku=value, source=source, external_id=external_id, is_active=True)
-        db.add(mapping)
-        db.flush()
+        try:
+            with db.begin_nested():
+                mapping = RecipeSkuMapping(
+                    company_id=company_id,
+                    recipe_id=recipe.id,
+                    product_id=recipe.product_id,
+                    variant_id=variant_id,
+                    sku=value,
+                    source=source,
+                    external_id=external_id,
+                    is_active=True,
+                )
+                db.add(mapping)
+                db.flush()
+        except IntegrityError as exc:
+            existing = db.scalar(
+                select(RecipeSkuMapping).where(
+                    RecipeSkuMapping.company_id == company_id,
+                    RecipeSkuMapping.sku == value,
+                ).with_for_update()
+            )
+            if existing is None:
+                raise ValueError("Concurrent recipe SKU mapping conflict; retry reconciliation") from exc
+            if existing.recipe_id != recipe.id or existing.variant_id != variant_id:
+                raise ValueError("SKU is already bound to another active recipe") from exc
+            existing.source = source
+            existing.external_id = external_id
+            existing.is_active = True
+            mapping = existing
         return mapping
 
     def get_recipe(self, db: Session, company_id: int, recipe_id: int):
