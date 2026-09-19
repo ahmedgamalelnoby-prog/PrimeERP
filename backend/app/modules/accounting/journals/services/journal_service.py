@@ -166,11 +166,33 @@ class JournalService:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Journal entry has already been reversed")
 
         target_date = reversal_date or date.today()
-        period = fiscal_year_repository.get_period_by_id(db, original.period_id, tenant_id, for_update=True)
+
+        # A reversal is a new accounting event. Its posting period must be
+        # resolved from the reversal date, not inherited from the original
+        # entry. This is essential when an entry is reversed after month/year
+        # close or in a later open fiscal period.
+        period = fiscal_year_repository.get_period_for_date(
+            db=db,
+            tenant_id=tenant_id,
+            company_id=original.company_id,
+            posting_date=target_date,
+        )
+        if period is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="No open accounting period is available for the reversal date",
+            )
+        period = fiscal_year_repository.get_period_by_id(
+            db,
+            period.id,
+            tenant_id,
+            for_update=True,
+        )
         if period is None or period.status != "open" or not period.allow_posting:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Accounting period is not open for reversal posting")
-        if not (period.start_date <= target_date <= period.end_date):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Reversal date is outside the open accounting period")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Accounting period is not open for reversal posting",
+            )
 
         lines = db.scalars(
             select(JournalEntryLine)
@@ -190,8 +212,8 @@ class JournalService:
             company_id=original.company_id,
             branch_id=original.branch_id,
             journal_id=original.journal_id,
-            fiscal_year_id=original.fiscal_year_id,
-            period_id=original.period_id,
+            fiscal_year_id=period.fiscal_year_id,
+            period_id=period.id,
             reversal_of_id=original.id,
             entry_number=f"REV-{original.entry_number}",
             entry_date=target_date,
