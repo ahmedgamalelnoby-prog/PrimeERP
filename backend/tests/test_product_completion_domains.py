@@ -431,3 +431,45 @@ def test_partner_open_balance_is_allocation_aware_and_historical():
     assert "allocation.amount" in source
     assert "payment.payment_date < before_date" in source
     assert "paid_total" not in source
+
+
+def test_inventory_outbound_standard_cost_is_policy_authoritative():
+    from app.modules.inventory.stock_moves.service import InventoryStockMoveService
+
+    item = SimpleNamespace(costing_method="standard", standard_cost=Decimal("25.00"), purchase_price=Decimal("30.00"))
+    warehouse = SimpleNamespace(average_cost=Decimal("99.00"))
+
+    assert InventoryStockMoveService._outbound_unit_cost(item, warehouse) == Decimal("25.00")
+
+
+def test_inventory_outbound_weighted_average_cost_is_policy_authoritative():
+    from app.modules.inventory.stock_moves.service import InventoryStockMoveService
+
+    item = SimpleNamespace(costing_method="weighted_average", standard_cost=Decimal("25.00"), purchase_price=Decimal("30.00"))
+    warehouse = SimpleNamespace(average_cost=Decimal("37.50"))
+
+    assert InventoryStockMoveService._outbound_unit_cost(item, warehouse) == Decimal("37.50")
+
+
+def test_inventory_fifo_weighted_cost_uses_exact_layer_allocations():
+    from app.modules.inventory.stock_moves.service import InventoryStockMoveService
+
+    allocations = [
+        (SimpleNamespace(id=1), Decimal("2"), Decimal("10")),
+        (SimpleNamespace(id=2), Decimal("3"), Decimal("20")),
+    ]
+
+    assert InventoryStockMoveService._weighted_cost(allocations) == Decimal("16")
+
+
+def test_inventory_fifo_recalculation_and_destination_reversal_are_variant_scoped():
+    import inspect
+    from app.modules.inventory.stock_moves.service import InventoryStockMoveService
+
+    recalc = inspect.getsource(InventoryStockMoveService._recalculate_average_cost)
+    reverse = inspect.getsource(InventoryStockMoveService._reverse_fifo_destination_layers)
+
+    assert "InventoryCostLayer.variant_id == variant_id" in recalc
+    assert "InventoryCostLayer.variant_id == variant_id" in reverse
+    assert "InventoryCostLayer.variant_id.is_(None)" in recalc
+    assert "InventoryCostLayer.variant_id.is_(None)" in reverse
