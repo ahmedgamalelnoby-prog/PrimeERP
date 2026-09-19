@@ -248,7 +248,7 @@ def _normalize_invoice(db: Session, company_id: int, connection_id: int, data: d
     if not external_id:
         return None
     order_id = _id(data.get("order_id") or _dict(data.get("order")).get("id"))
-    order = db.scalar(select(SallaOrder).where(SallaOrder.connection_id == connection_id, SallaOrder.external_id == order_id)) if order_id else None
+    order = db.scalar(select(SallaOrder).where(SallaOrder.company_id == company_id, SallaOrder.connection_id == connection_id, SallaOrder.external_id == order_id)) if order_id else None
     return _upsert(db, SallaInvoice, connection_id, external_id, {
         "company_id": company_id, "order_id": order.id if order else None, "invoice_number": data.get("invoice_number"),
         "status": _code(data.get("status")), "subtotal": _decimal(data.get("subtotal")), "discount": _decimal(data.get("discount")),
@@ -273,7 +273,7 @@ def normalize_salla_event(db: Session, event: IntegrationEvent) -> dict[str, int
     elif key == "customer":
         counters["customers"] = int(_normalize_customer(db, event.company_id, event.connection_id, data) is not None)
     elif key == "product":
-        before = db.query(SallaProductVariant).filter(SallaProductVariant.connection_id == event.connection_id).count()
+        before = db.query(SallaProductVariant).filter(SallaProductVariant.company_id == event.company_id, SallaProductVariant.connection_id == event.connection_id).count()
         obj = _normalize_product(db, event.company_id, event.connection_id, data)
         counters["products"] = int(obj is not None)
         counters["variants"] = db.query(SallaProductVariant).filter(SallaProductVariant.connection_id == event.connection_id).count() - before
