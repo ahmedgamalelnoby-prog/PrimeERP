@@ -9,6 +9,7 @@ from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models.user import User
 from app.modules.enterprise.models import Employee,PayrollRun,PayrollLine
+from app.modules.accounting.fiscal_years.services.fiscal_year_service import fiscal_year_service
 from app.modules.completion.domain_models import HRAttendance,HRLeave
 from .models import EmploymentContract
 router=APIRouter(prefix="/hr",tags=["HR"])
@@ -53,6 +54,11 @@ def leave_decision(leave_id:int,status:str=Query(...,pattern="^(approved|rejecte
 @router.post("/payroll/runs",status_code=201)
 def payroll(p:PayrollIn,company_id:int=Query(...,gt=0),user:User=Depends(get_current_user),db:Session=Depends(get_db)):
     scope(db,user,company_id)
+    try:
+        period_date=date.fromisoformat(p.period+"-01") if len(p.period)==7 else date.fromisoformat(p.period)
+    except ValueError as exc:
+        raise HTTPException(422,"Payroll period must be YYYY-MM or YYYY-MM-DD") from exc
+    fiscal_year_service.assert_open_for_date(db,company_id=company_id,posting_date=period_date)
     if db.scalar(select(PayrollRun.id).where(PayrollRun.company_id==company_id,PayrollRun.period==p.period)):raise HTTPException(409,"Payroll period already exists")
     emps=db.scalars(select(Employee).where(Employee.company_id==company_id,Employee.is_active.is_(True))).all()
     run=PayrollRun(company_id=company_id,period=p.period,status="draft");db.add(run);db.flush()
