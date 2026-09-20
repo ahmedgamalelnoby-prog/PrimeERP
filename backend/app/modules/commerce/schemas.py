@@ -136,7 +136,7 @@ class PaymentResponse(BaseModel):
     id: int
     company_id: int
     document_kind: str
-    document_id: int
+    document_id: int | None
     payment_date: date
     amount: Decimal
     wht_amount: Decimal
