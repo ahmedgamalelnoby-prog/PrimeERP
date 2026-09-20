@@ -113,8 +113,10 @@ class FinalizePayload(BaseModel):
 
 @router.post("/work-orders/{work_order_id}/finalize")
 def finalize_work_order(work_order_id:int,p:FinalizePayload,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
+    _company_for_user(db,company_id,u)
     wo=db.scalar(select(ManufacturingWorkOrder).where(ManufacturingWorkOrder.id==work_order_id,ManufacturingWorkOrder.company_id==company_id).with_for_update())
     if wo is None: raise HTTPException(404,"Work order not found")
+    if p.close_status != "closed": raise HTTPException(422,"Finalization status must be closed")
     if getattr(wo,"status",None)=="cancelled": raise HTTPException(409,"Cancelled work orders cannot be finalized")
     if getattr(wo,"status",None)=="closed": return {"work_order_id":wo.id,"status":wo.status,"variance_id":None}
     if Decimal(wo.completed_qty or 0) < Decimal(wo.planned_qty or 0): raise HTTPException(409,"Work order cannot be finalized before planned quantity is fully produced")
