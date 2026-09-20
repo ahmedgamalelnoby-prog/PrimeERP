@@ -66,10 +66,11 @@ def run(p:ConsolidationRunCreate,db:Session=Depends(get_db),user:User=Depends(ge
     pct={e.company_id:Decimal(next(m.consolidation_percent for m in members if m.entity_id==e.id))/Decimal(100) for e in entities}
     def fx_rate(from_currency:str,to_currency:str):
         if from_currency==to_currency:return Decimal(1)
-        direct=db.scalar(select(FinanceFxRate.rate).where(FinanceFxRate.company_id.in_([g.company_id,*company_ids]),FinanceFxRate.rate_date==p.period_end,FinanceFxRate.from_currency==from_currency,FinanceFxRate.to_currency==to_currency))
-        if direct is not None:return Decimal(direct)
-        inverse=db.scalar(select(FinanceFxRate.rate).where(FinanceFxRate.company_id==g.company_id,FinanceFxRate.rate_date==p.period_end,FinanceFxRate.from_currency==to_currency,FinanceFxRate.to_currency==from_currency))
-        if inverse is not None:return Decimal(1)/Decimal(inverse)
+        for rate_company_id in dict.fromkeys([g.company_id,*company_ids]):
+            direct=db.scalar(select(FinanceFxRate.rate).where(FinanceFxRate.company_id==rate_company_id,FinanceFxRate.rate_date==p.period_end,FinanceFxRate.from_currency==from_currency,FinanceFxRate.to_currency==to_currency))
+            if direct is not None:return Decimal(direct)
+            inverse=db.scalar(select(FinanceFxRate.rate).where(FinanceFxRate.company_id==rate_company_id,FinanceFxRate.rate_date==p.period_end,FinanceFxRate.from_currency==to_currency,FinanceFxRate.to_currency==from_currency))
+            if inverse is not None:return Decimal(1)/Decimal(inverse)
         raise HTTPException(422,f"Missing FX rate {from_currency}/{to_currency} for {p.period_end}")
     rows=db.execute(select(AccountCombination.code,JournalEntryLine.company_id,func.sum(JournalEntryLine.base_debit),func.sum(JournalEntryLine.base_credit)).join(JournalEntry,JournalEntry.id==JournalEntryLine.entry_id).join(AccountCombination,AccountCombination.id==JournalEntryLine.account_combination_id).where(JournalEntryLine.company_id.in_(company_ids),JournalEntry.status=="posted",JournalEntry.entry_date>=p.period_start,JournalEntry.entry_date<=p.period_end).group_by(AccountCombination.code,JournalEntryLine.company_id)).all()
     total_d=Decimal(0);total_c=Decimal(0)
