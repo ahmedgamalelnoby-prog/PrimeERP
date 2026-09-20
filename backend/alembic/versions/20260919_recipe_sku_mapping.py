@@ -7,7 +7,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "20260919_recipe_sku_mapping"
-down_revision = "20260919_payment_allocations"
+down_revision = "20260919_split_payment_allocations"
 branch_labels = None
 depends_on = None
 
