@@ -39,5 +39,33 @@ class CommissionService:
         db.flush()
         return settlement
 
+    @staticmethod
+    def calculate_from_source(db: Session, company_id: int, *, employee_id: int, rule_id: int, period: str, source_type: str, source_id: int, notes: str | None = None) -> CommissionSettlement:
+        rule = db.scalar(select(CommissionRule).where(CommissionRule.id == rule_id, CommissionRule.company_id == company_id, CommissionRule.is_active.is_(True)))
+        if rule is None:
+            raise ValueError("Commission rule not found for company")
+        from app.modules.commerce.models import SalesDocument, CommercePayment
+        source = db.scalar(select(SalesDocument).where(SalesDocument.id == source_id, SalesDocument.company_id == company_id)) if source_type in {"sale","sales_document"} else db.scalar(select(CommercePayment).where(CommercePayment.id == source_id, CommercePayment.company_id == company_id, CommercePayment.status == "posted"))
+        if source is None:
+            raise ValueError("Commission source not found")
+        basis = rule.basis
+        if source_type in {"sale","sales_document"}:
+            subtotal = Decimal(source.subtotal or 0)
+            gross = subtotal + Decimal(source.discount_total or 0)
+            base = gross if basis == "gross_sales" else subtotal
+            if basis == "collection":
+                base = Decimal(source.paid_total or 0)
+            if basis == "gross_profit":
+                from app.modules.inventory.stock_moves.models import InventoryStockMove
+                moves = db.scalars(select(InventoryStockMove).where(InventoryStockMove.company_id == company_id, InventoryStockMove.source_module == "commerce", InventoryStockMove.source_entity == "sales_delivery", InventoryStockMove.source_id.like(f"{source.id}:%"), InventoryStockMove.status == "posted")).all()
+                cogs = sum((Decimal(m.quantity or 0) * Decimal(m.unit_cost or 0) for m in moves), Decimal("0"))
+                base = subtotal - cogs
+        elif basis == "collection":
+            base = Decimal(source.amount or 0) - Decimal(source.wht_amount or 0)
+        else:
+            raise ValueError("This source type supports only collection basis")
+        base = max(base, Decimal("0"))
+        return CommissionService.calculate(db, company_id, CommissionCalculateRequest(employee_id=employee_id, rule_id=rule_id, period=period, source_type=source_type, source_id=source_id, base_amount=base, notes=notes))
+    
 
 commission_service = CommissionService()
