@@ -58,3 +58,5 @@ __all__ = ['Tenant','SubscriptionPlan','Subscription','SystemModule','PlanModule
 from app.modules.commerce.ar_models import ARWriteOff, ARReconciliation
 
 from app.modules.commerce.ap_models import APWriteOff, APReconciliation, APVarianceWorkflow
+
+from app.modules.treasury.completion_models import TreasuryTransaction, TreasuryDailyClosing, TreasuryForecast
