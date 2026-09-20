@@ -80,6 +80,23 @@ class TreasuryAccountingService:
             ]
         return self._post(db, cheque, when=cheque.cheque_date, user_id=user_id, event_key="created", description=f"Treasury cheque {cheque.cheque_number}", lines=lines)
 
+    def movement(self, db: Session, cheque: Cheque, when: date, user_id: int, event_key: str, description: str):
+        settings = db.scalar(select(CommerceAccountingSettings).where(CommerceAccountingSettings.company_id == cheque.company_id))
+        if settings is None: raise HTTPException(409, "Commerce accounting configuration is required for treasury movement")
+        clearing = settings.default_payment_account_id
+        bank = getattr(settings, "bank_account_id", None) or clearing
+        if cheque.direction == "received":
+            if event_key in {"deposited","under_collection"}:
+                lines=[{"account_combination_id":bank,"debit":Decimal(cheque.amount),"credit":0},{"account_combination_id":clearing,"debit":0,"credit":Decimal(cheque.amount)}]
+            elif event_key in {"collected","cleared"}:
+                lines=[{"account_combination_id":clearing,"debit":Decimal(cheque.amount),"credit":0},{"account_combination_id":bank,"debit":0,"credit":Decimal(cheque.amount)}]
+            else: return None
+        else:
+            if event_key in {"cleared"}:
+                lines=[{"account_combination_id":bank,"debit":Decimal(cheque.amount),"credit":0},{"account_combination_id":clearing,"debit":0,"credit":Decimal(cheque.amount)}]
+            else: return None
+        return self._post(db, cheque, when=when, user_id=user_id, event_key=event_key, description=description, lines=lines)
+
     def cancellation(self, db: Session, cheque: Cheque, when: date, user_id: int, event_key: str):
         settings = db.scalar(select(CommerceAccountingSettings).where(CommerceAccountingSettings.company_id == cheque.company_id))
         if settings is None:
