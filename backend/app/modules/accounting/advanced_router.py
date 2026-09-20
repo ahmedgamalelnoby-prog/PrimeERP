@@ -14,7 +14,10 @@ class FX(BaseModel): company_id:int;branch_id:int;journal_id:int;gain_loss_accou
 class Intercompany(BaseModel): source_company_id:int;target_company_id:int;source_branch_id:int;target_branch_id:int;source_journal_id:int;target_journal_id:int;when:date;amount:Decimal=Field(gt=0);source_debit_account_id:int;source_credit_account_id:int;target_debit_account_id:int;target_credit_account_id:int;reference:str;description:str
 class Elimination(BaseModel): company_id:int;branch_id:int;journal_id:int;when:date;debit_account_id:int;credit_account_id:int;amount:Decimal=Field(gt=0);consolidation_key:str;description:str
 @router.post("/auto-rules",dependencies=[Depends(require_permission("accounting.write"))])
-def auto_rule(p:AutoRule,db:Session=Depends(get_db),u:User=Depends(get_current_user)):return accounting_advanced_service.create_rule(db,u,**p.model_dump())
+def auto_rule(p:AutoRule,db:Session=Depends(get_db),u:User=Depends(get_current_user)):
+    result=accounting_advanced_service.create_rule(db,u,**p.model_dump())
+    db.commit(); db.refresh(result)
+    return result
 @router.post("/auto-post",dependencies=[Depends(require_permission("accounting.post"))])
 def auto_post(p:AutoPost,db:Session=Depends(get_db),u:User=Depends(get_current_user)):return accounting_advanced_service.post_source(db,u,**p.model_dump())
 class RulePost(BaseModel):
