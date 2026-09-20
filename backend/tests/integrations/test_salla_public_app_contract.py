@@ -141,6 +141,14 @@ def test_salla_shipment_packages_resolve_item_quantities():
     }
 
 
+def test_salla_return_does_not_trigger_order_financial_reversal():
+    from app.modules.integrations.salla_erp_finalize import _CANCELLED_STATES
+
+    assert "returned" not in _CANCELLED_STATES
+    assert "cancelled" in _CANCELLED_STATES
+    assert "fully_refunded" in _CANCELLED_STATES
+
+
 def test_salla_return_idempotency_is_independent_of_return_scope():
     assert _return_source_id("ORDER-1", 42) == "salla_return:ORDER-1:42"
     assert _return_source_id("ORDER-1", 42) == _return_source_id("ORDER-1", 42)
