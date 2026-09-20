@@ -10,6 +10,8 @@ from app.modules.inventory.stock_moves.schemas import StockMoveCreate
 from app.modules.inventory.locations.models import InventoryLocation
 from app.modules.catalog.models import Recipe, RecipeLine
 from app.modules.inventory.stock_moves.service import inventory_stock_move_service
+from app.modules.inventory.reservations.schemas import ReservationCreate
+from app.modules.inventory.reservations.service import inventory_reservation_service
 from app.modules.accounting.journals.services.journal_service import journal_service
 
 class ManufacturingCompletionService:
@@ -64,9 +66,13 @@ class ManufacturingCompletionService:
         for line in db.scalars(select(RecipeLine).where(RecipeLine.recipe_id==recipe.id).order_by(RecipeLine.line_no)).all():
             item_id=line.ingredient_item_id or line.ingredient_product_id
             required=Decimal(line.quantity or 0)*scale*(Decimal("1")+Decimal(line.waste_percentage or 0)/Decimal("100"))
-            payload=StockMoveCreate(company_id=company_id,item_id=item_id,quantity=required,unit_cost=Decimal("0"),movement_type="issue",source_location_id=source_location_id,transaction_date=date.today(),source_module="manufacturing",source_entity="production_material",source_id=f"{work_order_id}:{line.id}:{starting_completed}:{qty}",notes=f"Material consumption for work order {work_order_id}")
+            source_key=f"{work_order_id}:{line.id}:{starting_completed}:{qty}"
+            reservation_payload=ReservationCreate(company_id=company_id,item_id=item_id,variant_id=line.ingredient_variant_id if hasattr(line,"ingredient_variant_id") else None,location_id=source_location_id,quantity=required,source_module="manufacturing",source_entity="production_material",source_id=source_key,reference=f"WO-{work_order_id}",notes=f"Reserved for production work order {work_order_id}")
+            reservation=inventory_reservation_service.reserve(db,reservation_payload)
+            payload=StockMoveCreate(company_id=company_id,item_id=item_id,variant_id=reservation.variant_id,quantity=required,unit_cost=Decimal("0"),movement_type="issue",source_location_id=source_location_id,transaction_date=date.today(),source_module="manufacturing",source_entity="production_material",source_id=source_key,notes=f"Material consumption for work order {work_order_id}")
             move=inventory_stock_move_service.create_draft(db,payload)
             move=inventory_stock_move_service.post(db,tenant_id=tenant_id,company_id=company_id,move_id=move.id,user_id=user_id)
+            inventory_reservation_service.consume(db,company_id=company_id,reservation_id=reservation.id)
             existing=db.scalar(select(ManufacturingConsumption).where(ManufacturingConsumption.work_order_id==wo.id,ManufacturingConsumption.stock_move_id==move.id))
             if existing is None:
                 existing=ManufacturingConsumption(work_order_id=wo.id,item_id=item_id,quantity=required,unit_cost=move.unit_cost or 0,stock_move_id=move.id);db.add(existing)
