@@ -72,6 +72,20 @@ class JournalService:
             )
             for payload in lines
         ]
+        if source_module is not None and source_entity is not None and source_id is not None:
+            existing = db.scalar(
+                select(JournalEntry)
+                .where(
+                    JournalEntry.tenant_id == tenant_id,
+                    JournalEntry.company_id == company_id,
+                    JournalEntry.source_module == source_module,
+                    JournalEntry.source_entity == source_entity,
+                    JournalEntry.source_id == source_id,
+                )
+                .with_for_update()
+            )
+            if existing is not None:
+                return existing
         try:
             debit, credit = validate_balanced(posting_lines)
         except PostingValidationError as exc:
