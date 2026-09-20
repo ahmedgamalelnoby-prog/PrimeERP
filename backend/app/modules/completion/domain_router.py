@@ -106,7 +106,7 @@ def workflow(p:dict,db:Session=Depends(get_db),u:User=Depends(get_current_user))
 def workflow_decision(workflow_id:int,step_id:int,status:str=Query(...),reason:str|None=Query(None),company_id:int=Query(...),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
     company(db,company_id,u);x=db.scalar(select(WorkflowApprovalStep).where(WorkflowApprovalStep.id==step_id,WorkflowApprovalStep.workflow_id==workflow_id).with_for_update())
     if not x: raise HTTPException(404,"Workflow step not found")
-    x=domain_completion_service.workflow_decide(db,x,status,reason);db.commit();db.refresh(x);return x
+    x,w=domain_completion_service.workflow_decide(db,x,status,reason,u.id);db.commit();db.refresh(x);db.refresh(w);return {"step":x,"workflow":w}
 
 
 class WorkflowRulePayload(__import__("pydantic").BaseModel):
