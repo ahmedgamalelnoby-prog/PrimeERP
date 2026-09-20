@@ -236,7 +236,7 @@ class FiscalYearResponse(BaseModel):
 
 
 class FiscalYearActionRequest(BaseModel):
-    reason: Optional[str] = Field(
-        default=None,
-        max_length=1000,
-    )
+    reason: Optional[str] = Field(default=None,max_length=1000)
+    branch_id: Optional[int] = Field(default=None,gt=0)
+    journal_id: Optional[int] = Field(default=None,gt=0)
+    retained_earnings_account_id: Optional[int] = Field(default=None,gt=0)
