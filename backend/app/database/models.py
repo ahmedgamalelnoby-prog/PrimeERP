@@ -63,3 +63,4 @@ from app.modules.treasury.completion_models import TreasuryTransaction, Treasury
 
 from app.modules.core_integration.models import IntegrationTransaction
 from app.modules.pos.sessions.models import POSSession
+from app.modules.inventory.wms.models import WMSOperation, WMSOperationLine, InventoryTrackingUnit
