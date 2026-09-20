@@ -15,14 +15,14 @@ from app.modules.inventory.stock_moves.schemas import StockMoveCreate
 from app.modules.inventory.stock_moves.service import inventory_stock_move_service
 
 
-def _deliveries(db: Session, order: SallaOrder) -> list[SalesDocument]:
+def _deliveries(db: Session, order: SallaOrder, shipment_external_id: str | None = None) -> list[SalesDocument]:
     """Resolve every ERP delivery created for this Salla order.
 
     Order-level deliveries are keyed by the order external ID, while
     shipment-level deliveries are keyed by the shipment external ID. Looking
     up only the order ID would silently miss partial-shipment deliveries.
     """
-    external_ids = {str(order.external_id)}
+    external_ids = {str(order.external_id)} if shipment_external_id is None else set()
     shipment_ids = db.scalars(
         select(SallaShipment.external_id).where(
             SallaShipment.company_id == order.company_id,
@@ -34,6 +34,8 @@ def _deliveries(db: Session, order: SallaOrder) -> list[SalesDocument]:
         )
     ).all()
     external_ids.update(str(value) for value in shipment_ids if value)
+    if shipment_external_id is not None:
+        external_ids = {str(shipment_external_id)}
 
     mappings = db.scalars(
         select(IntegrationMapping).where(
@@ -57,9 +59,9 @@ def _deliveries(db: Session, order: SallaOrder) -> list[SalesDocument]:
     ).all()
 
 
-def restore_salla_inventory(db: Session, order: SallaOrder, user_id: int) -> dict:
+def restore_salla_inventory(db: Session, order: SallaOrder, user_id: int, shipment_external_id: str | None = None) -> dict:
     """Restore fulfilled Salla stock exactly once and reverse its COGS."""
-    deliveries = _deliveries(db, order)
+    deliveries = _deliveries(db, order, shipment_external_id=shipment_external_id)
     if not deliveries:
         return {"status": "no_delivery", "return_moves": 0, "cogs_reversed": False}
 
@@ -95,7 +97,8 @@ def restore_salla_inventory(db: Session, order: SallaOrder, user_id: int) -> dic
     total_cost = Decimal("0")
     returned = 0
     for move in source_moves:
-        source_id = f"{order.external_id}:{move.id}"
+        return_key = f"{order.external_id}:shipment:{shipment_external_id}" if shipment_external_id else str(order.external_id)
+        source_id = f"{return_key}:{move.id}"
         existing = db.scalar(
             select(InventoryStockMove).where(
                 InventoryStockMove.company_id == order.company_id,
@@ -138,14 +141,14 @@ def restore_salla_inventory(db: Session, order: SallaOrder, user_id: int) -> dic
             user_id=user_id,
             entry_date=delivery_for_location.document_date,
             journal_id=settings.sales_journal_id,
-            entry_number=f"RET-COGS-{order.external_id}",
+            entry_number=f"RET-COGS-{return_key}"[:60],
             description=f"COGS reversal for Salla return {order.external_id}",
             lines=[
                 {"account_combination_id": settings.inventory_account_id, "debit": total_cost, "credit": 0},
                 {"account_combination_id": settings.cogs_account_id, "debit": 0, "credit": total_cost},
             ],
             source_entity="salla_return_cogs",
-            source_id=order.external_id,
+            source_id=return_key,
         )
         accounting = True
     return {"status": "restored", "return_moves": returned, "cogs_reversed": accounting}
