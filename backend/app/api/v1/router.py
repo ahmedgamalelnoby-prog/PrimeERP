@@ -157,8 +157,8 @@ def build_router() -> APIRouter:
     api_router.include_router(entitlements_router)
     api_router.include_router(roles_router)
     api_router.include_router(legal_router)
+    api_router.include_router(ap_router, dependencies=[Depends(require_module("sales"))])
     return api_router
 
 from app.modules.commerce.ap_router import router as ap_router
-api_router.include_router(ap_router, dependencies=[Depends(require_module("sales"))])
 
