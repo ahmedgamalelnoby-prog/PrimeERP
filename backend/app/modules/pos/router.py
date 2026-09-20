@@ -452,7 +452,7 @@ def checkout(payload: Checkout, current_user: User = Depends(get_current_user), 
         raise HTTPException(422, "A jurisdiction tax snapshot is required before posting this POS invoice")
     validate_document_tax_snapshot(doc, snapshot)
     commerce_service.confirm(db, payload.company_id, doc.id, "sale", current_user.id)
-    commerce_service.post_inventory(db, payload.company_id, doc.id, "sale", user_id=current_user.id)
+    # Inventory is fulfilled exactly once by the paired delivery document above.
     commerce_service.pay(db, PaymentCreate(
         company_id=payload.company_id,
         document_id=doc.id,
