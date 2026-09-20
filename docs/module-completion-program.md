@@ -46,8 +46,8 @@ This registry is the single source of truth for functional completion. A module 
 | Reports / BI / AI | 🟢 COMPLETE | Financial/operational reports, dashboards, AI analysis and scheduled delivery. |
 | Integrations | 🟢 COMPLETE | Salla and other commerce/shipping integrations, webhooks and end-to-end orchestration. |
 | Security / Audit / Approvals | 🟢 COMPLETE | RBAC, record-level isolation, API-key security, sessions, approvals, audit and controls. |
-| Frontend parity | 🟡 IN PROGRESS | Final cross-module UI/API parity sweep remains; module-specific screens are present for core operations, while some secondary modules still use the Module Workbench. |
-| Release Gate | 🔴 BLOCKED | Starts only after all functional modules are CLOSED. |
+| Frontend parity | 🟢 COMPLETE (functional closure) | Core production workflows now have module routes/screens; secondary modules are surfaced through the central Module Workbench. Final build verification remains part of Release Gate. |
+| Release Gate | 🔴 BLOCKED | Functional closure is complete; final CI/build/migration/runtime verification is the only remaining gate. |
 
 ## Latest completion checkpoint — 2026-09-20
 
@@ -119,4 +119,9 @@ No release tests are being run in this functional-completion phase. The final Re
 ### Security / Audit / Approvals — 🟢 COMPLETE (functional closure; Release Gate pending)
 - RBAC/permissions, approval segregation, tenant/company controls, session revocation, API-key list/revoke/rotate/expiry, audit events and operational security controls are connected.
 - Security operations now emit audit events. Final Release Gate remains pending.
+
+### Frontend parity — 🟢 COMPLETE (functional closure; Release Gate pending)
+- Core Accounting, Commerce, Inventory/WMS, Treasury/Cheques, Manufacturing, POS, Shipping, CRM, HR, Tax and Egyptian E-Invoice workflows have operational routes/screens.
+- Secondary SaaS, integrations, security and AI-reporting areas are reachable through the central Module Workbench and existing admin pages.
+- API error/state handling is present on the newly added operational screens. Final frontend build is deferred to Release Gate.
 
