@@ -38,12 +38,12 @@ This registry is the single source of truth for functional completion. A module 
 | Manufacturing / MRP | 🟢 COMPLETE | Production/WIP/FG, BOM/recipe, scrap/by-product, subcontracting, variance and accounting closure. |
 | POS / Restaurant | 🟢 COMPLETE | POS → recipe → outlet stock → consumption → payment → COGS, KDS, modifiers/promotions, refunds/voids, outlet profitability. |
 | Shipping | 🟢 COMPLETE | Shipment lifecycle, terminal delivered state, returns, carrier pricing, COD settlement/reconciliation, GL. |
-| Catalog / Products / Recipes | 🟡 IN PROGRESS | SKU/variant lifecycle, recipes, external SKU mappings and downstream integrations. |
+| Catalog / Products / Recipes | 🟢 COMPLETE | SKU/variant lifecycle, recipes, external SKU mappings and downstream integrations. |
 | CRM / Sales | 🟡 IN PROGRESS | Lead → opportunity → quotation → customer/order integration and accounting/fulfillment links. |
 | HR / Organization | 🟡 IN PROGRESS | Employees/departments/users, organization scope and approval/permission integration. |
-| Tax / Egyptian E-Invoice | 🟡 IN PROGRESS | Tax engine, VAT/WHT, returns, e-invoice/credit/debit notes and accounting integration. |
-| SaaS / Companies / Tenants | 🟡 IN PROGRESS | Plans, entitlements, expiry locks, company/branch/warehouse/user limits and isolation. |
-| Reports / BI / AI | 🟡 IN PROGRESS | Financial/operational reports, dashboards, AI analysis and scheduled delivery. |
+| Tax / Egyptian E-Invoice | 🟢 COMPLETE | Tax engine, VAT/WHT, returns, e-invoice/credit/debit notes and accounting integration. |
+| SaaS / Companies / Tenants | 🟢 COMPLETE | Plans, entitlements, expiry locks, company/branch/warehouse/user limits and isolation. |
+| Reports / BI / AI | 🟢 COMPLETE | Financial/operational reports, dashboards, AI analysis and scheduled delivery. |
 | Integrations | 🟡 IN PROGRESS | Salla and other commerce/shipping integrations, webhooks and end-to-end orchestration. |
 | Security / Audit / Approvals | 🟡 IN PROGRESS | RBAC, record-level isolation, API-key security, sessions, approvals, audit and controls. |
 | Frontend parity | 🟡 IN PROGRESS | Every production API/workflow exposed through coherent UI and error/state handling. |
@@ -91,4 +91,15 @@ No release tests are being run in this functional-completion phase. The final Re
 ### Shipping — 🟢 COMPLETE (functional closure; Release Gate pending)
 - Carrier/method master data, pricing rules, shipment lifecycle, terminal delivered state, returns, COD, carrier fees, withdrawal/card fees, settlement, reconciliation and GL events are connected.
 - Shipment/company/tenant/account/journal/branch controls are enforced. Final Release Gate remains pending.
+
+### Catalog / Products / Recipes — 🟢 COMPLETE (functional closure; Release Gate pending)
+- Product/category/variant/price/cost master data, UOM conversion, recipe versioning, variant-aware recipe lines, cycle protection, external SKU recipe lookup and menu/pricing flows are connected.
+- Recipe API now exposes ingredient variant mappings. Final Release Gate remains pending.
+### Tax / Egyptian E-Invoice — 🟢 COMPLETE (functional closure; Release Gate pending)
+- VAT/WHT/custom tax master, tax calculation, ledger preview, return draft, reconciliation, submission, acceptance and closure workflows are connected.
+- Egyptian e-invoice creation, ETA submission, status sync, terminal-state protection, audit and frontend operational screens are connected. Final Release Gate remains pending.
+### SaaS / Companies / Tenants — 🟢 COMPLETE (functional closure; Release Gate pending)
+- Trial tenant registration, company/branch/user bootstrap, subscription dates, module entitlements, expiry locking and resource limits are connected. Final Release Gate remains pending.
+### Reports / BI / AI — 🟢 COMPLETE (functional closure; Release Gate pending)
+- Financial/operational report catalog, AI analysis, management advisory, scheduled email/WhatsApp delivery and delivery logs are connected. Final Release Gate remains pending.
 
