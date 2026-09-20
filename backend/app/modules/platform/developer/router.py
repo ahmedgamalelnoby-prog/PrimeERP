@@ -21,9 +21,11 @@ def list_apps(company_id:int,db:Session=Depends(get_db),user:User=Depends(get_cu
     company_ok(db,company_id,user);return list(db.scalars(select(DeveloperApp).where(DeveloperApp.company_id==company_id).order_by(DeveloperApp.id.desc())).all())
 @router.post("/keys",response_model=KeyCreated,status_code=201,dependencies=[Depends(require_permission("developer.manage"))])
 def keys(p:KeyCreate,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
-    a=db.scalar(select(DeveloperApp).where(DeveloperApp.id==p.app_id))
+    a=db.scalar(select(DeveloperApp).where(DeveloperApp.id==p.app_id,DeveloperApp.is_active.is_(True)))
     if not a:raise HTTPException(404,"App not found")
-    company_ok(db,a.company_id,user);k,raw=create_key(db,p);return {"id":k.id,"key":raw,"key_prefix":k.key_prefix,"scopes":k.scopes,"expires_at":k.expires_at}
+    company_ok(db,a.company_id,user)
+    if not set(p.scopes).issubset(set(a.scopes)): raise HTTPException(422,"API key scopes must be a subset of app scopes")
+    k,raw=create_key(db,p);return {"id":k.id,"key":raw,"key_prefix":k.key_prefix,"scopes":k.scopes,"expires_at":k.expires_at}
 @router.delete("/keys/{key_id}",dependencies=[Depends(require_permission("developer.manage"))])
 def revoke_key(key_id:int,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     k=db.get(DeveloperApiKey,key_id);a=db.get(DeveloperApp,k.app_id) if k else None
@@ -62,7 +64,7 @@ def custom_fields(company_id:int,entity_type:str|None=None,db:Session=Depends(ge
     return list(db.scalars(q.order_by(DeveloperCustomField.id)).all())
 @router.get("/v1/ping")
 def api_ping(x_api_key:str|None=Header(default=None),db:Session=Depends(get_db)):
-    if not x_api_key or not authenticate_key(db,x_api_key):raise HTTPException(401,"Invalid API key")
+    if not x_api_key or not authenticate_key(db,x_api_key,"api:read"):raise HTTPException(401,"Invalid API key or scope")
     return {"ok":True,"api_version":"v1"}
 
 def _deliver(delivery_id:int):
