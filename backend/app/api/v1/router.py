@@ -13,6 +13,7 @@ from app.modules.inventory.stock_moves.router import router as inventory_stock_m
 from app.modules.inventory.transfers.router import router as inventory_transfers_router
 from app.modules.inventory.warehouses.router import router as inventory_warehouses_router
 from app.modules.inventory.waste.router import router as inventory_waste_router
+from app.modules.inventory.wms.router import router as inventory_wms_router
 from app.modules.legal.router import router as legal_router
 from app.modules.platform.api.router import router as platform_modules_router
 from app.modules.platform.entitlements.router import router as entitlements_router
@@ -107,7 +108,7 @@ def build_router() -> APIRouter:
     api_router.include_router(accounting_router, dependencies=[Depends(require_module("accounting"))])
     api_router.include_router(taxes_router)
     api_router.include_router(jurisdiction_router)
-    for r in (inventory_items_router, inventory_warehouses_router, inventory_locations_router, inventory_stock_moves_router, inventory_transfers_router, inventory_adjustments_router, inventory_reservations_router, inventory_costing_router, inventory_waste_router):
+    for r in (inventory_items_router, inventory_warehouses_router, inventory_locations_router, inventory_stock_moves_router, inventory_transfers_router, inventory_adjustments_router, inventory_reservations_router, inventory_costing_router, inventory_waste_router, inventory_wms_router):
         api_router.include_router(r, dependencies=[Depends(require_module("inventory"))])
     api_router.include_router(catalog_router, dependencies=[Depends(require_module("inventory"))])
     api_router.include_router(catalog_variant_router, dependencies=[Depends(require_module("inventory"))])
