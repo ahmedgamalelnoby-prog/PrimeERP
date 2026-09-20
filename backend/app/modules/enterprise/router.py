@@ -97,7 +97,7 @@ def payroll(p: PayrollRunCreate, db: Session = Depends(get_db), current_user: Us
     if existing:
         raise HTTPException(409, "Payroll period already exists")
     emps = list(db.scalars(select(Employee).where(Employee.company_id == p.company_id, Employee.is_active.is_(True))).all())
-    r = PayrollRun(company_id=p.company_id, period=period, total_gross=0, total_deductions=0, total_net=0)
+    r = PayrollRun(company_id=p.company_id, period=period, total_gross=0, total_deductions=0, total_net=0, status="calculated")
     db.add(r)
     db.flush()
     gross_total = ded_total = net_total = Decimal("0")
@@ -115,11 +115,94 @@ def payroll(p: PayrollRunCreate, db: Session = Depends(get_db), current_user: Us
     r.total_gross = gross_total
     r.total_deductions = ded_total
     r.total_net = net_total
-    r.status = "posted"
     try:
         db.commit()
     except IntegrityError:
         rollback_integrity(db, "Payroll period already exists")
+    db.refresh(r)
+    return r
+
+
+@router.post("/payroll/runs/{payroll_run_id}/post", response_model=PayrollResponse, dependencies=[Depends(require_permission("enterprise.post"))])
+def post_payroll(
+    payroll_run_id: int,
+    p: PayrollPostRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from calendar import monthrange
+    from app.modules.accounting.fiscal_years.repositories.fiscal_year_repository import fiscal_year_repository
+    from app.modules.accounting.journals.services.journal_service import journal_service
+
+    r = db.scalar(select(PayrollRun).where(PayrollRun.id == payroll_run_id).with_for_update())
+    if r is None:
+        raise HTTPException(404, "Payroll run not found")
+    company_for_user(db, r.company_id, current_user)
+    if r.journal_entry_id is not None or r.status == "posted":
+        raise HTTPException(409, "Payroll run is already posted")
+    if r.status != "calculated":
+        raise HTTPException(409, "Only calculated payroll runs can be posted")
+
+    year, month = int(r.period[:4]), int(r.period[5:])
+    posting_date = date(year, month, monthrange(year, month)[1])
+    period = fiscal_year_repository.get_period_for_date(
+        db=db, tenant_id=current_user.tenant_id, company_id=r.company_id, posting_date=posting_date
+    )
+    if period is None:
+        raise HTTPException(409, "No accounting period is available for the payroll posting date")
+    period = fiscal_year_repository.get_period_by_id(db, period.id, current_user.tenant_id, for_update=True)
+    if period is None or period.company_id != r.company_id or period.status != "open" or not period.allow_posting:
+        raise HTTPException(409, "Accounting period is not open for payroll posting")
+
+    account_ids = {p.expense_account_id, p.salary_payable_account_id}
+    if r.total_deductions:
+        if p.deductions_payable_account_id is None:
+            raise HTTPException(422, "A deductions payable account is required when payroll deductions exist")
+        account_ids.add(p.deductions_payable_account_id)
+    accounts = db.scalars(
+        select(AccountCombination).where(
+            AccountCombination.id.in_(account_ids),
+            AccountCombination.company_id == r.company_id,
+            AccountCombination.tenant_id == current_user.tenant_id,
+            AccountCombination.is_active.is_(True),
+        )
+    ).all()
+    if len(accounts) != len(account_ids):
+        raise HTTPException(422, "Every payroll posting account must belong to the selected company and tenant")
+
+    lines = [
+        {"account_combination_id": p.expense_account_id, "debit": r.total_gross, "credit": 0, "description": f"Payroll expense {r.period}"},
+        {"account_combination_id": p.salary_payable_account_id, "debit": 0, "credit": r.total_net, "description": f"Net salaries payable {r.period}"},
+    ]
+    if r.total_deductions:
+        lines.append({"account_combination_id": p.deductions_payable_account_id, "debit": 0, "credit": r.total_deductions, "description": f"Payroll deductions payable {r.period}"})
+
+    entry = journal_service.create_draft(
+        db,
+        tenant_id=current_user.tenant_id,
+        company_id=r.company_id,
+        branch_id=p.branch_id,
+        journal_id=p.journal_id,
+        fiscal_year_id=period.fiscal_year_id,
+        period_id=period.id,
+        entry_number=f"PAYROLL-{r.period}",
+        entry_date=posting_date,
+        description=f"Payroll posting {r.period}",
+        lines=lines,
+        user_id=current_user.id,
+        source_module="enterprise",
+        source_entity="payroll_run",
+        source_id=r.id,
+        commit=False,
+    )
+    journal_service.submit(db, tenant_id=current_user.tenant_id, entry_id=entry.id, user_id=current_user.id, commit=False)
+    if entry.journal.requires_approval:
+        r.status = "pending_approval"
+    else:
+        journal_service.post(db, tenant_id=current_user.tenant_id, entry_id=entry.id, user_id=current_user.id, commit=False)
+        r.status = "posted"
+    r.journal_entry_id = entry.id
+    db.commit()
     db.refresh(r)
     return r
 
