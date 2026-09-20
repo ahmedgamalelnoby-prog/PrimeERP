@@ -45,6 +45,7 @@ class WMSOperationLine(Base):
     expiry_date = Column(Date, nullable=True, index=True)
     barcode = Column(String(100), nullable=True, index=True)
     stock_move_id = Column(Integer, ForeignKey("inventory_stock_moves.id", ondelete="RESTRICT"), nullable=True, unique=True)
+    reservation_id = Column(Integer, ForeignKey("inventory_reservations.id", ondelete="RESTRICT"), nullable=True, index=True)
     count_expected = Column(Numeric(18, 4), nullable=True)
     count_actual = Column(Numeric(18, 4), nullable=True)
 
