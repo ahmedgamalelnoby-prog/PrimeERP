@@ -28,6 +28,7 @@ from app.modules.saas.router import router as saas_router
 from app.modules.transactions.api.router import router as transactions_router
 from app.modules.commerce.router import router as commerce_router
 from app.modules.commerce.ar_router import router as ar_router
+from app.modules.commerce.ap_router import router as ap_router
 from app.modules.enterprise.router import router as enterprise_router
 from app.modules.shipping.router import router as shipping_router
 from app.modules.shipping.settlement_router import router as shipping_settlement_router
