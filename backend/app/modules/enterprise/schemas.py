@@ -9,9 +9,15 @@ class EmployeeCreate(BaseModel):
  company_id:int=Field(gt=0); employee_no:str; name:str; department:str|None=None; job_title:str|None=None; hire_date:date; basic_salary:Decimal=Field(ge=0); allowances:Decimal=Field(default=0,ge=0); deductions:Decimal=Field(default=0,ge=0)
 class EmployeeResponse(EmployeeCreate):
  model_config=ConfigDict(from_attributes=True); id:int; is_active:bool
-class PayrollRunCreate(BaseModel): company_id:int=Field(gt=0); period:str=Field(min_length=4,max_length=20)
+class PayrollRunCreate(BaseModel): company_id:int=Field(gt=0); period:str=Field(min_length=7,max_length=7)
+class PayrollPostRequest(BaseModel):
+ branch_id:int=Field(gt=0)
+ journal_id:int=Field(gt=0)
+ expense_account_id:int=Field(gt=0)
+ salary_payable_account_id:int=Field(gt=0)
+ deductions_payable_account_id:int|None=Field(default=None,gt=0)
 class PayrollResponse(BaseModel):
- model_config=ConfigDict(from_attributes=True); id:int; company_id:int; period:str; status:str; total_gross:Decimal; total_deductions:Decimal; total_net:Decimal
+ model_config=ConfigDict(from_attributes=True); id:int; company_id:int; period:str; status:str; total_gross:Decimal; total_deductions:Decimal; total_net:Decimal; journal_entry_id:int|None
 class BudgetCreate(BaseModel): company_id:int=Field(gt=0); name:str; fiscal_year:int=Field(gt=2000); notes:str|None=None
 class BudgetLineCreate(BaseModel): account_id:int=Field(gt=0); period:int=Field(ge=1,le=12); amount:Decimal=Field(ge=0)
 class BudgetResponse(BudgetCreate):
