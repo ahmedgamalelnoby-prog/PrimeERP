@@ -96,8 +96,23 @@ class DomainCompletionService:
 
     def workflow(self,db,**kw):
         x=WorkflowInstance(**kw);db.add(x);db.flush();return x
-    def workflow_decide(self,db,step,status,reason=None):
+    def workflow_decide(self,db,step,status,reason=None,actor_id=None):
         if status not in {"approved","rejected"}: raise HTTPException(422,"Workflow decision must be approved or rejected")
-        step.status=status;step.reason=reason;step.decided_at=datetime.now(timezone.utc);db.flush();return step
+        workflow=db.scalar(select(WorkflowInstance).where(WorkflowInstance.id==step.workflow_id).with_for_update())
+        if workflow is None: raise HTTPException(404,"Workflow instance not found")
+        if workflow.status in {"approved","rejected","cancelled"}: raise HTTPException(409,"Workflow is already terminal")
+        if step.status!="pending": raise HTTPException(409,"Workflow step has already been decided")
+        if step.level != workflow.current_level: raise HTTPException(409,"Only the current approval level can be decided")
+        if step.approver_id is not None and actor_id is not None and step.approver_id != actor_id and workflow.delegated_to != actor_id:
+            raise HTTPException(403,"User is not the assigned workflow approver")
+        step.status=status;step.reason=reason;step.decided_at=datetime.now(timezone.utc)
+        if status=="rejected":
+            workflow.status="rejected"
+        else:
+            next_step=db.scalar(select(WorkflowApprovalStep).where(WorkflowApprovalStep.workflow_id==workflow.id,WorkflowApprovalStep.level==step.level+1))
+            if next_step is None: workflow.status="approved"
+            else: workflow.current_level=step.level+1
+        db.flush()
+        return step, workflow
 
 domain_completion_service=DomainCompletionService()
