@@ -63,11 +63,11 @@ def restore_salla_inventory(db: Session, order: SallaOrder, user_id: int) -> dic
     if not deliveries:
         return {"status": "no_delivery", "return_moves": 0, "cogs_reversed": False}
 
-    all_source_moves = []
+    source_moves = []
     for delivery in deliveries:
         if not delivery.warehouse_id:
             continue
-        all_source_moves.extend(db.scalars(
+        source_moves.extend(db.scalars(
             select(InventoryStockMove).where(
                 InventoryStockMove.company_id == order.company_id,
                 InventoryStockMove.source_module == "commerce",
@@ -76,20 +76,12 @@ def restore_salla_inventory(db: Session, order: SallaOrder, user_id: int) -> dic
                 InventoryStockMove.status == "posted",
             )
         ).all())
-
-    source_moves = db.scalars(
-        select(InventoryStockMove).where(
-            InventoryStockMove.company_id == order.company_id,
-            InventoryStockMove.source_module == "commerce",
-            InventoryStockMove.source_entity == "sales_delivery",
-            InventoryStockMove.source_id.like(f"{delivery.id}:%"),
-            InventoryStockMove.status == "posted",
-        )
-    ).all()
     if not source_moves:
         return {"status": "delivery_not_posted", "return_moves": 0, "cogs_reversed": False}
 
-    delivery_for_location = deliveries[0]
+    delivery_for_location = next((d for d in deliveries if d.warehouse_id), None)
+    if delivery_for_location is None:
+        return {"status": "delivery_without_warehouse", "return_moves": 0, "cogs_reversed": False}
     destination = db.scalar(
         select(InventoryLocation).where(
             InventoryLocation.warehouse_id == delivery_for_location.warehouse_id,
