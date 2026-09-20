@@ -264,9 +264,15 @@ class CommerceService:
                 expanded.extend(expand_recipe(recipe_line.ingredient_product_id, None, line_qty, visited))
             return expanded
 
+        any_remaining = False
         for line in obj.lines:
+            already = Decimal(getattr(line, "fulfilled_quantity", 0) or 0)
+            remaining = Decimal(line.quantity) - already
+            if remaining <= 0:
+                continue
+            any_remaining = True
             if kind == "sale":
-                components = expand_recipe(line.item_id, line.variant_id, Decimal(line.quantity), set())
+                components = expand_recipe(line.item_id, line.variant_id, remaining, set())
                 for component_index, (component_item_id, component_variant_id, component_qty) in enumerate(components, start=1):
                     source_id = f"{obj.id}:{line.id}:component:{component_index}:{component_item_id}:{component_variant_id or 0}"
                     existing = db.scalar(select(InventoryStockMove).where(
@@ -302,17 +308,23 @@ class CommerceService:
                 payload = StockMoveCreate(
                     company_id=company_id, item_id=line.item_id, variant_id=getattr(line, "variant_id", None),
                     movement_type="receipt", source_location_id=None, destination_location_id=loc.id,
-                    quantity=line.quantity, unit_cost=net_unit_cost, transaction_date=obj.document_date,
+                    quantity=remaining, unit_cost=net_unit_cost, transaction_date=obj.document_date,
                     reference=obj.number, source_module="commerce", source_entity=source_entity,
                     source_id=source_id, notes="Purchase receipt",
                 )
                 move = inventory_stock_move_service.create_draft(db, payload)
                 inventory_stock_move_service.post(db, tenant_id=tenant_id, company_id=company_id, move_id=move.id, user_id=user_id)
+            line.fulfilled_quantity = already + remaining
+        if not any_remaining:
+            return obj
+        complete = all(Decimal(getattr(line, "fulfilled_quantity", 0) or 0) >= Decimal(line.quantity) for line in obj.lines)
         if kind == "sale":
             commerce_accounting_service.post_sales_delivery_cogs(db, obj, user_id)
+            obj.status = "fulfilled" if complete else "partially_fulfilled"
         else:
             commerce_accounting_service.post_purchase_receipt(db, obj, user_id)
-        obj.status = "fulfilled" if kind == "sale" else "received"; db.flush()
+            obj.status = "received" if complete else "partially_received"
+        db.flush()
         return obj
 
     @staticmethod
