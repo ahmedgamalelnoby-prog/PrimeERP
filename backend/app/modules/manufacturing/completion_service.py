@@ -98,6 +98,9 @@ class ManufacturingCompletionService:
     def subcontract(self,db,company_id,work_order_id,**kw):
         self._wo(db,company_id,work_order_id);x=ManufacturingSubcontract(company_id=company_id,work_order_id=work_order_id,**kw);db.add(x);db.flush();return x
     def post_variance(self,db,company_id,work_order_id,*,tenant_id,user_id,journal_id,fiscal_year_id,period_id,branch_id,entry_number,entry_date,debit_account_id,credit_account_id):
+        existing_posted=db.scalar(select(ManufacturingVariance).where(ManufacturingVariance.work_order_id==work_order_id,ManufacturingVariance.status=="posted").order_by(ManufacturingVariance.id.desc()))
+        if existing_posted is not None:
+            raise HTTPException(409,"Manufacturing variance is already posted for this work order")
         x=self.variance(db,company_id,work_order_id)
         amount=abs(Decimal(x.total_variance or 0))
         if amount == 0: raise HTTPException(409,"Manufacturing variance is zero; nothing to post")
