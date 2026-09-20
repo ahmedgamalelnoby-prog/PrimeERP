@@ -29,11 +29,21 @@ def group(p:GroupCreate,db:Session=Depends(get_db),user:User=Depends(get_current
 def member(group_id:int,p:MemberCreate,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     g=db.get(ConsolidationGroup,group_id);e=db.get(FinanceEntity,p.entity_id)
     if not g or not e:raise HTTPException(404,"Group/entity not found")
-    company_ok(db,g.company_id,user);company_ok(db,e.company_id,user);o=ConsolidationMember(group_id=group_id,**p.model_dump());db.add(o);db.commit();db.refresh(o);return {"id":o.id}
+    company_ok(db,g.company_id,user);company_ok(db,e.company_id,user)
+    if e.company_id == g.company_id:
+        raise HTTPException(422,"A consolidation group must contain entities from companies other than the group owner company")
+    if p.active_from and p.active_to and p.active_to < p.active_from:
+        raise HTTPException(422,"Membership active_to cannot precede active_from")
+    if not e.is_active:
+        raise HTTPException(409,"Finance entity is inactive")
+    o=ConsolidationMember(group_id=group_id,**p.model_dump());db.add(o);db.commit();db.refresh(o);return {"id":o.id}
 @router.post("/intercompany",dependencies=[Depends(require_permission("enterprise.finance.write"))])
 def intercompany(p:IntercompanyCreate,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     company_ok(db,p.company_id,user)
     if p.from_entity_id==p.to_entity_id:raise HTTPException(422,"Intercompany parties must differ")
+    parties=list(db.scalars(select(FinanceEntity).where(FinanceEntity.id.in_([p.from_entity_id,p.to_entity_id]),FinanceEntity.company_id == p.company_id,FinanceEntity.is_active.is_(True)))).all()
+    if len(parties) != 2:
+        raise HTTPException(422,"Both intercompany entities must belong to the selected company and be active")
     o=IntercompanyTransaction(**p.model_dump());db.add(o);db.commit();db.refresh(o);return {"id":o.id,"status":o.status}
 @router.get("/intercompany",dependencies=[Depends(require_permission("enterprise.finance.access"))])
 def intercompanies(company_id:int,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
