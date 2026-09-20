@@ -112,8 +112,9 @@ def build_router() -> APIRouter:
     api_router.include_router(accounting_router, dependencies=[Depends(require_module("accounting"))])
     api_router.include_router(taxes_router)
     api_router.include_router(jurisdiction_router)
-    for r in (inventory_items_router, inventory_warehouses_router, inventory_locations_router, inventory_stock_moves_router, inventory_transfers_router, inventory_adjustments_router, inventory_reservations_router, inventory_costing_router, inventory_waste_router, inventory_wms_router, inventory_revaluation_router, commerce_backorder_router):
+    for r in (inventory_items_router, inventory_warehouses_router, inventory_locations_router, inventory_stock_moves_router, inventory_transfers_router, inventory_adjustments_router, inventory_reservations_router, inventory_costing_router, inventory_waste_router, inventory_wms_router, inventory_revaluation_router):
         api_router.include_router(r, dependencies=[Depends(require_module("inventory"))])
+    api_router.include_router(commerce_backorder_router, dependencies=[Depends(require_module("sales"))])
     api_router.include_router(catalog_router, dependencies=[Depends(require_module("inventory"))])
     api_router.include_router(catalog_variant_router, dependencies=[Depends(require_module("inventory"))])
     api_router.include_router(catalog_bundle_router, dependencies=[Depends(require_module("inventory"))])
