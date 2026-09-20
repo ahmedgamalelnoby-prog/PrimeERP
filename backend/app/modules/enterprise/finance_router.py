@@ -27,8 +27,8 @@ def group(p:GroupCreate,db:Session=Depends(get_db),user:User=Depends(get_current
 @router.post("/groups/{group_id}/members",dependencies=[Depends(require_permission("enterprise.finance.write"))])
 def member(group_id:int,p:MemberCreate,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     g=db.get(ConsolidationGroup,group_id);e=db.get(FinanceEntity,p.entity_id)
-    if not g or not e or g.company_id!=e.company_id:raise HTTPException(404,"Group/entity not found")
-    company_ok(db,g.company_id,user);o=ConsolidationMember(group_id=group_id,**p.model_dump());db.add(o);db.commit();db.refresh(o);return {"id":o.id}
+    if not g or not e:raise HTTPException(404,"Group/entity not found")
+    company_ok(db,g.company_id,user);company_ok(db,e.company_id,user);o=ConsolidationMember(group_id=group_id,**p.model_dump());db.add(o);db.commit();db.refresh(o);return {"id":o.id}
 @router.post("/intercompany",dependencies=[Depends(require_permission("enterprise.finance.write"))])
 def intercompany(p:IntercompanyCreate,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     company_ok(db,p.company_id,user)
@@ -69,6 +69,13 @@ def approve(run_id:int,db:Session=Depends(get_db),user:User=Depends(get_current_
     g=db.get(ConsolidationGroup,r.group_id);company_ok(db,g.company_id,user)
     if r.status!="calculated":raise HTTPException(409,"Only calculated runs can be approved")
     r.status="approved";db.commit();return {"run_id":r.id,"status":r.status}
+@router.post("/consolidations/{run_id}/close",dependencies=[Depends(require_permission("enterprise.finance.post"))])
+def close(run_id:int,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
+    r=db.get(ConsolidationRun,run_id)
+    if not r:raise HTTPException(404,"Run not found")
+    g=db.get(ConsolidationGroup,r.group_id);company_ok(db,g.company_id,user)
+    if r.status!="approved":raise HTTPException(409,"Only approved runs can be closed")
+    r.status="closed";db.commit();return {"run_id":r.id,"status":r.status}
 @router.get("/consolidations/{run_id}",dependencies=[Depends(require_permission("enterprise.finance.access"))])
 def detail(run_id:int,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     r=db.get(ConsolidationRun,run_id)
