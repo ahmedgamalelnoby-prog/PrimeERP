@@ -732,6 +732,111 @@ def shipping_cod_reconciliation(
     }
 
 
+@router.get("/treasury/cheque-integration", dependencies=[Depends(require_permission("treasury.access"))])
+def cheque_integration(
+    company_id: int = Query(..., gt=0),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _company(db, company_id, user)
+    cheque_rows = db.execute(
+        select(
+            Cheque.status,
+            Cheque.direction,
+            func.count(Cheque.id),
+            func.coalesce(func.sum(Cheque.amount), 0),
+        )
+        .where(Cheque.company_id == company_id)
+        .group_by(Cheque.status, Cheque.direction)
+        .order_by(Cheque.direction, Cheque.status)
+    ).all()
+    events_count = db.scalar(
+        select(func.count(ChequeEvent.id)).where(ChequeEvent.company_id == company_id)
+    ) or 0
+    return {
+        "company_id": company_id,
+        "cheques": [
+            {
+                "status": status,
+                "direction": direction,
+                "count": count,
+                "amount": Decimal(str(amount or 0)),
+            }
+            for status, direction, count, amount in cheque_rows
+        ],
+        "event_count": events_count,
+        "terminal_statuses": ["collected", "cleared", "cancelled", "reversed", "withdrawn"],
+    }
+
+
+@router.get("/treasury/reconciliation-control", dependencies=[Depends(require_permission("treasury.access"))])
+def treasury_reconciliation_control(
+    company_id: int = Query(..., gt=0),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _company(db, company_id, user)
+
+    posted = db.execute(
+        select(
+            TreasuryTransaction.account_id,
+            func.coalesce(
+                func.sum(
+                    case(
+                        (TreasuryTransaction.transaction_type.in_(("receipt", "deposit")), TreasuryTransaction.amount),
+                        (TreasuryTransaction.transaction_type.in_(("payment", "withdrawal")), -TreasuryTransaction.amount),
+                        else_=0,
+                    )
+                ),
+                0,
+            ),
+        )
+        .where(
+            TreasuryTransaction.company_id == company_id,
+            TreasuryTransaction.status == "posted",
+        )
+        .group_by(TreasuryTransaction.account_id)
+    ).all()
+
+    closing = db.execute(
+        select(
+            func.count(TreasuryDailyClosing.id),
+            func.coalesce(func.sum(TreasuryDailyClosing.difference), 0),
+        )
+        .where(
+            TreasuryDailyClosing.company_id == company_id,
+            TreasuryDailyClosing.status == "closed",
+        )
+    ).one()
+
+    forecast = db.execute(
+        select(
+            func.count(TreasuryForecast.id),
+            func.coalesce(func.sum(TreasuryForecast.expected_inflow), 0),
+            func.coalesce(func.sum(TreasuryForecast.expected_outflow), 0),
+        )
+        .where(TreasuryForecast.company_id == company_id)
+    ).one()
+
+    return {
+        "company_id": company_id,
+        "posted_account_positions": [
+            {"account_id": account_id, "balance": Decimal(str(balance or 0))}
+            for account_id, balance in posted
+        ],
+        "daily_closing": {
+            "closed_days": closing[0] or 0,
+            "net_difference": Decimal(str(closing[1] or 0)),
+        },
+        "forecast": {
+            "forecast_count": forecast[0] or 0,
+            "expected_inflow": Decimal(str(forecast[1] or 0)),
+            "expected_outflow": Decimal(str(forecast[2] or 0)),
+            "expected_net": Decimal(str(forecast[1] or 0)) - Decimal(str(forecast[2] or 0)),
+        },
+    }
+
+
 @router.get("/integration/end-to-end-readiness", dependencies=[Depends(require_permission("commerce.access"))])
 def end_to_end_readiness(
     company_id: int = Query(..., gt=0),
