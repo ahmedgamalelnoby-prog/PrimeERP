@@ -82,6 +82,8 @@ from app.modules.accounting.fiscal_years.api.close_router import router as fisca
 from app.modules.completion.enterprise_router import router as enterprise_completion_router
 from app.modules.completion.finance_router import router as finance_completion_router
 from app.modules.completion.domain_router import router as domain_completion_router
+from app.modules.commerce.ap_router import router as ap_router
+
 def build_router() -> APIRouter:
     api_router = APIRouter()
     api_router.include_router(identity_router, prefix="/identity", tags=["identity"])
@@ -158,6 +160,4 @@ def build_router() -> APIRouter:
     api_router.include_router(legal_router)
     api_router.include_router(ap_router, dependencies=[Depends(require_module("sales"))])
     return api_router
-
-from app.modules.commerce.ap_router import router as ap_router
 
