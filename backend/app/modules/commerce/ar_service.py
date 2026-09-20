@@ -155,7 +155,8 @@ class ARService:
             settings=db.scalar(select(CommerceAccountingSettings).where(CommerceAccountingSettings.company_id==company_id))
             if settings is not None:
                 gl_balance=Decimal(str(db.scalar(select(func.coalesce(func.sum(JournalEntryLine.debit-JournalEntryLine.credit),0)).join(JournalEntry,JournalEntry.id==JournalEntryLine.entry_id).where(JournalEntry.company_id==company_id,JournalEntry.status=="posted",JournalEntry.entry_date<=as_of,JournalEntryLine.account_combination_id==settings.ar_account_id)) or 0))
-                subledger_balance=sum((Decimal(d.total or 0) for d in invoices),Decimal(0))-sum((by_doc.get(d.id,Decimal(0)) for d in invoices),Decimal(0))-sum((Decimal(w.amount or 0) for w in db.scalars(select(ARWriteOff).where(ARWriteOff.company_id==company_id,ARWriteOff.status=="approved",ARWriteOff.created_at<=as_of)).all()),Decimal(0))
+                credit_notes=Decimal(str(db.scalar(select(func.coalesce(func.sum(SalesDocument.total),0)).where(SalesDocument.company_id==company_id,SalesDocument.document_type=="credit_note",SalesDocument.status.in_({"confirmed","posted"}),SalesDocument.document_date<=as_of)) or 0))
+                subledger_balance=sum((Decimal(d.total or 0) for d in invoices),Decimal(0))-credit_notes-sum((by_doc.get(d.id,Decimal(0)) for d in invoices),Decimal(0))-sum((Decimal(w.amount or 0) for w in db.scalars(select(ARWriteOff).where(ARWriteOff.company_id==company_id,ARWriteOff.status=="approved",ARWriteOff.created_at<=as_of)).all()),Decimal(0))
                 gl_difference=gl_balance-subledger_balance
                 if abs(gl_difference)>Decimal("0.01"): issues.append({"type":"gl_subledger_mismatch","amount":str(gl_difference)})
         details={"invoice_open":str(invoice_open),"unapplied_payments":str(unapplied),"gl_balance":str(gl_balance) if gl_balance is not None else None,"gl_difference":str(gl_difference),"issues":issues}
