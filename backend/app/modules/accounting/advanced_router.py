@@ -27,3 +27,13 @@ def elimination(p:Elimination,db:Session=Depends(get_db),u:User=Depends(get_curr
 def diagnostics(company_id:int,start_date:date|None=None,end_date:date|None=None,db:Session=Depends(get_db),u:User=Depends(get_current_user)):return accounting_advanced_service.diagnostics(db,u,company_id=company_id,start_date=start_date,end_date=end_date)
 @router.get("/drilldown/{account_id}")
 def drilldown(account_id:int,company_id:int,start_date:date|None=None,end_date:date|None=None,db:Session=Depends(get_db),u:User=Depends(get_current_user)):return accounting_advanced_service.drilldown(db,u,company_id=company_id,account_id=account_id,start_date=start_date,end_date=end_date)
+
+class SourceReverse(BaseModel):
+ company_id:int
+ source_module:str
+ source_entity:str
+ source_id:int
+ reversal_date:date|None=None
+ reason:str=Field(min_length=3)
+@router.post("/reverse-source")
+def reverse_source(p:SourceReverse,db:Session=Depends(get_db),u:User=Depends(get_current_user)):return accounting_advanced_service.reverse_source(db,u,**p.model_dump())
