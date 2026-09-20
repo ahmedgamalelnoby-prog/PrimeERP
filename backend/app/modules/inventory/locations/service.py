@@ -57,10 +57,14 @@ class LocationService:
             raise ValueError("Invalid location type")
         if payload.name is not None:
             location.name = payload.name.strip()
-        if payload.location_type is not None:
-            location.location_type = payload.location_type
-        if payload.is_virtual is not None:
-            location.is_virtual = payload.is_virtual
+        next_type = payload.location_type if payload.location_type is not None else location.location_type
+        next_virtual = payload.is_virtual if payload.is_virtual is not None else location.is_virtual
+        if next_virtual and next_type != "virtual":
+            raise ValueError("Virtual locations must use location_type=virtual")
+        if next_type == "virtual" and not next_virtual:
+            raise ValueError("location_type=virtual requires is_virtual=true")
+        location.location_type = next_type
+        location.is_virtual = next_virtual
         if payload.is_active is not None:
             location.is_active = payload.is_active
         if payload.description is not None:
