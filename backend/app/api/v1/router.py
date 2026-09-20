@@ -56,6 +56,9 @@ from app.modules.crm.api import router as crm_router
 from app.modules.hr.router import router as hr_router
 from app.modules.pos.router import router as pos_router
 from app.modules.manufacturing.bom.router import router as manufacturing_router
+from app.modules.mobile.router import router as mobile_router
+from app.modules.platform.developer.router import router as developer_router
+from app.modules.enterprise.finance_router import router as enterprise_finance_router
 
 def build_router() -> APIRouter:
     api_router = APIRouter()
@@ -66,6 +69,9 @@ def build_router() -> APIRouter:
     api_router.include_router(hr_router)
     api_router.include_router(pos_router)
     api_router.include_router(manufacturing_router)
+    api_router.include_router(mobile_router)
+    api_router.include_router(developer_router)
+    api_router.include_router(enterprise_finance_router)
     api_router.include_router(platform_modules_router)
     api_router.include_router(saas_router, prefix="/saas", tags=["saas"])
     api_router.include_router(transactions_router, prefix="/transactions", tags=["transactions"])
