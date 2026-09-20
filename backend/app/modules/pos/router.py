@@ -17,8 +17,12 @@ from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models.user import User
 from app.modules.inventory.items.models import InventoryItem
 from app.modules.inventory.warehouses.models import InventoryWarehouse
+from app.modules.inventory.transfers.schemas import TransferCreate
+from app.modules.inventory.transfers.service import inventory_transfer_service
+from app.modules.commerce.payment_workflow import post_payment, reverse_payment
 from app.modules.jurisdiction.commerce_guard import capture_document_tax_snapshot, validate_document_tax_snapshot
 from app.modules.restaurant.models import (
+    Floor, RestaurantTable, OrderType,
     PreparationStation,
     PosMenuItemRoute,
     PosOrderLineRoute,
@@ -96,6 +100,18 @@ class Checkout(BaseModel):
     terminal_id: int | None = Field(default=None, gt=0)
     lines: list[CheckoutLine] = Field(min_length=1)
 
+
+class SplitPayment(BaseModel):
+    amount: Decimal = Field(gt=0)
+    method: str = Field(min_length=1, max_length=30)
+    reference: str | None = None
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=100)
+
+class SplitPaymentRequest(BaseModel):
+    payments: list[SplitPayment] = Field(min_length=1)
+
+class TableStatusUpdate(BaseModel):
+    status: str = Field(pattern="^(available|occupied|reserved|cleaning|out_of_service)$")
 
 class RouteStatusUpdate(BaseModel):
     status: str = Field(pattern="^(queued|preparing|ready|served|cancelled)$")
@@ -535,3 +551,81 @@ def update_route(route_id: int, payload: RouteStatusUpdate, company_id: int = Qu
     db.commit()
     db.refresh(route)
     return route
+
+
+@router.get("/tables")
+def list_tables(company_id: int = Query(..., gt=0), branch_id: int | None = Query(default=None, gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company(db, company_id, current_user)
+    q = select(RestaurantTable).join(Branch, Branch.id == RestaurantTable.branch_id).where(Branch.company_id == company_id, RestaurantTable.is_active.is_(True))
+    if branch_id: q = q.where(RestaurantTable.branch_id == branch_id)
+    return list(db.scalars(q.order_by(RestaurantTable.branch_id, RestaurantTable.code)).all())
+
+@router.patch("/tables/{table_id}/status", dependencies=[Depends(require_permission("commerce.write"))])
+def update_table_status(table_id: int, payload: TableStatusUpdate, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company(db, company_id, current_user)
+    table = db.scalar(select(RestaurantTable).join(Branch, Branch.id == RestaurantTable.branch_id).where(RestaurantTable.id == table_id, Branch.company_id == company_id, RestaurantTable.is_active.is_(True)).with_for_update())
+    if table is None: raise HTTPException(404, "Restaurant table not found")
+    if table.status == "out_of_service" and payload.status != "available": raise HTTPException(409, "Out-of-service table must be restored to available first")
+    table.status = payload.status
+    db.commit(); db.refresh(table); return table
+
+@router.get("/order-types")
+def list_order_types(company_id: int = Query(..., gt=0), branch_id: int | None = Query(default=None, gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company(db, company_id, current_user)
+    q = select(OrderType).join(Branch, Branch.id == OrderType.branch_id).where(Branch.company_id == company_id, OrderType.is_active.is_(True))
+    if branch_id: q = q.where(OrderType.branch_id == branch_id)
+    return list(db.scalars(q.order_by(OrderType.display_order, OrderType.name)).all())
+
+@router.post("/sales/{sale_id}/split-payments", dependencies=[Depends(require_permission("commerce.payment"))])
+def split_payments(sale_id: int, payload: SplitPaymentRequest, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company(db, company_id, current_user)
+    sale = db.scalar(select(SalesDocument).where(SalesDocument.id == sale_id, SalesDocument.company_id == company_id, SalesDocument.document_type == "invoice").with_for_update())
+    if sale is None: raise HTTPException(404, "POS sale invoice not found")
+    outstanding = Decimal(sale.total or 0) - Decimal(sale.paid_total or 0)
+    total = sum((Decimal(p.amount) for p in payload.payments), Decimal("0"))
+    if total != outstanding: raise HTTPException(422, f"Split payments must equal the outstanding amount {outstanding}")
+    posted=[]
+    for p in payload.payments:
+        _, payment = post_payment(db, company_id=company_id, document_kind="sale", document_id=sale.id, amount=p.amount, payment_date=sale.document_date, method=p.method, reference=p.reference, idempotency_key=p.idempotency_key)
+        posted.append(payment)
+    db.commit(); return {"sale_id": sale.id, "paid_total": sale.paid_total, "payments": posted}
+
+@router.post("/payments/{payment_id}/reverse", dependencies=[Depends(require_permission("commerce.payment"))])
+def reverse_pos_payment(payment_id: int, company_id: int = Query(..., gt=0), reversal_date: date = Query(...), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company(db, company_id, current_user)
+    _, original, reversal = reverse_payment(db, company_id=company_id, payment_id=payment_id, reversal_date=reversal_date, notes=f"POS payment reversal by user {current_user.id}")
+    db.commit(); return {"original_payment_id": original.id, "reversal_payment_id": reversal.id, "status": original.status}
+
+@router.post("/stock-requests", dependencies=[Depends(require_permission("inventory.write"))])
+def create_stock_request(payload: TransferCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company(db, payload.company_id, current_user)
+    try:
+        obj = inventory_transfer_service.create(db, payload)
+        inventory_transfer_service.request(db, company_id=payload.company_id, transfer_id=obj.id)
+        db.commit(); db.refresh(obj); return obj
+    except ValueError as exc:
+        db.rollback(); raise HTTPException(422, str(exc))
+
+@router.post("/stock-requests/{transfer_id}/approve", dependencies=[Depends(require_permission("inventory.post"))])
+def approve_stock_request(transfer_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company(db, company_id, current_user)
+    try:
+        obj=inventory_transfer_service.approve(db, company_id=company_id, transfer_id=transfer_id); db.commit(); return obj
+    except ValueError as exc:
+        db.rollback(); raise HTTPException(422,str(exc))
+
+@router.post("/stock-requests/{transfer_id}/ship", dependencies=[Depends(require_permission("inventory.post"))])
+def ship_stock_request(transfer_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company(db, company_id, current_user)
+    try:
+        obj=inventory_transfer_service.ship(db, company_id=company_id, transfer_id=transfer_id, tenant_id=current_user.tenant_id, user_id=current_user.id); db.commit(); return obj
+    except ValueError as exc:
+        db.rollback(); raise HTTPException(422,str(exc))
+
+@router.post("/stock-requests/{transfer_id}/receive", dependencies=[Depends(require_permission("inventory.post"))])
+def receive_stock_request(transfer_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company(db, company_id, current_user)
+    try:
+        obj=inventory_transfer_service.receive(db, company_id=company_id, transfer_id=transfer_id, tenant_id=current_user.tenant_id, user_id=current_user.id); db.commit(); return obj
+    except ValueError as exc:
+        db.rollback(); raise HTTPException(422,str(exc))
