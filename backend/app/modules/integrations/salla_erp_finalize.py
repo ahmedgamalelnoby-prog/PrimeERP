@@ -71,7 +71,33 @@ def _build_delivery(db: Session, order: SallaOrder, invoice: SalesDocument) -> S
     return delivery
 
 
-def finalize_salla_order(db: Session, order: SallaOrder, user_id: int | None = None) -> dict:
+_FULFILLMENT_STATES = {
+    "processing", "shipped", "in_transit", "out_for_delivery",
+    "delivered", "fulfilled", "partially_fulfilled", "completed",
+}
+_SHIPMENT_FULFILLMENT_STATES = {
+    "picked_up", "pickedup", "shipped", "in_transit", "intransit",
+    "received_at_final_hub", "out_for_delivery", "outfordelivery",
+    "reattempted", "to_be_reattempted", "delivered", "partially_delivered",
+}
+
+
+def _should_fulfill_order(order: SallaOrder, *, force_fulfillment: bool = False) -> bool:
+    """Inventory is consumed only after an explicit fulfillment signal."""
+    if force_fulfillment:
+        return True
+    fulfillment = str(order.fulfillment_status or "").strip().lower().replace(" ", "_")
+    state = str(order.status or "").strip().lower().replace(" ", "_")
+    return fulfillment in _FULFILLMENT_STATES or state in _FULFILLMENT_STATES
+
+
+def finalize_salla_order(
+    db: Session,
+    order: SallaOrder,
+    user_id: int | None = None,
+    *,
+    force_fulfillment: bool = False,
+) -> dict:
     effective_user_id = user_id or _system_user_id(db, order.company_id)
     state = str(order.status or "").strip().lower().replace(" ", "_")
     payment_state = str(order.payment_status or "").strip().lower().replace(" ", "_")
@@ -98,7 +124,7 @@ def finalize_salla_order(db: Session, order: SallaOrder, user_id: int | None = N
     if invoice is None or invoice.document_type != "invoice":
         result["shipping"] = sync_salla_shipments_for_order(db, order)
         return result
-    delivery = _build_delivery(db, order, invoice)
+    delivery = _build_delivery(db, order, invoice) if _should_fulfill_order(order, force_fulfillment=force_fulfillment) else None
     if delivery is not None:
         if delivery.status == "draft":
             delivery.status = "confirmed"
