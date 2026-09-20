@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException
 from app.modules.commerce.models import BusinessPartner, CommercePayment, CommercePaymentAllocation, SalesDocument
 from app.modules.commerce.ar_models import ARWriteOff, ARReconciliation
+from app.modules.commerce.ar_schemas import ARAdvanceReceiptRequest
 from app.modules.commerce.accounting_service import commerce_accounting_service
 from app.modules.accounting.fiscal_years.services.fiscal_year_service import fiscal_year_service
 from app.modules.accounting.journals.models import JournalEntry
@@ -15,6 +16,20 @@ from app.modules.companies.models import Company
 from app.modules.audit.service import record_audit_event
 
 class ARService:
+    def create_advance(self, db, company_id, payload, user_id):
+        partner=self._partner(db,company_id,payload.partner_id)
+        fiscal_year_service.assert_open_for_date(db,company_id=company_id,posting_date=payload.payment_date)
+        if payload.idempotency_key:
+            existing=db.scalar(select(CommercePayment).where(CommercePayment.company_id==company_id,CommercePayment.idempotency_key==payload.idempotency_key).with_for_update())
+            if existing:
+                if existing.document_kind!="sale" or existing.partner_id!=partner.id or Decimal(existing.amount)!=Decimal(payload.amount): raise HTTPException(409,"Idempotency key conflicts with another payment")
+                return existing
+        payment=CommercePayment(company_id=company_id,partner_id=partner.id,document_id=None,document_kind="sale",payment_date=payload.payment_date,amount=payload.amount,wht_amount=0,method=payload.method,reference=payload.reference,notes=payload.notes,idempotency_key=payload.idempotency_key,status="posted")
+        db.add(payment);db.flush()
+        commerce_accounting_service.post_payment(db,payment,None,user_id)
+        record_audit_event(db,action="ar.advance_created",entity_type="commerce_payment",entity_id=payment.id,user_id=user_id,tenant_id=db.scalar(select(Company.tenant_id).where(Company.id==company_id)),company_id=company_id,metadata={"partner_id":partner.id,"amount":str(payload.amount)})
+        return payment
+
     def _partner(self, db, company_id, partner_id):
         p=db.scalar(select(BusinessPartner).where(BusinessPartner.id==partner_id,BusinessPartner.company_id==company_id,BusinessPartner.is_active.is_(True)))
         if p is None: raise HTTPException(404,"Customer not found")
@@ -40,7 +55,7 @@ class ARService:
     def allocate(self, db, company_id, payment_id, allocations, user_id):
         payment=self._payment(db,company_id,payment_id)
         primary=db.scalar(select(SalesDocument).where(SalesDocument.id==payment.document_id,SalesDocument.company_id==company_id)) if payment.document_id else None
-        partner_id=primary.partner_id if primary else None
+        partner_id=(primary.partner_id if primary else payment.partner_id)
         if partner_id is None: raise HTTPException(409,"Payment is not linked to a customer")
         remaining=Decimal(payment.amount)-self._allocations_total(db,payment.id)
         created=[]
@@ -64,7 +79,9 @@ class ARService:
         payment=self._payment(db,company_id,payment_id)
         primary=db.scalar(select(SalesDocument).where(SalesDocument.id==payment.document_id,SalesDocument.company_id==company_id)) if payment.document_id else None
         if primary is None: raise HTTPException(409,"Payment must identify the customer for auto-match")
-        partner_id=primary.partner_id; remaining=self.unapplied(db,payment)
+        partner_id=(primary.partner_id if primary else payment.partner_id)
+        if partner_id is None: raise HTTPException(409,"Payment is not linked to a customer")
+        remaining=self.unapplied(db,payment)
         if remaining<=0: return {"payment_id":payment.id,"matched":[],"unapplied":"0"}
         cutoff=as_of or payment.payment_date
         invoices=list(db.scalars(select(SalesDocument).where(SalesDocument.company_id==company_id,SalesDocument.partner_id==partner_id,SalesDocument.document_type=="invoice",SalesDocument.status.in_({"confirmed","posted"}),SalesDocument.document_date<=cutoff).order_by(SalesDocument.due_date.asc().nulls_last(),SalesDocument.document_date.asc(),SalesDocument.id.asc()).with_for_update()).all())
