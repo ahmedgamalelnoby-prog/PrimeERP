@@ -652,3 +652,140 @@ def manufacturing_production_finance(
             "variance_status": variance.status if variance else None,
         })
     return rows
+
+
+@router.get("/commerce/return-reconciliation", dependencies=[Depends(require_permission("commerce.access"))])
+def return_reconciliation(
+    company_id: int = Query(..., gt=0),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _company(db, company_id, user)
+    sales_returns = db.scalars(
+        select(SalesDocument).where(
+            SalesDocument.company_id == company_id,
+            SalesDocument.document_type == "sales_return",
+            SalesDocument.status.notin_(("draft", "cancelled")),
+        )
+    ).all()
+    purchase_returns = db.scalars(
+        select(PurchaseDocument).where(
+            PurchaseDocument.company_id == company_id,
+            PurchaseDocument.document_type == "purchase_return",
+            PurchaseDocument.status.notin_(("draft", "cancelled")),
+        )
+    ).all()
+
+    def summarize(rows):
+        gross = sum((Decimal(str(x.total or 0)) for x in rows), Decimal("0"))
+        paid = sum((Decimal(str(x.paid_total or 0)) for x in rows), Decimal("0"))
+        return {
+            "count": len(rows),
+            "gross_value": gross,
+            "paid_value": paid,
+            "unsettled_value": gross - paid,
+        }
+
+    return {
+        "company_id": company_id,
+        "sales_returns": summarize(sales_returns),
+        "purchase_returns": summarize(purchase_returns),
+    }
+
+
+@router.get("/shipping/cod-reconciliation", dependencies=[Depends(require_permission("commerce.access"))])
+def shipping_cod_reconciliation(
+    company_id: int = Query(..., gt=0),
+    carrier_id: int | None = Query(default=None, gt=0),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _company(db, company_id, user)
+    stmt = select(Shipment).where(
+        Shipment.company_id == company_id,
+        Shipment.status.in_(("delivered", "returned")),
+    )
+    if carrier_id is not None:
+        stmt = stmt.where(Shipment.carrier_id == carrier_id)
+    rows = db.scalars(stmt.order_by(Shipment.id)).all()
+
+    delivered_cod = Decimal("0")
+    returned_cod = Decimal("0")
+    fees = Decimal("0")
+    for shipment in rows:
+        cod = Decimal(str(shipment.cod_collected or 0))
+        fee = Decimal(str(shipment.shipping_fee or 0))
+        fees += fee
+        if shipment.status == "delivered":
+            delivered_cod += cod
+        else:
+            returned_cod += cod
+
+    return {
+        "company_id": company_id,
+        "carrier_id": carrier_id,
+        "shipment_count": len(rows),
+        "delivered_cod": delivered_cod,
+        "returned_cod": returned_cod,
+        "shipping_fees": fees,
+        "net_cod_after_shipping_fees": delivered_cod - fees,
+    }
+
+
+@router.get("/integration/end-to-end-readiness", dependencies=[Depends(require_permission("commerce.access"))])
+def end_to_end_readiness(
+    company_id: int = Query(..., gt=0),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _company(db, company_id, user)
+
+    negative_stock = db.scalar(
+        select(func.count(InventoryStock.item_id)).where(
+            InventoryStock.company_id == company_id,
+            InventoryStock.quantity_on_hand < 0,
+        )
+    ) or 0
+    posted_payment_mismatches = 0
+    payments = db.scalars(
+        select(CommercePayment).where(
+            CommercePayment.company_id == company_id,
+            CommercePayment.status == "posted",
+        )
+    ).all()
+    for payment in payments:
+        allocated = db.scalar(
+            select(func.coalesce(func.sum(CommercePaymentAllocation.amount), 0)).where(
+                CommercePaymentAllocation.company_id == company_id,
+                CommercePaymentAllocation.payment_id == payment.id,
+                CommercePaymentAllocation.status == "active",
+            )
+        ) or 0
+        if Decimal(str(payment.amount or 0)) != Decimal(str(allocated or 0)):
+            posted_payment_mismatches += 1
+
+    open_shipments = db.scalar(
+        select(func.count(Shipment.id)).where(
+            Shipment.company_id == company_id,
+            Shipment.status.notin_(("delivered", "returned", "cancelled")),
+        )
+    ) or 0
+    open_work_orders = db.scalar(
+        select(func.count(ManufacturingWorkOrder.id)).where(
+            ManufacturingWorkOrder.company_id == company_id,
+            ManufacturingWorkOrder.status.in_(("released", "in_progress")),
+        )
+    ) or 0
+
+    return {
+        "company_id": company_id,
+        "inventory": {"negative_stock": negative_stock},
+        "payments": {"allocation_mismatches": posted_payment_mismatches},
+        "shipping": {"open_shipments": open_shipments},
+        "manufacturing": {"open_work_orders": open_work_orders},
+        "readiness": {
+            "inventory_ok": negative_stock == 0,
+            "payments_ok": posted_payment_mismatches == 0,
+            "operational_flow_visible": True,
+        },
+    }
