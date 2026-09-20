@@ -16,6 +16,7 @@ from app.modules.commerce.schemas import PartnerCreate, PartnerResponse, Documen
 from app.modules.commerce.sales_return_schemas import SalesReturnCreate
 from app.modules.commerce.sales_return_service import sales_return_service
 from app.modules.commerce.service import commerce_service
+from app.modules.commerce.ap_completion_service import ap_completion_service
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
@@ -178,6 +179,7 @@ def confirm_purchase(document_id: int, company_id: int = Query(..., gt=0), curre
     def action():
         obj = db.scalar(select(PurchaseDocument).where(PurchaseDocument.id == document_id, PurchaseDocument.company_id == company_id).with_for_update())
         if obj is None: raise ValueError("Document not found")
+        ap_completion_service.block_bill_posting_if_variance(db, company_id, document_id)
         snapshot = capture_document_tax_snapshot(db, obj, kind="purchase")
         if snapshot is None: raise ValueError("A jurisdiction tax snapshot is required before posting this purchase document")
         validate_document_tax_snapshot(obj, snapshot)
