@@ -52,7 +52,7 @@ def close_session(
     u:User=Depends(get_current_user),
     db:Session=Depends(get_db),
 ):
-    x=pos_session_service.close(db,u.tenant_id,p.company_id,session_id,p.actual_cash,p.notes)
+    x=pos_session_service.close(db,u.tenant_id,p.company_id,session_id,p.actual_cash,u.id,p.notes)
     db.commit()
     db.refresh(x)
     return x
