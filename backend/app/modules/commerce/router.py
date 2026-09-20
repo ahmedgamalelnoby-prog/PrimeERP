@@ -47,6 +47,7 @@ def _validate_accounting_configuration(db: Session, company: Company, payload: C
     for label, journal_id in journal_ids.items():
         if journal_id not in journal_by_id: raise HTTPException(422, f"Configured {label} does not belong to this company/tenant or is inactive")
     account_ids = {"AR account": payload.ar_account_id, "AP account": payload.ap_account_id, "sales account": payload.sales_account_id, "purchase account": payload.purchase_account_id, "inventory account": payload.inventory_account_id, "GRNI account": payload.grni_account_id, "PPV account": payload.purchase_price_variance_account_id, "COGS account": payload.cogs_account_id, "output VAT account": payload.output_vat_account_id, "input VAT account": payload.input_vat_account_id, "default payment account": payload.default_payment_account_id}
+    if payload.bank_account_id is not None: account_ids["bank account"] = payload.bank_account_id
     if payload.wht_account_id is not None: account_ids["WHT account"] = payload.wht_account_id
     accounts = db.scalars(select(AccountCombination).where(AccountCombination.id.in_(account_ids.values()), AccountCombination.company_id == company.id, AccountCombination.is_active.is_(True))).all()
     account_by_id = {account.id: account for account in accounts}
