@@ -65,6 +65,14 @@ class APService:
   self._bill(db,company_id,payload.bill_id,None);v=Decimal(payload.actual_amount)-Decimal(payload.expected_amount)
   x=APVarianceWorkflow(company_id=company_id,bill_id=payload.bill_id,variance_type=payload.variance_type,expected_amount=payload.expected_amount,actual_amount=payload.actual_amount,variance_amount=v,tolerance=payload.tolerance,status="approved" if abs(v)<=payload.tolerance else "pending",reason=payload.reason,requested_by=user_id)
   db.add(x);db.flush();return x
+ def apply_variance_workflow_to_bill(self,db,company_id,bill_id,user_id,tolerance=Decimal("0")):
+  result=self.three_way_match(db,company_id,bill_id,user_id,tolerance)
+  if result["status"]=="matched": return result
+  existing=db.scalar(select(APVarianceWorkflow).where(APVarianceWorkflow.company_id==company_id,APVarianceWorkflow.bill_id==bill_id,APVarianceWorkflow.status=="pending").with_for_update())
+  if not existing:
+   v=Decimal(result["value_variance"]);q=Decimal(result["quantity_variance"])
+   existing=APVarianceWorkflow(company_id=company_id,bill_id=bill_id,variance_type="three_way",expected_amount=Decimal("0"),actual_amount=v,variance_amount=v,tolerance=tolerance,status="pending",reason=f"Quantity variance {q}; value variance {v}",requested_by=user_id);db.add(existing);db.flush()
+  return {**result,"variance_workflow_id":existing.id,"workflow_status":existing.status}
  def decide_variance(self,db,company_id,vid,payload,user):
   x=db.scalar(select(APVarianceWorkflow).where(APVarianceWorkflow.id==vid,APVarianceWorkflow.company_id==company_id).with_for_update())
   if not x:raise HTTPException(404,"Variance not found")
