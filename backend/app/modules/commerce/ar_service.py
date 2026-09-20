@@ -61,6 +61,7 @@ class ARService:
         created=[]
         seen=set()
         for item in allocations:
+            if Decimal(item.amount) <= 0: raise HTTPException(422,"Allocation amount must be positive")
             if item.document_id in seen: raise HTTPException(422,"Duplicate invoice allocation")
             seen.add(item.document_id); amount=Decimal(item.amount)
             if amount<=0 or amount>remaining: raise HTTPException(409,"Allocation exceeds unapplied payment balance")
