@@ -7,6 +7,7 @@ const areas = [
   ["حركات المخزون", "/inventory/transactions", "استلام وصرف وتحويل وتسويات ومرتجعات مع الترحيل والعكس"],
   ["تحويلات المخزون", "/inventory/transfers", "طلب واعتماد وشحن واستلام التحويل بين المخازن"],
   ["الحجوزات", "/inventory/reservations", "حجز وتحرير وإلغاء الكميات للطلبات وعمليات الـWMS"],
+  ["التكلفة والمطابقة", "/inventory/costing", "تقييم المخزون ومطابقة قيمة الـSubledger مع التكلفة المعتمدة"],
 ];
 
 export default function InventoryPage() {
