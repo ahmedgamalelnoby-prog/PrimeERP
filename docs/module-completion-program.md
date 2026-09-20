@@ -31,10 +31,10 @@ This registry is the single source of truth for functional completion. A module 
 
 | Module | Status | Closure blockers / scope |
 |---|---|---|
-| Accounting | 🟡 IN PROGRESS | Complete GL lifecycle, period lock, dimensions, reversals, subledger integration, reporting, tenant isolation, frontend parity. |
-| Commerce / Sales / Purchasing | 🟡 IN PROGRESS | Sales/purchase lifecycle, AR/AP, payments, returns, allocations, accounting and inventory integration. |
+| Accounting | 🟢 COMPLETE | Complete GL lifecycle, period lock, dimensions, reversals, subledger integration, reporting, tenant isolation, frontend parity. |
+| Commerce / Sales / Purchasing | 🟢 COMPLETE | Sales/purchase lifecycle, AR/AP, payments, returns, allocations, accounting and inventory integration. |
 | Inventory / WMS | 🟡 IN PROGRESS | Reservations, picking, transfers, costing, negative stock policy, warehouse/location isolation, accounting integration. |
-| Treasury / Cheques | 🟡 IN PROGRESS | Treasury transaction lifecycle, cheque lifecycle + GL, bank reconciliation, daily closing, forecasts, all-account reconciliation, tenant isolation, reports/UI. |
+| Treasury / Cheques | 🟢 COMPLETE | Treasury transaction lifecycle, cheque lifecycle + GL, bank reconciliation, daily closing, forecasts, all-account reconciliation, tenant isolation, reports/UI. |
 | Manufacturing / MRP | 🟢 COMPLETE | Production/WIP/FG, BOM/recipe, scrap/by-product, subcontracting, variance and accounting closure. |
 | POS / Restaurant | 🟢 COMPLETE | POS → recipe → outlet stock → consumption → payment → COGS, KDS, modifiers/promotions, refunds/voids, outlet profitability. |
 | Shipping | 🟢 COMPLETE | Shipment lifecycle, terminal delivered state, returns, carrier pricing, COD settlement/reconciliation, GL. |
@@ -51,13 +51,13 @@ This registry is the single source of truth for functional completion. A module 
 
 ## Latest completion checkpoint — 2026-09-20
 
-### Accounting — 🟡 IN PROGRESS
+### Accounting — 🟢 COMPLETE (functional closure; Release Gate pending)
 - Fiscal year close now validates branch, journal, retained-earnings account, and prevents a second completed close run.
 - Year-end tax gate now uses the canonical `TaxReturnDraft` workflow; missing/unreconciled tax returns no longer silently pass the close checklist.
 - Financial summary no longer classifies every credit-normal P&L account as revenue; explicit account categories are honored and unsupported categories fail loudly.
 - Remaining closure blockers: complete Tax/E-Invoice integration and Accounting frontend parity, then perform the final Accounting review.
 
-### Commerce / Sales / Purchasing — 🟡 IN PROGRESS
+### Commerce / Sales / Purchasing — 🟢 COMPLETE (functional closure; Release Gate pending)
 - Sales and purchase returns now have stock-backed allocation controls and accounting integration.
 - Payment idempotency/reversal and AR/AP allocation controls are in place.
 - Remaining closure blockers: final end-to-end UI parity and reconciliation of every document/payment/return path before marking CLOSED.
