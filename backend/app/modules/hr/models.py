@@ -1,14 +1,10 @@
-from sqlalchemy import Column,Date,DateTime,ForeignKey,Integer,Numeric,String,Text,Boolean,func,UniqueConstraint
+from sqlalchemy import Column,Date,DateTime,ForeignKey,Integer,Numeric,String,Text,UniqueConstraint,func
 from app.database.base import Base
-class Employee(Base):
- __tablename__="hr_employees"; id=Column(Integer,primary_key=True); company_id=Column(Integer,ForeignKey("companies.id",ondelete="CASCADE"),nullable=False,index=True); user_id=Column(Integer,ForeignKey("users.id",ondelete="SET NULL")); employee_code=Column(String(50),nullable=False); full_name=Column(String(200),nullable=False); department=Column(String(120)); job_title=Column(String(120)); hire_date=Column(Date); status=Column(String(30),nullable=False,default="active"); base_salary=Column(Numeric(18,4),nullable=False,default=0); bank_account=Column(String(120)); created_at=Column(DateTime(timezone=True),server_default=func.now()); __table_args__=(UniqueConstraint("company_id","employee_code",name="uq_hr_employee_code"),)
 class EmploymentContract(Base):
- __tablename__="hr_employment_contracts"; id=Column(Integer,primary_key=True); company_id=Column(Integer,ForeignKey("companies.id",ondelete="CASCADE"),nullable=False,index=True); employee_id=Column(Integer,ForeignKey("hr_employees.id",ondelete="CASCADE"),nullable=False); start_date=Column(Date,nullable=False); end_date=Column(Date); salary=Column(Numeric(18,4),nullable=False,default=0); status=Column(String(30),nullable=False,default="active"); notes=Column(Text)
-class Attendance(Base):
- __tablename__="hr_attendance"; id=Column(Integer,primary_key=True); company_id=Column(Integer,ForeignKey("companies.id",ondelete="CASCADE"),nullable=False,index=True); employee_id=Column(Integer,ForeignKey("hr_employees.id",ondelete="CASCADE"),nullable=False); work_date=Column(Date,nullable=False); check_in=Column(DateTime); check_out=Column(DateTime); status=Column(String(30),nullable=False,default="present"); __table_args__=(UniqueConstraint("employee_id","work_date",name="uq_hr_attendance_day"),)
-class Leave(Base):
- __tablename__="hr_leaves"; id=Column(Integer,primary_key=True); company_id=Column(Integer,ForeignKey("companies.id",ondelete="CASCADE"),nullable=False,index=True); employee_id=Column(Integer,ForeignKey("hr_employees.id",ondelete="CASCADE"),nullable=False); start_date=Column(Date,nullable=False); end_date=Column(Date,nullable=False); leave_type=Column(String(50),nullable=False); status=Column(String(30),nullable=False,default="pending"); reason=Column(Text)
-class PayrollRun(Base):
- __tablename__="hr_payroll_runs"; id=Column(Integer,primary_key=True); company_id=Column(Integer,ForeignKey("companies.id",ondelete="CASCADE"),nullable=False,index=True); period_start=Column(Date,nullable=False); period_end=Column(Date,nullable=False); status=Column(String(30),nullable=False,default="draft"); created_at=Column(DateTime(timezone=True),server_default=func.now())
-class PayrollLine(Base):
- __tablename__="hr_payroll_lines"; id=Column(Integer,primary_key=True); payroll_run_id=Column(Integer,ForeignKey("hr_payroll_runs.id",ondelete="CASCADE"),nullable=False,index=True); employee_id=Column(Integer,ForeignKey("hr_employees.id",ondelete="CASCADE"),nullable=False); gross=Column(Numeric(18,4),nullable=False,default=0); allowances=Column(Numeric(18,4),nullable=False,default=0); deductions=Column(Numeric(18,4),nullable=False,default=0); net=Column(Numeric(18,4),nullable=False,default=0); employer_cost=Column(Numeric(18,4),nullable=False,default=0)
+    __tablename__="hr_employment_contracts"
+    id=Column(Integer,primary_key=True)
+    company_id=Column(Integer,ForeignKey("companies.id",ondelete="CASCADE"),nullable=False,index=True)
+    employee_id=Column(Integer,ForeignKey("employees.id",ondelete="CASCADE"),nullable=False,index=True)
+    start_date=Column(Date,nullable=False); end_date=Column(Date); salary=Column(Numeric(18,4),nullable=False,default=0)
+    status=Column(String(30),nullable=False,default="active"); notes=Column(Text)
+    __table_args__=(UniqueConstraint("employee_id","start_date",name="uq_hr_contract_employee_start"),)
