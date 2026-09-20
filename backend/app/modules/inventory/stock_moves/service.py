@@ -154,7 +154,7 @@ class InventoryStockMoveService:
         destination_balance = self._location_balance(db, company_id, move.item_id, variant_id, move.destination_location_id, lock=True) if move.destination_location_id else None
         source_warehouse_id = source_balance.location.warehouse_id if source_balance else None
         negative_policy = db.scalar(select(InventoryStockPolicy).where(InventoryStockPolicy.company_id == company_id, InventoryStockPolicy.warehouse_id == source_warehouse_id, InventoryStockPolicy.is_active.is_(True))) if source_warehouse_id else None
-        allow_negative = bool(negative_policy.allow_negative) if negative_policy is not None else False
+        allow_negative = bool(getattr(negative_policy, "allow_negative", False)) if negative_policy is not None else False
         destination_warehouse_id = destination_balance.location.warehouse_id if destination_balance else None
         unit_cost = Decimal(move.unit_cost or 0)
         fifo_allocations: list[tuple[InventoryCostLayer, Decimal, Decimal]] = []
