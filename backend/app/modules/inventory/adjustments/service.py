@@ -8,7 +8,8 @@ from app.modules.inventory.items.models import InventoryItem
 from app.modules.inventory.locations.models import InventoryLocation
 from app.modules.inventory.stock_moves.schemas import StockMoveCreate
 from app.modules.inventory.stock_moves.service import inventory_stock_move_service
-from app.modules.inventory.adjustments.models import InventoryAdjustment\nfrom app.modules.companies.models import Company
+from app.modules.inventory.adjustments.models import InventoryAdjustment
+from app.modules.companies.models import Company
 
 
 class InventoryAdjustmentService:
