@@ -59,6 +59,22 @@ def calculate(payload: CommissionCalculateRequest, company_id: int, db: Session 
         raise HTTPException(409, "Commission source is already settled")
 
 
+@router.post("/calculate-from-source", response_model=CommissionSettlementResponse, status_code=201, dependencies=[Depends(require_permission("enterprise.post"))])
+def calculate_from_source(employee_id: int, rule_id: int, period: str, source_type: str, source_id: int, company_id: int, notes: str | None = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    company_for_user(db, company_id, current_user)
+    try:
+        settlement = commission_service.calculate_from_source(db, company_id, employee_id=employee_id, rule_id=rule_id, period=period, source_type=source_type, source_id=source_id, notes=notes)
+        db.commit()
+        db.refresh(settlement)
+        return settlement
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(422, str(exc))
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "Commission source is already settled")
+
+
 @router.get("/settlements", response_model=list[CommissionSettlementResponse], dependencies=[Depends(require_permission("enterprise.access"))])
 def list_settlements(company_id: int, period: str | None = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     company_for_user(db, company_id, current_user)
