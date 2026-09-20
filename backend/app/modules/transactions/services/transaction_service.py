@@ -28,6 +28,7 @@ from app.modules.transactions.schemas import (
     TransactionCreate,
     TransactionUpdate,
 )
+from app.modules.accounting.fiscal_years.services.fiscal_year_service import fiscal_year_service
 from app.modules.transactions.services.numbering_service import (
     numbering_service,
 )
@@ -50,6 +51,7 @@ class TransactionService:
             company_id=payload.company_id,
             branch_id=payload.branch_id,
         )
+        fiscal_year_service.assert_open_for_date(db, company_id=payload.company_id, posting_date=payload.transaction_date)
 
         if payload.source_id is not None:
             existing = (
@@ -347,6 +349,7 @@ class TransactionService:
                 detail=str(exc),
             ) from exc
 
+        fiscal_year_service.assert_open_for_date(db, company_id=transaction.company_id, posting_date=date.today())
         previous_status = transaction.status
 
         transaction.status = "posted"
@@ -507,6 +510,7 @@ class TransactionService:
             )
 
         try:
+            fiscal_year_service.assert_open_for_date(db, company_id=original.company_id, posting_date=date.today())
             number_result = (
                 numbering_service
                 .generate_next_number(
