@@ -161,6 +161,15 @@ def post_payroll(
     if branch is None:
         raise HTTPException(422, "Payroll branch must belong to the selected company and tenant")
 
+    journal = db.scalar(select(AccountingJournal).where(
+        AccountingJournal.id == p.journal_id,
+        AccountingJournal.tenant_id == current_user.tenant_id,
+        AccountingJournal.company_id == r.company_id,
+        AccountingJournal.is_active.is_(True),
+    ))
+    if journal is None:
+        raise HTTPException(422, "Payroll journal must belong to the selected company and tenant and be active")
+
     account_ids = {p.expense_account_id, p.salary_payable_account_id}
     if r.total_deductions:
         if p.deductions_payable_account_id is None:
