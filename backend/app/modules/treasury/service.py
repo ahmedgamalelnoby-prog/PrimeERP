@@ -69,6 +69,8 @@ def transition_cheque(db: Session, cheque: Cheque, new_status: str, action_date:
     _record_event(db, locked, old_status, new_status, event_type, action_date, user_id, reference, notes)
     if new_status == "resubmitted" and old_status == "returned":
         treasury_accounting_service.created(db, locked, user_id)
+    elif new_status in {"deposited", "under_collection", "collected", "cleared"}:
+        treasury_accounting_service.movement(db, locked, when=action_date, user_id=user_id, event_key=new_status, description=f"Cheque {locked.cheque_number} moved to {new_status}")
     if new_status in {"returned", "cancelled", "reversed", "withdrawn"} and old_status not in {"returned", "cancelled", "reversed", "withdrawn"}:
         treasury_accounting_service.cancellation(db, locked, when=action_date, user_id=user_id, event_key=f"{event_type}-{action_date.isoformat()}")
     return locked
