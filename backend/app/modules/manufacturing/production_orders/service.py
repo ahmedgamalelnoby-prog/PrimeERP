@@ -39,7 +39,9 @@ class ManufacturingProductionService:
         factor=Decimal(qty)/Decimal(r.yield_quantity or 1);out=[]
         for line in db.scalars(select(RecipeLine).where(RecipeLine.recipe_id=r.id).order_by(RecipeLine.line_no)).all():
             q=Decimal(line.quantity)*factor*(1+Decimal(line.waste_percentage or 0)/100)
-            nested=db.scalar(select(Recipe.id).where(Recipe.company_id==company_id,Recipe.product_id==(line.ingredient_item_id or line.ingredient_product_id),Recipe.is_active.is_(True)).order_by(Recipe.version.desc()))
+            nested_q=select(Recipe.id).where(Recipe.company_id==company_id,Recipe.product_id==(line.ingredient_item_id or line.ingredient_product_id),Recipe.is_active.is_(True))
+            nested_q=nested_q.where(Recipe.variant_id==line.ingredient_variant_id) if getattr(line,"ingredient_variant_id",None) is not None else nested_q.where(Recipe.variant_id.is_(None))
+            nested=db.scalar(nested_q.order_by(Recipe.version.desc()))
             if nested: out.extend(self.explode(db,company_id,nested,q,seen))
             else: out.append({"item_id":line.ingredient_item_id or line.ingredient_product_id,"quantity":q,"uom_id":line.uom_id})
         return out
