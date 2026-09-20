@@ -107,6 +107,7 @@ async function login(
     response.data.access_token,
     response.data.refresh_token,
   );
+  storage.setTenantId(response.data.user.tenant_id);
 
   return response.data;
 }
