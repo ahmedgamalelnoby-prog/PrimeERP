@@ -90,6 +90,18 @@ class FiscalCloseService:
         self._audit(db,fy,user,"privileged_period_reopen",old,p.status,reason,p.id,{"privileged":True})
         db.commit();db.refresh(p);return p
 
+    def privileged_reopen_fiscal_year(self, db, fy_id, user, reason):
+        if not user.is_superuser: raise HTTPException(403,"Privileged accounting administrator is required")
+        if not reason or not reason.strip(): raise HTTPException(422,"Reopen reason is required")
+        fy=self._fy(db,fy_id,user)
+        if fy.status!="closed": raise HTTPException(409,"Only closed fiscal years can be reopened")
+        old=fy.status;fy.status="open";fy.is_current=True;fy.closed_by=None;fy.closed_at=None
+        for p in fy.periods:
+            if not p.is_adjustment and p.status=="locked":
+                p.status="open";p.allow_posting=True;p.closed_by=None;p.closed_at=None
+        self._audit(db,fy,user,"privileged_fiscal_year_reopen",old,fy.status,reason,None,{"privileged":True})
+        db.commit();db.refresh(fy);return fy
+
     def year_end_close(self, db, fy_id, user, *, branch_id, journal_id, retained_earnings_account_id, reason):
         if not user.is_superuser: raise HTTPException(403,"Privileged accounting administrator is required")
         if not reason or not reason.strip(): raise HTTPException(422,"Year-end close reason is required")
