@@ -22,9 +22,9 @@ class Overhead(BaseModel):
     amount:float=Field(ge=0)
     description:str|None=None
 class Scrap(BaseModel):
-    item_id:int=Field(gt=0);variant_id:int|None=None;quantity:float=Field(gt=0);unit_cost:float=Field(ge=0);reason:str=Field(min_length=1,max_length=300);stock_move_id:int|None=None
+    item_id:int=Field(gt=0);variant_id:int|None=None;quantity:float=Field(gt=0);unit_cost:float=Field(ge=0);reason:str=Field(min_length=1,max_length=300);stock_move_id:int|None=None;source_location_id:int|None=Field(default=None,gt=0)
 class ByProduct(BaseModel):
-    item_id:int=Field(gt=0);variant_id:int|None=None;quantity:float=Field(gt=0);unit_cost:float=Field(ge=0);stock_move_id:int|None=None
+    item_id:int=Field(gt=0);variant_id:int|None=None;quantity:float=Field(gt=0);unit_cost:float=Field(ge=0);stock_move_id:int|None=None;destination_location_id:int|None=Field(default=None,gt=0)
 class GLVariance(BaseModel):
     journal_id:int=Field(gt=0);fiscal_year_id:int=Field(gt=0);period_id:int=Field(gt=0);branch_id:int=Field(gt=0);entry_number:str=Field(min_length=1,max_length=80);entry_date:date;debit_account_id:int=Field(gt=0);credit_account_id:int=Field(gt=0)
 class Subcontract(BaseModel):
@@ -38,10 +38,20 @@ def overhead(work_order_id:int,p:Overhead,company_id:int=Query(...,gt=0),db:Sess
     x=manufacturing_completion_service.overhead(db,company_id,work_order_id,**p.model_dump());db.commit();db.refresh(x);return x
 @router.post("/work-orders/{work_order_id}/scrap")
 def scrap(work_order_id:int,p:Scrap,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
-    x=manufacturing_completion_service.scrap(db,company_id,work_order_id,**p.model_dump());db.commit();db.refresh(x);return x
+    if p.source_location_id is not None:
+        payload=type("StockPayload",(),{"company_id":company_id,"item_id":p.item_id,"variant_id":p.variant_id,"source_location_id":p.source_location_id,"destination_location_id":None,"quantity":p.quantity,"unit_cost":p.unit_cost,"movement_type":"issue","notes":p.reason})()
+        x=manufacturing_completion_service.stock_backed_scrap(db,u.tenant_id,company_id,work_order_id,payload,u.id)
+    else:
+        x=manufacturing_completion_service.scrap(db,company_id,work_order_id,**p.model_dump(exclude={"source_location_id"}))
+    db.commit();db.refresh(x);return x
 @router.post("/work-orders/{work_order_id}/byproducts")
 def byproducts(work_order_id:int,p:ByProduct,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
-    x=manufacturing_completion_service.byproduct(db,company_id,work_order_id,**p.model_dump());db.commit();db.refresh(x);return x
+    if p.destination_location_id is not None:
+        payload=type("StockPayload",(),{"company_id":company_id,"item_id":p.item_id,"variant_id":p.variant_id,"source_location_id":None,"destination_location_id":p.destination_location_id,"quantity":p.quantity,"unit_cost":p.unit_cost,"movement_type":"receipt","notes":"Manufacturing by-product receipt"})()
+        x=manufacturing_completion_service.stock_backed_byproduct(db,u.tenant_id,company_id,work_order_id,payload,u.id)
+    else:
+        x=manufacturing_completion_service.byproduct(db,company_id,work_order_id,**p.model_dump(exclude={"destination_location_id"}))
+    db.commit();db.refresh(x);return x
 @router.post("/work-orders/{work_order_id}/subcontract")
 def subcontract(work_order_id:int,p:Subcontract,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
     if p.actual_quantity > p.planned_quantity and p.status != "received": raise HTTPException(422,"Actual subcontract quantity cannot exceed planned quantity unless received")
