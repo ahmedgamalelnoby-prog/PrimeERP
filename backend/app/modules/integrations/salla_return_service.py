@@ -104,10 +104,9 @@ def restore_salla_inventory(db: Session, order: SallaOrder, user_id: int, shipme
     if destination is None:
         raise ValueError(f"Salla return {order.external_id} cannot restore stock: warehouse has no active location")
 
-    return_key = f"{order.external_id}:shipment:{shipment_external_id}" if shipment_external_id else str(order.external_id)
-    total_cost = Decimal("0")
     returned = 0
     newly_returned = 0
+    cogs_entries = 0
     for move in source_moves:
         source_id = _return_source_id(str(order.external_id), move.id)
         existing = db.scalar(
@@ -140,29 +139,33 @@ def restore_salla_inventory(db: Session, order: SallaOrder, user_id: int, shipme
         ret.source_entity = "salla_return"
         ret.source_id = source_id
         inventory_stock_move_service.post(db, company_id=order.company_id, move_id=ret.id)
-        total_cost += Decimal(ret.quantity) * Decimal(ret.unit_cost or 0)
         returned += 1
         newly_returned += 1
 
-    accounting = False
+        # Accounting is keyed to the original stock move, not the webhook
+        # scope. This prevents a later order-level return from posting a
+        # second COGS reversal for a move already returned by shipment.
+        unit_cost = Decimal(ret.unit_cost or 0)
+        total_cost = Decimal(ret.quantity) * unit_cost
+        if total_cost > 0:
+            settings = commerce_accounting_service._settings(db, order.company_id)
+            commerce_accounting_service._post(
+                db,
+                company_id=order.company_id,
+                user_id=user_id,
+                entry_date=delivery_for_location.document_date,
+                journal_id=settings.sales_journal_id,
+                entry_number=f"RET-COGS-{source_id}"[:60],
+                description=f"COGS reversal for Salla return {order.external_id}",
+                lines=[
+                    {"account_combination_id": settings.inventory_account_id, "debit": total_cost, "credit": 0},
+                    {"account_combination_id": settings.cogs_account_id, "debit": 0, "credit": total_cost},
+                ],
+                source_entity="salla_return_cogs",
+                source_id=f"{source_id}:cogs",
+            )
+            cogs_entries += 1
+
     if newly_returned == 0:
         return {"status": "already_restored", "return_moves": 0, "cogs_reversed": False}
-    if total_cost > 0:
-        settings = commerce_accounting_service._settings(db, order.company_id)
-        commerce_accounting_service._post(
-            db,
-            company_id=order.company_id,
-            user_id=user_id,
-            entry_date=delivery_for_location.document_date,
-            journal_id=settings.sales_journal_id,
-            entry_number=f"RET-COGS-{return_key}"[:60],
-            description=f"COGS reversal for Salla return {order.external_id}",
-            lines=[
-                {"account_combination_id": settings.inventory_account_id, "debit": total_cost, "credit": 0},
-                {"account_combination_id": settings.cogs_account_id, "debit": 0, "credit": total_cost},
-            ],
-            source_entity="salla_return_cogs",
-            source_id=return_key,
-        )
-        accounting = True
-    return {"status": "restored", "return_moves": returned, "cogs_reversed": accounting}
+    return {"status": "restored", "return_moves": returned, "cogs_reversed": cogs_entries > 0}
