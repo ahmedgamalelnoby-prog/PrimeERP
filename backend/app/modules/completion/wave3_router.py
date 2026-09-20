@@ -24,7 +24,8 @@ from app.modules.treasury.models import Cheque, ChequeEvent
 from app.modules.commerce.accounting_models import CommerceAccountingSettings
 from app.modules.accounting.journals.models.journal_entry import JournalEntry
 from app.modules.accounting.journals.models.journal_entry_line import JournalEntryLine
-from app.modules.manufacturing.completion_models import ManufacturingWorkOrder, ManufacturingVariance, ManufacturingConsumption
+from app.modules.completion.domain_models import ManufacturingWorkOrder, ManufacturingConsumption
+from app.modules.manufacturing.completion_models import ManufacturingVariance
 from app.modules.catalog.models import Recipe, RecipeSkuMapping
 from app.modules.integrations.models import IntegrationProductMapping, IntegrationConnection
 
