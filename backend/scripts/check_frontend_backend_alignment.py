@@ -140,6 +140,9 @@ def main() -> None:
     backend_only_allowed = {
         "organization", "jurisdiction", "notifications", "operations",
         "dashboard", "integrations",
+        # Cross-cutting backend services consumed by domain modules; they do not
+        # represent standalone user-facing navigation modules.
+        "ai_reporting", "completion", "core_integration",
     }
     missing_frontend = sorted(
         name for name in backend_frontend_names
