@@ -17,6 +17,9 @@ from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models.user import User
 from app.modules.inventory.items.models import InventoryItem
 from app.modules.inventory.warehouses.models import InventoryWarehouse
+from app.modules.inventory.locations.models import InventoryLocation
+from app.modules.inventory.stock_moves.schemas import StockMoveCreate
+from app.modules.inventory.stock_moves.service import inventory_stock_move_service
 from app.modules.inventory.transfers.schemas import TransferCreate
 from app.modules.inventory.transfers.service import inventory_transfer_service
 from app.modules.commerce.payment_workflow import post_payment, reverse_payment
@@ -362,6 +365,60 @@ def route_menu_item(payload: MenuItemRouteCreate, company_id: int = Query(..., g
     return obj
 
 
+def _active_recipe(db: Session, company_id: int, item_id: int, variant_id: int | None):
+    q = select(Recipe).where(Recipe.company_id == company_id, Recipe.product_id == item_id, Recipe.is_active.is_(True))
+    if variant_id is not None:
+        q = q.where(Recipe.variant_id == variant_id)
+    else:
+        q = q.where(Recipe.variant_id.is_(None))
+    return db.scalar(q.order_by(Recipe.version.desc()))
+
+
+def _expand_recipe(db: Session, company_id: int, item_id: int, variant_id: int | None, quantity: Decimal, visited: set[tuple[int, int | None]] | None = None):
+    visited = set(visited or ())
+    key = (item_id, variant_id)
+    if key in visited:
+        raise HTTPException(409, "Recursive POS recipe detected")
+    recipe = _active_recipe(db, company_id, item_id, variant_id)
+    if recipe is None:
+        return [(item_id, variant_id, quantity)]
+    visited.add(key)
+    factor = Decimal(quantity) / Decimal(recipe.yield_quantity or 1)
+    result = []
+    for line in recipe.lines:
+        component = line.ingredient_item_id or line.ingredient_product_id
+        qty = Decimal(line.quantity) * factor * (Decimal("1") + Decimal(line.waste_percentage or 0) / Decimal("100"))
+        nested = _active_recipe(db, company_id, component, None)
+        if nested:
+            result.extend(_expand_recipe(db, company_id, component, None, qty, visited))
+        else:
+            result.append((component, None, qty))
+    visited.remove(key)
+    return result
+
+
+def _post_recipe_consumption(db: Session, *, company_id: int, tenant_id: int, user_id: int, sale_id: int, sale_line: SalesLine, source_location_id: int, quantity: Decimal, reference: str):
+    components = _expand_recipe(db, company_id, sale_line.item_id, sale_line.variant_id, quantity)
+    for idx, (item_id, variant_id, qty) in enumerate(components, start=1):
+        source_id = f"pos:{sale_id}:line:{sale_line.id}:recipe:{idx}:{item_id}:{variant_id or 0}"
+        existing = db.scalar(select(__import__("app.modules.inventory.stock_moves.models", fromlist=["InventoryStockMove"]).InventoryStockMove).where(
+            __import__("app.modules.inventory.stock_moves.models", fromlist=["InventoryStockMove"]).InventoryStockMove.company_id == company_id,
+            __import__("app.modules.inventory.stock_moves.models", fromlist=["InventoryStockMove"]).InventoryStockMove.source_module == "pos",
+            __import__("app.modules.inventory.stock_moves.models", fromlist=["InventoryStockMove"]).InventoryStockMove.source_entity == "recipe_consumption",
+            __import__("app.modules.inventory.stock_moves.models", fromlist=["InventoryStockMove"]).InventoryStockMove.source_id == source_id,
+        ))
+        if existing:
+            continue
+        move = inventory_stock_move_service.create_draft(db, StockMoveCreate(
+            company_id=company_id, item_id=item_id, variant_id=variant_id,
+            source_location_id=source_location_id, destination_location_id=None,
+            quantity=qty, unit_cost=0, movement_type="issue", reference=reference,
+            source_module="pos", source_entity="recipe_consumption", source_id=source_id,
+            notes=f"POS recipe consumption for sale {sale_id}, line {sale_line.id}",
+        ))
+        inventory_stock_move_service.post(db, tenant_id=tenant_id, company_id=company_id, move_id=move.id, user_id=user_id)
+
+
 def _menu_price(db: Session, company_id: int, menu_item: MenuItem, price_list_id: int | None, quantity: Decimal) -> Decimal:
     if menu_item.sale_price_override is not None:
         return Decimal(menu_item.sale_price_override)
@@ -449,19 +506,47 @@ def checkout(payload: Checkout, current_user: User = Depends(get_current_user), 
         warehouse_id=payload.warehouse_id,
         lines=lines,
     ))
-    # POS checkout is a sell + immediate fulfillment: the invoice handles revenue/AR,
-    # while a paired delivery performs the physical issue from the outlet warehouse.
-    delivery = commerce_service.create_document(db, DocumentCreate(
-        company_id=payload.company_id,
-        partner_id=payload.partner_id,
-        document_type="delivery",
-        number=f"POSD-{doc.id}",
-        document_date=payload.payment_date,
-        warehouse_id=payload.warehouse_id,
-        lines=lines,
-    ))
-    commerce_service.confirm(db, payload.company_id, delivery.id, "sale", current_user.id)
-    commerce_service.post_inventory(db, payload.company_id, delivery.id, "sale", user_id=current_user.id)
+    # POS checkout is a sell + immediate fulfillment. Stocked menu items are issued
+    # directly; recipe-backed menu items consume their ingredients from the outlet warehouse.
+    direct_lines = []
+    recipe_line_ids = set()
+    for built_line in doc.lines:
+        if _active_recipe(db, payload.company_id, built_line.item_id, built_line.variant_id) is not None:
+            recipe_line_ids.add(built_line.id)
+        else:
+            direct_lines.append(DocumentLineCreate(
+                item_id=built_line.item_id, variant_id=built_line.variant_id,
+                quantity=built_line.quantity, unit_price=built_line.unit_price,
+                discount_percent=built_line.discount_percent,
+            ))
+    if direct_lines:
+        delivery = commerce_service.create_document(db, DocumentCreate(
+            company_id=payload.company_id, partner_id=payload.partner_id,
+            document_type="delivery", number=f"POSD-{doc.id}",
+            document_date=payload.payment_date, warehouse_id=payload.warehouse_id,
+            lines=direct_lines,
+        ))
+        commerce_service.confirm(db, payload.company_id, delivery.id, "sale", current_user.id)
+        commerce_service.post_inventory(db, payload.company_id, delivery.id, "sale", user_id=current_user.id)
+    outlet_location = db.scalar(select(InventoryLocation).where(
+        InventoryLocation.company_id == payload.company_id,
+        InventoryLocation.warehouse_id == payload.warehouse_id,
+        InventoryLocation.is_active.is_(True),
+        InventoryLocation.is_virtual.is_(False),
+        InventoryLocation.location_type.in_(["storage", "shipping"]),
+    ).order_by(InventoryLocation.id).limit(1))
+    if recipe_line_ids:
+        if outlet_location is None:
+            raise HTTPException(422, "The POS consumption warehouse has no active physical stock location")
+        for sale_line in doc.lines:
+            if sale_line.id in recipe_line_ids:
+                _post_recipe_consumption(
+                    db, company_id=payload.company_id, tenant_id=current_user.tenant_id,
+                    user_id=current_user.id, sale_id=doc.id, sale_line=sale_line,
+                    source_location_id=outlet_location.id, quantity=Decimal(sale_line.quantity),
+                    reference=doc.number,
+                )
+                sale_line.fulfilled_quantity = sale_line.quantity
 
     snapshot = capture_document_tax_snapshot(db, doc, kind="sale")
     if snapshot is None:
