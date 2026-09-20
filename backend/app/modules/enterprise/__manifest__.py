@@ -5,5 +5,7 @@ MANIFEST = manifest(
     display_name="Enterprise Operations",
     version="1.0.0",
     domain="enterprise",
-    dependencies=("accounting/accounting_core",),
+    dependencies=("accounting/accounting_core", "accounting/chart_of_accounts", "accounting/journal_entries"),
+    permissions=("enterprise.access", "enterprise.write", "enterprise.post"),
+    routes=("/enterprise",),
 )
