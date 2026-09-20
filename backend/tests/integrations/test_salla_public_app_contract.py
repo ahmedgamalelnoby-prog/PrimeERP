@@ -12,6 +12,7 @@ from app.modules.integrations.salla_public_app_service import (
     decrypt_token,
 )
 from app.modules.integrations.salla_shipping_service import _advance_status
+from app.modules.integrations.salla_erp_finalize import _should_fulfill_order
 from app.modules.shipping.service import (
     ShippingValidationError,
     calculate_shipping_fee,
@@ -92,3 +93,22 @@ def test_shipping_invalid_rate_is_rejected():
 def test_salla_embedded_session_accepts_token_from_json_body():
     parameter = inspect.signature(establish_embedded_session).parameters["salla_token"]
     assert getattr(parameter.default, "embed", None) is True
+
+
+def test_salla_order_does_not_fulfill_from_creation_or_pending_status():
+    order = type("Order", (), {"status": "created", "fulfillment_status": "pending"})()
+    assert _should_fulfill_order(order) is False
+
+
+@pytest.mark.parametrize(
+    "fulfillment_status",
+    ["processing", "shipped", "in_transit", "out_for_delivery", "delivered", "fulfilled", "partially_fulfilled"],
+)
+def test_salla_fulfillment_status_allows_inventory_fulfillment(fulfillment_status):
+    order = type("Order", (), {"status": "created", "fulfillment_status": fulfillment_status})()
+    assert _should_fulfill_order(order) is True
+
+
+def test_salla_shipment_milestone_can_explicitly_request_fulfillment():
+    order = type("Order", (), {"status": "created", "fulfillment_status": "pending"})()
+    assert _should_fulfill_order(order, force_fulfillment=True) is True
