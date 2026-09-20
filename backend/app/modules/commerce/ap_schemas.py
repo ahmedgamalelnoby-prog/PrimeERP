@@ -8,5 +8,5 @@ class APWriteOffRequest(BaseModel): company_id:int=Field(gt=0); document_id:int=
 class APWriteOffDecision(BaseModel): company_id:int=Field(gt=0); approve:bool; reason:str|None=None
 class APMatchRequest(BaseModel): company_id:int=Field(gt=0); payment_id:int=Field(gt=0); partner_id:int=Field(gt=0); as_of:date|None=None
 class APReconcileRequest(BaseModel): company_id:int=Field(gt=0); partner_id:int|None=None; as_of:date|None=None; persist:bool=True
-class APVarianceDecision(BaseModel): company_id:int=Field(gt=0); approve:bool; reason:str|None=None
+class APVarianceDecision(BaseModel): company_id:int=Field(gt=0); approve:bool=False; waive:bool=False; reason:str|None=None
 class APVarianceCreateRequest(BaseModel): company_id:int=Field(gt=0); bill_id:int=Field(gt=0); variance_type:str=Field(min_length=2,max_length=30); expected_amount:Decimal; actual_amount:Decimal; tolerance:Decimal=Field(default=0,ge=0); reason:str|None=None
