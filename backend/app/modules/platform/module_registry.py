@@ -39,7 +39,7 @@ MODULE_REGISTRY: tuple[dict[str, object], ...] = (
     {"key": "uom", "name": "Units of Measure", "name_ar": "وحدات القياس", "group": "operations", "status": "active", "description": "Units and conversion rules."},
     {"key": "commissions", "name": "Commissions", "name_ar": "العمولات", "group": "commercial", "status": "active", "description": "Commission rules and calculations."},
     {"key": "subscriptions", "name": "Subscriptions", "name_ar": "الاشتراكات", "group": "commercial", "status": "foundation", "description": "Recurring subscription lifecycle."},
-    {"key": "pos", "name": "POS", "name_ar": "نقطة البيع", "group": "commercial", "status": "foundation", "description": "Point-of-sale foundation."},
+    {"key": "pos", "name": "POS", "name_ar": "نقطة البيع", "group": "commercial", "status": "active", "description": "Point-of-sale operations with terminal sessions, outlet inventory integration and completion controls."},
     {"key": "restaurant", "name": "Restaurant", "name_ar": "المطاعم", "group": "industry", "status": "foundation", "description": "Restaurant operational foundation."},
     {"key": "hospitality", "name": "Hospitality", "name_ar": "الضيافة والفنادق", "group": "industry", "status": "roadmap", "description": "Hotel operations, revenue and profit-share workflows."},
     {"key": "commercial_leasing", "name": "Commercial Leasing", "name_ar": "الإيجارات التجارية", "group": "industry", "status": "roadmap", "description": "Commercial lease contracts, installments and revenue share."},
@@ -54,7 +54,7 @@ MODULE_REGISTRY: tuple[dict[str, object], ...] = (
     {"key": "assets", "name": "Assets", "name_ar": "الأصول", "group": "finance", "status": "foundation", "description": "Fixed asset lifecycle foundation."},
     {"key": "expenses", "name": "Expenses", "name_ar": "المصروفات", "group": "finance", "status": "foundation", "description": "Expense management foundation."},
     {"key": "budgets", "name": "Budgets", "name_ar": "الموازنات", "group": "finance", "status": "foundation", "description": "Budgeting foundation."},
-    {"key": "manufacturing", "name": "Manufacturing", "name_ar": "التصنيع", "group": "operations", "status": "roadmap", "description": "Manufacturing and production planning."},
+    {"key": "manufacturing", "name": "Manufacturing", "name_ar": "التصنيع", "group": "operations", "status": "active", "description": "Manufacturing work orders, material consumption, production, scrap, by-products, costing and WIP controls."},
     {"key": "quality", "name": "Quality", "name_ar": "الجودة", "group": "operations", "status": "roadmap", "description": "Quality control workflows."},
     {"key": "maintenance", "name": "Maintenance", "name_ar": "الصيانة", "group": "operations", "status": "roadmap", "description": "Maintenance workflows."},
     {"key": "work_orders", "name": "Work Orders", "name_ar": "أوامر العمل", "group": "operations", "status": "foundation", "description": "Work order foundation."},
@@ -65,7 +65,7 @@ MODULE_REGISTRY: tuple[dict[str, object], ...] = (
     {"key": "insurance", "name": "Insurance", "name_ar": "التأمين", "group": "industry", "status": "roadmap", "description": "Insurance operations foundation."},
 )
 
-REGISTRY_VERSION = "2026.09.18.1"
+REGISTRY_VERSION = "2026.09.20.1"
 
 
 def list_modules() -> list[dict[str, object]]:
