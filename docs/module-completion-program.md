@@ -39,8 +39,8 @@ This registry is the single source of truth for functional completion. A module 
 | POS / Restaurant | 🟢 COMPLETE | POS → recipe → outlet stock → consumption → payment → COGS, KDS, modifiers/promotions, refunds/voids, outlet profitability. |
 | Shipping | 🟢 COMPLETE | Shipment lifecycle, terminal delivered state, returns, carrier pricing, COD settlement/reconciliation, GL. |
 | Catalog / Products / Recipes | 🟢 COMPLETE | SKU/variant lifecycle, recipes, external SKU mappings and downstream integrations. |
-| CRM / Sales | 🟡 IN PROGRESS | Lead → opportunity → quotation → customer/order integration and accounting/fulfillment links. |
-| HR / Organization | 🟡 IN PROGRESS | Employees/departments/users, organization scope and approval/permission integration. |
+| CRM / Sales | 🟢 COMPLETE | Lead → opportunity → quotation → customer/order integration and accounting/fulfillment links. |
+| HR / Organization | 🟢 COMPLETE | Employees/departments/users, organization scope and approval/permission integration. |
 | Tax / Egyptian E-Invoice | 🟢 COMPLETE | Tax engine, VAT/WHT, returns, e-invoice/credit/debit notes and accounting integration. |
 | SaaS / Companies / Tenants | 🟢 COMPLETE | Plans, entitlements, expiry locks, company/branch/warehouse/user limits and isolation. |
 | Reports / BI / AI | 🟢 COMPLETE | Financial/operational reports, dashboards, AI analysis and scheduled delivery. |
@@ -102,4 +102,13 @@ No release tests are being run in this functional-completion phase. The final Re
 - Trial tenant registration, company/branch/user bootstrap, subscription dates, module entitlements, expiry locking and resource limits are connected. Final Release Gate remains pending.
 ### Reports / BI / AI — 🟢 COMPLETE (functional closure; Release Gate pending)
 - Financial/operational report catalog, AI analysis, management advisory, scheduled email/WhatsApp delivery and delivery logs are connected. Final Release Gate remains pending.
+
+### CRM / Sales — 🟢 COMPLETE (functional closure; Release Gate pending)
+- Lead → opportunity → activity → won/lost lifecycle is connected.
+- Won opportunities can create Commerce quotations, preserving company/tenant scope and product/variant selection.
+- CRM dashboard/pipeline metrics are exposed. Final Release Gate remains pending.
+### HR / Organization — 🟢 COMPLETE (functional closure; Release Gate pending)
+- Employee/contract, attendance, leave request/decision and payroll calculation workflows are connected.
+- Payroll is period-locked and can post gross/deductions/net to Accounting with journal linkage and approval-aware posting.
+- Company/tenant isolation is enforced. Final Release Gate remains pending.
 
