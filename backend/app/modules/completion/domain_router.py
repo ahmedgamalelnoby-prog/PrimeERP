@@ -107,3 +107,55 @@ def workflow_decision(workflow_id:int,step_id:int,status:str=Query(...),reason:s
     company(db,company_id,u);x=db.scalar(select(WorkflowApprovalStep).where(WorkflowApprovalStep.id==step_id,WorkflowApprovalStep.workflow_id==workflow_id).with_for_update())
     if not x: raise HTTPException(404,"Workflow step not found")
     x=domain_completion_service.workflow_decide(db,x,status,reason);db.commit();db.refresh(x);return x
+
+
+class WorkflowRulePayload(__import__("pydantic").BaseModel):
+    tenant_id:int|None=None
+    company_id:int
+    module:str
+    document_type:str
+    condition_json:dict={}
+    approval_levels:int=__import__("pydantic").Field(default=1,ge=1,le=20)
+    delegation_allowed:bool=False
+    escalation_minutes:int|None=__import__("pydantic").Field(default=None,gt=0)
+
+@router.post("/workflow-rules",status_code=201)
+def create_workflow_rule(p:WorkflowRulePayload,db:Session=Depends(get_db),u:User=Depends(get_current_user)):
+    company(db,p.company_id,u)
+    x=WorkflowRule(tenant_id=u.tenant_id,company_id=p.company_id,module=p.module,document_type=p.document_type,condition_json=p.condition_json,approval_levels=p.approval_levels,delegation_allowed=p.delegation_allowed,escalation_minutes=p.escalation_minutes)
+    db.add(x);db.commit();db.refresh(x);return x
+
+@router.get("/workflow-rules")
+def list_workflow_rules(company_id:int=Query(...),module:str|None=None,document_type:str|None=None,db:Session=Depends(get_db),u:User=Depends(get_current_user)):
+    company(db,company_id,u)
+    q=select(WorkflowRule).where(WorkflowRule.tenant_id==u.tenant_id,WorkflowRule.company_id==company_id,WorkflowRule.is_active.is_(True))
+    if module:q=q.where(WorkflowRule.module==module)
+    if document_type:q=q.where(WorkflowRule.document_type==document_type)
+    return list(db.scalars(q.order_by(WorkflowRule.id.desc())).all())
+
+class WorkflowStartPayload(__import__("pydantic").BaseModel):
+    company_id:int
+    module:str
+    document_type:str
+    document_id:str
+    delegated_to:int|None=None
+
+@router.post("/workflow/start",status_code=201)
+def start_workflow(p:WorkflowStartPayload,db:Session=Depends(get_db),u:User=Depends(get_current_user)):
+    company(db,p.company_id,u)
+    rule=db.scalar(select(WorkflowRule).where(WorkflowRule.tenant_id==u.tenant_id,WorkflowRule.company_id==p.company_id,WorkflowRule.module==p.module,WorkflowRule.document_type==p.document_type,WorkflowRule.is_active.is_(True)).order_by(WorkflowRule.id.desc()))
+    if rule is None: raise HTTPException(404,"No active workflow rule is configured for this transaction")
+    existing=db.scalar(select(WorkflowInstance).where(WorkflowInstance.tenant_id==u.tenant_id,WorkflowInstance.module==p.module,WorkflowInstance.document_type==p.document_type,WorkflowInstance.document_id==p.document_id).with_for_update())
+    if existing:return existing
+    w=WorkflowInstance(tenant_id=u.tenant_id,company_id=p.company_id,module=p.module,document_type=p.document_type,document_id=p.document_id,delegated_to=p.delegated_to)
+    db.add(w);db.flush()
+    for level in range(1,rule.approval_levels+1):
+        db.add(WorkflowApprovalStep(workflow_id=w.id,level=level,status="pending"))
+    db.commit();db.refresh(w);return w
+
+@router.post("/workflow/{workflow_id}/delegate")
+def delegate_workflow(workflow_id:int,delegated_to:int=Query(...,gt=0),company_id:int=Query(...),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
+    company(db,company_id,u)
+    w=db.scalar(select(WorkflowInstance).where(WorkflowInstance.id==workflow_id,WorkflowInstance.tenant_id==u.tenant_id,WorkflowInstance.company_id==company_id).with_for_update())
+    if w is None: raise HTTPException(404,"Workflow not found")
+    w.delegated_to=delegated_to;db.commit();db.refresh(w);return w
