@@ -1,27 +1,20 @@
 import client from "./client";
+import { storage } from "../utils/storage";
 
 client.interceptors.request.use((config) => {
-  const token = localStorage.getItem("access_token");
-
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-
+  const token = storage.getAccessToken();
+  const tenantId = storage.getTenantId();
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  if (tenantId) config.headers["X-Tenant-ID"] = tenantId;
   return config;
 });
 
 client.interceptors.response.use(
   (response) => response,
-
   (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem("access_token");
-
-      localStorage.removeItem("refresh_token");
-    }
-
+    if (error.response?.status === 401) storage.clear();
     return Promise.reject(error);
-  }
+  },
 );
 
 export default client;
