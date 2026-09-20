@@ -648,13 +648,11 @@ def handle_app_event(db: Session, payload: dict[str, Any], event_id: str | None 
                 # A shipment can be cancelled/returned after it has already
                 # consumed stock. Restore only that shipment's posted moves;
                 # never return the other shipments of the same order.
-                event_return = event in {
-                    "order.shipment.return.created",
-                    "order.shipment.return.cancelled",
-                }
+                # Creating/cancelling a return shipment is not proof that
+                # physical stock has been received back. Restore inventory only
+                # when the normalized shipment itself reaches a return state.
                 inventory_return = None
-                if order is not None and (
-                    shipment_status in {
+                if order is not None and shipment_status in {
                         "cancelled", "canceled", "returned", "return_to_origin",
                         "return_in_progress", "restoring", "restored",
                     }
