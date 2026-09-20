@@ -292,13 +292,24 @@ def test_purchase_payment_reversal_is_exact_accounting_opposite(monkeypatch):
 
 def test_payment_auto_wht_uses_product_tax_profile_result(monkeypatch):
     service = CommerceService()
-    document = SimpleNamespace(id=55)
+    document = SimpleNamespace(id=55, total=Decimal('1140.00'), paid_total=Decimal('0'))
     captured = {}
 
     monkeypatch.setattr(service, '_auto_payment_wht', lambda db, **kwargs: Decimal('11.40'))
+    payment = SimpleNamespace(
+        id=77,
+        company_id=7,
+        document_kind='sale',
+        document_id=55,
+        amount=Decimal('1140.00'),
+    )
+    def fake_post_payment(db, **kwargs):
+        captured.update(kwargs)
+        return document, payment
+
     monkeypatch.setattr(
         'app.modules.commerce.service.post_payment',
-        lambda db, **kwargs: captured.update(kwargs) or kwargs,
+        fake_post_payment,
     )
 
     payload = SimpleNamespace(
@@ -315,8 +326,18 @@ def test_payment_auto_wht_uses_product_tax_profile_result(monkeypatch):
     )
 
     class FakeDB:
+        def __init__(self):
+            self.calls = 0
+
         def scalar(self, _query):
-            return document
+            self.calls += 1
+            return document if self.calls == 1 else None
+
+        def add(self, _value):
+            pass
+
+        def flush(self):
+            pass
 
     service.pay(FakeDB(), payload, 'sale')
     assert captured['wht_amount'] == Decimal('11.40')
@@ -332,3 +353,238 @@ def test_straight_line_depreciation_math():
     depreciable=Decimal('100000')-Decimal('10000')
     monthly=depreciable/60
     assert monthly == Decimal('1500')
+
+
+def test_commerce_payment_retry_does_not_duplicate_cheque_side_effect():
+    import inspect
+
+    source = inspect.getsource(CommerceService.pay)
+    assert "Payment idempotency can return the already-posted payment" in source
+    assert "Cheque.source_payment_id == payment.id" in source
+    assert "if existing_cheque is None:" in source
+
+
+def test_payment_schema_supports_split_allocations_and_requires_primary_document():
+    from app.modules.commerce.schemas import PaymentCreate
+    payload = PaymentCreate(
+        company_id=7,
+        document_id=10,
+        payment_date=date(2026, 9, 19),
+        amount=Decimal("1500"),
+        method="bank_transfer",
+        allocations=[
+            {"document_id": 10, "amount": Decimal("900")},
+            {"document_id": 11, "amount": Decimal("600")},
+        ],
+    )
+    assert len(payload.allocations) == 2
+
+
+def test_payment_schema_rejects_unallocated_payment_remainder():
+    from app.modules.commerce.schemas import PaymentCreate
+
+    with pytest.raises(ValueError, match="must equal the payment amount"):
+        PaymentCreate(
+            company_id=7,
+            document_id=10,
+            payment_date=date(2026, 9, 19),
+            amount=Decimal("1500"),
+            method="bank_transfer",
+            allocations=[
+                {"document_id": 10, "amount": Decimal("900")},
+                {"document_id": 11, "amount": Decimal("500")},
+            ],
+        )
+
+
+def test_payment_allocation_model_allows_multiple_documents_per_payment():
+    from app.modules.commerce.models import CommercePaymentAllocation
+    constraints = {c.name for c in CommercePaymentAllocation.__table__.constraints}
+    assert "uq_commerce_payment_allocation_document" in constraints
+    assert "uq_commerce_payment_allocation_payment" not in constraints
+
+
+def test_payment_reverse_handles_all_active_allocations():
+    import inspect
+    from app.modules.commerce.payment_workflow import reverse_payment
+    source = inspect.getsource(reverse_payment)
+    assert "CommercePaymentAllocation.status == \"active\"" in source
+    assert "target.paid_total" in source
+    assert "allocation.status = \"reversed\"" in source
+
+def test_ar_ap_aging_uses_split_payment_allocations_as_of_cutoff():
+    import inspect
+    source = inspect.getsource(CommerceService.ar_ap_aging)
+    assert "CommercePaymentAllocation" in source
+    assert "allocation.document_id" in source
+    assert "allocation.amount" in source
+    assert 'CommercePaymentAllocation.status == "active"' in source
+    assert "allocated_payment_ids" in source
+    assert "Legacy payments created before allocation tracking remain" in source
+
+def test_partner_open_balance_is_allocation_aware_and_historical():
+    import inspect
+    source = inspect.getsource(CommerceService.partner_open_balance)
+    assert "CommercePaymentAllocation" in source
+    assert "payments_by_document" in source
+    assert "allocation.document_id" in source
+    assert "allocation.amount" in source
+    assert "CommercePayment.payment_date < before_date" in source
+    assert "paid_total" not in source
+
+
+def test_inventory_outbound_standard_cost_is_policy_authoritative():
+    from app.modules.inventory.stock_moves.service import InventoryStockMoveService
+
+    item = SimpleNamespace(costing_method="standard", standard_cost=Decimal("25.00"), purchase_price=Decimal("30.00"))
+    warehouse = SimpleNamespace(average_cost=Decimal("99.00"))
+
+    assert InventoryStockMoveService._outbound_unit_cost(item, warehouse) == Decimal("25.00")
+
+
+def test_inventory_outbound_weighted_average_cost_is_policy_authoritative():
+    from app.modules.inventory.stock_moves.service import InventoryStockMoveService
+
+    item = SimpleNamespace(costing_method="weighted_average", standard_cost=Decimal("25.00"), purchase_price=Decimal("30.00"))
+    warehouse = SimpleNamespace(average_cost=Decimal("37.50"))
+
+    assert InventoryStockMoveService._outbound_unit_cost(item, warehouse) == Decimal("37.50")
+
+
+def test_inventory_fifo_weighted_cost_uses_exact_layer_allocations():
+    from app.modules.inventory.stock_moves.service import InventoryStockMoveService
+
+    allocations = [
+        (SimpleNamespace(id=1), Decimal("2"), Decimal("10")),
+        (SimpleNamespace(id=2), Decimal("3"), Decimal("20")),
+    ]
+
+    assert InventoryStockMoveService._weighted_cost(allocations) == Decimal("16")
+
+
+def test_inventory_fifo_recalculation_and_destination_reversal_are_variant_scoped():
+    import inspect
+    from app.modules.inventory.stock_moves.service import InventoryStockMoveService
+
+    recalc = inspect.getsource(InventoryStockMoveService._recalculate_average_cost)
+    reverse = inspect.getsource(InventoryStockMoveService._reverse_fifo_destination_layers)
+
+    assert "InventoryCostLayer.variant_id == variant_id" in recalc
+    assert "InventoryCostLayer.variant_id == variant_id" in reverse
+    assert "InventoryCostLayer.variant_id.is_(None)" in recalc
+    assert "InventoryCostLayer.variant_id.is_(None)" in reverse
+
+
+def test_stock_move_reservation_contract_is_atomic_and_exact():
+    import inspect
+    from app.modules.inventory.stock_moves.service import InventoryStockMoveService
+
+    source = inspect.getsource(InventoryStockMoveService.post)
+    assert "InventoryReservation" in source
+    assert "with_for_update()" in source
+    assert "reservation.status != " + '"active"' in source
+    assert "reservation.item_id != move.item_id" in source
+    assert "Decimal(reservation.quantity) != Decimal(move.quantity)" in source
+    assert "source_balance.quantity_reserved -= quantity" in source
+    assert "warehouse_source.quantity_reserved -= quantity" in source
+    assert 'reservation.status = "consumed"' in source
+
+
+def test_stock_move_reversal_restores_consumed_reservation():
+    import inspect
+    from app.modules.inventory.stock_moves.service import InventoryStockMoveService
+
+    source = inspect.getsource(InventoryStockMoveService.reverse)
+    assert "Linked reservation must be consumed before movement reversal" in source
+    assert "source_balance.quantity_reserved += quantity" in source
+    assert "warehouse_source.quantity_reserved += quantity" in source
+    assert 'reservation.status = "active"' in source
+
+
+def test_inventory_transfer_allows_distinct_locations_in_same_warehouse():
+    import inspect
+    from app.modules.inventory.stock_moves.service import InventoryStockMoveService
+
+    source = inspect.getsource(InventoryStockMoveService.create_draft)
+    assert 'if source.warehouse_id == destination.warehouse_id and source.id == destination.id:' in source
+    assert 'raise ValueError("Source and destination locations must differ")' in source
+    assert 'Use a direct stock move for an intra-warehouse location transfer' not in source
+
+
+def test_inventory_balance_creation_is_race_safe():
+    import inspect
+    from app.modules.inventory.stock_moves.service import InventoryStockMoveService
+    from app.modules.inventory.reservations.service import InventoryReservationService
+
+    stock_source = inspect.getsource(InventoryStockMoveService._location_balance)
+    warehouse_source = inspect.getsource(InventoryStockMoveService._warehouse_stock)
+    reservation_balance = inspect.getsource(InventoryReservationService._locked_balance)
+    reservation_warehouse = inspect.getsource(InventoryReservationService._locked_warehouse_stock)
+
+    for source in (stock_source, warehouse_source, reservation_balance, reservation_warehouse):
+        assert "on_conflict_do_nothing" in source
+        assert "pg_insert" in source
+        assert "Unable to create or lock" in source or "db.scalar(stmt.with_for_update())" in source
+
+
+def test_inventory_reservation_variant_validation_uses_product_variant_is_active():
+    import inspect
+    from app.modules.inventory.reservations.service import InventoryReservationService
+
+    source = inspect.getsource(InventoryReservationService._validate_variant)
+    assert "ProductVariant.is_active.is_(True)" in source
+    assert "ProductVariant.active.is_(True)" not in source
+
+
+def test_stock_move_reversal_loads_linked_reservation_before_access():
+    import inspect
+    from app.modules.inventory.stock_moves.service import InventoryStockMoveService
+
+    source = inspect.getsource(InventoryStockMoveService.reverse)
+    reservation_load = source.index("if move.reservation_id is not None:")
+    reservation_use = source.index("reservation.status", reservation_load)
+    assert reservation_load < reservation_use
+    assert "if reservation is not None:" not in source
+
+
+def test_stock_move_reversal_is_guarded_by_single_reversal_lineage():
+    import inspect
+    from app.modules.inventory.stock_moves.service import InventoryStockMoveService
+
+    source = inspect.getsource(InventoryStockMoveService.reverse)
+    assert "move.reversed_by_move_id is not None" in source
+    assert "InventoryStockMove.reversed_by_move_id == move.id" in source
+    assert 'raise ValueError("Stock move already has a reversal movement")' in source
+
+
+
+def test_salla_shipment_updates_use_canonical_shipping_lifecycle():
+    import inspect
+    from app.modules.integrations import salla_shipping_service
+
+    source = inspect.getsource(salla_shipping_service.sync_salla_shipment)
+    assert "shipping_status_service.apply_transition" in source
+    assert "_system_user_id(db, salla_shipment.company_id)" in source
+    assert "existing.status = _advance_status" not in source
+
+
+def test_salla_imported_terminal_shipment_replays_canonical_lifecycle():
+    import inspect
+    from app.modules.integrations import salla_shipping_service
+
+    source = inspect.getsource(salla_shipping_service.sync_salla_shipment)
+    assert "_canonical_path(" in source
+    assert "shipping_status_service.apply_transition(" in source
+    assert "obj.status = _advance_status(obj.status, target_status)" not in source
+    assert salla_shipping_service._STATUS_MAP.get("shipped") == "shipped"
+    assert salla_shipping_service._STATUS_MAP.get("picked_up") == "shipped"
+
+
+def test_salla_sync_upsert_enforces_company_scoped_active_connection():
+    import inspect
+    from app.modules.integrations import salla_service
+
+    source = inspect.getsource(salla_service._upsert)
+    assert "IntegrationConnection.company_id == company_id" in source
+    assert "IntegrationConnection.is_active.is_(True)" in source
+    assert "model.company_id == company_id" in source

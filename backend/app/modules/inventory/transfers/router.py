@@ -90,7 +90,7 @@ def approve_transfer(transfer_id: int, company_id: int = Query(..., gt=0), db: S
 def ship_transfer(transfer_id: int, company_id: int = Query(..., gt=0), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _company_for_user(db, company_id, current_user)
     try:
-        return inventory_transfer_service.ship(db, company_id=company_id, transfer_id=transfer_id)
+        return inventory_transfer_service.ship(db, company_id=company_id, transfer_id=transfer_id, tenant_id=current_user.tenant_id, user_id=current_user.id)
     except ValueError as exc:
         _error(exc)
 
@@ -99,7 +99,7 @@ def ship_transfer(transfer_id: int, company_id: int = Query(..., gt=0), db: Sess
 def receive_transfer(transfer_id: int, company_id: int = Query(..., gt=0), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _company_for_user(db, company_id, current_user)
     try:
-        return inventory_transfer_service.receive(db, company_id=company_id, transfer_id=transfer_id)
+        return inventory_transfer_service.receive(db, company_id=company_id, transfer_id=transfer_id, tenant_id=current_user.tenant_id, user_id=current_user.id)
     except ValueError as exc:
         _error(exc)
 

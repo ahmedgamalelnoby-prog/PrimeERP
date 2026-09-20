@@ -4,6 +4,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.modules.accounting.chart_of_accounts.models import AccountCombination
@@ -18,6 +19,7 @@ from app.modules.inventory.locations.models import InventoryLocation
 from app.modules.inventory.stock_moves.location_stock import InventoryLocationStock
 from app.modules.inventory.stock_moves.models import InventoryAccountingConfig, InventoryCostLayer, InventoryStockMove, InventoryValuationAllocation
 from app.modules.inventory.stock_moves.repository import inventory_stock_move_repository
+from app.modules.inventory.reservations.models import InventoryReservation
 
 
 class InventoryStockMoveService:
@@ -97,8 +99,8 @@ class InventoryStockMoveService:
         if payload.movement_type == "transfer":
             source = locations[payload.source_location_id]
             destination = locations[payload.destination_location_id]
-            if source.warehouse_id == destination.warehouse_id:
-                raise ValueError("Use a direct stock move for an intra-warehouse location transfer")
+            if source.warehouse_id == destination.warehouse_id and source.id == destination.id:
+                raise ValueError("Source and destination locations must differ")
         values = payload.model_dump(exclude_none=True)
         move = InventoryStockMove(**values, status="draft")
         db.add(move)
@@ -118,6 +120,24 @@ class InventoryStockMoveService:
             raise ValueError("Company is outside the current tenant")
         if getattr(move, "source_entity", None) == "sales_delivery" and move.movement_type != "issue":
             raise ValueError("Sales delivery stock moves must be issue movements")
+        reservation = None
+        reservation_id = getattr(move, "reservation_id", None)
+        if reservation_id is not None:
+            reservation = db.scalar(
+                select(InventoryReservation)
+                .where(InventoryReservation.id == reservation_id, InventoryReservation.company_id == company_id)
+                .with_for_update()
+            )
+            if reservation is None:
+                raise ValueError("Reservation not found for stock movement")
+            if reservation.status != "active":
+                raise ValueError("Only active reservations can be consumed by a stock movement")
+            if reservation.item_id != move.item_id or reservation.variant_id != move.variant_id or reservation.location_id != move.source_location_id:
+                raise ValueError("Reservation does not match the stock movement item, variant, or source location")
+            if Decimal(reservation.quantity) != Decimal(move.quantity):
+                raise ValueError("Reservation quantity must exactly match the stock movement quantity")
+            if move.movement_type not in {"issue", "transfer", "return"}:
+                raise ValueError("Reservations can only be consumed by issue, transfer, or return movements")
         item = db.scalar(select(InventoryItem).where(InventoryItem.id == move.item_id, InventoryItem.company_id == company_id, InventoryItem.is_active.is_(True)))
         if item is None:
             raise ValueError("Item is unavailable for posting")
@@ -144,12 +164,26 @@ class InventoryStockMoveService:
             if item.costing_method == "fifo":
                 fifo_allocations = self._consume_fifo_layers(db, company_id, move.item_id, variant_id, source_warehouse_id, quantity)
                 unit_cost = self._weighted_cost(fifo_allocations)
-            elif unit_cost == 0:
-                unit_cost = Decimal(item.standard_cost or item.purchase_price or 0) if item.costing_method == "standard" else Decimal(warehouse_source.average_cost or 0)
+            else:
+                # For outbound valuation, the costing policy is authoritative.
+                # A caller-supplied unit_cost must never override standard or
+                # weighted-average valuation and create an incorrect COGS value.
+                unit_cost = self._outbound_unit_cost(item, warehouse_source)
             if unit_cost <= 0:
                 raise ValueError("A positive inventory valuation is required before changing stock")
             source_balance.quantity_on_hand -= quantity
             warehouse_source.quantity_on_hand -= quantity
+            if reservation is not None:
+                # Consume the reservation atomically with the physical issue.
+                # The reservation was locked above, so no second reservation
+                # service transaction can race this decrement.
+                if Decimal(source_balance.quantity_reserved or 0) < quantity:
+                    raise ValueError("Reserved stock is insufficient for the linked reservation")
+                if Decimal(warehouse_source.quantity_reserved or 0) < quantity:
+                    raise ValueError("Warehouse reserved stock is insufficient for the linked reservation")
+                source_balance.quantity_reserved -= quantity
+                warehouse_source.quantity_reserved -= quantity
+                reservation.status = "consumed"
 
         if destination_balance:
             warehouse_destination = self._warehouse_stock(db, company_id, move.item_id, variant_id, destination_warehouse_id)
@@ -186,6 +220,14 @@ class InventoryStockMoveService:
             raise ValueError("Only posted stock moves can be reversed")
         if move.reversed_by_move_id is not None:
             raise ValueError("Stock move has already been reversed")
+        linked_reversal = db.scalar(
+            select(InventoryStockMove.id).where(
+                InventoryStockMove.company_id == company_id,
+                InventoryStockMove.reversed_by_move_id == move.id,
+            ).limit(1)
+        )
+        if linked_reversal is not None:
+            raise ValueError("Stock move already has a reversal movement")
         allocations = db.scalars(select(InventoryValuationAllocation).where(InventoryValuationAllocation.stock_move_id == move.id, InventoryValuationAllocation.company_id == company_id).with_for_update()).all()
         item = db.scalar(select(InventoryItem).where(InventoryItem.id == move.item_id, InventoryItem.company_id == company_id, InventoryItem.is_active.is_(True)))
         if item is None:
@@ -216,6 +258,26 @@ class InventoryStockMoveService:
             warehouse_source.quantity_on_hand += quantity
             self._restore_fifo_source_layers(db, allocations, item.costing_method)
             self._recalculate_average_cost(db, company_id, move.item_id, variant_id, source_warehouse_id, item)
+
+        if move.reservation_id is not None:
+            reservation = db.scalar(
+                select(InventoryReservation)
+                .where(
+                    InventoryReservation.id == move.reservation_id,
+                    InventoryReservation.company_id == company_id,
+                )
+                .with_for_update()
+            )
+            if reservation is None:
+                raise ValueError("Linked reservation is missing")
+            if reservation.status != "consumed":
+                raise ValueError("Linked reservation must be consumed before movement reversal")
+            if source_balance is None:
+                raise ValueError("A reservation-backed movement requires a source location")
+            warehouse_source = self._warehouse_stock(db, company_id, move.item_id, variant_id, source_warehouse_id)
+            source_balance.quantity_reserved += quantity
+            warehouse_source.quantity_reserved += quantity
+            reservation.status = "active"
 
         if move.accounting_entry_id is not None:
             journal_service.reverse(db, tenant_id=tenant_id, entry_id=move.accounting_entry_id, user_id=user_id, reversal_date=reversal_date)
@@ -268,13 +330,30 @@ class InventoryStockMoveService:
         if lock:
             stmt = stmt.with_for_update()
         balance = db.scalar(stmt)
+        if balance is not None:
+            return balance
+        location = db.scalar(select(InventoryLocation).where(InventoryLocation.id == location_id, InventoryLocation.company_id == company_id))
+        if location is None:
+            raise ValueError("Location not found")
+        values = {
+            "company_id": company_id, "item_id": item_id, "variant_id": variant_id,
+            "location_id": location_id, "quantity_on_hand": 0, "quantity_reserved": 0,
+        }
+        if variant_id is None:
+            insert = pg_insert(InventoryLocationStock).values(**values).on_conflict_do_nothing(
+                index_elements=[InventoryLocationStock.company_id, InventoryLocationStock.location_id, InventoryLocationStock.item_id],
+                index_where=InventoryLocationStock.variant_id.is_(None),
+            )
+        else:
+            insert = pg_insert(InventoryLocationStock).values(**values).on_conflict_do_nothing(
+                index_elements=[InventoryLocationStock.company_id, InventoryLocationStock.location_id, InventoryLocationStock.item_id, InventoryLocationStock.variant_id],
+                index_where=InventoryLocationStock.variant_id.is_not(None),
+            )
+        db.execute(insert)
+        db.flush()
+        balance = db.scalar(stmt)
         if balance is None:
-            location = db.scalar(select(InventoryLocation).where(InventoryLocation.id == location_id, InventoryLocation.company_id == company_id))
-            if location is None:
-                raise ValueError("Location not found")
-            balance = InventoryLocationStock(company_id=company_id, item_id=item_id, variant_id=variant_id, location_id=location_id, quantity_on_hand=0, quantity_reserved=0)
-            db.add(balance)
-            db.flush()
+            raise ValueError("Unable to create or lock inventory location balance")
         return balance
 
     @staticmethod
@@ -282,10 +361,27 @@ class InventoryStockMoveService:
         stmt = select(InventoryStock).where(InventoryStock.company_id == company_id, InventoryStock.item_id == item_id, InventoryStock.warehouse_id == warehouse_id)
         stmt = stmt.where(InventoryStock.variant_id == variant_id) if variant_id is not None else stmt.where(InventoryStock.variant_id.is_(None))
         stock = db.scalar(stmt.with_for_update())
+        if stock is not None:
+            return stock
+        values = {
+            "company_id": company_id, "item_id": item_id, "variant_id": variant_id,
+            "warehouse_id": warehouse_id, "quantity_on_hand": 0, "quantity_reserved": 0, "average_cost": 0,
+        }
+        if variant_id is None:
+            insert = pg_insert(InventoryStock).values(**values).on_conflict_do_nothing(
+                index_elements=[InventoryStock.company_id, InventoryStock.item_id, InventoryStock.warehouse_id],
+                index_where=InventoryStock.variant_id.is_(None),
+            )
+        else:
+            insert = pg_insert(InventoryStock).values(**values).on_conflict_do_nothing(
+                index_elements=[InventoryStock.company_id, InventoryStock.item_id, InventoryStock.variant_id, InventoryStock.warehouse_id],
+                index_where=InventoryStock.variant_id.is_not(None),
+            )
+        db.execute(insert)
+        db.flush()
+        stock = db.scalar(stmt.with_for_update())
         if stock is None:
-            stock = InventoryStock(company_id=company_id, item_id=item_id, variant_id=variant_id, warehouse_id=warehouse_id, quantity_on_hand=0, quantity_reserved=0, average_cost=0)
-            db.add(stock)
-            db.flush()
+            raise ValueError("Unable to create or lock inventory warehouse stock")
         return stock
 
     def _consume_fifo_layers(self, db, company_id, item_id, variant_id, warehouse_id, quantity):
@@ -347,7 +443,14 @@ class InventoryStockMoveService:
         for allocation in rows:
             if remaining <= 0:
                 break
-            layer = db.scalar(select(InventoryCostLayer).where(InventoryCostLayer.id == allocation.cost_layer_id, InventoryCostLayer.company_id == company_id, InventoryCostLayer.item_id == item_id, InventoryCostLayer.warehouse_id == warehouse_id).with_for_update())
+            layer_query = select(InventoryCostLayer).where(
+                InventoryCostLayer.id == allocation.cost_layer_id,
+                InventoryCostLayer.company_id == company_id,
+                InventoryCostLayer.item_id == item_id,
+                InventoryCostLayer.warehouse_id == warehouse_id,
+            )
+            layer_query = layer_query.where(InventoryCostLayer.variant_id == variant_id) if variant_id is not None else layer_query.where(InventoryCostLayer.variant_id.is_(None))
+            layer = db.scalar(layer_query.with_for_update())
             if layer is None or Decimal(layer.quantity_remaining) < Decimal(allocation.quantity):
                 raise ValueError("Cannot reverse FIFO movement because its destination cost layer was consumed")
             take = min(remaining, Decimal(allocation.quantity))
@@ -370,12 +473,80 @@ class InventoryStockMoveService:
             layer.quantity_remaining += Decimal(allocation.quantity)
 
     @staticmethod
+    def _outbound_unit_cost(item, warehouse_stock):
+        if item.costing_method == "standard":
+            return Decimal(item.standard_cost or item.purchase_price or 0)
+        if item.costing_method == "weighted_average":
+            return Decimal(warehouse_stock.average_cost or 0)
+        raise ValueError("Unsupported outbound costing method")
+
+    @staticmethod
     def _recalculate_average_cost(db, company_id, item_id, variant_id, warehouse_id, item):
         stock = InventoryStockMoveService._warehouse_stock(db, company_id, item_id, variant_id, warehouse_id)
         if item.costing_method == "fifo":
-            layers = db.scalars(select(InventoryCostLayer).where(InventoryCostLayer.company_id == company_id, InventoryCostLayer.item_id == item_id, InventoryCostLayer.warehouse_id == warehouse_id, InventoryCostLayer.quantity_remaining > 0).order_by(InventoryCostLayer.id).with_for_update()).all()
+            stmt = select(InventoryCostLayer).where(
+                InventoryCostLayer.company_id == company_id,
+                InventoryCostLayer.item_id == item_id,
+                InventoryCostLayer.warehouse_id == warehouse_id,
+                InventoryCostLayer.quantity_remaining > 0,
+            )
+            stmt = stmt.where(InventoryCostLayer.variant_id == variant_id) if variant_id is not None else stmt.where(InventoryCostLayer.variant_id.is_(None))
+            layers = db.scalars(stmt.order_by(InventoryCostLayer.id).with_for_update()).all()
             qty = sum((Decimal(x.quantity_remaining) for x in layers), Decimal("0"))
             stock.average_cost = (sum((Decimal(x.quantity_remaining) * Decimal(x.unit_cost) for x in layers), Decimal("0")) / qty) if qty > 0 else Decimal("0")
+        elif item.costing_method == "weighted_average":
+            # Weighted-average cost must be reconstructable after a reversal.
+            # Destination valuation allocations are the authoritative inbound
+            # valuation history; outbound issues do not change average cost.
+            stmt = (
+                select(InventoryValuationAllocation)
+                .join(InventoryStockMove, InventoryStockMove.id == InventoryValuationAllocation.stock_move_id)
+                .join(InventoryLocation, InventoryLocation.id == InventoryStockMove.destination_location_id)
+                .where(
+                    InventoryValuationAllocation.company_id == company_id,
+                    InventoryStockMove.company_id == company_id,
+                    InventoryStockMove.item_id == item_id,
+                    InventoryStockMove.status == "posted",
+                    InventoryStockMove.destination_location_id.is_not(None),
+                    InventoryLocation.warehouse_id == warehouse_id,
+                    InventoryValuationAllocation.allocation_role == "destination_added",
+                )
+            )
+            stmt = stmt.where(InventoryStockMove.variant_id == variant_id) if variant_id is not None else stmt.where(InventoryStockMove.variant_id.is_(None))
+            inbound = db.scalars(stmt).all()
+
+            # A reversed outbound movement restores stock to its source
+            # warehouse. Its source-consumed valuation therefore becomes an
+            # inbound valuation for the reconstructed weighted-average cost.
+            restored_stmt = (
+                select(InventoryValuationAllocation)
+                .join(InventoryStockMove, InventoryStockMove.id == InventoryValuationAllocation.stock_move_id)
+                .join(InventoryLocation, InventoryLocation.id == InventoryStockMove.source_location_id)
+                .where(
+                    InventoryValuationAllocation.company_id == company_id,
+                    InventoryStockMove.company_id == company_id,
+                    InventoryStockMove.item_id == item_id,
+                    InventoryStockMove.status == "reversed",
+                    InventoryStockMove.source_location_id.is_not(None),
+                    InventoryLocation.warehouse_id == warehouse_id,
+                    InventoryValuationAllocation.allocation_role == "source_consumed",
+                )
+            )
+            restored_stmt = restored_stmt.where(InventoryStockMove.variant_id == variant_id) if variant_id is not None else restored_stmt.where(InventoryStockMove.variant_id.is_(None))
+            restored = db.scalars(restored_stmt).all()
+
+            qty = sum((Decimal(x.quantity) for x in inbound), Decimal("0")) + sum((Decimal(x.quantity) for x in restored), Decimal("0"))
+            if Decimal(stock.quantity_on_hand or 0) <= 0:
+                stock.average_cost = Decimal("0")
+            elif qty <= 0:
+                stock.average_cost = Decimal("0")
+            else:
+                stock.average_cost = (
+                    (
+                        sum((Decimal(x.quantity) * Decimal(x.unit_cost) for x in inbound), Decimal("0"))
+                        + sum((Decimal(x.quantity) * Decimal(x.unit_cost) for x in restored), Decimal("0"))
+                    ) / qty
+                ).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
 
 
 inventory_stock_move_service = InventoryStockMoveService()

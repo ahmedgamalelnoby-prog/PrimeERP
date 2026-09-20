@@ -7,7 +7,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import IntegrationEvent
+from .models import IntegrationConnection, IntegrationEvent
 from .salla_models import SallaCustomer, SallaInvoice, SallaOrder, SallaOrderItem, SallaProduct, SallaProductVariant, SallaShipment
 from .salla_product_mapping_service import reconcile_salla_product_mapping
 
@@ -90,7 +90,28 @@ def _event_key(event_type: str) -> str:
 
 
 def _upsert(db: Session, model, connection_id: int, external_id: str, values: dict):
-    obj = db.scalar(select(model).where(model.connection_id == connection_id, model.external_id == external_id).with_for_update())
+    # A connection belongs to exactly one company. Keep the company scope in
+    # every read/update so a reused/misconfigured connection ID can never
+    # mutate another company's synchronized Salla records.
+    company_id = values.get("company_id")
+    if company_id is None:
+        raise ValueError("Salla synchronization requires a company scope")
+    connection = db.scalar(
+        select(IntegrationConnection).where(
+            IntegrationConnection.id == connection_id,
+            IntegrationConnection.company_id == company_id,
+            IntegrationConnection.is_active.is_(True),
+        )
+    )
+    if connection is None:
+        raise ValueError("Salla connection does not belong to the company or is inactive")
+    obj = db.scalar(
+        select(model).where(
+            model.connection_id == connection_id,
+            model.company_id == company_id,
+            model.external_id == external_id,
+        ).with_for_update()
+    )
     if obj is None:
         obj = model(connection_id=connection_id, external_id=external_id, **values)
         db.add(obj)
@@ -132,7 +153,7 @@ def _normalize_product(db: Session, company_id: int, connection_id: int, data: d
         "urls": _dict(data.get("urls")), "images": _list(data.get("images")), "updated_at_salla": _dt(data.get("updated_at")), "raw_payload": data,
     })
     db.flush()
-    before = db.query(SallaProductVariant).filter(SallaProductVariant.connection_id == connection_id, SallaProductVariant.product_id == obj.id).count()
+    before = db.query(SallaProductVariant).filter(SallaProductVariant.company_id == company_id, SallaProductVariant.connection_id == connection_id, SallaProductVariant.product_id == obj.id).count()
     for variant in _list(data.get("skus") or data.get("variants")):
         variant = _dict(variant)
         variant_id = _id(variant.get("id") or variant.get("sku_id"))
@@ -150,6 +171,17 @@ def _normalize_product(db: Session, company_id: int, connection_id: int, data: d
     try:
         reconcile_result = reconcile_salla_product_mapping(db, company_id=company_id, connection_id=connection_id, salla_product_id=obj.id)
     except ValueError as exc:
+        # A SKU-bearing commerce product is not a successfully synchronized
+        # product until its ERP recipe identity is resolved. Let the event
+        # processor retry the transaction instead of silently recording a
+        # partial product with a mapping error.
+        variant_rows = _list(data.get("skus") or data.get("variants"))
+        sku_bearing = bool(data.get("sku")) or any(
+            isinstance(row, dict) and (row.get("sku") or row.get("barcode") or row.get("gtin"))
+            for row in variant_rows
+        )
+        if sku_bearing:
+            raise
         reconcile_result = {"product_mapped": 0, "variants_mapped": 0, "product_id": None, "reason": str(exc)}
     setattr(obj, "_mapping_result", reconcile_result)
     return obj
@@ -197,7 +229,7 @@ def _normalize_shipment(db: Session, company_id: int, connection_id: int, data: 
     if not external_id:
         return None
     order_id = _id(data.get("order_id") or _dict(data.get("order")).get("id"))
-    order = db.scalar(select(SallaOrder).where(SallaOrder.connection_id == connection_id, SallaOrder.external_id == order_id)) if order_id else None
+    order = db.scalar(select(SallaOrder).where(SallaOrder.company_id == company_id, SallaOrder.connection_id == connection_id, SallaOrder.external_id == order_id)) if order_id else None
     courier = _dict(data.get("courier"))
     return _upsert(db, SallaShipment, connection_id, external_id, {
         "company_id": company_id, "order_id": order.id if order else None, "order_external_id": order_id,
@@ -216,7 +248,7 @@ def _normalize_invoice(db: Session, company_id: int, connection_id: int, data: d
     if not external_id:
         return None
     order_id = _id(data.get("order_id") or _dict(data.get("order")).get("id"))
-    order = db.scalar(select(SallaOrder).where(SallaOrder.connection_id == connection_id, SallaOrder.external_id == order_id)) if order_id else None
+    order = db.scalar(select(SallaOrder).where(SallaOrder.company_id == company_id, SallaOrder.connection_id == connection_id, SallaOrder.external_id == order_id)) if order_id else None
     return _upsert(db, SallaInvoice, connection_id, external_id, {
         "company_id": company_id, "order_id": order.id if order else None, "invoice_number": data.get("invoice_number"),
         "status": _code(data.get("status")), "subtotal": _decimal(data.get("subtotal")), "discount": _decimal(data.get("discount")),
@@ -237,14 +269,14 @@ def normalize_salla_event(db: Session, event: IntegrationEvent) -> dict[str, int
     if key == "order":
         obj = _normalize_order(db, event.company_id, event.connection_id, data)
         counters["orders"] = int(obj is not None)
-        counters["order_items"] = db.query(SallaOrderItem).filter(SallaOrderItem.connection_id == event.connection_id, SallaOrderItem.order_id == obj.id).count() if obj else 0
+        counters["order_items"] = db.query(SallaOrderItem).filter(SallaOrderItem.company_id == event.company_id, SallaOrderItem.connection_id == event.connection_id, SallaOrderItem.order_id == obj.id).count() if obj else 0
     elif key == "customer":
         counters["customers"] = int(_normalize_customer(db, event.company_id, event.connection_id, data) is not None)
     elif key == "product":
-        before = db.query(SallaProductVariant).filter(SallaProductVariant.connection_id == event.connection_id).count()
+        before = db.query(SallaProductVariant).filter(SallaProductVariant.company_id == event.company_id, SallaProductVariant.connection_id == event.connection_id).count()
         obj = _normalize_product(db, event.company_id, event.connection_id, data)
         counters["products"] = int(obj is not None)
-        counters["variants"] = db.query(SallaProductVariant).filter(SallaProductVariant.connection_id == event.connection_id).count() - before
+        counters["variants"] = db.query(SallaProductVariant).filter(SallaProductVariant.company_id == event.company_id, SallaProductVariant.connection_id == event.connection_id).count() - before
         mapping_result = getattr(obj, "_mapping_result", {}) if obj else {}
         counters["product_mapped"] = int(mapping_result.get("product_mapped", 0))
         counters["variants_mapped"] = int(mapping_result.get("variants_mapped", 0))

@@ -44,8 +44,9 @@ class CommerceAccountingService:
     def _post(self, db: Session, *, company_id: int, user_id: int, entry_date: date, journal_id: int, entry_number: str, description: str, lines: list[dict], source_entity: str, source_id: int):
         validate_double_entry(lines); validate_source(source_module="commerce", source_entity=source_entity, source_id=source_id)
         settings, tenant_id, period, fiscal_year = self._context(db, company_id, entry_date)
-        existing = db.scalar(select(JournalEntry).where(JournalEntry.tenant_id == tenant_id, JournalEntry.company_id == company_id, JournalEntry.source_module == "commerce", JournalEntry.source_entity == source_entity, JournalEntry.source_id == source_id))
-        if existing: return existing
+        existing = db.scalar(select(JournalEntry).where(JournalEntry.tenant_id == tenant_id, JournalEntry.company_id == company_id, JournalEntry.source_module == "commerce", JournalEntry.source_entity == source_entity, JournalEntry.source_id == source_id).with_for_update())
+        if existing:
+            return existing
         journal = db.scalar(select(AccountingJournal).where(AccountingJournal.id == journal_id, AccountingJournal.company_id == company_id, AccountingJournal.tenant_id == tenant_id, AccountingJournal.is_active.is_(True)))
         if journal is None: raise HTTPException(409, "Configured accounting journal was not found")
         entry = journal_service.create_draft(db, tenant_id=tenant_id, company_id=company_id, branch_id=settings.default_branch_id, journal_id=journal_id, fiscal_year_id=fiscal_year.id, period_id=period.id, entry_number=entry_number, entry_date=entry_date, description=description, lines=lines, user_id=user_id, source_module="commerce", source_entity=source_entity, source_id=source_id, commit=False)

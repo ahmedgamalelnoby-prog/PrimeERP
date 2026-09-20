@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import traceback
 from pathlib import Path
 
 import yaml
@@ -105,7 +106,8 @@ def main() -> int:
         application = create_application()
         paths = application.openapi().get("paths", {})
     except Exception as exc:
-        fail(f"FastAPI application could not be constructed for route audit: {exc}")
+        traceback.print_exc()
+        fail(f"FastAPI application could not be constructed for route audit: {type(exc).__name__}: {exc}")
 
     missing_paths = [path for path in REQUIRED_API_CONTRACT if path not in paths]
     if missing_paths:

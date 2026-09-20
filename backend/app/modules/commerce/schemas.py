@@ -60,6 +60,7 @@ class DocumentCreate(BaseModel):
     document_type: SaleType | PurchaseType
     number: str = Field(min_length=1, max_length=60)
     document_date: date
+    due_date: date | None = None
     warehouse_id: int | None = Field(default=None, gt=0)
     notes: str | None = None
     lines: list[DocumentLineCreate] = Field(min_length=1)
@@ -84,6 +85,7 @@ class DocumentResponse(BaseModel):
     document_type: str
     number: str
     document_date: date
+    due_date: date | None
     status: str
     warehouse_id: int | None
     subtotal: Decimal
@@ -91,6 +93,11 @@ class DocumentResponse(BaseModel):
     discount_total: Decimal
     paid_total: Decimal
     total: Decimal
+ 
+
+class PaymentAllocationCreate(BaseModel):
+    document_id: int = Field(gt=0)
+    amount: Decimal = Field(gt=0)
 
 
 class PaymentCreate(BaseModel):
@@ -108,11 +115,21 @@ class PaymentCreate(BaseModel):
     cheque_bank_name: str | None = Field(default=None, max_length=150)
     cheque_account_number: str | None = Field(default=None, max_length=100)
     cheque_due_date: date | None = None
+    allocations: list[PaymentAllocationCreate] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_wht(self):
         if self.wht_amount > self.amount:
             raise ValueError("WHT amount cannot exceed payment amount")
+        if self.allocations:
+            ids = [a.document_id for a in self.allocations]
+            if len(ids) != len(set(ids)):
+                raise ValueError("Duplicate payment allocation documents are not allowed")
+            total = sum((a.amount for a in self.allocations), Decimal("0"))
+            if total != self.amount:
+                raise ValueError("Payment allocations must equal the payment amount")
+            if self.document_id not in ids:
+                raise ValueError("The primary document must be included in payment allocations")
         return self
 
 
@@ -136,3 +153,46 @@ class PaymentReverse(BaseModel):
     company_id: int = Field(gt=0)
     reversal_date: date
     notes: str | None = None
+
+
+class AgingRow(BaseModel):
+    direction: str
+    document_id: int
+    document_number: str
+    partner_id: int
+    document_date: date
+    due_date: date
+    total: Decimal
+    paid_total: Decimal
+    outstanding: Decimal
+    days_overdue: int
+    bucket: str
+
+class AgingSummary(BaseModel):
+    as_of: date
+    receivable: Decimal
+    payable: Decimal
+    net: Decimal
+    rows: list[AgingRow]
+
+
+class StatementRow(BaseModel):
+    date: date
+    document_type: str
+    document_id: int | None
+    reference: str
+    debit: Decimal
+    credit: Decimal
+    balance: Decimal
+
+
+class PartnerStatement(BaseModel):
+    company_id: int
+    partner_id: int
+    direction: Literal["customer", "vendor"]
+    from_date: date | None
+    to_date: date | None
+    as_of: date
+    opening_balance: Decimal
+    closing_balance: Decimal
+    rows: list[StatementRow]

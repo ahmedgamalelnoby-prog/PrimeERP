@@ -21,6 +21,7 @@ router = APIRouter(
 
 class JournalReversalRequest(BaseModel):
     reversal_date: date | None = None
+    reason: str = Field(min_length=1, max_length=1000)
     description: str | None = Field(default=None, max_length=2000)
 
 
@@ -91,8 +92,8 @@ def post_entry(entry_id: int, current_user: User = Depends(get_current_user), db
 
 
 @router.post("/{entry_id}/reverse", response_model=JournalEntryResponse, dependencies=[Depends(require_permission("accounting.post"))])
-def reverse_entry(entry_id: int, payload: JournalReversalRequest | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    request = payload or JournalReversalRequest()
+def reverse_entry(entry_id: int, payload: JournalReversalRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    request = payload
     return journal_service.reverse(
         db,
         tenant_id=_tenant_id(current_user),
@@ -100,6 +101,7 @@ def reverse_entry(entry_id: int, payload: JournalReversalRequest | None = None, 
         user_id=current_user.id,
         reversal_date=request.reversal_date,
         description=request.description,
+        reason=request.reason,
     )
 
 

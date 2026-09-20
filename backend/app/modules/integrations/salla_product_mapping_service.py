@@ -6,10 +6,11 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.modules.catalog.models import ProductBarcode, ProductVariant, Recipe
+from app.modules.catalog.models import ProductBarcode, ProductVariant, Recipe, RecipeSkuMapping
 from app.modules.companies.models import Company
 from app.modules.inventory.items.models import InventoryItem
 from .models import IntegrationConnection, IntegrationProductMapping
+from app.modules.catalog.service import catalog_service
 from .salla_models import SallaProduct, SallaProductVariant
 
 
@@ -219,21 +220,47 @@ def reconcile_salla_product_mapping(
         external_sku=_first_text(salla_product.sku),
         external_url=_url(salla_product.urls),
     )
-    # Bind every recipe version for this commercial Product to the same external SKU.\n    # Recipe.code remains the ERP-internal code.\n    salla_sku = _first_text(salla_product.sku)\n    if salla_sku:\n        from app.modules.catalog.models import CatalogProduct\n        catalog_product = db.scalar(select(CatalogProduct).where(\n            CatalogProduct.company_id == company_id,\n            CatalogProduct.item_id == local_product.id,\n            CatalogProduct.is_active.is_(True),\n        ))\n        if catalog_product is not None:\n            recipes = db.scalars(select(Recipe).where(\n                Recipe.company_id == company_id,\n                Recipe.catalog_product_id == catalog_product.id,\n            ).with_for_update()).all()\n            for recipe in recipes:\n                recipe.external_sku = salla_sku\n
+    # Every Salla SKU is a first-class recipe identity. Parent and variant SKUs
+    # may point to the same recipe when their ERP composition is shared.
+    # Recipe.code remains the ERP-internal code.
+    salla_sku = _first_text(salla_product.sku)
+    active_recipe = db.scalar(
+        select(Recipe).where(
+            Recipe.company_id == company_id,
+            Recipe.product_id == local_product.id,
+            Recipe.variant_id.is_(None),
+            Recipe.is_active.is_(True),
+        ).order_by(Recipe.version.desc()).limit(1)
+    )
+    if salla_sku:
+        if active_recipe is None:
+            raise ValueError("Salla product SKU requires an active ERP recipe before mapping")
+        catalog_service.bind_recipe_sku(
+            db, company_id, active_recipe.id, salla_sku,
+            source="salla", external_id=external_id,
+        )
+        # Keep the legacy single-SKU field populated for backward compatibility.
+        active_recipe.external_sku = salla_sku
+
     variants = list(
         db.scalars(
-            select(SallaProductVariant)
-            .where(SallaProductVariant.product_id == salla_product.id, SallaProductVariant.company_id == company_id, SallaProductVariant.connection_id == connection_id)
-            .order_by(SallaProductVariant.id)
+            select(SallaProductVariant).where(
+                SallaProductVariant.product_id == salla_product.id,
+                SallaProductVariant.company_id == company_id,
+                SallaProductVariant.connection_id == connection_id,
+            ).order_by(SallaProductVariant.id)
         ).all()
     )
     mapped = 0
     for salla_variant in variants:
         local_variant = _find_local_variant(db, company_id, local_product.id, salla_variant)
-        if local_variant is None:
-            continue
-        variant_external_id = str(salla_variant.external_id).strip()
-        if not variant_external_id:
+        variant_external_id = _first_text(salla_variant.external_id)
+        variant_sku = _first_text(salla_variant.sku, salla_variant.barcode, salla_variant.gtin)
+        if variant_sku and local_variant is None:
+            raise ValueError("Salla variant SKU requires a matching ERP product variant before mapping")
+        if variant_sku and not variant_external_id:
+            raise ValueError("Salla variant SKU requires an external variant identity before mapping")
+        if local_variant is None or not variant_external_id:
             continue
         _upsert_mapping(
             db,
@@ -242,10 +269,26 @@ def reconcile_salla_product_mapping(
             product_id=local_product.id,
             variant_id=local_variant.id,
             external_id=variant_external_id,
-            external_sku=_first_text(salla_variant.sku, salla_variant.barcode, salla_variant.gtin),
+            external_sku=variant_sku,
             external_url=None,
         )
+        if variant_sku:
+            variant_recipe = db.scalar(
+                select(Recipe).where(
+                    Recipe.company_id == company_id,
+                    Recipe.product_id == local_product.id,
+                    Recipe.variant_id == local_variant.id,
+                    Recipe.is_active.is_(True),
+                ).order_by(Recipe.version.desc()).limit(1)
+            ) or active_recipe
+            if variant_recipe is None:
+                raise ValueError("Salla variant SKU requires an active ERP recipe before mapping")
+            catalog_service.bind_recipe_sku(
+                db, company_id, variant_recipe.id, variant_sku,
+                variant_id=local_variant.id, source="salla", external_id=variant_external_id,
+            )
         mapped += 1
 
     db.flush()
     return {"product_mapped": 1, "variants_mapped": mapped, "product_id": local_product.id, "reason": None}
+

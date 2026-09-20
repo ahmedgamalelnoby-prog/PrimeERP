@@ -80,7 +80,7 @@ class InventoryTransferService:
     def approve(self, db: Session, *, company_id: int, transfer_id: int):
         return self._transition(db, company_id, transfer_id, "requested", "approved")
 
-    def ship(self, db: Session, *, company_id: int, transfer_id: int):
+    def ship(self, db: Session, *, company_id: int, transfer_id: int, tenant_id: int, user_id: int):
         transfer = self._locked(db, company_id, transfer_id)
         if transfer is None:
             raise ValueError("Transfer not found")
@@ -103,17 +103,17 @@ class InventoryTransferService:
                     reference=transfer.reference,
                     source_module="inventory/transfers",
                     source_entity="inventory_transfer",
-                    source_id=str(transfer.id),
+                    source_id=f"{transfer.id}:{line.id}",
                 ),
             )
-            inventory_stock_move_service.post(db, company_id=company_id, move_id=move.id)
+            inventory_stock_move_service.post(db, tenant_id=tenant_id, company_id=company_id, move_id=move.id, user_id=user_id)
             line.shipped_quantity = line.quantity
 
         transfer.status = "shipped"
         db.flush()
         return transfer
 
-    def receive(self, db: Session, *, company_id: int, transfer_id: int):
+    def receive(self, db: Session, *, company_id: int, transfer_id: int, tenant_id: int, user_id: int):
         transfer = self._locked(db, company_id, transfer_id)
         if transfer is None:
             raise ValueError("Transfer not found")
@@ -140,7 +140,7 @@ class InventoryTransferService:
                     source_id=str(transfer.id),
                 ),
             )
-            inventory_stock_move_service.post(db, company_id=company_id, move_id=move.id)
+            inventory_stock_move_service.post(db, tenant_id=tenant_id, company_id=company_id, move_id=move.id, user_id=user_id)
             line.received_quantity = line.shipped_quantity
 
         transfer.status = "received"

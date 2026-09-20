@@ -12,7 +12,7 @@ from app.modules.shipping.cost_models import ShippingShipmentCost
 from app.modules.shipping.models import Shipment
 from app.modules.shipping.pricing_schemas import ShippingCostInput
 from app.modules.shipping.pricing_service import shipping_pricing_service
-from app.modules.shipping.settlement_models import ShippingShipmentSettlement
+from app.modules.shipping.settlement_models import ShippingSettlementBatch, ShippingShipmentSettlement
 from app.modules.shipping.status_models import ShippingFinancialEvent, ShippingOrderStatus, ShippingStatusHistory
 
 
@@ -69,6 +69,10 @@ class ShippingStatusService:
 
     def apply_transition(self, db: Session, shipment: Shipment, new_status: str, changed_on: date | None = None, user_id: int | None = None) -> list[ShippingFinancialEvent]:
         changed_on = changed_on or date.today()
+        shipment_locked = db.scalar(select(Shipment).where(Shipment.id == shipment.id, Shipment.company_id == shipment.company_id).with_for_update())
+        if shipment_locked is None:
+            raise ValueError("Shipment not found")
+        shipment = shipment_locked
         self.ensure_defaults(db, shipment.company_id)
         status = db.scalar(select(ShippingOrderStatus).where(
             ShippingOrderStatus.company_id == shipment.company_id,
@@ -96,7 +100,10 @@ class ShippingStatusService:
         db.flush()
         actions = json.loads(status.financial_actions or "[]")
         events: list[ShippingFinancialEvent] = []
-        cost = db.scalar(select(ShippingShipmentCost).where(ShippingShipmentCost.shipment_id == shipment.id))
+        cost = db.scalar(select(ShippingShipmentCost).where(ShippingShipmentCost.shipment_id == shipment.id,
+            ShippingShipmentCost.company_id == shipment.company_id,
+            ShippingShipmentCost.carrier_id == shipment.carrier_id,
+        ))
         cost_total = Decimal(cost.total_cost or 0) if cost else Decimal(shipment.shipping_fee or 0)
         dynamic_return_cost = Decimal("0")
         if new_status == "returned":
@@ -135,7 +142,9 @@ class ShippingStatusService:
             "reverse_cod_receivable": ("customer_receivable", "carrier_cod_receivable"),
             "recognize_return_cost": ("return_shipping_expense", "carrier_payable"),
         }
-        already_settled = db.scalar(select(ShippingShipmentSettlement.id).where(ShippingShipmentSettlement.shipment_id == shipment.id)) is not None
+        already_settled = db.scalar(select(ShippingShipmentSettlement.id).where(ShippingShipmentSettlement.shipment_id == shipment.id,
+            ShippingShipmentSettlement.batch_id.in_(select(ShippingSettlementBatch.id).where(ShippingSettlementBatch.company_id == shipment.company_id)),
+        )) is not None
         for action in actions:
             if action == "reverse_cod_receivable" and already_settled:
                 continue

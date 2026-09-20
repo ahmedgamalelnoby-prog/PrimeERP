@@ -38,6 +38,7 @@ from app.modules.uom.router import router as uom_router
 from app.modules.companies.router import router as companies_router
 from app.modules.branches.router import router as branches_router
 from app.modules.treasury.router import router as treasury_router
+from app.modules.treasury.bank_reconciliation.router import router as bank_reconciliation_router
 from app.modules.egyptian_einvoice.router import router as egyptian_einvoice_router
 from app.modules.audit.router import router as audit_router
 from app.modules.roles.router import router as roles_router
@@ -51,12 +52,26 @@ from app.modules.saas.entitlements import require_module
 from app.modules.jurisdiction.router import router as jurisdiction_router
 from app.modules.reports.router import router as reports_router
 from app.modules.helpdesk_ai.router import router as helpdesk_router
+from app.modules.crm.api import router as crm_router
+from app.modules.hr.router import router as hr_router
+from app.modules.pos.router import router as pos_router
+from app.modules.manufacturing.bom.router import router as manufacturing_router
+from app.modules.mobile.router import router as mobile_router
+from app.modules.platform.developer.router import router as developer_router
+from app.modules.enterprise.finance_router import router as enterprise_finance_router
 
 def build_router() -> APIRouter:
     api_router = APIRouter()
     api_router.include_router(identity_router, prefix="/identity", tags=["identity"])
     api_router.include_router(features_router)
     api_router.include_router(helpdesk_router)
+    api_router.include_router(crm_router)
+    api_router.include_router(hr_router)
+    api_router.include_router(pos_router)
+    api_router.include_router(manufacturing_router)
+    api_router.include_router(mobile_router)
+    api_router.include_router(developer_router)
+    api_router.include_router(enterprise_finance_router)
     api_router.include_router(platform_modules_router)
     api_router.include_router(saas_router, prefix="/saas", tags=["saas"])
     api_router.include_router(transactions_router, prefix="/transactions", tags=["transactions"])
@@ -88,6 +103,7 @@ def build_router() -> APIRouter:
     api_router.include_router(companies_router)
     api_router.include_router(branches_router)
     api_router.include_router(treasury_router)
+    api_router.include_router(bank_reconciliation_router)
     api_router.include_router(egyptian_einvoice_router, dependencies=[Depends(require_module("einvoice"))])
     api_router.include_router(reports_router)
     api_router.include_router(audit_router)

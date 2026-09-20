@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -93,6 +93,7 @@ class Recipe(Base):
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     product_id = Column(Integer, ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False, index=True)
     catalog_product_id = Column(Integer, ForeignKey("catalog_products.id", ondelete="RESTRICT"), nullable=True, index=True)
+    variant_id = Column(Integer, ForeignKey("product_variants.id", ondelete="RESTRICT"), nullable=True, index=True)
     code = Column(String(60), nullable=False)
     external_sku = Column(String(160), nullable=True, index=True)
     name_ar = Column(String(200), nullable=False)
@@ -103,9 +104,16 @@ class Recipe(Base):
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
-    __table_args__ = (UniqueConstraint("company_id", "code", "version", name="uq_recipe_company_code_version"), UniqueConstraint("company_id", "product_id", "version", name="uq_recipe_company_product_version"), CheckConstraint("yield_quantity > 0", name="ck_recipe_yield_positive"), CheckConstraint("waste_percentage >= 0 AND waste_percentage < 100", name="ck_recipe_waste_range"))
+    __table_args__ = (
+        UniqueConstraint("company_id", "code", "version", name="uq_recipe_company_code_version"),
+        Index("uq_recipe_company_product_version_parent", "company_id", "product_id", "version", unique=True, postgresql_where=(variant_id.is_(None))),
+        Index("uq_recipe_company_product_variant_version", "company_id", "product_id", "variant_id", "version", unique=True, postgresql_where=(variant_id.is_not(None))),
+        CheckConstraint("yield_quantity > 0", name="ck_recipe_yield_positive"),
+        CheckConstraint("waste_percentage >= 0 AND waste_percentage < 100", name="ck_recipe_waste_range"),
+    )
     product = relationship("InventoryItem")
     catalog_product = relationship("CatalogProduct")
+    variant = relationship("ProductVariant", foreign_keys=[variant_id])
     lines = relationship("RecipeLine", back_populates="recipe", cascade="all, delete-orphan", order_by="RecipeLine.line_no")
 
 
@@ -124,6 +132,28 @@ class RecipeLine(Base):
     __table_args__ = (UniqueConstraint("recipe_id", "line_no", name="uq_recipe_line_no"), CheckConstraint("line_no > 0", name="ck_recipe_line_no_positive"), CheckConstraint("quantity > 0", name="ck_recipe_line_quantity_positive"), CheckConstraint("waste_percentage >= 0 AND waste_percentage < 100", name="ck_recipe_line_waste_range"), CheckConstraint("conversion_factor_to_product_uom > 0", name="ck_recipe_line_conversion_positive"))
     recipe = relationship("Recipe", back_populates="lines")
     # Both columns point to inventory_items; keep the legacy ingredient relationship\n    # explicitly bound to ingredient_product_id and expose the canonical item link separately.\n    ingredient = relationship("InventoryItem", foreign_keys=[ingredient_product_id])\n    ingredient_item = relationship("InventoryItem", foreign_keys=[ingredient_item_id])\n
+
+class RecipeSkuMapping(Base):
+    __tablename__ = "recipe_sku_mappings"
+    id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    recipe_id = Column(Integer, ForeignKey("recipes.id", ondelete="CASCADE"), nullable=False, index=True)
+    product_id = Column(Integer, ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False, index=True)
+    variant_id = Column(Integer, ForeignKey("product_variants.id", ondelete="RESTRICT"), nullable=True, index=True)
+    sku = Column(String(160), nullable=False)
+    source = Column(String(40), nullable=False, default="salla")
+    external_id = Column(String(160), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+    __table_args__ = (
+        UniqueConstraint("company_id", "sku", name="uq_recipe_sku_mapping_company_sku"),
+        UniqueConstraint("company_id", "source", "external_id", name="uq_recipe_sku_mapping_source_external"),
+    )
+    recipe = relationship("Recipe")
+    product = relationship("InventoryItem")
+    variant = relationship("ProductVariant", foreign_keys=[variant_id])
+
 
 class Menu(Base):
     __tablename__ = "menus"

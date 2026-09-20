@@ -157,8 +157,12 @@ def shipment(payload: ShipmentCreate, current_user: User = Depends(get_current_u
             ),
         )
         fee = pricing_result.total_cost
-    except ValueError:
-        pass
+    except ValueError as exc:
+        # Shipping cost calculation is a financial control. Never silently
+        # fall back to the manual fee when a configured pricing profile exists
+        # but its calculation fails; doing so can create an incorrect carrier
+        # liability and customer charge without an audit-visible error.
+        raise HTTPException(status_code=422, detail=f"Shipping cost calculation failed: {exc}") from exc
 
     obj = Shipment(
         company_id=payload.company_id,

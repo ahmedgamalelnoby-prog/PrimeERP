@@ -139,6 +139,11 @@ class FiscalYearRepository:
                 AccountingPeriod.allow_posting
                 .is_(True),
             )
+            .order_by(
+                AccountingPeriod.start_date.desc(),
+                AccountingPeriod.end_date.desc(),
+                AccountingPeriod.id.desc(),
+            )
             .first()
         )
 

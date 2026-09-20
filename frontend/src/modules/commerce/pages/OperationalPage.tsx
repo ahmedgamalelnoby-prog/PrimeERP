@@ -4,15 +4,15 @@ import client from "@/shared/api/client";
 import "@/shared/api/interceptors";
 
 type Row = Record<string, unknown>;
-type RouteConfig = { title: string; endpoint: string; kind: "partners" | "documents" | "shipping"; partnerType?: "customer" | "vendor"; documentKind?: "sale" | "purchase" };
+type RouteConfig = { title: string; endpoint: string; kind: "partners" | "documents" | "shipping"; partnerType?: "customer" | "vendor"; documentKind?: "sale" | "purchase"; documentType?: string };
 const config: Record<string, RouteConfig> = {
   "/customers": { title: "العملاء", endpoint: "/commerce/partners", kind: "partners", partnerType: "customer" },
   "/purchasing/suppliers": { title: "الموردون", endpoint: "/commerce/partners", kind: "partners", partnerType: "vendor" },
-  "/sales/quotations": { title: "عروض المبيعات", endpoint: "/commerce/sales/documents", kind: "documents" },
-  "/sales/orders": { title: "طلبات المبيعات", endpoint: "/commerce/sales/documents", kind: "documents", documentKind: "sale" },
-  "/sales/invoices": { title: "فواتير المبيعات", endpoint: "/commerce/sales/documents", kind: "documents", documentKind: "sale" },
-  "/purchases/orders": { title: "طلبات المشتريات", endpoint: "/commerce/purchases/documents", kind: "documents", documentKind: "purchase" },
-  "/purchasing/invoices": { title: "فواتير المشتريات", endpoint: "/commerce/purchases/documents", kind: "documents", documentKind: "purchase" },
+  "/sales/quotations": { title: "عروض المبيعات", endpoint: "/commerce/sales/documents", kind: "documents", documentKind: "sale", documentType: "quotation" },
+  "/sales/orders": { title: "طلبات المبيعات", endpoint: "/commerce/sales/documents", kind: "documents", documentKind: "sale", documentType: "order" },
+  "/sales/invoices": { title: "فواتير المبيعات", endpoint: "/commerce/sales/documents", kind: "documents", documentKind: "sale", documentType: "invoice" },
+  "/purchases/orders": { title: "طلبات المشتريات", endpoint: "/commerce/purchases/documents", kind: "documents", documentKind: "purchase", documentType: "order" },
+  "/purchasing/invoices": { title: "فواتير المشتريات", endpoint: "/commerce/purchases/documents", kind: "documents", documentKind: "purchase", documentType: "bill" },
   "/shipping": { title: "الشحن واللوجستيات", endpoint: "/shipping/carriers", kind: "shipping" },
 };
 
@@ -47,6 +47,7 @@ export default function OperationalPage() {
   const query = useMemo(() => companyId ? `?company_id=${companyId}` : "", [companyId]);
   const isSale = meta.endpoint === "/commerce/sales/documents";
   const isPurchase = meta.endpoint === "/commerce/purchases/documents";
+  const allowedDocumentTypes = isSale ? (meta.documentType ? [meta.documentType] : ["quotation","order","delivery","invoice","credit_note"]) : ["requisition","rfq","order","receipt","bill","debit_note"];
 
   async function actionDocument(id: number, action: string) {
     if (!companyId) return;
@@ -116,7 +117,7 @@ export default function OperationalPage() {
       return;
     }
     try {
-      const r = await client.get(`${meta.endpoint}${query}${meta.partnerType ? `&partner_type=${meta.partnerType}` : ""}`);
+      const params = new URLSearchParams(query.replace(/^\?/, "")); if (meta.partnerType) params.set("partner_type", meta.partnerType); if (meta.documentType) params.set("document_type", meta.documentType); const r = await client.get(`${meta.endpoint}?${params.toString()}`);
       setRows(Array.isArray(r.data) ? r.data : []);
     } catch (e: any) {
       setError(e?.response?.data?.detail || "تعذر تحميل البيانات");
@@ -174,7 +175,7 @@ export default function OperationalPage() {
           <input required type="number" min="1" value={itemId} onChange={e => setItemId(e.target.value)} placeholder="Item ID" className="w-full rounded-lg border bg-background px-3 py-2" />
           <input required value={number} onChange={e => setNumber(e.target.value)} placeholder="رقم المستند" className="w-full rounded-lg border bg-background px-3 py-2" />
           <select value={type} onChange={e => setType(e.target.value)} className="w-full rounded-lg border bg-background px-3 py-2">
-            <option value="quotation">Quotation</option><option value="order">Order</option><option value="delivery">Delivery</option><option value="invoice">Invoice</option><option value="credit_note">Credit Note</option><option value="requisition">Requisition</option><option value="rfq">RFQ</option><option value="receipt">Receipt</option><option value="bill">Bill</option><option value="debit_note">Debit Note</option>
+            {allowedDocumentTypes.map(value => <option key={value} value={value}>{value}</option>)}
           </select>
           <input required type="number" min="0" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="سعر الوحدة" className="w-full rounded-lg border bg-background px-3 py-2" />
         </>}

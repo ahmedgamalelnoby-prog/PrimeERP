@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import secrets
 import unicodedata
@@ -10,6 +11,7 @@ from typing import Any
 
 import requests
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -20,8 +22,14 @@ from app.modules.saas.models import Subscription, SubscriptionPlan, Tenant, Tena
 from app.modules.saas.schemas import TenantRegistrationRequest
 from app.modules.saas.service import register_trial_tenant, resolve_enabled_modules
 
-from .models import IntegrationConnection
-from .salla_public_app_models import SallaAppInstallation, SallaSSOTicket
+from .models import IntegrationConnection, IntegrationEvent
+from .salla_public_app_models import SallaAppEvent, SallaAppInstallation, SallaSSOTicket
+from .salla_models import SallaOrder
+from .salla_service import normalize_salla_event
+from .salla_erp_finalize import finalize_salla_order
+from .salla_erp_service import _system_user_id
+from .salla_return_service import restore_salla_inventory
+from .salla_shipping_service import sync_salla_shipment
 
 SALLA_USER_INFO_URL = "https://accounts.salla.sa/oauth2/user/info"
 
@@ -55,6 +63,20 @@ def _merchant_id(payload: dict[str, Any]) -> str:
     if value is None:
         raise SallaPublicAppError("Salla authorization payload does not contain merchant id")
     return str(value)
+
+
+def _event_id(payload: dict[str, Any]) -> str:
+    for source in (payload, _payload_data(payload)):
+        value = _text(source, "event_id", "event_idempotency_key", "id")
+        if value:
+            return value[:255]
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _event_payload_hash(payload: dict[str, Any]) -> str:
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _encrypt(value: str | None) -> str | None:
@@ -108,16 +130,16 @@ def _provision_or_reuse_account(db: Session, merchant_id: str, merchant: dict[st
     name = _text(merchant, "name", "store_name", "business_name") or f"Salla Store {merchant_id}"
     phone = _text(merchant, "mobile", "phone")
     language = "ar"
-    existing = db.scalars(select(User).where(func.lower(User.email) == (email or "").lower(), User.is_deleted.is_(False))).all() if email else []
-    if len(existing) == 1 and existing[0].tenant_id is not None:
-        user = existing[0]
-        company = db.scalar(select(Company).where(Company.tenant_id == user.tenant_id, Company.is_active.is_(True)).order_by(Company.id))
-        if company is None:
-            raise SallaPublicAppError("Existing PrimeERP tenant has no active company")
-        return user.tenant_id, company.id, user.id
-
-    if len(existing) > 1:
-        raise SallaPublicAppError("Salla merchant email matches multiple PrimeERP accounts; manual linking is required")
+    existing = db.scalars(
+        select(User).where(
+            func.lower(User.email) == (email or "").lower(),
+            User.is_deleted.is_(False),
+        )
+    ).all() if email else []
+    if existing:
+        raise SallaPublicAppError(
+            "Salla merchant email already belongs to a PrimeERP account; explicit account linking is required"
+        )
 
     username = _unique_username(db, email, merchant_id)
     synthetic_email = email or f"salla-{merchant_id}@primeerp.local"
@@ -139,7 +161,20 @@ def _provision_or_reuse_account(db: Session, merchant_id: str, merchant: dict[st
 
 
 def _ensure_connection(db: Session, installation: SallaAppInstallation) -> IntegrationConnection:
-    connection = db.scalar(select(IntegrationConnection).where(IntegrationConnection.id == installation.connection_id)) if installation.connection_id else None
+    connection = None
+    if installation.connection_id:
+        connection = db.scalar(
+            select(IntegrationConnection)
+            .join(Company, Company.id == IntegrationConnection.company_id)
+            .where(
+                IntegrationConnection.id == installation.connection_id,
+                IntegrationConnection.company_id == installation.company_id,
+                Company.tenant_id == installation.tenant_id,
+                IntegrationConnection.provider == "salla",
+                IntegrationConnection.is_active.is_(True),
+            )
+            .with_for_update()
+        )
     if connection is None:
         connection = IntegrationConnection(
             company_id=installation.company_id,
@@ -200,6 +235,15 @@ def handle_authorize_event(db: Session, payload: dict[str, Any]) -> dict[str, An
     installation.merchant_email = _text(merchant, "email", "merchant_email", "owner_email")
     installation.metadata_json = merchant
 
+    if db.scalar(
+        select(Company.id).where(
+            Company.id == installation.company_id,
+            Company.tenant_id == installation.tenant_id,
+            Company.is_active.is_(True),
+        )
+    ) is None:
+        raise SallaPublicAppError("Salla installation company does not belong to its tenant")
+
     connection = _ensure_connection(db, installation)
     connection.credential_ref = None
     connection.is_active = True
@@ -246,7 +290,7 @@ def consume_sso_ticket(db: Session, ticket: str) -> str:
 
 
 def get_salla_access_token(db: Session, connection: IntegrationConnection) -> str:
-    installation = db.scalar(select(SallaAppInstallation).where(SallaAppInstallation.connection_id == connection.id).with_for_update())
+    installation = db.scalar(select(SallaAppInstallation).where(SallaAppInstallation.connection_id == connection.id, SallaAppInstallation.company_id == connection.company_id, SallaAppInstallation.tenant_id == connection.tenant_id).with_for_update())
     if installation is None:
         raise SallaPublicAppError("Salla public-app installation not found")
     token = decrypt_token(installation.access_token_ciphertext)
@@ -285,10 +329,7 @@ def get_salla_access_token(db: Session, connection: IntegrationConnection) -> st
     return token
 
 
-
 def _activate_primeerp_subscription(db: Session, installation: SallaAppInstallation, data: dict[str, Any]) -> None:
-    """Map a Salla paid plan event to a PrimeERP subscription plan."""
-    import json
     try:
         mapping = json.loads(os.getenv("SALLA_PLAN_MAP_JSON", "{}"))
     except json.JSONDecodeError as exc:
@@ -303,6 +344,7 @@ def _activate_primeerp_subscription(db: Session, installation: SallaAppInstallat
 
     external_id = _text(data, "subscription_id") or _text(data, "id")
     existing = db.scalar(select(Subscription).where(
+        Subscription.tenant_id == installation.tenant_id,
         Subscription.external_provider == "salla",
         Subscription.external_subscription_id == external_id,
     )) if external_id else None
@@ -384,55 +426,259 @@ def _deactivate_primeerp_subscription(db: Session, installation: SallaAppInstall
         tenant.is_active = True
 
 
-def handle_app_event(db: Session, payload: dict[str, Any]) -> dict[str, Any]:
+def handle_app_event(db: Session, payload: dict[str, Any], event_id: str | None = None) -> dict[str, Any]:
     event = str(payload.get("event") or "").strip().lower()
     merchant_id = _merchant_id(payload)
-    installation = db.scalar(select(SallaAppInstallation).where(SallaAppInstallation.merchant_id == merchant_id).with_for_update())
-    if event == "app.store.authorize":
-        return handle_authorize_event(db, payload)
-    if installation is None:
-        return {"ignored": True, "reason": "installation_not_found", "event": event, "merchant_id": merchant_id}
+    event_id = (event_id or _event_id(payload)).strip()[:255]
+    payload_hash = _event_payload_hash(payload)
 
-    installation.last_webhook_at = datetime.now(timezone.utc)
-    data = _payload_data(payload)
-    if event in {"app.uninstalled", "app.subscription.expired", "app.subscription.canceled", "app.trial.expired", "app.trial.canceled"}:
-        installation.status = "inactive" if event == "app.uninstalled" else "subscription_inactive"
-        if event == "app.uninstalled":
-            installation.subscription_status = "uninstalled"
-            if installation.connection_id:
-                connection = db.get(IntegrationConnection, installation.connection_id)
-                if connection:
-                    connection.is_active = False
-        elif event == "app.subscription.expired":
-            installation.subscription_status = "expired"
-            _deactivate_primeerp_subscription(db, installation, "expired")
-        elif event == "app.subscription.canceled":
-            installation.subscription_status = "canceled"
-            _deactivate_primeerp_subscription(db, installation, "canceled")
-        elif event in {"app.trial.expired", "app.trial.canceled"}:
-            installation.subscription_status = event.rsplit(".", 1)[1]
-            _deactivate_primeerp_subscription(db, installation, event.rsplit(".", 1)[1])
-    elif event in {"app.trial.started", "app.subscription.started", "app.subscription.renewed"}:
-        installation.status = "active"
-        installation.subscription_status = "trialing" if event == "app.trial.started" else "active"
-        if event in {"app.subscription.started", "app.subscription.renewed"} and _text(data, "item_type") in {None, "plan"}:
-            _activate_primeerp_subscription(db, installation, data)
-        installation.subscription_id = _text(data, "subscription_id", "id") or installation.subscription_id
-        installation.subscription_item_slug = _text(data, "item_slug") or installation.subscription_item_slug
-        installation.trial_ends_at = None
-        if event == "app.trial.started":
-            end = _text(data, "end_date")
-            if end:
-                try:
-                    installation.trial_ends_at = datetime.fromisoformat(end.replace("Z", "+00:00"))
-                    tenant = db.get(Tenant, installation.tenant_id)
-                    if tenant:
-                        tenant.trial_ends_at = installation.trial_ends_at
-                        tenant.status = "trial"
-                        tenant.is_trial = True
-                except ValueError:
-                    pass
-    elif event == "app.updated":
-        installation.status = "active"
+    installation = db.scalar(
+        select(SallaAppInstallation)
+        .where(SallaAppInstallation.merchant_id == merchant_id)
+        .with_for_update()
+    )
+
+    event_row = db.scalar(
+        select(SallaAppEvent)
+        .where(
+            SallaAppEvent.merchant_id == merchant_id,
+            SallaAppEvent.event_id == event_id,
+        )
+        .with_for_update()
+    )
+    if event_row is not None:
+        if event_row.payload_sha256 != payload_hash:
+            raise SallaPublicAppError("Salla event id was already used with a different payload")
+        if event_row.status == "processed":
+            return {
+                "accepted": True,
+                "duplicate": True,
+                "event_id": event_id,
+                "result": event_row.result_json,
+            }
+        if event_row.status == "processing":
+            raise SallaPublicAppError("Salla event is already being processed")
+    else:
+        try:
+            with db.begin_nested():
+                event_row = SallaAppEvent(
+                    merchant_id=merchant_id,
+                    event_id=event_id,
+                    event_type=event,
+                    payload_sha256=payload_hash,
+                    status="processing",
+                )
+                db.add(event_row)
+                db.flush()
+        except IntegrityError:
+            event_row = db.scalar(
+                select(SallaAppEvent)
+                .where(
+                    SallaAppEvent.merchant_id == merchant_id,
+                    SallaAppEvent.event_id == event_id,
+                )
+                .with_for_update()
+            )
+            if event_row is None:
+                raise SallaPublicAppError("Unable to establish Salla event idempotency record")
+
+    if event == "app.store.authorize":
+        result = handle_authorize_event(db, payload)
+        event_row.status = "processed"
+        event_row.result_json = result
+        event_row.processed_at = datetime.now(timezone.utc)
+        db.commit()
+        return result
+
+    if installation is None:
+        result = {"ignored": True, "reason": "installation_not_found", "event": event, "merchant_id": merchant_id}
+    else:
+        installation.last_webhook_at = datetime.now(timezone.utc)
+        data = _payload_data(payload)
+        if event in {"app.uninstalled", "app.subscription.expired", "app.subscription.canceled", "app.trial.expired", "app.trial.canceled"}:
+            installation.status = "inactive" if event == "app.uninstalled" else "subscription_inactive"
+            if event == "app.uninstalled":
+                installation.subscription_status = "uninstalled"
+                if installation.connection_id:
+                    connection = db.get(IntegrationConnection, installation.connection_id)
+                    if connection:
+                        connection.is_active = False
+            elif event == "app.subscription.expired":
+                installation.subscription_status = "expired"
+                _deactivate_primeerp_subscription(db, installation, "expired")
+            elif event == "app.subscription.canceled":
+                installation.subscription_status = "canceled"
+                _deactivate_primeerp_subscription(db, installation, "canceled")
+            else:
+                installation.subscription_status = event.rsplit(".", 1)[1]
+                _deactivate_primeerp_subscription(db, installation, event.rsplit(".", 1)[1])
+        elif event in {"app.trial.started", "app.subscription.started", "app.subscription.renewed"}:
+            installation.status = "active"
+            installation.subscription_status = "trialing" if event == "app.trial.started" else "active"
+            if event in {"app.subscription.started", "app.subscription.renewed"} and _text(data, "item_type") in {None, "plan"}:
+                _activate_primeerp_subscription(db, installation, data)
+            installation.subscription_id = _text(data, "subscription_id", "id") or installation.subscription_id
+            installation.subscription_item_slug = _text(data, "item_slug") or installation.subscription_item_slug
+            installation.trial_ends_at = None
+            if event == "app.trial.started":
+                end = _text(data, "end_date")
+                if end:
+                    try:
+                        installation.trial_ends_at = datetime.fromisoformat(end.replace("Z", "+00:00"))
+                        tenant = db.get(Tenant, installation.tenant_id)
+                        if tenant:
+                            tenant.trial_ends_at = installation.trial_ends_at
+                            tenant.status = "trial"
+                            tenant.is_trial = True
+                    except ValueError:
+                        pass
+        elif event == "app.updated":
+            installation.status = "active"
+
+        # Commerce webhooks cross the public-app boundary into the normalized
+        # Salla tables and then use the existing ERP execution pipeline.
+        # Return/cancel shipment events have their own inventory semantics and
+        # must not be treated as ordinary order updates.
+        elif event.startswith("order.") and event not in {
+            "order.shipment.creating", "order.shipment.created",
+            "order.shipment.cancelled", "order.shipment.return.creating",
+            "order.shipment.return.created", "order.shipment.return.cancelled",
+        }:
+            if installation.connection_id is None:
+                raise SallaPublicAppError("Salla installation has no active integration connection")
+            connection = db.scalar(select(IntegrationConnection).where(
+                IntegrationConnection.id == installation.connection_id,
+                IntegrationConnection.company_id == installation.company_id,
+                IntegrationConnection.provider == "salla",
+                IntegrationConnection.is_active.is_(True),
+            ))
+            if connection is None:
+                raise SallaPublicAppError("Salla integration connection is missing or inactive")
+            normalized_event = IntegrationEvent(
+                company_id=connection.company_id,
+                connection_id=connection.id,
+                external_event_id=event_id,
+                event_type=event,
+                payload=json.dumps(data, ensure_ascii=False),
+            )
+            counters = normalize_salla_event(db, normalized_event)
+            external_order_id = _text(data, "id", "order_id")
+            if not external_order_id:
+                raise SallaPublicAppError(f"Salla {event} webhook does not contain an order id")
+            order = db.scalar(select(SallaOrder).where(
+                SallaOrder.company_id == connection.company_id,
+                SallaOrder.connection_id == connection.id,
+                SallaOrder.external_id == external_order_id,
+            ).with_for_update())
+            if order is None:
+                raise SallaPublicAppError(f"Salla order {external_order_id} was not normalized")
+            execution = finalize_salla_order(db, order)
+            result = {
+                "installation_id": installation.id,
+                "event": event,
+                "status": installation.status,
+                "subscription_status": installation.subscription_status,
+                "commerce": execution,
+                "normalized": counters,
+            }
+        elif event.startswith("shipment.") or event in {
+            "shipment.created", "shipment.updated", "shipment.status.updated",
+            "order.shipment.creating", "order.shipment.created",
+            "order.shipment.cancelled", "order.shipment.return.creating",
+            "order.shipment.return.created", "order.shipment.return.cancelled",
+        }:
+            if installation.connection_id is None:
+                raise SallaPublicAppError("Salla installation has no active integration connection")
+            connection = db.scalar(select(IntegrationConnection).where(
+                IntegrationConnection.id == installation.connection_id,
+                IntegrationConnection.company_id == installation.company_id,
+                IntegrationConnection.provider == "salla",
+                IntegrationConnection.is_active.is_(True),
+            ))
+            if connection is None:
+                raise SallaPublicAppError("Salla integration connection is missing or inactive")
+            normalized_event = IntegrationEvent(
+                company_id=connection.company_id,
+                connection_id=connection.id,
+                external_event_id=event_id,
+                event_type=event,
+                payload=json.dumps(data, ensure_ascii=False),
+            )
+            counters = normalize_salla_event(db, normalized_event)
+            shipment_id = _text(data, "id", "shipment_id")
+            shipment_result = None
+            if shipment_id:
+                from .salla_models import SallaShipment
+                salla_shipment = db.scalar(select(SallaShipment).where(
+                    SallaShipment.company_id == connection.company_id,
+                    SallaShipment.connection_id == connection.id,
+                    SallaShipment.external_id == shipment_id,
+                ).with_for_update())
+                if salla_shipment is None:
+                    raise SallaPublicAppError(f"Salla shipment {shipment_id} was not normalized")
+                shipment_result = sync_salla_shipment(db, salla_shipment)
+
+                # Shipment events are the authoritative fulfillment signal.
+                # A pending/created shipment must not consume ERP stock, while
+                # shipped-or-later must finalize the linked Salla order.
+                shipment_status = str(salla_shipment.status or "").strip().lower().replace(" ", "_")
+                fulfillment_requested = shipment_status in {
+                    "picked_up", "pickedup", "shipped", "in_transit", "intransit",
+                    "delivering", "received_at_final_hub",
+                    "out_for_delivery", "outfordelivery",
+                    "partially_delivered", "delivered",
+                }
+                order = None
+                if salla_shipment.order_id:
+                    order = db.scalar(select(SallaOrder).where(
+                        SallaOrder.id == salla_shipment.order_id,
+                        SallaOrder.company_id == connection.company_id,
+                        SallaOrder.connection_id == connection.id,
+                    ).with_for_update())
+                elif salla_shipment.order_external_id:
+                    order = db.scalar(select(SallaOrder).where(
+                        SallaOrder.external_id == salla_shipment.order_external_id,
+                        SallaOrder.company_id == connection.company_id,
+                        SallaOrder.connection_id == connection.id,
+                    ).with_for_update())
+                commerce = finalize_salla_order(
+                    db, order, force_fulfillment=True, shipment=salla_shipment
+                ) if order is not None and fulfillment_requested else None
+
+                # A shipment can be cancelled/returned after it has already
+                # consumed stock. Restore only that shipment's posted moves;
+                # never return the other shipments of the same order.
+                # Creating/cancelling a return shipment is not proof that
+                # physical stock has been received back. Restore inventory only
+                # when the normalized shipment itself reaches a return state.
+                inventory_return = None
+                # Return/cancel webhook creation alone does not prove that
+                # inventory has physically returned. The normalized shipment
+                # status is the single source of truth for stock restoration.
+                if order is not None and shipment_status in {
+                    "cancelled", "canceled", "returned", "return_to_origin",
+                    "return_in_progress", "restoring", "restored",
+                }:
+                    inventory_return = restore_salla_inventory(
+                        db,
+                        order,
+                        user_id=_system_user_id(db, order.company_id),
+                        shipment_external_id=salla_shipment.external_id,
+                    )
+            result = {
+                "installation_id": installation.id,
+                "event": event,
+                "status": installation.status,
+                "subscription_status": installation.subscription_status,
+                "shipping": shipment_result,
+                "commerce": commerce,
+                "normalized": counters,
+                "inventory_return": inventory_return,
+            }
+        result = locals().get("result") or {"installation_id": installation.id, "event": event, "status": installation.status, "subscription_status": installation.subscription_status}
+
+    event_row.status = "processed"
+    event_row.result_json = result
+    event_row.processed_at = datetime.now(timezone.utc)
     db.commit()
-    return {"installation_id": installation.id, "event": event, "status": installation.status, "subscription_status": installation.subscription_status}
+    return result

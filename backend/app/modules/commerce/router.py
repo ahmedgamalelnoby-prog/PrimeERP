@@ -1,3 +1,4 @@
+from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -11,7 +12,7 @@ from app.modules.branches.models import Branch
 from app.modules.commerce.accounting_models import CommerceAccountingSettings
 from app.modules.commerce.accounting_schemas import CommerceAccountingSettingsCreate
 from app.modules.commerce.models import CommercePayment, SalesDocument, PurchaseDocument
-from app.modules.commerce.schemas import PartnerCreate, PartnerResponse, DocumentCreate, DocumentResponse, PaymentCreate, PaymentResponse, PaymentReverse
+from app.modules.commerce.schemas import PartnerCreate, PartnerResponse, DocumentCreate, DocumentResponse, PaymentCreate, PaymentResponse, PaymentReverse, AgingSummary, PartnerStatement
 from app.modules.commerce.sales_return_schemas import SalesReturnCreate
 from app.modules.commerce.sales_return_service import sales_return_service
 from app.modules.commerce.service import commerce_service
@@ -102,15 +103,61 @@ def create_purchase(payload: DocumentCreate, current_user: User = Depends(get_cu
     obj = _run(lambda: commerce_service.create_document(db, payload)); db.commit(); db.refresh(obj); return obj
 
 
+@router.get("/ar-ap/aging", response_model=AgingSummary)
+def ar_ap_aging(company_id: int = Query(..., gt=0), as_of: date | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company_for_user(db, company_id, current_user)
+    cutoff = as_of or date.today()
+    rows = commerce_service.ar_ap_aging(db, company_id, cutoff)
+    receivable = sum((r["outstanding"] for r in rows if r["direction"] == "receivable"), 0)
+    payable = sum((r["outstanding"] for r in rows if r["direction"] == "payable"), 0)
+    return {"as_of": cutoff, "receivable": receivable, "payable": payable, "net": receivable - payable, "rows": rows}
+
+@router.get("/partners/{partner_id}/statement", response_model=PartnerStatement)
+def partner_statement(
+    partner_id: int,
+    company_id: int = Query(..., gt=0),
+    direction: str = Query(..., pattern="^(customer|vendor)$"),
+    from_date: date | None = None,
+    to_date: date | None = None,
+    as_of: date | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _company_for_user(db, company_id, current_user)
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(400, "from_date cannot be later than to_date")
+    cutoff = as_of or to_date or date.today()
+    result = _run(lambda: commerce_service.partner_statement(db, company_id, partner_id, direction, from_date, to_date, cutoff))
+    result.update({"company_id": company_id, "partner_id": partner_id, "direction": direction, "from_date": from_date, "to_date": to_date, "as_of": cutoff})
+    return result
+
+
 @router.get("/sales/documents", response_model=list[DocumentResponse])
-def sales(company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _company_for_user(db, company_id, current_user); return commerce_service.list_documents(db, company_id, "sale")
+def sales(
+    company_id: int = Query(..., gt=0),
+    document_type: str | None = Query(default=None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _company_for_user(db, company_id, current_user)
+    allowed = {"quotation", "order", "delivery", "invoice", "credit_note"}
+    if document_type is not None and document_type not in allowed:
+        raise HTTPException(400, "Invalid sales document type")
+    return commerce_service.list_documents(db, company_id, "sale", document_type)
 
 
 @router.get("/purchases/documents", response_model=list[DocumentResponse])
-def purchases(company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _company_for_user(db, company_id, current_user); return commerce_service.list_documents(db, company_id, "purchase")
-
+def purchases(
+    company_id: int = Query(..., gt=0),
+    document_type: str | None = Query(default=None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _company_for_user(db, company_id, current_user)
+    allowed = {"requisition", "rfq", "order", "receipt", "bill", "debit_note"}
+    if document_type is not None and document_type not in allowed:
+        raise HTTPException(400, "Invalid purchase document type")
+    return commerce_service.list_documents(db, company_id, "purchase", document_type)
 
 @router.post("/sales/{document_id}/confirm", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def confirm_sale(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):

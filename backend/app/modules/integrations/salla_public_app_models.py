@@ -46,6 +46,27 @@ class SallaAppInstallation(Base):
     )
 
 
+class SallaAppEvent(Base):
+    """Durable idempotency ledger for signed Salla public-app events."""
+
+    __tablename__ = "salla_app_events"
+
+    id = Column(Integer, primary_key=True)
+    merchant_id = Column(String(160), nullable=False, index=True)
+    event_id = Column(String(255), nullable=False)
+    event_type = Column(String(160), nullable=False)
+    payload_sha256 = Column(String(64), nullable=False)
+    status = Column(String(30), nullable=False, server_default="processing", index=True)
+    result_json = Column(JSON, nullable=True)
+    error_message = Column(Text, nullable=True)
+    received_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    processed_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("merchant_id", "event_id", name="uq_salla_app_event_merchant_event"),
+    )
+
+
 class SallaSSOTicket(Base):
     """One-time short-lived ticket exchanged by the PrimeERP frontend for a JWT."""
 

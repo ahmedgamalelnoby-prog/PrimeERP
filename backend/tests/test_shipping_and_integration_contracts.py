@@ -56,7 +56,7 @@ def test_salla_event_identity_requires_event_type():
 
 def test_salla_shipping_status_normalization_covers_common_salla_states():
     from app.modules.integrations.salla_shipping_service import _STATUS_MAP
-    assert _STATUS_MAP["shipped"] == "picked_up"
+    assert _STATUS_MAP["shipped"] == "shipped"
     assert _STATUS_MAP["received_at_final_hub"] == "in_transit"
     assert _STATUS_MAP["reattempted"] == "out_for_delivery"
     assert _STATUS_MAP["return_to_origin"] == "returned"
@@ -66,8 +66,10 @@ def test_salla_shipping_status_normalization_covers_common_salla_states():
 def test_salla_shipping_status_does_not_move_backwards():
     from app.modules.integrations.salla_shipping_service import _advance_status
     assert _advance_status("delivered", "in_transit") == "delivered"
+    assert _advance_status("shipped", "delivered") == "delivered"
     assert _advance_status("out_for_delivery", "pending") == "out_for_delivery"
     assert _advance_status("in_transit", "returned") == "returned"
+    assert _advance_status("shipped", "returned") == "returned"
     assert _advance_status("delivered", "cancelled") == "delivered"
 
 

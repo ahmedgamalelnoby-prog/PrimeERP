@@ -27,6 +27,7 @@ class SalesDocument(Base):
     document_type = Column(String(20), nullable=False)
     number = Column(String(60), nullable=False, index=True)
     document_date = Column(Date, nullable=False)
+    due_date = Column(Date, nullable=True)
     status = Column(String(20), nullable=False, default="draft")
     warehouse_id = Column(Integer, ForeignKey("inventory_warehouses.id", ondelete="RESTRICT"), nullable=True)
     notes = Column(Text, nullable=True)
@@ -68,6 +69,7 @@ class PurchaseDocument(Base):
     document_type = Column(String(20), nullable=False)
     number = Column(String(60), nullable=False)
     document_date = Column(Date, nullable=False)
+    due_date = Column(Date, nullable=True)
     status = Column(String(20), nullable=False, default="draft")
     warehouse_id = Column(Integer, ForeignKey("inventory_warehouses.id", ondelete="RESTRICT"), nullable=True)
     notes = Column(Text, nullable=True)
@@ -126,6 +128,25 @@ class PurchaseBillReceiptAllocation(Base):
     )
 
 
+class CommercePaymentAllocation(Base):
+    __tablename__ = "commerce_payment_allocations"
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    payment_id = Column(Integer, ForeignKey("commerce_payments.id", ondelete="RESTRICT"), nullable=False, index=True)
+    document_kind = Column(String(10), nullable=False)
+    document_id = Column(Integer, nullable=False, index=True)
+    amount = Column(Numeric(18, 4), nullable=False)
+    status = Column(String(20), nullable=False, default="active")
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default="CURRENT_TIMESTAMP")
+    reversed_at = Column(DateTime(timezone=True), nullable=True)
+    __table_args__ = (
+        UniqueConstraint("company_id", "payment_id", "document_kind", "document_id", name="uq_commerce_payment_allocation_document"),
+        CheckConstraint("document_kind IN ('sale','purchase')", name="ck_commerce_payment_allocation_kind"),
+        CheckConstraint("amount > 0", name="ck_commerce_payment_allocation_amount"),
+        CheckConstraint("status IN ('active','reversed')", name="ck_commerce_payment_allocation_status"),
+    )
+
+
 class CommercePayment(Base):
     __tablename__ = "commerce_payments"
     id = Column(Integer, primary_key=True)
@@ -143,6 +164,7 @@ class CommercePayment(Base):
     reversed_of_id = Column(Integer, ForeignKey("commerce_payments.id", ondelete="RESTRICT"), nullable=True, index=True)
     reversed_at = Column(DateTime(timezone=True), nullable=True)
     __table_args__ = (
+        UniqueConstraint("company_id", "idempotency_key", name="uq_commerce_payment_idempotency"),
         CheckConstraint("document_kind IN ('sale','purchase')", name="ck_commerce_payment_kind"),
         CheckConstraint("amount > 0", name="ck_commerce_payment_amount"),
         CheckConstraint("wht_amount >= 0 AND wht_amount <= amount", name="ck_commerce_payment_wht"),

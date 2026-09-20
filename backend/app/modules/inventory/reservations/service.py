@@ -1,4 +1,5 @@
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.modules.catalog.models import ProductVariant
@@ -21,12 +22,12 @@ class InventoryReservationService:
 
     @staticmethod
     def _validate_variant(db: Session, *, company_id: int, item: InventoryItem, variant_id: int | None):
-        active_variant_id = db.scalar(select(ProductVariant.id).where(ProductVariant.company_id == company_id, ProductVariant.product_id == item.id, ProductVariant.active.is_(True)).limit(1))
+        active_variant_id = db.scalar(select(ProductVariant.id).where(ProductVariant.company_id == company_id, ProductVariant.product_id == item.id, ProductVariant.is_active.is_(True)).limit(1))
         if variant_id is None:
             if active_variant_id is not None:
                 raise ValueError("This item has active variants; reservations must identify the variant")
             return None
-        variant = db.scalar(select(ProductVariant).where(ProductVariant.id == variant_id, ProductVariant.company_id == company_id, ProductVariant.product_id == item.id, ProductVariant.active.is_(True)))
+        variant = db.scalar(select(ProductVariant).where(ProductVariant.id == variant_id, ProductVariant.company_id == company_id, ProductVariant.product_id == item.id, ProductVariant.is_active.is_(True)))
         if variant is None:
             raise ValueError("Variant does not belong to the item/company or is inactive")
         return variant
@@ -87,8 +88,27 @@ class InventoryReservationService:
         stmt = select(InventoryLocationStock).where(InventoryLocationStock.company_id == company_id, InventoryLocationStock.item_id == item_id, InventoryLocationStock.location_id == location_id)
         stmt = stmt.where(InventoryLocationStock.variant_id == variant_id) if variant_id is not None else stmt.where(InventoryLocationStock.variant_id.is_(None))
         balance = db.scalar(stmt.with_for_update())
+        if balance is not None:
+            return balance
+        values = {
+            "company_id": company_id, "item_id": item_id, "variant_id": variant_id,
+            "location_id": location_id, "quantity_on_hand": 0, "quantity_reserved": 0,
+        }
+        if variant_id is None:
+            insert = pg_insert(InventoryLocationStock).values(**values).on_conflict_do_nothing(
+                index_elements=[InventoryLocationStock.company_id, InventoryLocationStock.location_id, InventoryLocationStock.item_id],
+                index_where=InventoryLocationStock.variant_id.is_(None),
+            )
+        else:
+            insert = pg_insert(InventoryLocationStock).values(**values).on_conflict_do_nothing(
+                index_elements=[InventoryLocationStock.company_id, InventoryLocationStock.location_id, InventoryLocationStock.item_id, InventoryLocationStock.variant_id],
+                index_where=InventoryLocationStock.variant_id.is_not(None),
+            )
+        db.execute(insert)
+        db.flush()
+        balance = db.scalar(stmt.with_for_update())
         if balance is None:
-            balance = InventoryLocationStock(company_id=company_id, item_id=item_id, variant_id=variant_id, location_id=location_id, quantity_on_hand=0, quantity_reserved=0); db.add(balance); db.flush()
+            raise ValueError("Unable to create or lock inventory location balance")
         return balance
 
     @staticmethod
@@ -96,8 +116,27 @@ class InventoryReservationService:
         stmt = select(InventoryStock).where(InventoryStock.company_id == company_id, InventoryStock.item_id == item_id, InventoryStock.warehouse_id == warehouse_id)
         stmt = stmt.where(InventoryStock.variant_id == variant_id) if variant_id is not None else stmt.where(InventoryStock.variant_id.is_(None))
         stock = db.scalar(stmt.with_for_update())
+        if stock is not None:
+            return stock
+        values = {
+            "company_id": company_id, "item_id": item_id, "variant_id": variant_id,
+            "warehouse_id": warehouse_id, "quantity_on_hand": 0, "quantity_reserved": 0, "average_cost": 0,
+        }
+        if variant_id is None:
+            insert = pg_insert(InventoryStock).values(**values).on_conflict_do_nothing(
+                index_elements=[InventoryStock.company_id, InventoryStock.item_id, InventoryStock.warehouse_id],
+                index_where=InventoryStock.variant_id.is_(None),
+            )
+        else:
+            insert = pg_insert(InventoryStock).values(**values).on_conflict_do_nothing(
+                index_elements=[InventoryStock.company_id, InventoryStock.item_id, InventoryStock.variant_id, InventoryStock.warehouse_id],
+                index_where=InventoryStock.variant_id.is_not(None),
+            )
+        db.execute(insert)
+        db.flush()
+        stock = db.scalar(stmt.with_for_update())
         if stock is None:
-            stock = InventoryStock(company_id=company_id, item_id=item_id, variant_id=variant_id, warehouse_id=warehouse_id, quantity_on_hand=0, quantity_reserved=0, average_cost=0); db.add(stock); db.flush()
+            raise ValueError("Unable to create or lock inventory warehouse stock")
         return stock
 
     def _locked_warehouse_stock_for_location(self, db: Session, company_id: int, item_id: int, variant_id: int | None, location_id: int):

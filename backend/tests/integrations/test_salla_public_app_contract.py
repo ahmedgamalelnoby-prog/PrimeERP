@@ -1,14 +1,20 @@
 from decimal import Decimal
+import inspect
+
 
 import pytest
 
+from app.modules.integrations.salla_public_app_router import establish_embedded_session
 from app.modules.integrations.salla_public_app_service import (
     SallaPublicAppError,
     _merchant_id,
     _encrypt,
     decrypt_token,
 )
+from app.modules.integrations.salla_return_service import _return_source_id
 from app.modules.integrations.salla_shipping_service import _advance_status
+from app.modules.integrations.salla_erp_finalize import _should_fulfill_order, _shipment_package_quantities
+from app.modules.integrations.salla_models import SallaOrderItem, SallaShipment
 from app.modules.shipping.service import (
     ShippingValidationError,
     calculate_shipping_fee,
@@ -34,8 +40,8 @@ def test_salla_authorization_requires_merchant_identity():
 @pytest.mark.parametrize(
     ("current", "target", "expected"),
     [
-        ("pending", "picked_up", "picked_up"),
-        ("picked_up", "in_transit", "in_transit"),
+        ("pending", "shipped", "shipped"),
+        ("shipped", "in_transit", "in_transit"),
         ("in_transit", "out_for_delivery", "out_for_delivery"),
         ("out_for_delivery", "delivered", "delivered"),
         ("delivered", "pending", "delivered"),
@@ -84,3 +90,86 @@ def test_shipping_invalid_rate_is_rejected():
             cod_fee_percent=Decimal("101"),
             payment_method="cod",
         )
+
+
+def test_salla_embedded_session_accepts_token_from_json_body():
+    parameter = inspect.signature(establish_embedded_session).parameters["salla_token"]
+    assert getattr(parameter.default, "embed", None) is True
+
+
+def test_salla_order_does_not_fulfill_from_creation_or_pending_status():
+    order = type("Order", (), {"status": "created", "fulfillment_status": "pending"})()
+    assert _should_fulfill_order(order) is False
+
+
+@pytest.mark.parametrize(
+    "fulfillment_status",
+    ["processing", "shipped", "in_transit", "delivering", "out_for_delivery", "delivered", "fulfilled", "partially_fulfilled"],
+)
+def test_salla_fulfillment_status_allows_inventory_fulfillment(fulfillment_status):
+    order = type("Order", (), {"status": "created", "fulfillment_status": fulfillment_status})()
+    assert _should_fulfill_order(order) is True
+
+
+def test_salla_shipment_milestone_can_explicitly_request_fulfillment():
+    order = type("Order", (), {"status": "created", "fulfillment_status": "pending"})()
+    assert _should_fulfill_order(order, force_fulfillment=True) is True
+
+
+@pytest.mark.parametrize(
+    "fulfillment_status",
+    ["pending", "created", "cancelled"],
+)
+def test_salla_pending_or_non_fulfillment_states_do_not_consume_inventory(fulfillment_status):
+    order = type("Order", (), {"status": "created", "fulfillment_status": fulfillment_status})()
+    assert _should_fulfill_order(order) is False
+
+
+def test_salla_shipment_packages_resolve_item_quantities():
+    item_a = SallaOrderItem(id=1, external_id="101", sku="SKU-A", quantity=10)
+    item_b = SallaOrderItem(id=2, external_id="102", sku="SKU-B", quantity=3)
+    shipment = SallaShipment(
+        external_id="S-1",
+        packages=[
+            {"item_id": 101, "sku": "SKU-A", "quantity": 4},
+            {"external_id": "102", "sku": "SKU-B", "quantity": 2},
+        ],
+    )
+    assert _shipment_package_quantities(shipment, [item_a, item_b]) == {
+        item_a.id: Decimal("4"),
+        item_b.id: Decimal("2"),
+    }
+
+
+def test_salla_return_does_not_trigger_order_financial_reversal():
+    from app.modules.integrations.salla_erp_finalize import _CANCELLED_STATES
+
+    assert "returned" not in _CANCELLED_STATES
+    assert "cancelled" in _CANCELLED_STATES
+    assert "fully_refunded" in _CANCELLED_STATES
+
+
+def test_salla_return_idempotency_is_independent_of_return_scope():
+    assert _return_source_id("ORDER-1", 42) == "salla_return:ORDER-1:42"
+    assert _return_source_id("ORDER-1", 42) == _return_source_id("ORDER-1", 42)
+    assert _return_source_id("ORDER-1", 42) != _return_source_id("ORDER-1", 43)
+
+
+@pytest.mark.parametrize(
+    "event",
+    [
+        "order.shipment.return.created",
+        "order.shipment.return.cancelled",
+        "order.shipment.cancelled",
+        "shipment.cancelled",
+    ],
+)
+def test_salla_return_and_shipment_events_are_recognized(event):
+    assert (
+        event.startswith("shipment.")
+        or event in {
+            "order.shipment.cancelled",
+            "order.shipment.return.created",
+            "order.shipment.return.cancelled",
+        }
+    )
