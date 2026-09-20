@@ -48,6 +48,7 @@ from app.modules.completion.models import FunctionalTransaction, TransactionAppr
 from app.modules.accounting.automation_models import JournalAutomation, JournalAllocation
 from app.modules.accounting.advanced_models import AccountingAutoPostRule, AccountingFXRevaluation, AccountingIntercompanyLink, AccountingElimination, AccountingPostingLink
 from app.modules.accounting.recognition_models import AccountingRecognitionSchedule
+from app.modules.accounting.fiscal_years.models.close_control import FiscalYearCloseChecklistItem, FiscalYearCloseRun, FiscalYearCloseAudit
 from app.modules.completion.enterprise_models import DomainControl, WorkflowRule, MasterDataIdentity, AIActionAudit, SubscriptionUsage
 from app.modules.completion.finance_models import SettlementAllocation, ReturnControl, IntegrationDelivery
 from app.modules.completion.domain_models import FinanceAgingSnapshot, FinanceWriteOff, FinanceReconciliation, InventoryTraceUnit, ManufacturingWorkOrder, ManufacturingConsumption, CRMOpportunity, CRMActivity, HRAttendance, HRLeave, HRPayrollCompletionRun, TaxFilingControl, SubscriptionLifecycleEvent, APIClientCredential, WebhookDeliveryControl, MobileSyncQueue, WorkflowInstance, WorkflowApprovalStep
