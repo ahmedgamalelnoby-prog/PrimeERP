@@ -62,6 +62,7 @@ from app.modules.platform.developer.router import router as developer_router
 from app.modules.enterprise.finance_router import router as enterprise_finance_router
 from app.modules.completion.router import router as completion_router
 from app.modules.accounting.automation_router import router as accounting_automation_router
+from app.modules.accounting.advanced_router import router as accounting_advanced_router
 from app.modules.completion.enterprise_router import router as enterprise_completion_router
 from app.modules.completion.finance_router import router as finance_completion_router
 from app.modules.completion.domain_router import router as domain_completion_router
