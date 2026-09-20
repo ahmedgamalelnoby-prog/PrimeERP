@@ -138,7 +138,7 @@ def post_payment(
 
     balance = Decimal(document.total or 0) - Decimal(document.paid_total or 0)
     if update_document_paid_total and amount > balance:
-        raise ValueError("Payment exceeds outstanding balance")
+        raise ValueError("Payment exceeds outstanding balance; use AR allocation for partial/overpayment")
 
     candidate = CommercePayment(
         company_id=company_id,
