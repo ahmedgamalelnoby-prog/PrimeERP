@@ -35,3 +35,13 @@ class ARReconcileRequest(BaseModel):
     partner_id: int | None = Field(default=None, gt=0)
     as_of: date | None = None
     persist: bool = True
+
+class ARAdvanceReceiptRequest(BaseModel):
+    company_id: int = Field(gt=0)
+    partner_id: int = Field(gt=0)
+    payment_date: date
+    amount: Decimal = Field(gt=0)
+    method: str = Field(min_length=1, max_length=30)
+    reference: str | None = None
+    notes: str | None = None
+    idempotency_key: str | None = None
