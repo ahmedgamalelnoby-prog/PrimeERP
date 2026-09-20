@@ -36,6 +36,8 @@ class ManufacturingCompletionService:
         x.journal_entry_id=entry.id;x.status="posted";db.flush();return x
     def variance(self,db,company_id,work_order_id):
         wo=self._wo(db,company_id,work_order_id)
+        if getattr(wo,"status",None) in {"cancelled","closed"}:
+            raise HTTPException(409,"Closed or cancelled work orders cannot be recalculated")
         planned_m=Decimal(wo.total_material_cost or 0); actual_m=sum((Decimal(x.unit_cost or 0)*Decimal(x.quantity or 0) for x in db.scalars(select(ManufacturingConsumption).where(ManufacturingConsumption.work_order_id==wo.id))),Decimal("0"))
         planned_l=Decimal(0); actual_l=Decimal(db.scalar(select(func.coalesce(func.sum(ManufacturingLaborActual.amount),0)).where(ManufacturingLaborActual.work_order_id==wo.id)) or 0)
         planned_o=Decimal(wo.total_overhead_cost or 0); actual_o=Decimal(db.scalar(select(func.coalesce(func.sum(ManufacturingOverheadActual.amount),0)).where(ManufacturingOverheadActual.work_order_id==wo.id)) or 0)
