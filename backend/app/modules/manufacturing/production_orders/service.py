@@ -41,7 +41,7 @@ class ManufacturingProductionService:
         seen.add(recipe_id);r=db.scalar(select(Recipe).where(Recipe.id==recipe_id,Recipe.company_id==company_id,Recipe.is_active.is_(True)))
         if r is None: raise HTTPException(404,"Recipe not found")
         factor=Decimal(qty)/Decimal(r.yield_quantity or 1);out=[]
-        for line in db.scalars(select(RecipeLine).where(RecipeLine.recipe_id=r.id).order_by(RecipeLine.line_no)).all():
+        for line in db.scalars(select(RecipeLine).where(RecipeLine.recipe_id == r.id).order_by(RecipeLine.line_no)).all():
             q=Decimal(line.quantity)*factor*(1+Decimal(line.waste_percentage or 0)/100)
             nested_q=select(Recipe.id).where(Recipe.company_id==company_id,Recipe.product_id==(line.ingredient_item_id or line.ingredient_product_id),Recipe.is_active.is_(True))
             nested_q=nested_q.where(Recipe.variant_id==line.ingredient_variant_id) if getattr(line,"ingredient_variant_id",None) is not None else nested_q.where(Recipe.variant_id.is_(None))
