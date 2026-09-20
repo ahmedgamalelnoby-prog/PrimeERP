@@ -13,7 +13,6 @@ from app.modules.enterprise.finance_schemas import *
 from app.modules.accounting.journals.models.journal_entry import JournalEntry
 from app.modules.accounting.journals.models.journal_entry_line import JournalEntryLine
 from app.modules.accounting.chart_of_accounts.models import AccountCombination
-from app.modules.accounting.fiscal_years.models.accounting_period import AccountingPeriod
 router=APIRouter(prefix="/enterprise/finance",tags=["Enterprise Finance"])
 def company_ok(db,cid,user):
     if not user.tenant_id or not db.scalar(select(Company.id).where(Company.id==cid,Company.tenant_id==user.tenant_id)): raise HTTPException(404,"Company not found")
@@ -67,7 +66,7 @@ def run(p:ConsolidationRunCreate,db:Session=Depends(get_db),user:User=Depends(ge
     pct={e.company_id:Decimal(next(m.consolidation_percent for m in members if m.entity_id==e.id))/Decimal(100) for e in entities}
     def fx_rate(from_currency:str,to_currency:str):
         if from_currency==to_currency:return Decimal(1)
-        direct=db.scalar(select(FinanceFxRate.rate).where(FinanceFxRate.company_id==g.company_id,FinanceFxRate.rate_date==p.period_end,FinanceFxRate.from_currency==from_currency,FinanceFxRate.to_currency==to_currency))
+        direct=db.scalar(select(FinanceFxRate.rate).where(FinanceFxRate.company_id.in_([g.company_id,*company_ids]),FinanceFxRate.rate_date==p.period_end,FinanceFxRate.from_currency==from_currency,FinanceFxRate.to_currency==to_currency))
         if direct is not None:return Decimal(direct)
         inverse=db.scalar(select(FinanceFxRate.rate).where(FinanceFxRate.company_id==g.company_id,FinanceFxRate.rate_date==p.period_end,FinanceFxRate.from_currency==to_currency,FinanceFxRate.to_currency==from_currency))
         if inverse is not None:return Decimal(1)/Decimal(inverse)
