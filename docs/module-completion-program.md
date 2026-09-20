@@ -45,7 +45,7 @@ This registry is the single source of truth for functional completion. A module 
 | SaaS / Companies / Tenants | 🟢 COMPLETE | Plans, entitlements, expiry locks, company/branch/warehouse/user limits and isolation. |
 | Reports / BI / AI | 🟢 COMPLETE | Financial/operational reports, dashboards, AI analysis and scheduled delivery. |
 | Integrations | 🟢 COMPLETE | Salla and other commerce/shipping integrations, webhooks and end-to-end orchestration. |
-| Security / Audit / Approvals | 🟡 IN PROGRESS | RBAC, record-level isolation, API-key security, sessions, approvals, audit and controls. |
+| Security / Audit / Approvals | 🟢 COMPLETE | RBAC, record-level isolation, API-key security, sessions, approvals, audit and controls. |
 | Frontend parity | 🟡 IN PROGRESS | Every production API/workflow exposed through coherent UI and error/state handling. |
 | Release Gate | 🔴 BLOCKED | Starts only after all functional modules are CLOSED. |
 
@@ -115,4 +115,8 @@ No release tests are being run in this functional-completion phase. The final Re
 ### Integrations — 🟢 COMPLETE (functional closure; Release Gate pending)
 - Integration connections, company/tenant isolation, Salla full sync, SKU/product/variant mappings, orders/customers/products, shipping-company/shipment sync, ERP finalization, signed public webhooks, duplicate-event protection, retries/dead-letter handling and audit-visible integration events are connected.
 - Salla order flow reaches ERP Commerce/Inventory/Shipping paths and shipping status/settlement controls. Final Release Gate remains pending.
+
+### Security / Audit / Approvals — 🟢 COMPLETE (functional closure; Release Gate pending)
+- RBAC/permissions, approval segregation, tenant/company controls, session revocation, API-key list/revoke/rotate/expiry, audit events and operational security controls are connected.
+- Security operations now emit audit events. Final Release Gate remains pending.
 
