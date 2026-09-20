@@ -44,7 +44,7 @@ This registry is the single source of truth for functional completion. A module 
 | Tax / Egyptian E-Invoice | 🟢 COMPLETE | Tax engine, VAT/WHT, returns, e-invoice/credit/debit notes and accounting integration. |
 | SaaS / Companies / Tenants | 🟢 COMPLETE | Plans, entitlements, expiry locks, company/branch/warehouse/user limits and isolation. |
 | Reports / BI / AI | 🟢 COMPLETE | Financial/operational reports, dashboards, AI analysis and scheduled delivery. |
-| Integrations | 🟡 IN PROGRESS | Salla and other commerce/shipping integrations, webhooks and end-to-end orchestration. |
+| Integrations | 🟢 COMPLETE | Salla and other commerce/shipping integrations, webhooks and end-to-end orchestration. |
 | Security / Audit / Approvals | 🟡 IN PROGRESS | RBAC, record-level isolation, API-key security, sessions, approvals, audit and controls. |
 | Frontend parity | 🟡 IN PROGRESS | Every production API/workflow exposed through coherent UI and error/state handling. |
 | Release Gate | 🔴 BLOCKED | Starts only after all functional modules are CLOSED. |
@@ -111,4 +111,8 @@ No release tests are being run in this functional-completion phase. The final Re
 - Employee/contract, attendance, leave request/decision and payroll calculation workflows are connected.
 - Payroll is period-locked and can post gross/deductions/net to Accounting with journal linkage and approval-aware posting.
 - Company/tenant isolation is enforced. Final Release Gate remains pending.
+
+### Integrations — 🟢 COMPLETE (functional closure; Release Gate pending)
+- Integration connections, company/tenant isolation, Salla full sync, SKU/product/variant mappings, orders/customers/products, shipping-company/shipment sync, ERP finalization, signed public webhooks, duplicate-event protection, retries/dead-letter handling and audit-visible integration events are connected.
+- Salla order flow reaches ERP Commerce/Inventory/Shipping paths and shipping status/settlement controls. Final Release Gate remains pending.
 
