@@ -150,9 +150,54 @@ def create_tax_return_draft(payload: dict, current_user: User = Depends(get_curr
     company_id = int(payload.get("company_id", 0))
     _company_for_user(db, company_id, current_user)
     values = _return_values(payload)
-    obj = TaxReturnDraft(company_id=company_id, jurisdiction_code=str(payload.get("jurisdiction_code", "EG")).upper(), **values, notes=payload.get("notes"))
+    jurisdiction = str(payload.get("jurisdiction_code", "EG")).upper()
+    overlap = db.scalar(select(TaxReturnDraft).where(
+        TaxReturnDraft.company_id == company_id,
+        TaxReturnDraft.jurisdiction_code == jurisdiction,
+        TaxReturnDraft.period_from <= values["period_to"],
+        TaxReturnDraft.period_to >= values["period_from"],
+        TaxReturnDraft.status.notin_({"rejected", "cancelled"}),
+    ))
+    if overlap is not None:
+        raise HTTPException(409, "An active tax return already covers an overlapping period")
+    obj = TaxReturnDraft(company_id=company_id, jurisdiction_code=jurisdiction, **values, notes=payload.get("notes"))
     db.add(obj); db.commit(); db.refresh(obj)
     return obj
+
+@router.post("/returns/drafts/{draft_id}/reconcile", dependencies=[Depends(require_permission("tax.write"))])
+def reconcile_tax_return(draft_id:int, company_id:int=Query(...,gt=0), current_user:User=Depends(get_current_user), db:Session=Depends(get_db)):
+    _company_for_user(db, company_id, current_user)
+    obj=db.scalar(select(TaxReturnDraft).where(TaxReturnDraft.id==draft_id,TaxReturnDraft.company_id==company_id).with_for_update())
+    if obj is None: raise HTTPException(404,"Tax return draft not found")
+    if obj.status not in {"draft","reconciled"}: raise HTTPException(409,"Tax return cannot be reconciled in its current state")
+    if Decimal(obj.reconciliation_difference or 0) != 0: raise HTTPException(409,"Tax return has a non-zero reconciliation difference")
+    obj.is_reconciled=True; obj.status="reconciled"; db.commit(); db.refresh(obj); return obj
+
+@router.post("/returns/drafts/{draft_id}/submit", dependencies=[Depends(require_permission("tax.write"))])
+def submit_tax_return(draft_id:int, company_id:int=Query(...,gt=0), submission_reference:str|None=None, current_user:User=Depends(get_current_user), db:Session=Depends(get_db)):
+    _company_for_user(db, company_id, current_user)
+    obj=db.scalar(select(TaxReturnDraft).where(TaxReturnDraft.id==draft_id,TaxReturnDraft.company_id==company_id).with_for_update())
+    if obj is None: raise HTTPException(404,"Tax return draft not found")
+    if obj.status!="reconciled" or not obj.is_reconciled: raise HTTPException(409,"Tax return must be reconciled before submission")
+    if obj.status=="submitted": return obj
+    obj.status="submitted"; obj.submission_status="submitted"; obj.submission_reference=submission_reference or obj.submission_reference
+    db.commit(); db.refresh(obj); return obj
+
+@router.post("/returns/drafts/{draft_id}/accept", dependencies=[Depends(require_permission("tax.write"))])
+def accept_tax_return(draft_id:int, company_id:int=Query(...,gt=0), current_user:User=Depends(get_current_user), db:Session=Depends(get_db)):
+    _company_for_user(db, company_id, current_user)
+    obj=db.scalar(select(TaxReturnDraft).where(TaxReturnDraft.id==draft_id,TaxReturnDraft.company_id==company_id).with_for_update())
+    if obj is None: raise HTTPException(404,"Tax return draft not found")
+    if obj.status!="submitted": raise HTTPException(409,"Only submitted tax returns can be accepted")
+    obj.status="accepted"; obj.submission_status="accepted"; db.commit(); db.refresh(obj); return obj
+
+@router.post("/returns/drafts/{draft_id}/close", dependencies=[Depends(require_permission("tax.write"))])
+def close_tax_return(draft_id:int, company_id:int=Query(...,gt=0), current_user:User=Depends(get_current_user), db:Session=Depends(get_db)):
+    _company_for_user(db, company_id, current_user)
+    obj=db.scalar(select(TaxReturnDraft).where(TaxReturnDraft.id==draft_id,TaxReturnDraft.company_id==company_id).with_for_update())
+    if obj is None: raise HTTPException(404,"Tax return draft not found")
+    if obj.status!="accepted": raise HTTPException(409,"Only accepted tax returns can be closed")
+    obj.status="closed"; obj.submission_status="closed"; db.commit(); db.refresh(obj); return obj
 
 
 @router.get("/returns/drafts", dependencies=[Depends(require_permission("tax.access"))])
