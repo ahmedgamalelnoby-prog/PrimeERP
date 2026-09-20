@@ -82,6 +82,7 @@ class ManufacturingVariance(Base):
     actual_overhead=Column(Numeric(20,6),nullable=False,server_default="0")
     scrap_cost=Column(Numeric(20,6),nullable=False,server_default="0")
     byproduct_credit=Column(Numeric(20,6),nullable=False,server_default="0")
+    subcontract_cost=Column(Numeric(20,6),nullable=False,server_default="0")
     total_variance=Column(Numeric(20,6),nullable=False,server_default="0")
     journal_entry_id=Column(Integer,ForeignKey("journal_entries.id",ondelete="SET NULL"))
     wip_journal_entry_id=Column(Integer,ForeignKey("journal_entries.id",ondelete="SET NULL"))
