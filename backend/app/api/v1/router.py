@@ -82,6 +82,7 @@ def build_router() -> APIRouter:
     api_router.include_router(enterprise_finance_router)
     api_router.include_router(completion_router)
     api_router.include_router(accounting_automation_router)
+    api_router.include_router(accounting_advanced_router, dependencies=[Depends(require_module("accounting"))])
     api_router.include_router(enterprise_completion_router)
     api_router.include_router(finance_completion_router)
     api_router.include_router(domain_completion_router)
