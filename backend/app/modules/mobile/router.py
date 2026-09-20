@@ -28,6 +28,7 @@ def open_session(p:SessionCreate,db:Session=Depends(get_db),user:User=Depends(ge
     if not d: raise HTTPException(404,"Device not found")
     old=db.scalar(select(MobileSession).where(MobileSession.device_id==d.id,MobileSession.status=="open"))
     if old: old.status="closed";old.closed_at=datetime.now(timezone.utc)
+    if p.warehouse_id and not db.scalar(select(__import__("app.modules.inventory.warehouses.models",fromlist=["Warehouse"]).Warehouse.id).where(__import__("app.modules.inventory.warehouses.models",fromlist=["Warehouse"]).Warehouse.id==p.warehouse_id,__import__("app.modules.inventory.warehouses.models",fromlist=["Warehouse"]).Warehouse.company_id==d.company_id)): raise HTTPException(404,"Warehouse not found")
     s=MobileSession(device_id=d.id,user_id=user.id,warehouse_id=p.warehouse_id,branch_id=p.branch_id);db.add(s);db.commit();db.refresh(s);return s
 
 @router.post("/sessions/{session_id}/close",response_model=SessionResponse,dependencies=[Depends(require_permission("mobile.write"))])
@@ -47,7 +48,10 @@ def tasks(company_id:int=Query(...,gt=0),status:str|None=None,db:Session=Depends
     return list(db.scalars(q.order_by(MobileTask.id.desc())).all())
 
 @router.post("/tasks",response_model=TaskResponse,status_code=201,dependencies=[Depends(require_permission("mobile.write"))])
-def create_task(p:TaskCreate,db:Session=Depends(get_db),user:User=Depends(get_current_user)): company_ok(db,p.company_id,user);t=MobileTask(**p.model_dump());db.add(t);db.commit();db.refresh(t);return t
+def create_task(p:TaskCreate,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
+    company_ok(db,p.company_id,user)
+    if p.assigned_user_id and not db.scalar(select(User.id).where(User.id==p.assigned_user_id,User.tenant_id==user.tenant_id)): raise HTTPException(422,"Assigned user is outside the tenant")
+    t=MobileTask(**p.model_dump());db.add(t);db.commit();db.refresh(t);return t
 
 @router.post("/tasks/{task_id}/complete",response_model=TaskResponse,dependencies=[Depends(require_permission("mobile.write"))])
 def complete_task(task_id:int,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
