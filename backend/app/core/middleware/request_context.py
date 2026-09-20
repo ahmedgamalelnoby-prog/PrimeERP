@@ -25,6 +25,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
     REQUEST_ID_HEADER = "X-Request-ID"
     LANGUAGE_HEADER = "Accept-Language"
     TIMEZONE_HEADER = "X-Timezone"
+    TENANT_HEADER = "X-Tenant-ID"
 
     def __init__(
         self,
@@ -45,6 +46,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             user_agent=request.headers.get("user-agent"),
             language=self._resolve_language(request),
             timezone=request.headers.get(self.TIMEZONE_HEADER),
+            tenant_id=self._resolve_tenant_id(request),
         )
 
         token = set_request_context(context)
@@ -96,6 +98,16 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             return request.client.host
 
         return None
+
+    def _resolve_tenant_id(self, request: Request) -> int | None:
+        raw_tenant_id = request.headers.get(self.TENANT_HEADER)
+        if not raw_tenant_id:
+            return None
+        try:
+            tenant_id = int(raw_tenant_id.strip())
+        except (TypeError, ValueError):
+            return None
+        return tenant_id if tenant_id > 0 else None
 
     def _resolve_language(
         self,
