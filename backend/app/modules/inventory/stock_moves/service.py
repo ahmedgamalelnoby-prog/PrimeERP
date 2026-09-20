@@ -321,7 +321,7 @@ class InventoryStockMoveService:
         entry = journal_service.create_draft(db, tenant_id=tenant_id, company_id=company_id, branch_id=config.branch_id, journal_id=config.journal_id, fiscal_year_id=period.fiscal_year_id, period_id=period.id, entry_number=f"INV-{move.id}", entry_date=move.transaction_date or date.today(), description=f"Inventory {move.movement_type} #{move.id}", lines=lines, user_id=user_id, reference=move.reference, source_module="inventory", source_entity="stock_move", source_id=move.id, commit=False)
         journal_service.submit(db, tenant_id=tenant_id, entry_id=entry.id, user_id=user_id, commit=False)
         if journal.requires_approval:
-            journal_service.approve(db, tenant_id=tenant_id, entry_id=entry.id, user_id=user_id, commit=False)
+            raise ValueError("Inventory journal requires independent approval before posting")
         journal_service.post(db, tenant_id=tenant_id, entry_id=entry.id, user_id=user_id, commit=False)
         move.accounting_entry_id = entry.id
 
