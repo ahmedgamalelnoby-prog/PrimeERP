@@ -70,3 +70,12 @@ def test_pos_frontend_exposes_full_operational_surface():
         assert endpoint in page
     assert "Consumption Warehouse" in page
     assert "Restaurant & Hotel POS" in page
+
+
+
+def test_pos_checkout_does_not_double_consume_inventory_from_invoice_and_delivery():
+    router = (ROOT / "modules/pos/router.py").read_text(encoding="utf-8")
+    delivery_post = 'commerce_service.post_inventory(db, payload.company_id, delivery.id, "sale", user_id=current_user.id)'
+    invoice_post = 'commerce_service.post_inventory(db, payload.company_id, doc.id, "sale", user_id=current_user.id)'
+    assert delivery_post in router
+    assert invoice_post not in router
