@@ -193,6 +193,9 @@ class CommerceService:
                 fiscal_year_service.assert_open_for_date(db, company_id=company_id, posting_date=obj.document_date)
         if kind == "sale":
             self.enforce_credit_limit(db, company_id, obj)
+        # Inventory documents are also transactional events; their accounting period must be open.
+        if obj.document_type in {"delivery", "receipt"} and hasattr(fiscal_year_service, "assert_open_for_date"):
+            fiscal_year_service.assert_open_for_date(db, company_id=company_id, posting_date=obj.document_date)
         obj.status = "confirmed"; db.flush()
         if user_id is not None:
             if kind == "sale":
