@@ -15,6 +15,7 @@ from app.modules.enterprise.schemas import AssetCreate, AssetResponse, EmployeeC
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.accounting.chart_of_accounts.models import AccountCombination
+from app.modules.accounting.journals.models import AccountingJournal
 
 router = APIRouter(prefix="/enterprise", tags=["Enterprise"])
 
