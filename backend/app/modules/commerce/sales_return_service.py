@@ -103,7 +103,8 @@ class SalesReturnService:
             available = Decimal(delivery_move.quantity) - Decimal(returned_qty)
             if Decimal(request_line.quantity) > available:
                 raise ValueError(f"Return quantity exceeds delivered quantity for line {source_line.id}; available {available}")
-            move = inventory_stock_move_service.create_draft(db, StockMoveCreate(company_id=payload.company_id, item_id=source_line.item_id, variant_id=source_line.variant_id, movement_type="receipt", source_location_id=None, destination_location_id=destination_location_id, quantity=request_line.quantity, unit_cost=Decimal(delivery_move.unit_cost or 0), reference=document.number, source_module="commerce", source_entity="sales_return", source_id=f"{document.id}:{credit_line.id}", notes=f"Return against delivery {delivery.number}"))
+            actual_destination_location_id = delivery_move.source_location_id or destination_location_id
+            move = inventory_stock_move_service.create_draft(db, StockMoveCreate(company_id=payload.company_id, item_id=source_line.item_id, variant_id=source_line.variant_id, movement_type="receipt", source_location_id=None, destination_location_id=actual_destination_location_id, quantity=request_line.quantity, unit_cost=Decimal(delivery_move.unit_cost or 0), reference=document.number, source_module="commerce", source_entity="sales_return", source_id=f"{document.id}:{credit_line.id}", notes=f"Return against delivery {delivery.number}"))
             inventory_stock_move_service.post(db, company_id=payload.company_id, move_id=move.id)
             db.add(SalesReturnAllocation(company_id=payload.company_id, credit_note_line_id=credit_line.id, original_delivery_line_id=source_line.id, quantity=request_line.quantity, unit_cost=Decimal(delivery_move.unit_cost or 0)))
         document.status = "fulfilled"
