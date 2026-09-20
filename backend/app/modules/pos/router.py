@@ -10,7 +10,7 @@ from app.database.session import get_db
 from app.modules.catalog.models import Menu, MenuItem, ProductPrice
 from app.modules.companies.models import Company
 from app.modules.branches.models import Branch
-from app.modules.commerce.models import SalesDocument, SalesLine
+from app.modules.commerce.models import SalesDocument, SalesLine, CommercePayment
 from app.modules.commerce.schemas import DocumentCreate, DocumentLineCreate, PaymentCreate
 from app.modules.commerce.service import commerce_service
 from app.modules.commerce.sales_return_schemas import SalesReturnCreate
@@ -483,6 +483,7 @@ def _menu_price(db: Session, company_id: int, menu_item: MenuItem, price_list_id
 def checkout(payload: Checkout, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company(db, payload.company_id, current_user)
     terminal = _terminal(db, payload.company_id, payload.terminal_id) if payload.terminal_id else None
+    session = None
     if terminal is not None:
         outlet = db.get(PosOutlet, terminal.outlet_id)
         if outlet is None or outlet.warehouse_id is None:
@@ -583,6 +584,9 @@ def checkout(payload: Checkout, current_user: User = Depends(get_current_user), 
         warehouse_id=payload.warehouse_id,
         lines=lines,
     ))
+    if session is not None:
+        doc.pos_session_id = session.id
+        db.flush()
     if payload.promotion_code:
         promotion = db.scalar(select(POSPromotion).where(POSPromotion.company_id == payload.company_id, POSPromotion.code == payload.promotion_code, POSPromotion.is_active.is_(True)))
         if promotion is not None:
