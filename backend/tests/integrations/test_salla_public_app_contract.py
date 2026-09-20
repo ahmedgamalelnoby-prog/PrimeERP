@@ -103,7 +103,7 @@ def test_salla_order_does_not_fulfill_from_creation_or_pending_status():
 
 @pytest.mark.parametrize(
     "fulfillment_status",
-    ["processing", "shipped", "in_transit", "out_for_delivery", "delivered", "fulfilled", "partially_fulfilled"],
+    ["processing", "shipped", "in_transit", "delivering", "out_for_delivery", "delivered", "fulfilled", "partially_fulfilled"],
 )
 def test_salla_fulfillment_status_allows_inventory_fulfillment(fulfillment_status):
     order = type("Order", (), {"status": "created", "fulfillment_status": fulfillment_status})()
@@ -116,8 +116,8 @@ def test_salla_shipment_milestone_can_explicitly_request_fulfillment():
 
 
 def test_salla_shipment_packages_resolve_item_quantities():
-    item_a = SallaOrderItem(external_id="101", sku="SKU-A", quantity=10)
-    item_b = SallaOrderItem(external_id="102", sku="SKU-B", quantity=3)
+    item_a = SallaOrderItem(id=1, external_id="101", sku="SKU-A", quantity=10)
+    item_b = SallaOrderItem(id=2, external_id="102", sku="SKU-B", quantity=3)
     shipment = SallaShipment(
         external_id="S-1",
         packages=[
