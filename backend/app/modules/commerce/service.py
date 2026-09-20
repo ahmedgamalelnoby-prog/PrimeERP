@@ -19,6 +19,7 @@ from app.modules.inventory.stock_moves.service import inventory_stock_move_servi
 from app.modules.inventory.warehouses.models import InventoryWarehouse
 from app.modules.accounting.fiscal_years.services.fiscal_year_service import fiscal_year_service
 from app.modules.treasury.models import Cheque, ChequeEvent
+from app.modules.treasury.service import transition_cheque
 from app.modules.commerce.backorder_service import backorder_service
 
 SALE_TYPES = {"quotation", "order", "delivery", "invoice", "credit_note"}
@@ -495,7 +496,10 @@ class CommerceService:
                     created_by=user_id,
                     created_at=now,
                 ))
-        if user_id is not None: commerce_accounting_service.post_payment(db, payment, document, user_id)
+        # Cheque payments are accounted by the Treasury cheque lifecycle.
+        # Posting them again through the cash/bank payment bridge would double-post GL.
+        if user_id is not None and payment.method.lower() != "cheque":
+            commerce_accounting_service.post_payment(db, payment, document, user_id)
         if integration_tx is not None and integration_started:
             core_integration_service.complete(db, integration_tx, user_id=user_id)
         record_audit_event(db, action="commerce.payment.post", entity_type="commerce_payment", entity_id=payment.id,
@@ -505,7 +509,20 @@ class CommerceService:
 
     def reverse_payment(self, db, company_id: int, payment_id: int, reversal_date, notes=None, user_id: int | None = None):
         document, payment, reversal = reverse_payment(db, company_id=company_id, payment_id=payment_id, reversal_date=reversal_date, notes=notes)
-        if user_id is not None: commerce_accounting_service.post_payment_reversal(db, payment, document, user_id, reversal_date=reversal_date)
+        if payment.method.lower() == "cheque":
+            cheque = db.scalar(
+                select(Cheque).where(
+                    Cheque.company_id == company_id,
+                    Cheque.source_payment_id == payment.id,
+                ).with_for_update()
+            )
+            if cheque is not None and cheque.status not in {"cancelled", "reversed", "withdrawn"}:
+                transition_cheque(
+                    db, cheque, "cancelled", reversal_date, user_id,
+                    "payment_reversal", f"REV-PAY-{payment.id}", notes or f"Payment reversal {payment.id}",
+                )
+        elif user_id is not None:
+            commerce_accounting_service.post_payment_reversal(db, payment, document, user_id, reversal_date=reversal_date)
         return document, payment, reversal
 
 
