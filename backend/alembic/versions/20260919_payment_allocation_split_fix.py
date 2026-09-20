@@ -7,7 +7,7 @@ which made the split-allocation contract impossible at database level.
 from alembic import op
 
 revision = "20260919_payment_allocation_split_fix"
-down_revision = "20260919_recipe_sku_mapping"
+down_revision = "20260919_payment_allocations"
 branch_labels = None
 depends_on = None
 
