@@ -10,6 +10,7 @@ from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models.user import User
 from app.modules.enterprise.models import Employee,PayrollRun,PayrollLine
 from app.modules.accounting.fiscal_years.services.fiscal_year_service import fiscal_year_service
+from app.modules.accounting.journals.services.journal_service import journal_service
 from app.modules.completion.domain_models import HRAttendance,HRLeave
 from .models import EmploymentContract
 router=APIRouter(prefix="/hr",tags=["HR"])
@@ -24,6 +25,7 @@ class AttendanceIn(BaseModel):
 class LeaveIn(BaseModel):
     employee_user_id:int;start_date:date;end_date:date;leave_type:str;reason:str|None=None
 class PayrollIn(BaseModel): period:str=Field(min_length=4,max_length=20)
+class PayrollPostIn(BaseModel): journal_id:int=Field(gt=0);fiscal_year_id:int=Field(gt=0);period_id:int=Field(gt=0);branch_id:int=Field(gt=0);expense_account_id:int=Field(gt=0);payable_account_id:int=Field(gt=0);deduction_account_id:int=Field(gt=0);entry_number:str=Field(min_length=1,max_length=80);entry_date:date
 @router.post("/employees",status_code=201)
 def employee(p:EmployeeIn,company_id:int=Query(...,gt=0),user:User=Depends(get_current_user),db:Session=Depends(get_db)):
     scope(db,user,company_id);o=Employee(company_id=company_id,is_active=True,**p.model_dump());db.add(o);db.commit();db.refresh(o);return o
@@ -67,6 +69,22 @@ def payroll(p:PayrollIn,company_id:int=Query(...,gt=0),user:User=Depends(get_cur
         gross=Decimal(e.basic_salary or 0)+Decimal(e.allowances or 0);ded=Decimal(e.deductions or 0);net=gross-ded
         db.add(PayrollLine(payroll_run_id=run.id,employee_id=e.id,gross=gross,deductions=ded,net=net));gross_total+=gross;ded_total+=ded;net_total+=net
     run.total_gross=gross_total;run.total_deductions=ded_total;run.total_net=net_total;run.status="calculated";db.commit();db.refresh(run);return run
+@router.post("/payroll/runs/{run_id}/post")
+def post_payroll(run_id:int,p:PayrollPostIn,company_id:int=Query(...,gt=0),user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+    scope(db,user,company_id)
+    run=db.scalar(select(PayrollRun).where(PayrollRun.id==run_id,PayrollRun.company_id==company_id).with_for_update())
+    if not run: raise HTTPException(404,"Payroll run not found")
+    if run.status not in {"calculated","pending_approval"}: raise HTTPException(409,"Payroll run is not ready for posting")
+    if getattr(run,"journal_entry_id",None): return run
+    lines=[{"account_combination_id":p.expense_account_id,"debit":run.total_gross,"credit":0,"description":f"Payroll {run.period} gross"},{"account_combination_id":p.deduction_account_id,"debit":0,"credit":run.total_deductions,"description":f"Payroll {run.period} deductions"},{"account_combination_id":p.payable_account_id,"debit":0,"credit":run.total_net,"description":f"Payroll {run.period} net payable"}]
+    entry=journal_service.create_draft(db,tenant_id=user.tenant_id,company_id=company_id,branch_id=p.branch_id,journal_id=p.journal_id,fiscal_year_id=p.fiscal_year_id,period_id=p.period_id,entry_number=p.entry_number,entry_date=p.entry_date,description=f"Payroll posting {run.period}",lines=lines,user_id=user.id,source_module="hr",source_entity="payroll_run",source_id=run.id,commit=False)
+    journal_service.submit(db,tenant_id=user.tenant_id,entry_id=entry.id,user_id=user.id,commit=False)
+    if entry.journal.requires_approval: run.status="pending_approval"
+    else:
+        journal_service.post(db,tenant_id=user.tenant_id,entry_id=entry.id,user_id=user.id,commit=False); run.status="posted"
+    if hasattr(run,"journal_entry_id"): run.journal_entry_id=entry.id
+    db.commit();db.refresh(run);return run
+
 @router.get("/payroll/runs/{run_id}")
 def payroll_detail(run_id:int,company_id:int=Query(...,gt=0),user:User=Depends(get_current_user),db:Session=Depends(get_db)):
     scope(db,user,company_id);run=db.scalar(select(PayrollRun).where(PayrollRun.id==run_id,PayrollRun.company_id==company_id))
