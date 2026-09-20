@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.modules.commerce.models import BusinessPartner
 from app.modules.treasury.models import Cheque, ChequeEvent
 from app.modules.accounting.fiscal_years.services.fiscal_year_service import fiscal_year_service
+from app.modules.treasury.accounting_service import treasury_accounting_service
 
 
 ALLOWED_TRANSITIONS = {
@@ -45,6 +46,7 @@ def create_cheque(db: Session, payload, user_id: int):
     db.add(cheque)
     db.flush()
     _record_event(db, cheque, None, status, "created", payload.cheque_date, user_id, None, payload.notes)
+    treasury_accounting_service.created(db, cheque, user_id)
     return cheque
 
 
@@ -56,7 +58,10 @@ def transition_cheque(db: Session, cheque: Cheque, new_status: str, action_date:
         raise ValueError("Cheque not found")
     if new_status not in ALLOWED_TRANSITIONS.get(locked.status, set()):
         raise ValueError(f"Cannot move cheque from {locked.status} to {new_status}")
-    _record_event(db, locked, locked.status, new_status, event_type, action_date, user_id, reference, notes)
+    old_status = locked.status
+    _record_event(db, locked, old_status, new_status, event_type, action_date, user_id, reference, notes)
+    if new_status in {"returned", "cancelled", "reversed", "withdrawn"} and old_status not in {"returned", "cancelled", "reversed", "withdrawn"}:
+        treasury_accounting_service.cancellation(db, locked, when=action_date, user_id=user_id, event_key=f"{event_type}-{action_date.isoformat()}")
     return locked
 
 
