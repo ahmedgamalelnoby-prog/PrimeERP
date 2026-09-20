@@ -35,6 +35,9 @@ def unapplied(payment_id:int,company_id:int=Query(...),u=Depends(get_current_use
 @router.post("/write-offs")
 def wo(p:APWriteOffRequest,u=Depends(get_current_user),db:Session=Depends(get_db)):
  company(db,p.company_id,u);x=run(lambda:ap_service.request_writeoff(db,p.company_id,p,u.id));db.commit();return x
+@router.get("/three-way-match/{bill_id}")
+def three_way(bill_id:int,company_id:int=Query(...),tolerance:float=0,u=Depends(get_current_user),db:Session=Depends(get_db)):
+ company(db,company_id,u);return run(lambda:ap_service.three_way_match(db,company_id,bill_id,u.id,Decimal(str(tolerance))))
 @router.post("/variances")
 def variance(p:APVarianceCreateRequest,u=Depends(get_current_user),db:Session=Depends(get_db)):
  company(db,p.company_id,u);x=run(lambda:ap_service.create_variance(db,p.company_id,p,u.id));db.commit();return x
