@@ -11,7 +11,9 @@ from app.modules.accounting.fiscal_years.repositories.fiscal_year_repository imp
 from app.modules.accounting.journals.models import JournalEntry, JournalEntryLine
 from app.modules.accounting.journals.services.journal_service import journal_service
 from app.modules.accounting.chart_of_accounts.models import AccountCombination, NaturalAccount
-from app.modules.accounting.chart_of_accounts.models import AccountingSettings
+from app.modules.branches.models import Branch
+from app.modules.accounting.journals.models import Journal
+from app.modules.taxes.models import TaxReturnDraft
 from app.modules.audit.service import record_audit_event
 from app.modules.companies.models import Company
 from app.modules.identity.models import User
@@ -56,11 +58,15 @@ class FiscalCloseService:
         counts["no_unreconciled_bank"]=db.scalar(select(func.count()).select_from(BankStatementLine).where(BankStatementLine.company_id==company_id,BankStatementLine.status!="matched"))==0
         counts["no_pending_workflow"]=db.scalar(select(func.count(FunctionalTransaction.id)).where(FunctionalTransaction.tenant_id==fy.tenant_id,FunctionalTransaction.company_id==company_id,FunctionalTransaction.status.in_({"pending","submitted","approved"})))==0
         counts["no_open_financial_transactions"]=db.scalar(select(func.count(BusinessTransaction.id)).where(BusinessTransaction.tenant_id==fy.tenant_id,BusinessTransaction.company_id==company_id,BusinessTransaction.transaction_date>=fy.start_date,BusinessTransaction.transaction_date<=fy.end_date,BusinessTransaction.status.in_({"draft","pending","approved"})))==0
-        try:
-            from app.modules.completion.domain_models import TaxFilingControl
-            counts["tax_controls_complete"]=db.scalar(select(func.count(TaxFilingControl.id)).where(TaxFilingControl.tenant_id==fy.tenant_id,TaxFilingControl.company_id==company_id,TaxFilingControl.period_key.like(f"{fy.code}%"),TaxFilingControl.status.notin_({"accepted","closed","submitted"})))==0
-        except Exception:
-            counts["tax_controls_complete"]=True
+        tax_drafts=db.scalars(select(TaxReturnDraft).where(
+            TaxReturnDraft.company_id==company_id,
+            TaxReturnDraft.period_from<=fy.end_date,
+            TaxReturnDraft.period_to>=fy.start_date,
+        )).all()
+        counts["tax_controls_complete"]=bool(tax_drafts) and all(
+            bool(d.is_reconciled) and d.status in {"reconciled","submitted","accepted","closed"}
+            for d in tax_drafts
+        )
         items=[]
         for key,name in self.CHECKS:
             ok=bool(counts[key])
@@ -111,6 +117,39 @@ class FiscalCloseService:
         if fy.status!="open": raise HTTPException(409,"Only open fiscal years can be closed")
         check=self.checklist(db,fy.company_id,fy.id,user)
         if not check["ready"]: raise HTTPException(409,{"message":"Year-end checklist is not complete","checklist":check["items"]})
+        run=db.scalar(select(FiscalYearCloseRun).where(
+            FiscalYearCloseRun.tenant_id==fy.tenant_id,
+            FiscalYearCloseRun.company_id==fy.company_id,
+            FiscalYearCloseRun.fiscal_year_id==fy.id,
+        ).with_for_update())
+        if run is not None and run.status=="completed":
+            raise HTTPException(409,"Fiscal year close has already been completed")
+        branch=db.scalar(select(Branch).where(
+            Branch.id==branch_id,
+            Branch.company_id==fy.company_id,
+            Branch.tenant_id==fy.tenant_id,
+            Branch.is_active.is_(True),
+        ))
+        if branch is None:
+            raise HTTPException(422,"Branch does not belong to the selected company and tenant")
+        journal=db.scalar(select(Journal).where(
+            Journal.id==journal_id,
+            Journal.company_id==fy.company_id,
+            Journal.tenant_id==fy.tenant_id,
+            Journal.is_active.is_(True),
+        ))
+        if journal is None:
+            raise HTTPException(422,"Journal does not belong to the selected company and tenant")
+        retained=db.scalar(select(AccountCombination).join(NaturalAccount, NaturalAccount.id==AccountCombination.natural_account_id).where(
+            AccountCombination.id==retained_earnings_account_id,
+            AccountCombination.company_id==fy.company_id,
+            AccountCombination.tenant_id==fy.tenant_id,
+            AccountCombination.is_active.is_(True),
+            NaturalAccount.financial_statement=="balance_sheet",
+            NaturalAccount.account_category.in_({"equity","equity_account","retained_earnings"}),
+        ))
+        if retained is None:
+            raise HTTPException(422,"Retained earnings account must be an active equity account in the selected company")
         period=next((p for p in fy.periods if p.is_adjustment),None)
         if period is None:
             raise HTTPException(409,"Adjustment period is required for year-end closing entries")
@@ -136,8 +175,9 @@ class FiscalCloseService:
         journal_service.submit(db,tenant_id=fy.tenant_id,entry_id=entry.id,user_id=user.id,commit=False)
         if entry.journal.requires_approval: raise HTTPException(409,"Year-end closing entry requires independent approval before posting")
         journal_service.post(db,tenant_id=fy.tenant_id,entry_id=entry.id,user_id=user.id,commit=False)
-        run=db.scalar(select(FiscalYearCloseRun).where(FiscalYearCloseRun.tenant_id==fy.tenant_id,FiscalYearCloseRun.fiscal_year_id==fy.id).with_for_update())
-        if run is None: run=FiscalYearCloseRun(tenant_id=fy.tenant_id,company_id=fy.company_id,fiscal_year_id=fy.id);db.add(run)
+        if run is None:
+            run=FiscalYearCloseRun(tenant_id=fy.tenant_id,company_id=fy.company_id,fiscal_year_id=fy.id)
+            db.add(run)
         run.status="completed";run.reason=reason;run.closing_entry_id=entry.id;run.completed_by=user.id;run.completed_at=datetime.now(timezone.utc)
         old=fy.status;fy.status="closed";fy.is_current=False;fy.closed_by=user.id;fy.closed_at=datetime.now(timezone.utc)
         for p in fy.periods: p.status="locked";p.allow_posting=False
