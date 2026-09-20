@@ -2,7 +2,10 @@
 from alembic import op
 
 revision = "20260920_manufacturing_variance_approval"
-down_revision = "20260920_pos_session_sales_link"
+down_revision = (
+    "20260920_pos_session_sales_link",
+    "20260920_enterprise_payroll_period_guard",
+)
 branch_labels = None
 depends_on = None
 
