@@ -8,12 +8,13 @@ from app.database.session import get_db
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.companies.models import Company
+from app.core.permissions import require_permission
 from .completion_service import manufacturing_completion_service
 from app.modules.completion.domain_models import ManufacturingWorkOrder
 from app.modules.accounting.journals.services.journal_service import journal_service
 from app.modules.inventory.stock_moves.schemas import StockMoveCreate
 
-router=APIRouter(prefix="/manufacturing/completion",tags=["Manufacturing Completion"])
+router=APIRouter(prefix="/manufacturing/completion",tags=["Manufacturing Completion"],dependencies=[Depends(require_permission("manufacturing.access"))])
 
 def _company_for_user(db:Session,company_id:int,u:User):
     if u.tenant_id is None: raise HTTPException(403,"Tenant required")
@@ -39,15 +40,15 @@ class GLVariance(BaseModel):
 class Subcontract(BaseModel):
     vendor_id:int=Field(gt=0);service_reference:str=Field(min_length=1,max_length=120);planned_quantity:float=Field(gt=0);actual_quantity:float=Field(ge=0);unit_cost:float=Field(ge=0);status:str="planned"
 
-@router.post("/work-orders/{work_order_id}/labor")
+@router.post("/work-orders/{work_order_id}/labor",dependencies=[Depends(require_permission("manufacturing.write"))])
 def labor(work_order_id:int,p:Labor,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
     _company_for_user(db,company_id,u)
     x=manufacturing_completion_service.labor(db,company_id,work_order_id,**p.model_dump());db.commit();db.refresh(x);return x
-@router.post("/work-orders/{work_order_id}/overhead")
+@router.post("/work-orders/{work_order_id}/overhead",dependencies=[Depends(require_permission("manufacturing.write"))])
 def overhead(work_order_id:int,p:Overhead,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
     _company_for_user(db,company_id,u)
     x=manufacturing_completion_service.overhead(db,company_id,work_order_id,**p.model_dump());db.commit();db.refresh(x);return x
-@router.post("/work-orders/{work_order_id}/scrap")
+@router.post("/work-orders/{work_order_id}/scrap",dependencies=[Depends(require_permission("manufacturing.write"))])
 def scrap(work_order_id:int,p:Scrap,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
     _company_for_user(db,company_id,u)
     if p.source_location_id is not None:
@@ -56,7 +57,7 @@ def scrap(work_order_id:int,p:Scrap,company_id:int=Query(...,gt=0),db:Session=De
     else:
         x=manufacturing_completion_service.scrap(db,company_id,work_order_id,**p.model_dump(exclude={"source_location_id"}))
     db.commit();db.refresh(x);return x
-@router.post("/work-orders/{work_order_id}/byproducts")
+@router.post("/work-orders/{work_order_id}/byproducts",dependencies=[Depends(require_permission("manufacturing.write"))])
 def byproducts(work_order_id:int,p:ByProduct,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
     _company_for_user(db,company_id,u)
     if p.destination_location_id is not None:
@@ -65,17 +66,17 @@ def byproducts(work_order_id:int,p:ByProduct,company_id:int=Query(...,gt=0),db:S
     else:
         x=manufacturing_completion_service.byproduct(db,company_id,work_order_id,**p.model_dump(exclude={"destination_location_id"}))
     db.commit();db.refresh(x);return x
-@router.post("/work-orders/{work_order_id}/subcontract")
+@router.post("/work-orders/{work_order_id}/subcontract",dependencies=[Depends(require_permission("manufacturing.write"))])
 def subcontract(work_order_id:int,p:Subcontract,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
     _company_for_user(db,company_id,u)
     if p.actual_quantity > p.planned_quantity and p.status != "received": raise HTTPException(422,"Actual subcontract quantity cannot exceed planned quantity unless received")
     x=manufacturing_completion_service.subcontract(db,company_id,work_order_id,**p.model_dump());db.commit();db.refresh(x);return x
-@router.post("/work-orders/{work_order_id}/variance")
+@router.post("/work-orders/{work_order_id}/variance",dependencies=[Depends(require_permission("manufacturing.post"))])
 def variance(work_order_id:int,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
     _company_for_user(db,company_id,u)
     x=manufacturing_completion_service.variance(db,company_id,work_order_id);db.commit();db.refresh(x);return x
 
-@router.post("/work-orders/{work_order_id}/variance/post")
+@router.post("/work-orders/{work_order_id}/variance/post",dependencies=[Depends(require_permission("manufacturing.post"))])
 def post_variance(work_order_id:int,p:GLVariance,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
     _company_for_user(db,company_id,u)
     x=manufacturing_completion_service.post_variance(db,company_id,work_order_id,tenant_id=u.tenant_id,user_id=u.id,**p.model_dump());db.commit();db.refresh(x);return x
@@ -83,7 +84,7 @@ def post_variance(work_order_id:int,p:GLVariance,company_id:int=Query(...,gt=0),
 class Settlement(BaseModel):
     journal_id:int=Field(gt=0);fiscal_year_id:int=Field(gt=0);period_id:int=Field(gt=0);branch_id:int=Field(gt=0);entry_number:str=Field(min_length=1,max_length=80);entry_date:date;wip_account_id:int=Field(gt=0);finished_goods_account_id:int=Field(gt=0)
 
-@router.post("/work-orders/{work_order_id}/wip/settle")
+@router.post("/work-orders/{work_order_id}/wip/settle",dependencies=[Depends(require_permission("manufacturing.post"))])
 def settle_wip(work_order_id:int,p:Settlement,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
     _company_for_user(db,company_id,u)
     wo=db.get(ManufacturingWorkOrder,work_order_id)
@@ -101,7 +102,7 @@ class ProductionPayload(BaseModel):
     source_location_id:int|None=Field(default=None,gt=0)
     destination_location_id:int|None=Field(default=None,gt=0)
 
-@router.post("/work-orders/{work_order_id}/produce")
+@router.post("/work-orders/{work_order_id}/produce",dependencies=[Depends(require_permission("manufacturing.post"))])
 def produce(work_order_id:int,p:ProductionPayload,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
     _company_for_user(db,company_id,u)
     result=manufacturing_completion_service.execute_production(db,u.tenant_id,company_id,work_order_id,u.id,p.quantity,p.source_location_id,p.destination_location_id)
@@ -111,7 +112,7 @@ def produce(work_order_id:int,p:ProductionPayload,company_id:int=Query(...,gt=0)
 class FinalizePayload(BaseModel):
     close_status:str="closed"
 
-@router.post("/work-orders/{work_order_id}/finalize")
+@router.post("/work-orders/{work_order_id}/finalize",dependencies=[Depends(require_permission("manufacturing.post"))])
 def finalize_work_order(work_order_id:int,p:FinalizePayload,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
     _company_for_user(db,company_id,u)
     wo=db.scalar(select(ManufacturingWorkOrder).where(ManufacturingWorkOrder.id==work_order_id,ManufacturingWorkOrder.company_id==company_id).with_for_update())
