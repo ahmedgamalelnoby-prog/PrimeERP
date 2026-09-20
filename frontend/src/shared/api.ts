@@ -1,4 +1,4 @@
-import { apiClient } from "./api";
+import apiClient from "./api/interceptors";
 
 export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await apiClient.request<T>({
