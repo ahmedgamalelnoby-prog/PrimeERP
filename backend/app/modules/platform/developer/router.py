@@ -73,7 +73,7 @@ def _deliver(delivery_id:int):
     db=SessionLocal()
     try:
         d=db.get(DeveloperWebhookDelivery,delivery_id)
-        if not d or d.status=="delivered":return
+        if not d or d.status in {"delivered","disabled"}:return
         w=db.get(DeveloperWebhook,d.webhook_id)
         if not w or not w.is_active:
             d.status="disabled";db.commit();return
@@ -94,7 +94,7 @@ def _deliver(delivery_id:int):
         except Exception as exc:
             d.attempts+=1;d.response_body=str(exc)[:4000]
             if d.attempts>=MAX_DELIVERY_ATTEMPTS:
-                d.status="dead_letter";d.next_attempt_at=None
+                d.status="failed";d.next_attempt_at=None
             else:
                 d.status="failed";d.next_attempt_at=now+timedelta(seconds=min(3600,2**d.attempts*30))
         db.commit()
