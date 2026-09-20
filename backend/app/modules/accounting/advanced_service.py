@@ -32,6 +32,13 @@ class AccountingAdvancedService:
         e=journal_service.create_draft(db,tenant_id=tenant,company_id=kw["company_id"],branch_id=kw["branch_id"],journal_id=kw["journal_id"],fiscal_year_id=p.fiscal_year_id,period_id=p.id,entry_number=f"AUTO-{kw['source_module'][:12]}-{source_id}",entry_date=kw["when"],description=kw["description"],lines=[{"account_combination_id":kw["debit_account_id"],"debit":kw["amount"],"credit":0},{"account_combination_id":kw["credit_account_id"],"debit":0,"credit":kw["amount"]}],user_id=user.id,currency_code=kw["currency_code"],source_module=kw["source_module"],source_entity=kw["source_entity"],source_id=kw["source_id"])
         e=self._post(db,tenant,e,user.id)
         db.add(AccountingPostingLink(tenant_id=tenant,company_id=kw["company_id"],source_module=kw["source_module"],source_entity=kw["source_entity"],source_id=source_id,journal_entry_id=e.id,status="posted"));db.flush();return e
+    def post_by_rule(self,db,user,*,company_id,source_module,source_entity,source_id,when,amount,description):
+        tenant=self._scope(db,user,company_id)
+        rule=db.scalar(select(AccountingAutoPostRule).where(AccountingAutoPostRule.tenant_id==tenant,AccountingAutoPostRule.company_id==company_id,AccountingAutoPostRule.source_module==source_module,AccountingAutoPostRule.source_entity==source_entity,AccountingAutoPostRule.is_active.is_(True)).order_by(AccountingAutoPostRule.id))
+        if rule is None: raise HTTPException(status_code=404,detail="No active automatic posting rule exists for this source")
+        if not rule.auto_post: raise HTTPException(status_code=409,detail="Automatic posting is disabled for this rule")
+        return self.post_source(db,user,company_id=company_id,branch_id=rule.branch_id,journal_id=rule.journal_id,when=when,source_module=source_module,source_entity=source_entity,source_id=source_id,debit_account_id=rule.debit_account_id,credit_account_id=rule.credit_account_id,amount=amount,description=description,currency_code=rule.currency_code)
+
     def fx_revalue(self,db,user,**kw):
         tenant=self._scope(db,user,kw["company_id"]);p=self._period(db,tenant,kw["company_id"],kw["when"]);old_base=kw["foreign_amount"]*kw["old_rate"];new_base=kw["foreign_amount"]*kw["new_rate"];delta=new_base-old_base
         if delta==0:raise HTTPException(status_code=409,detail="No FX revaluation difference exists")
