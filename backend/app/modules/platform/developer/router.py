@@ -1,6 +1,6 @@
 from fastapi import APIRouter,Depends,HTTPException,Header,BackgroundTasks
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime,timezone,timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.core.permissions import require_permission
@@ -12,6 +12,7 @@ from app.modules.platform.developer.models import DeveloperApp,DeveloperApiKey,D
 from app.modules.platform.developer.schemas import *
 from app.modules.platform.developer.service import create_app,create_key,authenticate_key,sha,encrypt_secret,decrypt_secret,sign_webhook
 router=APIRouter(prefix="/developer",tags=["Developer Platform"])
+MAX_DELIVERY_ATTEMPTS=5
 def company_ok(db,cid,user):
     if not user.tenant_id or not db.scalar(select(Company.id).where(Company.id==cid,Company.tenant_id==user.tenant_id)):raise HTTPException(404,"Company not found")
 @router.post("/apps",response_model=AppCreated,status_code=201,dependencies=[Depends(require_permission("developer.manage"))])
@@ -25,7 +26,7 @@ def keys(p:KeyCreate,db:Session=Depends(get_db),user:User=Depends(get_current_us
     a=db.scalar(select(DeveloperApp).where(DeveloperApp.id==p.app_id,DeveloperApp.is_active.is_(True)))
     if not a:raise HTTPException(404,"App not found")
     company_ok(db,a.company_id,user)
-    if not set(p.scopes).issubset(set(a.scopes)): raise HTTPException(422,"API key scopes must be a subset of app scopes")
+    if not set(p.scopes).issubset(set(a.scopes)):raise HTTPException(422,"API key scopes must be a subset of app scopes")
     k,raw=create_key(db,p);return {"id":k.id,"key":raw,"key_prefix":k.key_prefix,"scopes":k.scopes,"expires_at":k.expires_at}
 @router.delete("/keys/{key_id}",dependencies=[Depends(require_permission("developer.manage"))])
 def revoke_key(key_id:int,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
@@ -43,21 +44,18 @@ def webhooks(company_id:int,db:Session=Depends(get_db),user:User=Depends(get_cur
 @router.post("/events/publish",dependencies=[Depends(require_permission("developer.manage"))])
 def publish(p:EventPublish,background:BackgroundTasks,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     company_ok(db,p.company_id,user)
-    existing_event=db.scalar(select(DeveloperEvent).where(DeveloperEvent.company_id==p.company_id,DeveloperEvent.event_id==p.event_id))
-    if existing_event:return {"accepted":True,"duplicate":True}
-    e=DeveloperEvent(**p.model_dump());db.add(e);db.flush()
-    deliveries=[]
+    if db.scalar(select(DeveloperEvent).where(DeveloperEvent.company_id==p.company_id,DeveloperEvent.event_id==p.event_id)):return {"accepted":True,"duplicate":True}
+    e=DeveloperEvent(**p.model_dump());db.add(e);db.flush();created_ids=[]
     hooks=list(db.scalars(select(DeveloperWebhook).join(DeveloperApp).where(DeveloperApp.company_id==p.company_id,DeveloperWebhook.is_active.is_(True))).all())
     for w in hooks:
         if w.events and p.event_type not in w.events and "*" not in w.events:continue
-        d=DeveloperWebhookDelivery(webhook_id=w.id,event_id=p.event_id,event_type=p.event_type,payload=p.payload)
-        db.add(d);db.flush();deliveries.append(d.id)
+        d=DeveloperWebhookDelivery(webhook_id=w.id,event_id=p.event_id,event_type=p.event_type,payload=p.payload,status="pending",next_attempt_at=datetime.now(timezone.utc));db.add(d);db.flush();created_ids.append(d.id)
     db.commit()
-    for delivery_id in deliveries: background.add_task(_deliver,delivery_id)
-    return {"accepted":True,"deliveries_created":len(deliveries)}
+    for delivery_id in created_ids:background.add_task(_deliver,delivery_id)
+    return {"accepted":True,"deliveries_created":len(created_ids)}
 @router.get("/events/deliveries",dependencies=[Depends(require_permission("developer.access"))])
 def deliveries(company_id:int,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
-    company_ok(db,company_id,user);return [{"id":d.id,"event_id":d.event_id,"event_type":d.event_type,"status":d.status,"attempts":d.attempts,"response_code":d.response_code} for d in db.scalars(select(DeveloperWebhookDelivery).join(DeveloperWebhook).join(DeveloperApp).where(DeveloperApp.company_id==company_id).order_by(DeveloperWebhookDelivery.id.desc()).limit(200)).all()]
+    company_ok(db,company_id,user);return [{"id":d.id,"event_id":d.event_id,"event_type":d.event_type,"status":d.status,"attempts":d.attempts,"response_code":d.response_code,"next_attempt_at":d.next_attempt_at} for d in db.scalars(select(DeveloperWebhookDelivery).join(DeveloperWebhook).join(DeveloperApp).where(DeveloperApp.company_id==company_id).order_by(DeveloperWebhookDelivery.id.desc()).limit(200)).all()]
 @router.post("/custom-fields",response_model=CustomFieldResponse,status_code=201,dependencies=[Depends(require_permission("developer.manage"))])
 def custom_field(p:CustomFieldCreate,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     company_ok(db,p.company_id,user);o=DeveloperCustomField(**p.model_dump());db.add(o);db.commit();db.refresh(o);return o
@@ -76,17 +74,29 @@ def _deliver(delivery_id:int):
     try:
         d=db.get(DeveloperWebhookDelivery,delivery_id)
         if not d or d.status=="delivered":return
-        if d.attempts>=5:return
         w=db.get(DeveloperWebhook,d.webhook_id)
-        if not w or not w.is_active:d.status="disabled";db.commit();return
-        ts=int(datetime.now(timezone.utc).timestamp());body={"id":d.event_id,"type":d.event_type,"data":d.payload}
+        if not w or not w.is_active:
+            d.status="disabled";db.commit();return
+        now=datetime.now(timezone.utc)
+        if d.attempts>=MAX_DELIVERY_ATTEMPTS:
+            d.status="dead_letter";db.commit();return
+        if d.next_attempt_at and d.next_attempt_at>now:return
+        ts=int(now.timestamp());body={"id":d.event_id,"type":d.event_type,"data":d.payload}
         try:
             r=requests.post(w.url,json=body,headers={"Content-Type":"application/json","X-PrimeERP-Event":d.event_type,"X-PrimeERP-Timestamp":str(ts),"X-PrimeERP-Signature":"sha256="+sign_webhook(decrypt_secret(w.secret_encrypted),ts,body)},timeout=10)
             d.attempts+=1;d.response_code=r.status_code;d.response_body=r.text[:4000]
-            if 200<=r.status_code<300:d.status="delivered";d.delivered_at=datetime.now(timezone.utc)
-            else:d.status="failed"
+            if 200<=r.status_code<300:
+                d.status="delivered";d.delivered_at=datetime.now(timezone.utc);d.next_attempt_at=None
+            elif d.attempts>=MAX_DELIVERY_ATTEMPTS:
+                d.status="dead_letter";d.next_attempt_at=None
+            else:
+                d.status="failed";d.next_attempt_at=now+timedelta(seconds=min(3600,2**d.attempts*30))
         except Exception as exc:
-            d.attempts+=1;d.response_body=str(exc)[:4000];d.status="failed"
+            d.attempts+=1;d.response_body=str(exc)[:4000]
+            if d.attempts>=MAX_DELIVERY_ATTEMPTS:
+                d.status="dead_letter";d.next_attempt_at=None
+            else:
+                d.status="failed";d.next_attempt_at=now+timedelta(seconds=min(3600,2**d.attempts*30))
         db.commit()
     finally:db.close()
 @router.post("/deliveries/{delivery_id}/retry",dependencies=[Depends(require_permission("developer.manage"))])
@@ -96,7 +106,7 @@ def retry_delivery(delivery_id:int,background:BackgroundTasks,db:Session=Depends
     w=db.get(DeveloperWebhook,d.webhook_id);a=db.get(DeveloperApp,w.app_id) if w else None
     if not a:raise HTTPException(404,"Webhook app not found")
     company_ok(db,a.company_id,user)
-    if d.status=="delivered":return {"queued":False,"delivery_id":d.id,"status":"delivered"}
-    if d.attempts>=5:raise HTTPException(409,"Delivery retry limit reached")
-    background.add_task(_deliver,d.id)
+    if d.status=="delivered":raise HTTPException(409,"Delivery already delivered")
+    if d.attempts>=MAX_DELIVERY_ATTEMPTS:raise HTTPException(409,"Delivery retry limit reached")
+    d.status="pending";d.next_attempt_at=datetime.now(timezone.utc);db.commit();background.add_task(_deliver,d.id)
     return {"queued":True,"delivery_id":d.id}
