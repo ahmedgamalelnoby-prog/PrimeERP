@@ -1010,7 +1010,6 @@ def end_to_end_readiness(
         "company_id": company_id,
         "inventory": {"negative_stock": negative_stock},
         "payments": {"allocation_mismatches": posted_payment_mismatches},
-        "shipping": {"open_shipments": open_shipments},
         "manufacturing": {"open_work_orders": open_work_orders},
         "returns": {"purchase_return_allocations": purchase_return_allocations},
         "treasury": {"open_cheques": cheque_open_count},
