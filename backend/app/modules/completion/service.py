@@ -3,9 +3,13 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .models import FunctionalTransaction, TransactionApproval, PostingDiagnostic, ReconciliationItem, PeriodControl
+from app.modules.companies.models import Company
 
 class CompletionService:
     def register(self,db:Session,*,tenant_id:int,company_id:int,module:str,document_type:str,document_id:str,idempotency_key:str,user_id:int|None=None,source:str|None=None):
+        company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == tenant_id, Company.is_active.is_(True)))
+        if company is None:
+            raise HTTPException(403, "Company is outside the current tenant")
         existing=db.scalar(select(FunctionalTransaction).where(FunctionalTransaction.tenant_id==tenant_id,FunctionalTransaction.module==module,FunctionalTransaction.idempotency_key==idempotency_key))
         if existing:return existing
         tx=FunctionalTransaction(tenant_id=tenant_id,company_id=company_id,module=module,document_type=document_type,document_id=str(document_id),idempotency_key=idempotency_key,created_by=user_id,source=source)
