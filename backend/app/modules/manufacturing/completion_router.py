@@ -101,11 +101,12 @@ class ProductionPayload(BaseModel):
     quantity:Decimal=Field(gt=0)
     source_location_id:int|None=Field(default=None,gt=0)
     destination_location_id:int|None=Field(default=None,gt=0)
+    idempotency_key:str|None=Field(default=None,min_length=8,max_length=180)
 
 @router.post("/work-orders/{work_order_id}/produce",dependencies=[Depends(require_permission("manufacturing.post"))])
 def produce(work_order_id:int,p:ProductionPayload,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
     _company_for_user(db,company_id,u)
-    result=manufacturing_completion_service.execute_production(db,u.tenant_id,company_id,work_order_id,u.id,p.quantity,p.source_location_id,p.destination_location_id)
+    result=manufacturing_completion_service.execute_production(db,u.tenant_id,company_id,work_order_id,u.id,p.quantity,p.source_location_id,p.destination_location_id,p.idempotency_key)
     db.commit()
     return result
 
