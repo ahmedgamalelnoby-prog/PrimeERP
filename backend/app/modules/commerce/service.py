@@ -408,6 +408,8 @@ class CommerceService:
 
     def pay(self, db, payload, kind, user_id: int | None = None):
         model = SalesDocument if kind == "sale" else PurchaseDocument; allowed_types = {"invoice"} if kind == "sale" else {"bill"}
+        integration_tx = None
+        integration_started = False
         document = db.scalar(select(model).where(model.id == payload.document_id, model.company_id == payload.company_id).with_for_update())
         if document is None: raise ValueError("Document not found")
         document_type = getattr(document, "document_type", "invoice" if kind == "sale" else "bill")
@@ -416,6 +418,12 @@ class CommerceService:
         if document_status not in {"confirmed", "posted"}: raise ValueError("Document must be confirmed or posted before payment")
         wht_amount = Decimal(payload.wht_amount or 0)
         if wht_amount == 0 and getattr(payload, "auto_wht", True): wht_amount = self._auto_payment_wht(db, document=document, company_id=payload.company_id, amount=Decimal(payload.amount), document_kind=kind)
+        if getattr(payload, "idempotency_key", None):
+            integration_tx, integration_started = core_integration_service.begin(
+                db, user=type("Actor", (), {"tenant_id": getattr(document, "tenant_id", None), "id": user_id})(),
+                company_id=payload.company_id, source_module="commerce", source_entity=f"{kind}_payment",
+                source_id=document.id, operation="post_payment", idempotency_key=payload.idempotency_key,
+            )
         payment_result = post_payment(db, company_id=payload.company_id, document_kind=kind, document_id=payload.document_id, amount=payload.amount, payment_date=payload.payment_date, method=payload.method, wht_amount=wht_amount, reference=payload.reference, notes=payload.notes, idempotency_key=payload.idempotency_key, update_document_paid_total=False)
         if isinstance(payment_result, tuple) and len(payment_result) == 2:
             document, payment = payment_result
@@ -473,6 +481,11 @@ class CommerceService:
                     created_at=now,
                 ))
         if user_id is not None: commerce_accounting_service.post_payment(db, payment, document, user_id)
+        if integration_tx is not None and integration_started:
+            core_integration_service.complete(db, integration_tx, user_id=user_id)
+        record_audit_event(db, action="commerce.payment.post", entity_type="commerce_payment", entity_id=payment.id,
+                           user_id=user_id, company_id=payload.company_id,
+                           metadata={"document_id": document.id, "kind": kind, "amount": str(payment.amount), "method": payload.method})
         return document, payment
 
     def reverse_payment(self, db, company_id: int, payment_id: int, reversal_date, notes=None, user_id: int | None = None):
