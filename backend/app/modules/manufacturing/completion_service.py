@@ -47,7 +47,8 @@ class ManufacturingCompletionService:
         wo=self._wo(db,company_id,work_order_id)
         qty=Decimal(str(quantity))
         if qty <= 0: raise HTTPException(400,"Production quantity must be positive")
-        remaining=Decimal(wo.planned_qty or 0)-Decimal(wo.completed_qty or 0)
+        starting_completed=Decimal(wo.completed_qty or 0)
+        remaining=Decimal(wo.planned_qty or 0)-starting_completed
         if qty > remaining: raise HTTPException(409,"Production quantity exceeds remaining work-order quantity")
         if wo.recipe_id is None: raise HTTPException(409,"Work order has no recipe")
         recipe=db.scalar(select(Recipe).where(Recipe.id==wo.recipe_id,Recipe.company_id==company_id,Recipe.is_active.is_(True)))
@@ -62,7 +63,7 @@ class ManufacturingCompletionService:
         for line in db.scalars(select(RecipeLine).where(RecipeLine.recipe_id==recipe.id).order_by(RecipeLine.line_no)).all():
             item_id=line.ingredient_item_id or line.ingredient_product_id
             required=Decimal(line.quantity or 0)*scale*(Decimal("1")+Decimal(line.waste_percentage or 0)/Decimal("100"))
-            payload=StockMoveCreate(company_id=company_id,item_id=item_id,quantity=required,unit_cost=Decimal("0"),movement_type="issue",source_location_id=source_location_id,transaction_date=date.today(),source_module="manufacturing",source_entity="production_material",source_id=f"{work_order_id}:{line.id}:{qty}",notes=f"Material consumption for work order {work_order_id}")
+            payload=StockMoveCreate(company_id=company_id,item_id=item_id,quantity=required,unit_cost=Decimal("0"),movement_type="issue",source_location_id=source_location_id,transaction_date=date.today(),source_module="manufacturing",source_entity="production_material",source_id=f"{work_order_id}:{line.id}:{starting_completed}:{qty}",notes=f"Material consumption for work order {work_order_id}")
             move=inventory_stock_move_service.create_draft(db,payload)
             move=inventory_stock_move_service.post(db,tenant_id=tenant_id,company_id=company_id,move_id=move.id,user_id=user_id)
             existing=db.scalar(select(ManufacturingConsumption).where(ManufacturingConsumption.work_order_id==wo.id,ManufacturingConsumption.stock_move_id==move.id))
@@ -72,14 +73,17 @@ class ManufacturingCompletionService:
         actual_l=Decimal(db.scalar(select(func.coalesce(func.sum(ManufacturingLaborActual.amount),0)).where(ManufacturingLaborActual.work_order_id==wo.id)) or 0)
         actual_o=Decimal(db.scalar(select(func.coalesce(func.sum(ManufacturingOverheadActual.amount),0)).where(ManufacturingOverheadActual.work_order_id==wo.id)) or 0)
         subcontract=Decimal(db.scalar(select(func.coalesce(func.sum(ManufacturingSubcontract.actual_quantity*ManufacturingSubcontract.unit_cost),0)).where(ManufacturingSubcontract.work_order_id==wo.id,ManufacturingSubcontract.status!="cancelled")) or 0)
-        total_cost=material_total+actual_l+actual_o+subcontract
-        unit_cost=total_cost/qty if qty else Decimal("0")
+        cumulative_cost=material_total+actual_l+actual_o+subcontract
+        prior_output_value=Decimal(db.scalar(select(func.coalesce(func.sum(InventoryStockMove.quantity*InventoryStockMove.unit_cost),0)).where(InventoryStockMove.company_id==company_id,InventoryStockMove.source_module=="manufacturing",InventoryStockMove.source_entity=="production_output",InventoryStockMove.source_id.like(f"{work_order_id}:%"),InventoryStockMove.status=="posted")) or 0)
+        incremental_cost=cumulative_cost-prior_output_value
+        if incremental_cost < 0: incremental_cost=Decimal("0")
+        unit_cost=incremental_cost/qty if qty else Decimal("0")
         payload=StockMoveCreate(company_id=company_id,item_id=wo.item_id,variant_id=wo.variant_id,quantity=qty,unit_cost=unit_cost,movement_type="receipt",destination_location_id=destination_location_id,transaction_date=date.today(),source_module="manufacturing",source_entity="production_output",source_id=f"{work_order_id}:{qty}:{Decimal(wo.completed_qty or 0)}",notes=f"Finished goods receipt for work order {work_order_id}")
         output=inventory_stock_move_service.create_draft(db,payload)
         output=inventory_stock_move_service.post(db,tenant_id=tenant_id,company_id=company_id,move_id=output.id,user_id=user_id)
         wo.completed_qty=Decimal(wo.completed_qty or 0)+qty
         wo.status="completed" if wo.completed_qty >= Decimal(wo.planned_qty or 0) else "in_progress"
-        wo.total_material_cost=material_total
+        wo.total_material_cost=Decimal(wo.total_material_cost or 0)+material_total
         if wo.actual_start is None: wo.actual_start=date.today()
         if wo.completed_qty >= Decimal(wo.planned_qty or 0): wo.actual_end=date.today()
         db.flush()
