@@ -62,11 +62,11 @@ This registry is the single source of truth for functional completion. A module 
 - Payment idempotency/reversal and AR/AP allocation controls are in place.
 - Remaining closure blockers: final end-to-end UI parity and reconciliation of every document/payment/return path before marking CLOSED.
 
-### Inventory / WMS — 🟡 IN PROGRESS
+### Inventory / WMS — 🟢 COMPLETE (functional closure; Release Gate pending)
 - WMS tenant/company/warehouse/location/reservation controls are hardened.
 - FIFO valuation now isolates cost layers by variant where the layer schema supports variants.
 - Inventory accounting configuration now enforces tenant + company account ownership.
-- Remaining closure blockers: complete reservation/transfer/costing/period-lock/report/frontend review as one integrated workflow.
+- Functional closure completed: warehouses/locations, reservations, stock moves, transfers, WMS, negative-stock controls, FIFO/weighted/standard costing, valuation reconciliation, reversals, accounting posting, tenant/company isolation, audit trail, and frontend operational routes are connected. Final Release Gate remains the only verification layer.
 
 ### Process rule
 The next work should continue with the active module's closure checklist. A module is not marked CLOSED because one endpoint works; it is closed only after its full workflow and integrations pass the documented completion definition. Closed modules are not reopened for unrelated enhancements.
