@@ -69,7 +69,10 @@ from app.modules.inventory.costing.revaluation_models import InventoryCostRevalu
 from app.modules.commerce.backorder_models import CommerceBackorder
 
 from app.modules.manufacturing.mrp_models import MRPPlan, MRPRequirement, MRPWorkCenter, MRPRoutingOperation, MRPScheduleSlot, MRPProductionCost
-\nfrom app.modules.crm.models import CRMLead\nfrom app.modules.hr.models import EmploymentContract\n
+
+from app.modules.crm.models import CRMLead
+from app.modules.hr.models import EmploymentContract
+
 from app.modules.inventory.costing.variance_models import InventoryCostVariance
 
 from app.modules.manufacturing.completion_models import ManufacturingLaborActual, ManufacturingOverheadActual, ManufacturingScrap, ManufacturingByProduct, ManufacturingSubcontract, ManufacturingVariance, InventoryStockPolicy, InventoryCostReconciliation
