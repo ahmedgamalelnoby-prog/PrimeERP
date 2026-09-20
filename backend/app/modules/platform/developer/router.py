@@ -8,7 +8,7 @@ from app.modules.identity.models import User
 from app.modules.companies.models import Company
 from app.modules.platform.developer.models import DeveloperApp,DeveloperApiKey,DeveloperWebhook,DeveloperEvent,DeveloperWebhookDelivery,DeveloperCustomField
 from app.modules.platform.developer.schemas import *
-from app.modules.platform.developer.service import create_app,create_key,authenticate_key,sha
+from app.modules.platform.developer.service import create_app,create_key,authenticate_key,sha,encrypt_secret
 router=APIRouter(prefix="/developer",tags=["Developer Platform"])
 def company_ok(db,cid,user):
     if not user.tenant_id or not db.scalar(select(Company.id).where(Company.id==cid,Company.tenant_id==user.tenant_id)):raise HTTPException(404,"Company not found")
@@ -32,7 +32,7 @@ def revoke_key(key_id:int,db:Session=Depends(get_db),user:User=Depends(get_curre
 def webhook(p:WebhookCreate,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     a=db.get(DeveloperApp,p.app_id)
     if not a:raise HTTPException(404,"App not found")
-    company_ok(db,a.company_id,user);secret=secrets.token_urlsafe(32);w=DeveloperWebhook(app_id=a.id,url=p.url,secret_hash=sha(secret),events=p.events);db.add(w);db.commit();db.refresh(w);return {**WebhookResponse.model_validate(w).model_dump(),"signing_secret":secret}
+    company_ok(db,a.company_id,user);secret=secrets.token_urlsafe(32);w=DeveloperWebhook(app_id=a.id,url=p.url,secret_hash=sha(secret),secret_encrypted=encrypt_secret(secret),events=p.events);db.add(w);db.commit();db.refresh(w);return {**WebhookResponse.model_validate(w).model_dump(),"signing_secret":secret}
 @router.get("/webhooks",response_model=list[WebhookResponse],dependencies=[Depends(require_permission("developer.access"))])
 def webhooks(company_id:int,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     company_ok(db,company_id,user);return list(db.scalars(select(DeveloperWebhook).join(DeveloperApp).where(DeveloperApp.company_id==company_id)).all())
