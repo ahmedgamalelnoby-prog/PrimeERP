@@ -124,6 +124,7 @@ class RecipeLine(Base):
     line_no = Column(Integer, nullable=False)
     ingredient_product_id = Column(Integer, ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False, index=True)
     ingredient_item_id = Column(Integer, ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=True, index=True)
+    ingredient_variant_id = Column(Integer, ForeignKey("product_variants.id", ondelete="RESTRICT"), nullable=True, index=True)
     quantity = Column(Numeric(18, 6), nullable=False)
     waste_percentage = Column(Numeric(7, 4), nullable=False, default=0)
     uom_id = Column(Integer, ForeignKey("units_of_measure.id", ondelete="RESTRICT"), nullable=True)
