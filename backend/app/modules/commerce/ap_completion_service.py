@@ -97,6 +97,40 @@ class APCompletionService:
         record_audit_event(db,action="ap.variance_decided",entity_type="ap_variance",entity_id=x.id,user_id=user_id,tenant_id=company.tenant_id,company_id=company_id,metadata={"status":x.status,"reason":reason})
         return x
 
+    def reconcile(self,db,company_id,partner_id,as_of,user_id,persist=True):
+        q=[PurchaseDocument.company_id==company_id,PurchaseDocument.document_type=="bill",PurchaseDocument.status.in_({"confirmed","posted"}),PurchaseDocument.document_date<=as_of]
+        if partner_id:q.append(PurchaseDocument.partner_id==partner_id)
+        bills=list(db.scalars(select(PurchaseDocument).where(*q)).all()); ids=[d.id for d in bills]
+        allocations=list(db.scalars(select(CommercePaymentAllocation).where(CommercePaymentAllocation.company_id==company_id,CommercePaymentAllocation.document_kind=="purchase",CommercePaymentAllocation.status=="active",CommercePaymentAllocation.document_id.in_(ids or [-1]))).all())
+        by={}
+        for a in allocations: by[a.document_id]=by.get(a.document_id,Decimal("0"))+Decimal(a.amount)
+        issues=[]; bill_open=Decimal("0")
+        for d in bills:
+            expected=Decimal(d.total or 0)-by.get(d.id,Decimal("0")); actual=Decimal(d.total or 0)-Decimal(d.paid_total or 0)
+            if expected<0: issues.append({"type":"over_allocated_bill","document_id":d.id,"amount":str(-expected)})
+            if abs(expected-actual)>Decimal("0.0001"): issues.append({"type":"paid_total_mismatch","document_id":d.id,"amount":str(expected-actual)})
+            bill_open+=max(expected,Decimal("0"))
+        pfilter=[CommercePayment.company_id==company_id,CommercePayment.document_kind=="purchase",CommercePayment.status=="posted",CommercePayment.payment_date<=as_of]
+        if partner_id:pfilter.append(CommercePayment.partner_id==partner_id)
+        payments=list(db.scalars(select(CommercePayment).where(*pfilter)).all())
+        unapplied=sum((max(Decimal(p.amount)-sum((Decimal(a.amount) for a in db.scalars(select(CommercePaymentAllocation).where(CommercePaymentAllocation.payment_id==p.id,CommercePaymentAllocation.status=="active")).all()),Decimal("0")),Decimal("0")) for p in payments),Decimal("0"))
+        from app.modules.commerce.accounting_models import CommerceAccountingSettings
+        settings=db.scalar(select(CommerceAccountingSettings).where(CommerceAccountingSettings.company_id==company_id))
+        gl_balance=None; gl_difference=Decimal("0")
+        if settings is not None:
+            gl_balance=Decimal(str(db.scalar(select(func.coalesce(func.sum(JournalEntryLine.debit-JournalEntryLine.credit),0)).join(JournalEntry,JournalEntry.id==JournalEntryLine.entry_id).where(JournalEntry.company_id==company_id,JournalEntry.status=="posted",JournalEntry.entry_date<=as_of,JournalEntryLine.account_combination_id==settings.ap_account_id)) or 0))
+            dq=[PurchaseDocument.company_id==company_id,PurchaseDocument.document_type=="debit_note",PurchaseDocument.status.in_({"confirmed","posted"}),PurchaseDocument.document_date<=as_of]
+            if partner_id:dq.append(PurchaseDocument.partner_id==partner_id)
+            debit_notes=Decimal(str(db.scalar(select(func.coalesce(func.sum(PurchaseDocument.total),0)).where(*dq)) or 0))
+            subledger=sum((Decimal(d.total or 0) for d in bills),Decimal("0"))+debit_notes-sum((by.get(d.id,Decimal("0")) for d in bills),Decimal("0"))
+            gl_difference=gl_balance-subledger
+            if abs(gl_difference)>Decimal("0.01"): issues.append({"type":"gl_subledger_mismatch","amount":str(gl_difference)})
+        result={"status":"balanced" if not issues else "exception","bill_open":str(bill_open),"unapplied_payments":str(unapplied),"gl_balance":str(gl_balance) if gl_balance is not None else None,"gl_difference":str(gl_difference),"issues":issues}
+        if persist:
+            from app.modules.commerce.ap_models import APReconciliation
+            db.add(APReconciliation(company_id=company_id,partner_id=partner_id,as_of=as_of,status=result["status"],discrepancy_amount=sum((Decimal(i.get("amount","0")) for i in issues),Decimal("0")),details_json=json.dumps(result,default=str),reconciled_by=user_id))
+        return result
+
     def block_bill_posting_if_variance(self,db,company_id,bill_id):
         pending=db.scalar(select(APVarianceWorkflow.id).where(APVarianceWorkflow.company_id==company_id,APVarianceWorkflow.bill_id==bill_id,APVarianceWorkflow.status=="pending"))
         if pending: raise HTTPException(409,"Supplier bill has a pending three-way-match variance approval")
