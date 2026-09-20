@@ -20,6 +20,7 @@ from app.modules.inventory.warehouses.models import InventoryWarehouse
 from app.modules.accounting.fiscal_years.services.fiscal_year_service import fiscal_year_service
 from app.modules.treasury.models import Cheque, ChequeEvent
 from app.modules.treasury.service import transition_cheque
+from app.modules.treasury.accounting_service import treasury_accounting_service
 from app.modules.commerce.backorder_service import backorder_service
 
 SALE_TYPES = {"quotation", "order", "delivery", "invoice", "credit_note"}
@@ -496,6 +497,7 @@ class CommerceService:
                     created_by=user_id,
                     created_at=now,
                 ))
+                treasury_accounting_service.created(db, cheque, user_id)
         # Cheque payments are accounted by the Treasury cheque lifecycle.
         # Posting them again through the cash/bank payment bridge would double-post GL.
         if user_id is not None and payment.method.lower() != "cheque":
