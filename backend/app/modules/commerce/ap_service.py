@@ -70,6 +70,23 @@ class APService:
   if not x:raise HTTPException(404,"Variance not found")
   if x.status!="pending":raise HTTPException(409,"Variance already decided")
   x.status="approved" if payload.approve else "rejected";x.decided_by=user.id;x.decided_at=datetime.now(timezone.utc);return x
+ def three_way_match(self,db,company_id,bill_id,user_id,tolerance=Decimal("0")):
+  bill=self._bill(db,company_id,bill_id,None)
+  from app.modules.commerce.models import PurchaseBillReceiptLink,PurchaseBillReceiptAllocation,PurchaseLine
+  links=list(db.scalars(select(PurchaseBillReceiptLink).where(PurchaseBillReceiptLink.company_id==company_id,PurchaseBillReceiptLink.bill_id==bill.id)).all())
+  receipt_ids=[x.receipt_id for x in links]
+  receipts=list(db.scalars(select(PurchaseDocument).where(PurchaseDocument.company_id==company_id,PurchaseDocument.id.in_(receipt_ids or [-1]))).all())
+  po_qty=Decimal(0);receipt_qty=Decimal(0);bill_qty=Decimal(0)
+  for line in bill.lines: bill_qty+=Decimal(line.quantity or 0)
+  for receipt in receipts:
+   for line in receipt.lines: receipt_qty+=Decimal(line.quantity or 0)
+  if receipt_ids:
+   allocations=list(db.scalars(select(PurchaseBillReceiptAllocation).where(PurchaseBillReceiptAllocation.company_id==company_id,PurchaseBillReceiptAllocation.bill_line_id.in_([x.id for x in bill.lines]))).all())
+   po_qty=sum((Decimal(a.quantity or 0) for a in allocations),Decimal(0))
+  price_expected=sum((Decimal(x.quantity or 0)*Decimal(x.unit_price or 0) for x in bill.lines),Decimal(0))
+  qty_variance=bill_qty-receipt_qty; value_variance=Decimal(bill.subtotal or 0)-price_expected
+  status="matched" if abs(qty_variance)<=tolerance and abs(value_variance)<=tolerance else "variance"
+  return {"bill_id":bill.id,"status":status,"po_receipt_qty":str(po_qty),"receipt_qty":str(receipt_qty),"bill_qty":str(bill_qty),"quantity_variance":str(qty_variance),"value_variance":str(value_variance)}
  def reconcile(self,db,company_id,partner_id,as_of,user_id,persist=True):
   q=[PurchaseDocument.company_id==company_id,PurchaseDocument.document_type=="bill",PurchaseDocument.status.in_({"confirmed","posted"}),PurchaseDocument.document_date<=as_of]
   if partner_id:q.append(PurchaseDocument.partner_id==partner_id)
