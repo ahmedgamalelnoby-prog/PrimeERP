@@ -54,7 +54,7 @@ class TreasuryAccountingService:
             user_id=user_id,
             source_module="treasury",
             source_entity="cheque_event",
-            source_id=f"{cheque.id}:{event_key}",
+            source_id=cheque.id,
             commit=False,
             currency_code=cheque.currency,
         )
