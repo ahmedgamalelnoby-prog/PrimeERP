@@ -14,7 +14,7 @@ def company(db,cid,u): return domain_completion_service._tenant(db,cid,u)
 
 @router.post("/aging")
 def aging(p:dict,db:Session=Depends(get_db),u:User=Depends(get_current_user)):
-    company(db,int(p["company_id"]),u); return domain_completion_service.save_aging(db,u.tenant_id,int(p["company_id"]),int(p["partner_id"]),str(p["direction"]),date.fromisoformat(p["as_of_date"]))
+    company(db,int(p["company_id"]),u); p=dict(p); p.pop("tenant_id",None); return domain_completion_service.save_aging(db,u.tenant_id,int(p["company_id"]),int(p["partner_id"]),str(p["direction"]),date.fromisoformat(p["as_of_date"]))
 
 @router.post("/writeoffs")
 def writeoff(p:dict,db:Session=Depends(get_db),u:User=Depends(get_current_user)):
@@ -35,7 +35,7 @@ def post_writeoff(id:int,company_id:int=Query(...),db:Session=Depends(get_db),u:
 
 @router.post("/reconcile")
 def reconcile(p:dict,db:Session=Depends(get_db),u:User=Depends(get_current_user)):
-    company(db,int(p["company_id"]),u);x=domain_completion_service.reconcile(db,tenant_id=u.tenant_id,**p);db.commit();db.refresh(x);return x
+    company(db,int(p["company_id"]),u); p=dict(p); p.pop("tenant_id",None); x=domain_completion_service.reconcile(db,tenant_id=u.tenant_id,**p);db.commit();db.refresh(x);return x
 
 @router.post("/inventory/trace")
 def trace(p:dict,db:Session=Depends(get_db),u:User=Depends(get_current_user)):
@@ -61,11 +61,11 @@ def activity(p:dict,db:Session=Depends(get_db),u:User=Depends(get_current_user))
 
 @router.post("/hr/attendance")
 def attendance(p:dict,db:Session=Depends(get_db),u:User=Depends(get_current_user)):
-    company(db,int(p["company_id"]),u);x=HRAttendance(**p,tenant_id=u.tenant_id);db.add(x);db.commit();db.refresh(x);return x
+    company(db,int(p["company_id"]),u); p=dict(p); p.pop("tenant_id",None); x=HRAttendance(**p,tenant_id=u.tenant_id);db.add(x);db.commit();db.refresh(x);return x
 
 @router.post("/hr/leaves")
 def leave(p:dict,db:Session=Depends(get_db),u:User=Depends(get_current_user)):
-    company(db,int(p["company_id"]),u);x=HRLeave(**p,tenant_id=u.tenant_id);db.add(x);db.commit();db.refresh(x);return x
+    company(db,int(p["company_id"]),u); p=dict(p); p.pop("tenant_id",None); x=HRLeave(**p,tenant_id=u.tenant_id);db.add(x);db.commit();db.refresh(x);return x
 
 @router.post("/hr/leaves/{id}/decision")
 def leave_decision(id:int,status:str=Query(...,pattern="^(approved|rejected|cancelled)$"),company_id:int=Query(...),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
@@ -76,11 +76,11 @@ def leave_decision(id:int,status:str=Query(...,pattern="^(approved|rejected|canc
 
 @router.post("/hr/payroll/runs")
 def payroll_run(p:dict,db:Session=Depends(get_db),u:User=Depends(get_current_user)):
-    company(db,int(p["company_id"]),u);x=HRPayrollCompletionRun(tenant_id=u.tenant_id,**p);db.add(x);db.commit();db.refresh(x);return x
+    company(db,int(p["company_id"]),u); p=dict(p); p.pop("tenant_id",None); x=HRPayrollCompletionRun(tenant_id=u.tenant_id,**p);db.add(x);db.commit();db.refresh(x);return x
 
 @router.post("/tax/filings")
 def tax_filing(p:dict,db:Session=Depends(get_db),u:User=Depends(get_current_user)):
-    company(db,int(p["company_id"]),u);p=dict(p);p["payable_tax"]=Decimal(str(p.get("output_tax",0)))-Decimal(str(p.get("input_tax",0)))+Decimal(str(p.get("withholding_tax",0)));x=TaxFilingControl(tenant_id=u.tenant_id,**p);db.add(x);db.commit();db.refresh(x);return x
+    company(db,int(p["company_id"]),u);p=dict(p);p.pop("tenant_id",None);p["payable_tax"]=Decimal(str(p.get("output_tax",0)))-Decimal(str(p.get("input_tax",0)))+Decimal(str(p.get("withholding_tax",0)));x=TaxFilingControl(tenant_id=u.tenant_id,**p);db.add(x);db.commit();db.refresh(x);return x
 
 @router.post("/saas/subscriptions/{subscription_id}/lifecycle")
 def lifecycle(subscription_id:int,to_status:str=Query(...),reason:str|None=Query(None),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
@@ -96,11 +96,11 @@ def api_key(p:dict,db:Session=Depends(get_db),u:User=Depends(get_current_user)):
 
 @router.post("/mobile/sync")
 def mobile_sync(p:dict,db:Session=Depends(get_db),u:User=Depends(get_current_user)):
-    company(db,int(p["company_id"]),u);x=domain_completion_service.mobile_enqueue(db,tenant_id=u.tenant_id,**p);db.commit();db.refresh(x);return x
+    company(db,int(p["company_id"]),u); p=dict(p); p.pop("tenant_id",None); x=domain_completion_service.mobile_enqueue(db,tenant_id=u.tenant_id,**p);db.commit();db.refresh(x);return x
 
 @router.post("/workflow")
 def workflow(p:dict,db:Session=Depends(get_db),u:User=Depends(get_current_user)):
-    company(db,int(p["company_id"]),u);x=domain_completion_service.workflow(db,tenant_id=u.tenant_id,**p);db.commit();db.refresh(x);return x
+    company(db,int(p["company_id"]),u); p=dict(p); p.pop("tenant_id",None); x=domain_completion_service.workflow(db,tenant_id=u.tenant_id,**p);db.commit();db.refresh(x);return x
 
 @router.post("/workflow/{workflow_id}/steps/{step_id}/decision")
 def workflow_decision(workflow_id:int,step_id:int,status:str=Query(...),reason:str|None=Query(None),company_id:int=Query(...),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
