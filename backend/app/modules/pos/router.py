@@ -13,6 +13,9 @@ from app.modules.branches.models import Branch
 from app.modules.commerce.models import SalesDocument, SalesLine
 from app.modules.commerce.schemas import DocumentCreate, DocumentLineCreate, PaymentCreate
 from app.modules.commerce.service import commerce_service
+from app.modules.commerce.sales_return_schemas import SalesReturnCreate
+from app.modules.commerce.sales_return_service import sales_return_service
+from app.modules.commerce.payment_workflow import reverse_payment
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models.user import User
 from app.modules.inventory.items.models import InventoryItem
@@ -615,6 +618,41 @@ def checkout(payload: Checkout, current_user: User = Depends(get_current_user), 
     db.refresh(doc)
     return doc
 
+
+@router.post("/sales/{sale_id}/refund", dependencies=[Depends(require_permission("commerce.payment"))])
+def refund_sale(sale_id:int,payload:SalesReturnCreate,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+    _company(db,payload.company_id,current_user)
+    sale=db.scalar(select(SalesDocument).where(SalesDocument.id==sale_id,SalesDocument.company_id==payload.company_id,SalesDocument.document_type=="invoice").with_for_update())
+    if sale is None: raise HTTPException(404,"POS sale invoice not found")
+    if sale.partner_id != payload.partner_id: raise HTTPException(422,"Refund customer does not match the original sale")
+    try:
+        result=sales_return_service.create_and_post(db,payload,current_user.id,current_user.tenant_id)
+        db.commit();db.refresh(result);return result
+    except ValueError as exc:
+        db.rollback();raise HTTPException(422,str(exc))
+
+@router.post("/sales/{sale_id}/void", dependencies=[Depends(require_permission("commerce.payment"))])
+def void_sale(sale_id:int,company_id:int=Query(...,gt=0),void_date:date=Query(...),current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+    _company(db,company_id,current_user)
+    sale=db.scalar(select(SalesDocument).where(SalesDocument.id==sale_id,SalesDocument.company_id==company_id,SalesDocument.document_type=="invoice").with_for_update())
+    if sale is None: raise HTTPException(404,"POS sale invoice not found")
+    if sale.status not in {"confirmed","posted"}: raise HTTPException(409,"Only confirmed/posted POS sales can be voided")
+    delivery=db.scalar(select(SalesDocument).where(SalesDocument.company_id==company_id,SalesDocument.number==f"POSD-{sale.id}",SalesDocument.document_type=="delivery").with_for_update())
+    if delivery is None: raise HTTPException(409,"POS delivery document was not found")
+    from app.modules.commerce.sales_return_schemas import SalesReturnLineCreate
+    payload=SalesReturnCreate(company_id=company_id,partner_id=sale.partner_id,number=f"POSVOID-{sale.id}-{void_date.isoformat()}",document_date=void_date,warehouse_id=delivery.warehouse_id,notes=f"POS void for sale {sale.number}",lines=[SalesReturnLineCreate(original_delivery_line_id=line.id,quantity=line.quantity) for line in delivery.lines])
+    try:
+        result=sales_return_service.create_and_post(db,payload,current_user.id,current_user.tenant_id)
+        payments=list(db.scalars(select(CommercePayment).where(CommercePayment.company_id==company_id,CommercePayment.document_kind=="sale",CommercePayment.document_id==sale.id,CommercePayment.status=="posted").with_for_update()).all())
+        reversals=[]
+        for payment in payments:
+            _,_,reversal=reverse_payment(db,company_id=company_id,payment_id=payment.id,reversal_date=void_date,notes=f"POS void {sale.number}")
+            reversals.append(reversal.id)
+        sale.status="cancelled"
+        db.commit()
+        return {"sale_id":sale.id,"status":"voided","refund_document_id":result.id,"reversal_payment_ids":reversals}
+    except ValueError as exc:
+        db.rollback();raise HTTPException(422,str(exc))
 
 @router.get("/stations/{station_id}/queue")
 def station_queue(
