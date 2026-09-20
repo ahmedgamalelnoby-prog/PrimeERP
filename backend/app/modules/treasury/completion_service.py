@@ -49,4 +49,11 @@ def forecast(db,p,user):
   existing.expected_inflow=p.expected_inflow;existing.expected_outflow=p.expected_outflow;existing.opening_balance=p.opening_balance;existing.closing_balance=p.opening_balance+p.expected_inflow-p.expected_outflow;db.flush();return existing
  o=TreasuryForecast(company_id=p.company_id,forecast_date=p.forecast_date,expected_inflow=p.expected_inflow,expected_outflow=p.expected_outflow,opening_balance=p.opening_balance,closing_balance=p.opening_balance+p.expected_inflow-p.expected_outflow,source=p.source,created_by=user.id);db.add(o);db.flush();return o
 def positions(db,cid,user):
- _company(db,cid,user);debit=func.sum(case((TreasuryTransaction.transaction_type.in_(["receipt","deposit"]),TreasuryTransaction.amount),(TreasuryTransaction.transaction_type.in_(["payment","withdrawal"]),-TreasuryTransaction.amount),else_=0));rows=db.execute(select(TreasuryTransaction.account_id,debit.label("balance")).where(TreasuryTransaction.company_id==cid,TreasuryTransaction.status=="posted").group_by(TreasuryTransaction.account_id)).all();return [{"account_id":a,"balance":b} for a,b in rows]
+ _company(db,cid,user)
+ debit=func.sum(case((TreasuryTransaction.transaction_type.in_(["receipt","deposit"]),TreasuryTransaction.amount),(TreasuryTransaction.transaction_type.in_(["payment","withdrawal"]),-TreasuryTransaction.amount),(TreasuryTransaction.transaction_type=="transfer",-TreasuryTransaction.amount),else_=0))
+ rows=db.execute(select(TreasuryTransaction.account_id,debit.label("balance")).where(TreasuryTransaction.company_id==cid,TreasuryTransaction.status=="posted").group_by(TreasuryTransaction.account_id)).all()
+ result={a:Decimal(str(b or 0)) for a,b in rows}
+ transfer_rows=db.execute(select(TreasuryTransaction.offset_account_id,func.sum(TreasuryTransaction.amount)).where(TreasuryTransaction.company_id==cid,TreasuryTransaction.status=="posted",TreasuryTransaction.transaction_type=="transfer").group_by(TreasuryTransaction.offset_account_id)).all()
+ for account_id,amount in transfer_rows:
+  result[account_id]=result.get(account_id,Decimal("0"))+Decimal(str(amount or 0))
+ return [{"account_id":a,"balance":b} for a,b in result.items()]
