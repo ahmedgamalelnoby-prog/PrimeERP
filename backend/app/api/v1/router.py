@@ -151,3 +151,7 @@ def build_router() -> APIRouter:
 
 from app.modules.commerce.ap_router import router as ap_router
 api_router.include_router(ap_router, dependencies=[Depends(require_module("sales"))])
+
+from app.modules.manufacturing.mrp_router import router as manufacturing_mrp_router
+
+api_router.include_router(manufacturing_mrp_router)
