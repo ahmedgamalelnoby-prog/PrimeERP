@@ -62,3 +62,4 @@ from app.modules.commerce.ap_models import APWriteOff, APReconciliation, APVaria
 from app.modules.treasury.completion_models import TreasuryTransaction, TreasuryDailyClosing, TreasuryForecast
 
 from app.modules.core_integration.models import IntegrationTransaction
+from app.modules.pos.sessions.models import POSSession
