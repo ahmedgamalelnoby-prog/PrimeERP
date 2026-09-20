@@ -37,7 +37,7 @@ class InventoryCostingService:
         rows = []
         total = Decimal("0")
         for stock, costing_method in db.execute(
-            stmt.order_by(InventoryStock.item_id, InventoryStock.warehouse_id)
+            stmt.order_by(InventoryStock.item_id, InventoryStock.variant_id, InventoryStock.warehouse_id)
         ).all():
             quantity = Decimal(stock.quantity_on_hand or 0)
             average_cost = Decimal(stock.average_cost or 0)
@@ -71,6 +71,7 @@ class InventoryCostingService:
             rows.append(
                 InventoryValuationRow(
                     item_id=stock.item_id,
+                    variant_id=getattr(stock, "variant_id", None),
                     warehouse_id=stock.warehouse_id,
                     quantity_on_hand=quantity,
                     average_cost=average_cost,
