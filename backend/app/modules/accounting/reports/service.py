@@ -121,18 +121,33 @@ class FinancialReportService:
         equity = Decimal("0")
 
         for row in trial.rows:
+            category=(row.account_category or "").strip().lower()
             if row.financial_statement == "profit_and_loss":
-                if row.account_category in {"revenue", "income"} or row.normal_balance == "credit":
+                if category in {"revenue","income","sales"}:
                     revenue += row.balance
-                else:
+                elif category in {"expense","expenses","cost","cost_of_sales","cogs"}:
                     expenses += row.balance
-            elif row.financial_statement == "balance_sheet":
-                if row.account_category in {"asset", "assets"} or row.normal_balance == "debit":
-                    assets += row.balance
-                elif row.account_category in {"liability", "liabilities"}:
-                    liabilities += row.balance
+                elif not category:
+                    if row.normal_balance == "credit":
+                        revenue += row.balance
+                    else:
+                        expenses += row.balance
                 else:
+                    raise ValueError(f"Unsupported P&L account category: {row.account_category}")
+            elif row.financial_statement == "balance_sheet":
+                if category in {"asset","assets"}:
+                    assets += row.balance
+                elif category in {"liability","liabilities"}:
+                    liabilities += row.balance
+                elif category in {"equity","equity_account","retained_earnings"}:
                     equity += row.balance
+                elif not category:
+                    if row.normal_balance == "debit":
+                        assets += row.balance
+                    else:
+                        liabilities += row.balance
+                else:
+                    raise ValueError(f"Unsupported balance-sheet account category: {row.account_category}")
 
         return FinancialSummaryResponse(
             company_id=company_id,
