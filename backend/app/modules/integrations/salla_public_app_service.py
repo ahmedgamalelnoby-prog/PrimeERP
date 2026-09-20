@@ -537,7 +537,13 @@ def handle_app_event(db: Session, payload: dict[str, Any], event_id: str | None 
 
         # Commerce webhooks cross the public-app boundary into the normalized
         # Salla tables and then use the existing ERP execution pipeline.
-        elif event.startswith("order.") or event in {"order.created", "order.updated", "order.status.updated", "order.cancelled"}:
+        # Return/cancel shipment events have their own inventory semantics and
+        # must not be treated as ordinary order updates.
+        elif event.startswith("order.") and event not in {
+            "order.shipment.creating", "order.shipment.created",
+            "order.shipment.cancelled", "order.shipment.return.creating",
+            "order.shipment.return.created", "order.shipment.return.cancelled",
+        }:
             if installation.connection_id is None:
                 raise SallaPublicAppError("Salla installation has no active integration connection")
             connection = db.scalar(select(IntegrationConnection).where(
@@ -575,7 +581,12 @@ def handle_app_event(db: Session, payload: dict[str, Any], event_id: str | None 
                 "commerce": execution,
                 "normalized": counters,
             }
-        elif event.startswith("shipment.") or event in {"shipment.created", "shipment.updated", "shipment.status.updated"}:
+        elif event.startswith("shipment.") or event in {
+            "shipment.created", "shipment.updated", "shipment.status.updated",
+            "order.shipment.creating", "order.shipment.created",
+            "order.shipment.cancelled", "order.shipment.return.creating",
+            "order.shipment.return.created", "order.shipment.return.cancelled",
+        }:
             if installation.connection_id is None:
                 raise SallaPublicAppError("Salla installation has no active integration connection")
             connection = db.scalar(select(IntegrationConnection).where(
@@ -637,11 +648,18 @@ def handle_app_event(db: Session, payload: dict[str, Any], event_id: str | None 
                 # A shipment can be cancelled/returned after it has already
                 # consumed stock. Restore only that shipment's posted moves;
                 # never return the other shipments of the same order.
+                event_return = event in {
+                    "order.shipment.return.created",
+                    "order.shipment.return.cancelled",
+                }
                 inventory_return = None
-                if order is not None and shipment_status in {
-                    "cancelled", "canceled", "returned", "return_to_origin",
-                    "return_in_progress", "unable_to_deliver",
-                }:
+                if order is not None and (
+                    shipment_status in {
+                        "cancelled", "canceled", "returned", "return_to_origin",
+                        "return_in_progress", "restoring", "restored",
+                    }
+                    or event_return
+                ):
                     inventory_return = restore_salla_inventory(
                         db,
                         order,
@@ -656,6 +674,7 @@ def handle_app_event(db: Session, payload: dict[str, Any], event_id: str | None 
                 "shipping": shipment_result,
                 "commerce": commerce,
                 "normalized": counters,
+                "inventory_return": inventory_return,
             }
         result = locals().get("result") or {"installation_id": installation.id, "event": event, "status": installation.status, "subscription_status": installation.subscription_status}
 
