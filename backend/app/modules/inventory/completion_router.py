@@ -9,9 +9,10 @@ from app.modules.companies.models import Company
 from app.modules.manufacturing.completion_models import InventoryStockPolicy,InventoryCostReconciliation
 from app.modules.inventory.items.models import InventoryStock
 from app.modules.catalog.models import ProductCostHistory
+from app.core.permissions import require_permission
 from app.modules.inventory.stock_moves.models import InventoryCostLayer
 
-router=APIRouter(prefix="/inventory/completion",tags=["Inventory Completion"])
+router=APIRouter(prefix="/inventory/completion",tags=["Inventory Completion"],dependencies=[Depends(require_permission("inventory.access"))])
 def company(db,cid,u):
     if u.tenant_id is None: raise HTTPException(403,"Tenant required")
     x=db.scalar(select(Company).where(Company.id==cid,Company.tenant_id==u.tenant_id,Company.is_active.is_(True)))
@@ -21,7 +22,7 @@ class Policy(BaseModel):
     allow_negative:bool=False
     warning_threshold:float=Field(default=0,ge=0)
     costing_method:str="weighted_average"
-@router.put("/stock-policy")
+@router.put("/stock-policy",dependencies=[Depends(require_permission("inventory.write"))])
 def set_policy(p:Policy,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
     company(db,company_id,u)
     q=select(InventoryStockPolicy).where(InventoryStockPolicy.company_id==company_id,InventoryStockPolicy.warehouse_id==p.warehouse_id,InventoryStockPolicy.is_active.is_(True))
@@ -33,7 +34,7 @@ def set_policy(p:Policy,company_id:int=Query(...,gt=0),db:Session=Depends(get_db
 @router.get("/stock-policy")
 def get_policy(company_id:int=Query(...,gt=0),warehouse_id:int|None=None,db:Session=Depends(get_db),u:User=Depends(get_current_user)):
     company(db,company_id,u);x=db.scalar(select(InventoryStockPolicy).where(InventoryStockPolicy.company_id==company_id,InventoryStockPolicy.warehouse_id==warehouse_id,InventoryStockPolicy.is_active.is_(True)));return x
-@router.post("/cost-reconciliation")
+@router.post("/cost-reconciliation",dependencies=[Depends(require_permission("inventory.post"))])
 def reconcile(company_id:int=Query(...,gt=0),warehouse_id:int=Query(...,gt=0),item_id:int=Query(...,gt=0),method:str="weighted_average",db:Session=Depends(get_db),u:User=Depends(get_current_user)):
     company(db,company_id,u)
     stock=db.scalar(select(InventoryStock).where(InventoryStock.company_id==company_id,InventoryStock.warehouse_id==warehouse_id,InventoryStock.item_id==item_id).with_for_update())
