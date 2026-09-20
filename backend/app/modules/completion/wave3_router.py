@@ -880,6 +880,19 @@ def treasury_gl_reconciliation(
     if settings is None:
         raise HTTPException(409, "Accounting configuration is required for treasury GL reconciliation")
 
+    # Reconcile every account actually used by Treasury, not only the default
+    # payment account. Transfers affect both source and destination accounts.
+    account_rows = db.execute(
+        select(TreasuryTransaction.account_id)
+        .where(TreasuryTransaction.company_id == company_id)
+        .union(
+            select(TreasuryTransaction.offset_account_id)
+            .where(TreasuryTransaction.company_id == company_id)
+        )
+    ).all()
+    account_ids = {int(row[0]) for row in account_rows if row[0] is not None}
+    account_ids.add(int(settings.default_payment_account_id))
+
     treasury_rows = db.execute(
         select(
             TreasuryTransaction.account_id,
@@ -908,8 +921,9 @@ def treasury_gl_reconciliation(
         .group_by(TreasuryTransaction.offset_account_id)
     ).all()
 
-    treasury = {account_id: Decimal(str(balance or 0)) for account_id, balance in treasury_rows}
+    treasury = {int(account_id): Decimal(str(balance or 0)) for account_id, balance in treasury_rows}
     for account_id, amount in destination_rows:
+        account_id = int(account_id)
         treasury[account_id] = treasury.get(account_id, Decimal("0")) + Decimal(str(amount or 0))
 
     gl_rows = db.execute(
@@ -922,26 +936,36 @@ def treasury_gl_reconciliation(
         .where(
             JournalEntry.company_id == company_id,
             JournalEntry.status == "posted",
-            JournalEntryLine.account_combination_id == settings.default_payment_account_id,
+            JournalEntryLine.account_combination_id.in_(account_ids),
         )
         .group_by(JournalEntryLine.account_combination_id)
     ).all()
-    gl_balance = Decimal("0")
-    if gl_rows:
-        _, debit, credit = gl_rows[0]
-        gl_balance = Decimal(str(debit or 0)) - Decimal(str(credit or 0))
-    treasury_balance = treasury.get(settings.default_payment_account_id, Decimal("0"))
-    difference = treasury_balance - gl_balance
+    gl = {
+        int(account_id): Decimal(str(debit or 0)) - Decimal(str(credit or 0))
+        for account_id, debit, credit in gl_rows
+    }
+
+    accounts = []
+    for account_id in sorted(account_ids):
+        treasury_balance = treasury.get(account_id, Decimal("0"))
+        gl_balance = gl.get(account_id, Decimal("0"))
+        difference = treasury_balance - gl_balance
+        accounts.append(
+            {
+                "account_id": account_id,
+                "treasury_balance": treasury_balance,
+                "gl_balance": gl_balance,
+                "difference": difference,
+                "reconciled": difference == 0,
+            }
+        )
 
     return {
         "company_id": company_id,
-        "account_id": settings.default_payment_account_id,
-        "treasury_balance": treasury_balance,
-        "gl_balance": gl_balance,
-        "difference": difference,
-        "reconciled": difference == 0,
+        "accounts": accounts,
+        "reconciled": all(row["reconciled"] for row in accounts),
+        "difference": sum((row["difference"] for row in accounts), Decimal("0")),
     }
-
 
 @router.get("/integration/end-to-end-readiness", dependencies=[Depends(require_permission("commerce.access"))])
 def end_to_end_readiness(
