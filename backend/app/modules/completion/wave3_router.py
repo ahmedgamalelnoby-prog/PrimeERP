@@ -18,6 +18,9 @@ from app.modules.restaurant.models import PosOrderLineRoute, PosTerminal, PosOut
 from app.modules.commerce.models import SalesDocument, SalesLine, CommercePayment
 from app.modules.shipping.models import Shipment
 from app.modules.treasury.completion_models import TreasuryTransaction
+from app.modules.manufacturing.completion_models import ManufacturingWorkOrder, ManufacturingVariance, ManufacturingConsumption
+from app.modules.catalog.models import Recipe, RecipeSkuMapping
+from app.modules.integrations.models import IntegrationProductMapping, IntegrationConnection
 
 router = APIRouter(prefix="/completion/wave3", tags=["Completion Wave 3"])
 
@@ -360,4 +363,115 @@ def control_tower(
         "pos_active_kds_lines": queued_kds,
         "shipping_open_shipments": open_shipments,
         "posted_commerce_payments": posted_payments,
+    }
+
+
+@router.get("/manufacturing/control-tower", dependencies=[Depends(require_permission("inventory.access"))])
+def manufacturing_control_tower(
+    company_id: int = Query(..., gt=0),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _company(db, company_id, user)
+    rows = db.execute(
+        select(
+            ManufacturingWorkOrder.status,
+            func.count(ManufacturingWorkOrder.id),
+            func.coalesce(func.sum(ManufacturingWorkOrder.planned_qty), 0),
+            func.coalesce(func.sum(ManufacturingWorkOrder.completed_qty), 0),
+        )
+        .where(ManufacturingWorkOrder.company_id == company_id)
+        .group_by(ManufacturingWorkOrder.status)
+        .order_by(ManufacturingWorkOrder.status)
+    ).all()
+    variances = db.execute(
+        select(
+            func.count(ManufacturingVariance.id),
+            func.coalesce(func.sum(ManufacturingVariance.total_variance), 0),
+        )
+        .where(ManufacturingVariance.company_id == company_id, ManufacturingVariance.status == "calculated")
+    ).one()
+    return {
+        "company_id": company_id,
+        "work_orders": [
+            {
+                "status": status,
+                "count": count,
+                "planned_quantity": Decimal(str(planned or 0)),
+                "completed_quantity": Decimal(str(completed or 0)),
+            }
+            for status, count, planned, completed in rows
+        ],
+        "unposted_variance_count": variances[0] or 0,
+        "unposted_variance_value": Decimal(str(variances[1] or 0)),
+    }
+
+
+@router.get("/integrations/salla-readiness", dependencies=[Depends(require_permission("integrations.access"))])
+def salla_readiness(
+    company_id: int = Query(..., gt=0),
+    connection_id: int = Query(..., gt=0),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _company(db, company_id, user)
+    connection = db.scalar(
+        select(IntegrationConnection).where(
+            IntegrationConnection.id == connection_id,
+            IntegrationConnection.company_id == company_id,
+            IntegrationConnection.provider.ilike("salla"),
+            IntegrationConnection.is_active.is_(True),
+        )
+    )
+    if connection is None:
+        raise HTTPException(404, "Active Salla connection not found")
+    mappings = db.scalars(
+        select(IntegrationProductMapping)
+        .where(
+            IntegrationProductMapping.company_id == company_id,
+            IntegrationProductMapping.connection_id == connection_id,
+            IntegrationProductMapping.sync_status == "active",
+        )
+        .order_by(IntegrationProductMapping.id)
+    ).all()
+    result = []
+    for mapping in mappings:
+        recipe = db.scalar(
+            select(Recipe)
+            .where(
+                Recipe.company_id == company_id,
+                Recipe.product_id == mapping.product_id,
+                Recipe.is_active.is_(True),
+                Recipe.variant_id == mapping.variant_id,
+            )
+            .order_by(Recipe.version.desc(), Recipe.id.desc())
+        )
+        sku_recipe = db.scalar(
+            select(RecipeSkuMapping)
+            .where(
+                RecipeSkuMapping.company_id == company_id,
+                RecipeSkuMapping.product_id == mapping.product_id,
+                RecipeSkuMapping.variant_id == mapping.variant_id,
+                RecipeSkuMapping.sku == mapping.external_sku,
+                RecipeSkuMapping.is_active.is_(True),
+            )
+        ) if mapping.external_sku else None
+        result.append({
+            "mapping_id": mapping.id,
+            "external_id": mapping.external_id,
+            "external_sku": mapping.external_sku,
+            "product_id": mapping.product_id,
+            "variant_id": mapping.variant_id,
+            "mapped": True,
+            "recipe_ready": recipe is not None or sku_recipe is not None,
+            "recipe_id": recipe.id if recipe else (sku_recipe.recipe_id if sku_recipe else None),
+            "sync_status": mapping.sync_status,
+        })
+    missing_recipe = sum(1 for row in result if not row["recipe_ready"])
+    return {
+        "connection_id": connection_id,
+        "mapped_products": len(result),
+        "missing_recipe": missing_recipe,
+        "ready": missing_recipe == 0,
+        "items": result,
     }
