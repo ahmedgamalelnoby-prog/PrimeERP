@@ -90,6 +90,8 @@ class ManufacturingCompletionService:
         wo.completed_qty=Decimal(wo.completed_qty or 0)+qty
         wo.status="completed" if wo.completed_qty >= Decimal(wo.planned_qty or 0) else "in_progress"
         wo.total_material_cost=Decimal(wo.total_material_cost or 0)+material_total
+        wo.total_labor_cost=actual_l
+        wo.total_overhead_cost=actual_o
         if wo.actual_start is None: wo.actual_start=date.today()
         if wo.completed_qty >= Decimal(wo.planned_qty or 0): wo.actual_end=date.today()
         db.flush()
