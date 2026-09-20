@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
+from app.modules.branches.models import Branch
 from app.modules.enterprise.models import FixedAsset, Budget, BudgetLine, Employee, PayrollRun, PayrollLine, Project, ProjectContract
 from app.modules.enterprise.schemas import AssetCreate, AssetResponse, EmployeeCreate, EmployeeResponse, PayrollRunCreate, PayrollPostRequest, PayrollResponse, BudgetCreate, BudgetLineCreate, BudgetResponse, ProjectCreate, ProjectResponse, ContractCreate, ContractResponse
 from app.modules.identity.dependencies import get_current_user
@@ -154,6 +155,10 @@ def post_payroll(
     period = fiscal_year_repository.get_period_by_id(db, period.id, current_user.tenant_id, for_update=True)
     if period is None or period.company_id != r.company_id or period.status != "open" or not period.allow_posting:
         raise HTTPException(409, "Accounting period is not open for payroll posting")
+
+    branch = db.scalar(select(Branch).where(Branch.id == p.branch_id, Branch.company_id == r.company_id, Branch.tenant_id == current_user.tenant_id, Branch.is_active.is_(True)))
+    if branch is None:
+        raise HTTPException(422, "Payroll branch must belong to the selected company and tenant")
 
     account_ids = {p.expense_account_id, p.salary_payable_account_id}
     if r.total_deductions:
