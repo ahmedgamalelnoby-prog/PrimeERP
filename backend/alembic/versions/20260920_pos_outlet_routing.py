@@ -1,11 +1,11 @@
 """Add multi-outlet POS terminal and kitchen/bar routing.
 Revision ID: 20260920_pos_outlet_routing
-Revises: 20260919_merge_global_gap_heads, 20260919_salla_app_event_idempotency
+Revises: 20260919_merge_global_gap_heads
 """
 from alembic import op
 import sqlalchemy as sa
 revision = "20260920_pos_outlet_routing"
-down_revision = ("20260919_merge_global_gap_heads", "20260919_salla_app_event_idempotency")
+down_revision = "20260919_merge_global_gap_heads"
 branch_labels = None
 depends_on = None
 
