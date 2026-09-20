@@ -8,7 +8,8 @@ from app.database.session import get_db
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
-from .models import CRMLead\nfrom app.modules.completion.domain_models import CRMOpportunity,CRMActivity
+from .models import CRMLead
+from app.modules.completion.domain_models import CRMOpportunity,CRMActivity
 router=APIRouter(prefix="/crm",tags=["CRM"])
 def scope(db,user,company_id):
     if user.tenant_id is None or db.scalar(select(Company).where(Company.id==company_id,Company.tenant_id==user.tenant_id)) is None: raise HTTPException(403,"Company is outside the current tenant")
@@ -35,7 +36,10 @@ def lead_status(lead_id:int,status:str=Query(...,pattern="^(new|qualified|conver
     o.status=status;db.commit();return o
 @router.post("/opportunities",status_code=201)
 def create_opportunity(p:OppIn,company_id:int=Query(...,gt=0),user:User=Depends(get_current_user),db:Session=Depends(get_db)):
-    scope(db,user,company_id);o=CRMOpportunity(company_id=company_id,code=p.name,value=p.value,probability=p.probability,expected_close=p.expected_close,owner_id=p.owner_id);db.add(o);db.commit();db.refresh(o);return o
+    scope(db,user,company_id)
+    if p.lead_id is not None and not db.scalar(select(CRMLead.id).where(CRMLead.id==p.lead_id,CRMLead.company_id==company_id)):
+        raise HTTPException(422,"Lead does not belong to the company")
+    o=CRMOpportunity(company_id=company_id,code=p.name,amount=p.amount,value=p.amount,probability=p.probability,expected_close=p.expected_close,owner_id=p.owner_id,lead_id=p.lead_id,notes=p.notes);db.add(o);db.commit();db.refresh(o);return o
 @router.get("/opportunities")
 def opportunities(company_id:int=Query(...,gt=0),stage:str|None=None,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
     scope(db,user,company_id);q=select(CRMOpportunity).where(CRMOpportunity.company_id==company_id)
