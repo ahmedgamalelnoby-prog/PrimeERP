@@ -44,14 +44,14 @@ class InventoryAdjustmentService:
         db.flush()
         return adjustment
 
-    def post(self, db: Session, *, company_id: int, adjustment_id: int):
+    def post(self, db: Session, *, tenant_id: int, company_id: int, adjustment_id: int, user_id: int):
         adjustment = self._locked(db, company_id, adjustment_id)
         if adjustment.status != "approved":
             raise ValueError("Only approved adjustments can be posted")
         source_location_id = adjustment.location_id if adjustment.direction == "decrease" else None
         destination_location_id = adjustment.location_id if adjustment.direction == "increase" else None
         move = inventory_stock_move_service.create_draft(db, StockMoveCreate(company_id=company_id, item_id=adjustment.item_id, variant_id=adjustment.variant_id, source_location_id=source_location_id, destination_location_id=destination_location_id, quantity=Decimal(adjustment.quantity), unit_cost=Decimal(adjustment.unit_cost or 0), movement_type="adjustment", reference=adjustment.reference or f"ADJ-{adjustment.id}", source_module="inventory/adjustments", source_entity="inventory_adjustment", source_id=str(adjustment.id), notes=adjustment.reason))
-        inventory_stock_move_service.post(db, tenant_id=db.scalar(select(Company.tenant_id).where(Company.id==company_id)), company_id=company_id, move_id=move.id, user_id=0)
+        inventory_stock_move_service.post(db, tenant_id=tenant_id, company_id=company_id, move_id=move.id, user_id=user_id)
         adjustment.status = "posted"
         db.flush()
         return adjustment
