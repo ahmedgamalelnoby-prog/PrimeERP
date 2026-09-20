@@ -1,7 +1,7 @@
 """Enterprise finance: multi-entity consolidation, intercompany and FX."""
 from alembic import op
 import sqlalchemy as sa
-revision="20260920_enterprise_finance";down_revision="20260920_developer_platform";branch_labels=None;depends_on=None
+revision="20260920_enterprise_finance";down_revision=("20260920_developer_platform","20260919_salla_app_event_idempotency");branch_labels=None;depends_on=None
 def upgrade():
     op.create_table("finance_entities",sa.Column("id",sa.Integer(),primary_key=True),sa.Column("company_id",sa.Integer(),sa.ForeignKey("companies.id",ondelete="CASCADE"),nullable=False),sa.Column("code",sa.String(40),nullable=False),sa.Column("name",sa.String(160),nullable=False),sa.Column("functional_currency",sa.String(3),nullable=False,server_default="EGP"),sa.Column("consolidation_method",sa.String(30),nullable=False,server_default="full"),sa.Column("is_active",sa.Boolean(),nullable=False,server_default=sa.true()),sa.UniqueConstraint("company_id","code",name="uq_finance_entity_company_code"),sa.CheckConstraint("consolidation_method IN ('full','proportionate','equity')",name="ck_finance_entity_method"))
     op.create_index("ix_finance_entities_company_id","finance_entities",["company_id"])
