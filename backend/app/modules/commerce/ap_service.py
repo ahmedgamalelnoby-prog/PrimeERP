@@ -37,9 +37,12 @@ class APService:
   db.add(pay);db.flush();commerce_accounting_service.post_payment(db,pay,None,user_id)
   return pay
  def allocate(self,db,company_id,payment_id,items,user_id):
-  p=self._payment(db,company_id,payment_id);partner=p.partner_id;remaining=self.unapplied(db,p);created=[]
+  p=self._payment(db,company_id,payment_id);partner=p.partner_id;remaining=self.unapplied(db,p);created=[];seen=set()
   for i in items:
    amt=Decimal(i.amount)
+   if amt<=0:raise HTTPException(422,"Allocation amount must be positive")
+   if i.document_id in seen:raise HTTPException(422,"Duplicate bill allocation")
+   seen.add(i.document_id)
    if amt>remaining:raise HTTPException(409,"Allocation exceeds unapplied payment")
    d=self._bill(db,company_id,i.document_id,partner);outstanding=Decimal(d.total or 0)-Decimal(d.paid_total or 0)
    if amt>outstanding:raise HTTPException(409,"Allocation exceeds bill outstanding")
