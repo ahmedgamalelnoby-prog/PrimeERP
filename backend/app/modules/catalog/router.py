@@ -41,7 +41,7 @@ def _error(exc: ValueError):
 
 def _recipe_response(db, company_id, recipe):
     cost = catalog_service.recipe_cost(db, company_id, recipe.id)
-    return {**recipe.__dict__, "lines": [{"id": l.id, "line_no": l.line_no, "ingredient_product_id": l.ingredient_product_id, "quantity": l.quantity, "waste_percentage": l.waste_percentage, "uom_id": l.uom_id, "notes": l.notes} for l in recipe.lines], "total_cost": cost * recipe.yield_quantity, "cost_per_yield": cost}
+    return {**recipe.__dict__, "lines": [{"id": l.id, "line_no": l.line_no, "ingredient_product_id": l.ingredient_product_id, "ingredient_variant_id": getattr(l, "ingredient_variant_id", None), "quantity": l.quantity, "waste_percentage": l.waste_percentage, "uom_id": l.uom_id, "notes": l.notes} for l in recipe.lines], "total_cost": cost * recipe.yield_quantity, "cost_per_yield": cost}
 
 
 @router.post("/categories", response_model=CategoryResponse, status_code=201, dependencies=WRITE_GUARDS)
