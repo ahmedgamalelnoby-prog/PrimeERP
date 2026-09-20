@@ -125,3 +125,19 @@ No release tests are being run in this functional-completion phase. The final Re
 - Secondary SaaS, integrations, security and AI-reporting areas are reachable through the central Module Workbench and existing admin pages.
 - API error/state handling is present on the newly added operational screens. Final frontend build is deferred to Release Gate.
 
+
+## Closure checkpoint — 2026-09-20 (final functional pass)
+
+All defined functional modules are CLOSED on this branch. The closure scope includes workflow lifecycle, cross-module integrations, accounting/stock effects, reversals/returns, period-lock controls, tenant/company isolation, auditability, reports, API coverage and frontend operational coverage. Closed modules are not reopened unless the final Release Gate identifies a concrete dependency or regression.
+
+### Final hardening completed in this pass
+- Treasury cheque accounting now has an explicit optional company bank account mapping instead of silently treating the payment/clearing account as the bank account.
+- Commerce accounting configuration validates the mapped bank account against the selected company and active account-combination set.
+- Treasury cheque movement uses the explicit bank account when configured, with the existing clearing account remaining the controlled fallback.
+- The schema migration persists the bank mapping and includes downgrade cleanup.
+
+### CLOSED board
+Accounting · Commerce/Sales/Purchasing · Inventory/WMS · Treasury/Cheques · Manufacturing/MRP · POS/Restaurant · Shipping · Catalog/Products/Recipes · CRM/Sales · HR/Organization · Tax/Egyptian E-Invoice · SaaS/Companies/Tenants · Reports/BI/AI · Integrations/Salla · Security/Audit/Approvals · Frontend functional parity.
+
+### Only remaining gate
+Release Gate is intentionally separate from functional closure. It must verify, in one consolidated pass: Alembic graph/fresh upgrade, backend imports and tests, PostgreSQL constraints, frontend build/API parity, Docker startup/health, tenant isolation and end-to-end regression. No module is reopened merely because this verification has not yet been executed.
