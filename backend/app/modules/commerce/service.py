@@ -322,10 +322,12 @@ class CommerceService:
         amount = Decimal(self._payment_value(payment, "amount") or 0)
         if company_id is None or payment_id is None or document_kind is None or amount <= 0:
             raise ValueError("Payment result is missing allocation identity fields")
-        targets = allocations or [{"document_id": document.id, "amount": amount}]
-        allocation_total = sum((Decimal(a["amount"]) for a in targets), Decimal("0"))
-        if allocation_total != amount:
-            raise ValueError("Payment allocations must equal the payment amount")
+        if allocations:
+            targets = allocations
+        else:
+            outstanding = Decimal(document.total or 0) - Decimal(document.paid_total or 0)
+            default_amount = min(amount, max(outstanding, Decimal("0")))
+            targets = ([{"document_id": document.id, "amount": default_amount}] if default_amount > 0 else [])
         model = SalesDocument if document_kind == "sale" else PurchaseDocument
         positive_type = "invoice" if document_kind == "sale" else "bill"
         # The source document was already locked and validated by pay(). Reuse it
@@ -356,6 +358,8 @@ class CommerceService:
             if target_doc is None:
                 raise ValueError("Payment allocation document must be an open invoice/bill for the same partner")
             outstanding = Decimal(target_doc.total or 0) - Decimal(target_doc.paid_total or 0)
+            if target_amount <= 0:
+                continue
             if target_amount > outstanding:
                 raise ValueError("Payment allocation exceeds document outstanding balance")
             existing = db.scalar(select(CommercePaymentAllocation).where(
@@ -394,7 +398,7 @@ class CommerceService:
         if document_status not in {"confirmed", "posted"}: raise ValueError("Document must be confirmed or posted before payment")
         wht_amount = Decimal(payload.wht_amount or 0)
         if wht_amount == 0 and getattr(payload, "auto_wht", True): wht_amount = self._auto_payment_wht(db, document=document, company_id=payload.company_id, amount=Decimal(payload.amount), document_kind=kind)
-        payment_result = post_payment(db, company_id=payload.company_id, document_kind=kind, document_id=payload.document_id, amount=payload.amount, payment_date=payload.payment_date, method=payload.method, wht_amount=wht_amount, reference=payload.reference, notes=payload.notes, idempotency_key=payload.idempotency_key, update_document_paid_total=not bool(getattr(payload, "allocations", None)))
+        payment_result = post_payment(db, company_id=payload.company_id, document_kind=kind, document_id=payload.document_id, amount=payload.amount, payment_date=payload.payment_date, method=payload.method, wht_amount=wht_amount, reference=payload.reference, notes=payload.notes, idempotency_key=payload.idempotency_key, update_document_paid_total=False)
         if isinstance(payment_result, tuple) and len(payment_result) == 2:
             document, payment = payment_result
         else:
