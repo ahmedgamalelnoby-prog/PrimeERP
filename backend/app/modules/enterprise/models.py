@@ -23,6 +23,7 @@ class Employee(Base):
 class PayrollRun(Base):
     __tablename__='payroll_runs'
     id=Column(Integer,primary_key=True); company_id=Column(Integer,ForeignKey('companies.id',ondelete='CASCADE'),nullable=False,index=True); period=Column(String(20),nullable=False); status=Column(String(20),nullable=False,server_default='draft'); total_gross=Column(Numeric(18,4),nullable=False,server_default='0'); total_deductions=Column(Numeric(18,4),nullable=False,server_default='0'); total_net=Column(Numeric(18,4),nullable=False,server_default='0'); journal_entry_id=Column(Integer,ForeignKey('journal_entries.id',ondelete='SET NULL'),nullable=True,index=True)
+    __table_args__=(UniqueConstraint('company_id','period',name='uq_payroll_runs_company_period'),)
 class PayrollLine(Base):
     __tablename__='payroll_lines'
     id=Column(Integer,primary_key=True); payroll_run_id=Column(Integer,ForeignKey('payroll_runs.id',ondelete='CASCADE'),nullable=False,index=True); employee_id=Column(Integer,ForeignKey('employees.id',ondelete='RESTRICT'),nullable=False); gross=Column(Numeric(18,4),nullable=False); deductions=Column(Numeric(18,4),nullable=False); net=Column(Numeric(18,4),nullable=False)
