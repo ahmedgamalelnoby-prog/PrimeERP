@@ -66,3 +66,5 @@ from app.modules.pos.sessions.models import POSSession
 from app.modules.inventory.wms.models import WMSOperation, WMSOperationLine, InventoryTrackingUnit
 from app.modules.inventory.costing.revaluation_models import InventoryCostRevaluation
 from app.modules.commerce.backorder_models import CommerceBackorder
+
+from app.modules.manufacturing.mrp_models import MRPPlan, MRPRequirement, MRPWorkCenter, MRPRoutingOperation, MRPScheduleSlot, MRPProductionCost
