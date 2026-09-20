@@ -987,6 +987,24 @@ def end_to_end_readiness(
             ManufacturingWorkOrder.status.in_(("released", "in_progress")),
         )
     ) or 0
+    purchase_return_allocations = db.scalar(
+        select(func.count(PurchaseReturnAllocation.id)).where(
+            PurchaseReturnAllocation.company_id == company_id,
+        )
+    ) or 0
+    cheque_open_count = db.scalar(
+        select(func.count(Cheque.id)).where(
+            Cheque.company_id == company_id,
+            Cheque.status.in_(("received", "deposited", "under_collection", "issued", "resubmitted")),
+        )
+    ) or 0
+    unsettled_shipments = db.scalar(
+        select(func.count(Shipment.id)).where(
+            Shipment.company_id == company_id,
+            Shipment.status == "delivered",
+            ~Shipment.id.in_(select(ShippingShipmentSettlement.shipment_id)),
+        )
+    ) or 0
 
     return {
         "company_id": company_id,
@@ -994,9 +1012,13 @@ def end_to_end_readiness(
         "payments": {"allocation_mismatches": posted_payment_mismatches},
         "shipping": {"open_shipments": open_shipments},
         "manufacturing": {"open_work_orders": open_work_orders},
+        "returns": {"purchase_return_allocations": purchase_return_allocations},
+        "treasury": {"open_cheques": cheque_open_count},
+        "shipping": {"open_shipments": open_shipments, "unsettled_delivered_shipments": unsettled_shipments},
         "readiness": {
             "inventory_ok": negative_stock == 0,
             "payments_ok": posted_payment_mismatches == 0,
+            "shipping_settlement_ok": unsettled_shipments == 0,
             "operational_flow_visible": True,
         },
     }
