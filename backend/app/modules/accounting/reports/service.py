@@ -1,12 +1,11 @@
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import func, select, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.modules.accounting.chart_of_accounts.models import AccountCombination, NaturalAccount
 from app.modules.accounting.journals.models import JournalEntry, JournalEntryLine
-from app.modules.companies.models import Company
 from app.modules.companies.models import Company
 from app.modules.accounting.reports.schemas import (
     FinancialSummaryResponse,
