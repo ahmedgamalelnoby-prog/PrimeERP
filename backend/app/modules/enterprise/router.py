@@ -16,6 +16,7 @@ from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.accounting.chart_of_accounts.models import AccountCombination
 from app.modules.accounting.journals.models import AccountingJournal
+from app.modules.commerce.models import BusinessPartner
 
 router = APIRouter(prefix="/enterprise", tags=["Enterprise"])
 
@@ -23,7 +24,7 @@ router = APIRouter(prefix="/enterprise", tags=["Enterprise"])
 def company_for_user(db: Session, company_id: int, user: User) -> Company:
     if user.tenant_id is None:
         raise HTTPException(403, "User is not assigned to a tenant")
-    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == user.tenant_id))
+    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == user.tenant_id, Company.is_active.is_(True)))
     if company is None:
         raise HTTPException(404, "Company not found")
     return company
@@ -244,7 +245,7 @@ def budget_line(budget_id: int, p: BudgetLineCreate, db: Session = Depends(get_d
     company_for_user(db, o.company_id, current_user)
     if o.status != "draft":
         raise HTTPException(400, "Only draft budgets can be edited")
-    account = db.scalar(select(AccountCombination).where(AccountCombination.id == p.account_id, AccountCombination.company_id == o.company_id, AccountCombination.is_active.is_(True)))
+    account = db.scalar(select(AccountCombination).where(AccountCombination.id == p.account_id, AccountCombination.tenant_id == current_user.tenant_id, AccountCombination.company_id == o.company_id, AccountCombination.is_active.is_(True)))
     if not account:
         raise HTTPException(400, "Account is not valid for this company")
     line = BudgetLine(budget_id=budget_id, **p.model_dump())
@@ -278,6 +279,15 @@ def project(p: ProjectCreate, db: Session = Depends(get_db), current_user: User 
     company_for_user(db, p.company_id, current_user)
     if p.end_date and p.start_date and p.end_date < p.start_date:
         raise HTTPException(422, "Project end date cannot precede start date")
+    if p.customer_id is not None:
+        customer = db.scalar(select(BusinessPartner).where(
+            BusinessPartner.id == p.customer_id,
+            BusinessPartner.company_id == p.company_id,
+            BusinessPartner.partner_type.in_(["customer", "both"]),
+            BusinessPartner.is_active.is_(True),
+        ))
+        if customer is None:
+            raise HTTPException(422, "Project customer must be an active customer of the selected company")
     o = Project(**p.model_dump())
     db.add(o)
     try:
@@ -299,8 +309,18 @@ def contract(p: ContractCreate, db: Session = Depends(get_db), current_user: Use
     company_for_user(db, p.company_id, current_user)
     if p.end_date and p.start_date and p.end_date < p.start_date:
         raise HTTPException(422, "Contract end date cannot precede start date")
-    if not db.scalar(select(Project).where(Project.id == p.project_id, Project.company_id == p.company_id)):
+    project = db.scalar(select(Project).where(Project.id == p.project_id, Project.company_id == p.company_id))
+    if project is None:
         raise HTTPException(400, "Project not found")
+    if p.customer_id is not None:
+        customer = db.scalar(select(BusinessPartner).where(
+            BusinessPartner.id == p.customer_id,
+            BusinessPartner.company_id == p.company_id,
+            BusinessPartner.partner_type.in_(["customer", "both"]),
+            BusinessPartner.is_active.is_(True),
+        ))
+        if customer is None:
+            raise HTTPException(422, "Contract customer must be an active customer of the selected company")
     o = ProjectContract(**p.model_dump())
     db.add(o)
     try:
