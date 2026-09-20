@@ -49,14 +49,29 @@ def run(p:ConsolidationRunCreate,db:Session=Depends(get_db),user:User=Depends(ge
     g=db.get(ConsolidationGroup,p.group_id)
     if not g:raise HTTPException(404,"Consolidation group not found")
     company_ok(db,g.company_id,user)
+    if p.period_end < p.period_start:raise HTTPException(422,"Consolidation period is invalid")
+    existing=db.scalar(select(ConsolidationRun).where(ConsolidationRun.group_id==g.id,ConsolidationRun.period_start==p.period_start,ConsolidationRun.period_end==p.period_end))
+    if existing:
+        return {"run_id":existing.id,"status":existing.status,"duplicate":True,"total_debit":existing.total_debit,"total_credit":existing.total_credit,"elimination_total":existing.elimination_total}
     members=list(db.scalars(select(ConsolidationMember).where(ConsolidationMember.group_id==g.id,ConsolidationMember.is_active.is_(True))).all())
+    members=[m for m in members if (m.active_from is None or m.active_from<=p.period_end) and (m.active_to is None or m.active_to>=p.period_start)]
     if not members:raise HTTPException(422,"Consolidation group has no active members")
     r=ConsolidationRun(group_id=g.id,period_start=p.period_start,period_end=p.period_end,status="draft",created_by=user.id);db.add(r);db.flush()
-    entities=list(db.scalars(select(FinanceEntity).where(FinanceEntity.id.in_([m.entity_id for m in members]))).all());company_ids=[e.company_id for e in entities];pct={e.company_id:Decimal(next(m.consolidation_percent for m in members if m.entity_id==e.id))/Decimal(100) for e in entities}
+    entities=list(db.scalars(select(FinanceEntity).where(FinanceEntity.id.in_([m.entity_id for m in members]),FinanceEntity.is_active.is_(True))).all())
+    entity_by_company={e.company_id:e for e in entities}
+    company_ids=list(entity_by_company)
+    pct={e.company_id:Decimal(next(m.consolidation_percent for m in members if m.entity_id==e.id))/Decimal(100) for e in entities}
     rows=db.execute(select(AccountCombination.code,JournalEntryLine.company_id,func.sum(JournalEntryLine.base_debit),func.sum(JournalEntryLine.base_credit)).join(JournalEntry,JournalEntry.id==JournalEntryLine.entry_id).join(AccountCombination,AccountCombination.id==JournalEntryLine.account_combination_id).where(JournalEntryLine.company_id.in_(company_ids),JournalEntry.status=="posted",JournalEntry.entry_date>=p.period_start,JournalEntry.entry_date<=p.period_end).group_by(AccountCombination.code,JournalEntryLine.company_id)).all()
     total_d=Decimal(0);total_c=Decimal(0)
     for code,cid,d,c in rows:
-        factor=pct.get(cid,Decimal(1));d=(d or 0)*factor;c=(c or 0)*factor;db.add(ConsolidationLine(run_id=r.id,account_code=code,debit=d,credit=c,source_company_id=cid,ownership_percent=factor*100));total_d+=d;total_c+=c
+        factor=pct.get(cid,Decimal(1))
+        entity=entity_by_company.get(cid)
+        d=Decimal(d or 0)*factor;c=Decimal(c or 0)*factor
+        if entity and entity.functional_currency!=g.reporting_currency:
+            rate=db.scalar(select(FinanceFxRate.rate).where(FinanceFxRate.company_id==cid,FinanceFxRate.rate_date==p.period_end,FinanceFxRate.from_currency==entity.functional_currency,FinanceFxRate.to_currency==g.reporting_currency))
+            if rate is None:raise HTTPException(422,f"Missing FX rate {entity.functional_currency}/{g.reporting_currency} for company {cid} on {p.period_end}")
+            d*=Decimal(rate);c*=Decimal(rate)
+        db.add(ConsolidationLine(run_id=r.id,account_code=code,debit=d,credit=c,source_company_id=cid,ownership_percent=factor*100));total_d+=d;total_c+=c
     tx=list(db.scalars(select(IntercompanyTransaction).where(IntercompanyTransaction.company_id==g.company_id,IntercompanyTransaction.from_entity_id.in_([m.entity_id for m in members]),IntercompanyTransaction.to_entity_id.in_([m.entity_id for m in members]),IntercompanyTransaction.transaction_date.between(p.period_start,p.period_end),IntercompanyTransaction.status.in_(["open","matched"]))).all())
     elim=Decimal(0)
     for t in tx:
