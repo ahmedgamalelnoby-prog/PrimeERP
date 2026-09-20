@@ -42,7 +42,12 @@ class InventoryStockMoveService:
         if journal is None:
             raise ValueError("Journal must be an active inventory journal belonging to the company")
         ids = {payload.inventory_account_id, payload.cogs_account_id, payload.adjustment_account_id, payload.clearing_account_id}
-        accounts = db.scalars(select(AccountCombination).where(AccountCombination.id.in_(ids), AccountCombination.company_id == payload.company_id, AccountCombination.is_active.is_(True))).all()
+        accounts = db.scalars(select(AccountCombination).where(
+            AccountCombination.id.in_(ids),
+            AccountCombination.tenant_id == tenant_id,
+            AccountCombination.company_id == payload.company_id,
+            AccountCombination.is_active.is_(True),
+        )).all()
         if len(accounts) != 4:
             raise ValueError("All inventory accounting accounts must belong to the company and be active")
         config = self.get_accounting_config(db, tenant_id=tenant_id, company_id=payload.company_id)
