@@ -24,6 +24,7 @@ from app.modules.inventory.transfers.schemas import TransferCreate
 from app.modules.inventory.transfers.service import inventory_transfer_service
 from app.modules.commerce.payment_workflow import post_payment, reverse_payment
 from app.modules.jurisdiction.commerce_guard import capture_document_tax_snapshot, validate_document_tax_snapshot
+from app.modules.pos.completion_models import POSModifierOption, POSPromotion
 from app.modules.restaurant.models import (
     Floor, RestaurantTable, OrderType,
     PreparationStation,
@@ -91,6 +92,7 @@ class CheckoutLine(BaseModel):
     quantity: Decimal = Field(gt=0)
     unit_price: Decimal | None = Field(default=None, ge=0)
     discount_percent: Decimal = Field(default=0, ge=0, le=100)
+    modifier_option_ids: list[int] = Field(default_factory=list)
 
 
 class Checkout(BaseModel):
@@ -102,6 +104,7 @@ class Checkout(BaseModel):
     method: str = Field(min_length=1, max_length=30)
     terminal_id: int | None = Field(default=None, gt=0)
     lines: list[CheckoutLine] = Field(min_length=1)
+    promotion_code: str | None = Field(default=None, max_length=80)
 
 
 class SplitPayment(BaseModel):
@@ -451,6 +454,21 @@ def checkout(payload: Checkout, current_user: User = Depends(get_current_user), 
             raise HTTPException(422, "POS consumption warehouse must match the terminal outlet warehouse")
     lines: list[DocumentLineCreate] = []
     routes: list[int | None] = []
+    pre_discount_subtotal = sum((Decimal(str(x.unit_price or 0)) * Decimal(x.quantity) for x in payload.lines), Decimal("0"))
+    promotion_percent = Decimal("0")
+    if payload.promotion_code:
+        promotion = db.scalar(select(POSPromotion).where(POSPromotion.company_id == payload.company_id, POSPromotion.code == payload.promotion_code, POSPromotion.is_active.is_(True)))
+        if promotion is None:
+            raise HTTPException(404, "Promotion not found")
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        if (promotion.valid_from and now < promotion.valid_from) or (promotion.valid_to and now > promotion.valid_to):
+            raise HTTPException(409, "Promotion is outside its validity window")
+        if pre_discount_subtotal < Decimal(promotion.min_subtotal or 0):
+            raise HTTPException(409, "Promotion minimum subtotal is not met")
+        promotion_percent = Decimal(promotion.discount_percent or 0)
+        if promotion.max_discount is not None and pre_discount_subtotal > 0:
+            promotion_percent = min(promotion_percent, Decimal(promotion.max_discount) * Decimal("100") / pre_discount_subtotal)
     for line in payload.lines:
         if line.menu_item_id:
             if terminal is None:
@@ -475,12 +493,18 @@ def checkout(payload: Checkout, current_user: User = Depends(get_current_user), 
             if menu_item is None or terminal_menu is None or route is None:
                 raise HTTPException(422, "This menu item is not enabled and routed on this POS terminal")
             price = _menu_price(db, payload.company_id, menu_item, terminal_menu.price_list_id, line.quantity)
+            options = list(db.scalars(select(POSModifierOption).where(POSModifierOption.id.in_(line.modifier_option_ids), POSModifierOption.is_active.is_(True))).all()) if line.modifier_option_ids else []
+            if len(options) != len(set(line.modifier_option_ids)):
+                raise HTTPException(422, "One or more POS modifier options are invalid or inactive")
+            modifier_delta = sum((Decimal(o.price_delta or 0) for o in options), Decimal("0"))
+            base_discount = Decimal(line.discount_percent)
+            effective_discount = Decimal("100") - (Decimal("100") - base_discount) * (Decimal("100") - promotion_percent) / Decimal("100")
             lines.append(DocumentLineCreate(
                 item_id=menu_item.product_id,
                 variant_id=line.variant_id,
                 quantity=line.quantity,
-                unit_price=price,
-                discount_percent=line.discount_percent,
+                unit_price=price + modifier_delta,
+                discount_percent=effective_discount,
             ))
             routes.append(route.station_id)
         else:
@@ -488,12 +512,18 @@ def checkout(payload: Checkout, current_user: User = Depends(get_current_user), 
                 raise HTTPException(422, "Each POS line requires menu_item_id or item_id")
             if line.unit_price is None:
                 raise HTTPException(422, "unit_price is required for a non-menu POS line")
+            options = list(db.scalars(select(POSModifierOption).where(POSModifierOption.id.in_(line.modifier_option_ids), POSModifierOption.is_active.is_(True))).all()) if line.modifier_option_ids else []
+            if len(options) != len(set(line.modifier_option_ids)):
+                raise HTTPException(422, "One or more POS modifier options are invalid or inactive")
+            modifier_delta = sum((Decimal(o.price_delta or 0) for o in options), Decimal("0"))
+            base_discount = Decimal(line.discount_percent)
+            effective_discount = Decimal("100") - (Decimal("100") - base_discount) * (Decimal("100") - promotion_percent) / Decimal("100")
             lines.append(DocumentLineCreate(
                 item_id=line.item_id,
                 variant_id=line.variant_id,
                 quantity=line.quantity,
-                unit_price=line.unit_price,
-                discount_percent=line.discount_percent,
+                unit_price=Decimal(line.unit_price) + modifier_delta,
+                discount_percent=effective_discount,
             ))
             routes.append(None)
 
