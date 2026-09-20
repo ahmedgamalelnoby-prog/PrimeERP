@@ -44,10 +44,20 @@ class InventoryCostingService:
             value = quantity * average_cost
 
             if costing_method == "fifo" and layers is not None:
+                fifo_conditions = [
+                    layers.c.company_id == company_id,
+                    layers.c.item_id == stock.item_id,
+                    layers.c.warehouse_id == stock.warehouse_id,
+                    layers.c.quantity_remaining > 0,
+                ]
+                if hasattr(layers.c, "variant_id"):
+                    fifo_conditions.append(
+                        layers.c.variant_id == getattr(stock, "variant_id", None)
+                    )
                 fifo_stmt = select(
                     layers.c.quantity_remaining,
                     layers.c.unit_cost,
-                ).where(
+                ).where(*fifo_conditions)
                     layers.c.company_id == company_id,
                     layers.c.item_id == stock.item_id,
                     layers.c.warehouse_id == stock.warehouse_id,
