@@ -11,7 +11,6 @@ depends_on = None
 
 
 def upgrade():
-    op.drop_constraint("ck_mfg_variance_status", "manufacturing_variances", type_="check")
     op.create_check_constraint(
         "ck_mfg_variance_status",
         "manufacturing_variances",
