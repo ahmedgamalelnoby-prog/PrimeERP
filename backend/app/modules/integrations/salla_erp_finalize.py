@@ -15,7 +15,7 @@ from app.modules.integrations.salla_return_service import restore_salla_inventor
 from app.modules.integrations.salla_shipping_service import sync_salla_shipments_for_order
 
 
-_CANCELLED_STATES = {"cancelled", "canceled", "refunded", "refund", "fully_refunded", "returned"}
+_CANCELLED_STATES = {"cancelled", "canceled", "refunded", "refund", "fully_refunded"}
 
 
 def _mapping(db: Session, order: SallaOrder, entity_type: str):
