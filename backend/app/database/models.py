@@ -72,3 +72,5 @@ from app.modules.manufacturing.mrp_models import MRPPlan, MRPRequirement, MRPWor
 from app.modules.inventory.costing.variance_models import InventoryCostVariance
 
 from app.modules.manufacturing.completion_models import ManufacturingLaborActual, ManufacturingOverheadActual, ManufacturingScrap, ManufacturingByProduct, ManufacturingSubcontract, ManufacturingVariance, InventoryStockPolicy, InventoryCostReconciliation
+
+from app.modules.pos.completion_models import POSModifierGroup, POSModifierOption, POSPromotion, POSPromotionUse
