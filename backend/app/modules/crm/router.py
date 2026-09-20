@@ -8,7 +8,7 @@ from app.database.session import get_db
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
-from .models import CRMLead,CRMOpportunity,CRMActivity
+from .models import CRMLead\nfrom app.modules.completion.domain_models import CRMOpportunity,CRMActivity
 router=APIRouter(prefix="/crm",tags=["CRM"])
 def scope(db,user,company_id):
     if user.tenant_id is None or db.scalar(select(Company).where(Company.id==company_id,Company.tenant_id==user.tenant_id)) is None: raise HTTPException(403,"Company is outside the current tenant")
@@ -35,7 +35,7 @@ def lead_status(lead_id:int,status:str=Query(...,pattern="^(new|qualified|conver
     o.status=status;db.commit();return o
 @router.post("/opportunities",status_code=201)
 def create_opportunity(p:OppIn,company_id:int=Query(...,gt=0),user:User=Depends(get_current_user),db:Session=Depends(get_db)):
-    scope(db,user,company_id);o=CRMOpportunity(company_id=company_id,**p.model_dump());db.add(o);db.commit();db.refresh(o);return o
+    scope(db,user,company_id);o=CRMOpportunity(company_id=company_id,code=p.name,value=p.value,probability=p.probability,expected_close=p.expected_close,owner_id=p.owner_id);db.add(o);db.commit();db.refresh(o);return o
 @router.get("/opportunities")
 def opportunities(company_id:int=Query(...,gt=0),stage:str|None=None,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
     scope(db,user,company_id);q=select(CRMOpportunity).where(CRMOpportunity.company_id==company_id)
@@ -46,12 +46,12 @@ def opportunity_stage(opportunity_id:int,p:StageIn,company_id:int=Query(...,gt=0
     scope(db,user,company_id);o=db.scalar(select(CRMOpportunity).where(CRMOpportunity.id==opportunity_id,CRMOpportunity.company_id==company_id).with_for_update())
     if not o:raise HTTPException(404,"Opportunity not found")
     if p.stage=="lost" and not p.lost_reason:raise HTTPException(422,"Lost reason is required")
-    o.stage=p.stage;o.lost_reason=p.lost_reason;db.commit();return o
+    o.stage=p.stage;o.status="won" if p.stage=="won" else ("lost" if p.stage=="lost" else "open");o.lost_reason=p.lost_reason;db.commit();return o
 @router.post("/opportunities/{opportunity_id}/activities",status_code=201)
 def activity(opportunity_id:int,p:ActivityIn,company_id:int=Query(...,gt=0),user:User=Depends(get_current_user),db:Session=Depends(get_db)):
     scope(db,user,company_id)
     if not db.scalar(select(CRMOpportunity.id).where(CRMOpportunity.id==opportunity_id,CRMOpportunity.company_id==company_id)):raise HTTPException(404,"Opportunity not found")
-    o=CRMActivity(company_id=company_id,opportunity_id=opportunity_id,**p.model_dump());db.add(o);db.commit();db.refresh(o);return o
+    o=CRMActivity(company_id=company_id,opportunity_id=opportunity_id,user_id=p.assigned_to,activity_type=p.activity_type,subject=p.subject,due_at=p.due_at,notes=p.notes);db.add(o);db.commit();db.refresh(o);return o
 @router.post("/activities/{activity_id}/complete")
 def complete_activity(activity_id:int,company_id:int=Query(...,gt=0),user:User=Depends(get_current_user),db:Session=Depends(get_db)):
     scope(db,user,company_id);o=db.scalar(select(CRMActivity).where(CRMActivity.id==activity_id,CRMActivity.company_id==company_id).with_for_update())
@@ -60,5 +60,5 @@ def complete_activity(activity_id:int,company_id:int=Query(...,gt=0),user:User=D
 @router.get("/dashboard")
 def dashboard(company_id:int=Query(...,gt=0),user:User=Depends(get_current_user),db:Session=Depends(get_db)):
     scope(db,user,company_id); rows=db.scalars(select(CRMOpportunity).where(CRMOpportunity.company_id==company_id)).all()
-    weighted=sum((Decimal(x.amount or 0)*Decimal(x.probability or 0)/100 for x in rows),Decimal(0))
-    return {"opportunities":len(rows),"open_amount":sum((Decimal(x.amount or 0) for x in rows if x.stage not in ("won","lost")),Decimal(0)),"weighted_pipeline":weighted,"won_amount":sum((Decimal(x.amount or 0) for x in rows if x.stage=="won"),Decimal(0))}
+    weighted=sum((Decimal(x.value or 0)*Decimal(x.probability or 0)/100 for x in rows),Decimal(0))
+    return {"opportunities":len(rows),"open_amount":sum((Decimal(x.amount or 0) for x in rows if x.status=="open"),Decimal(0)),"weighted_pipeline":weighted,"won_amount":sum((Decimal(x.amount or 0) for x in rows if x.status=="won"),Decimal(0))}
