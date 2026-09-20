@@ -7,12 +7,19 @@ from sqlalchemy import select
 from app.database.session import get_db
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
+from app.modules.companies.models import Company
 from .completion_service import manufacturing_completion_service
 from app.modules.completion.domain_models import ManufacturingWorkOrder
 from app.modules.accounting.journals.services.journal_service import journal_service
 from app.modules.inventory.stock_moves.schemas import StockMoveCreate
 
 router=APIRouter(prefix="/manufacturing/completion",tags=["Manufacturing Completion"])
+
+def _company_for_user(db:Session,company_id:int,u:User):
+    if u.tenant_id is None: raise HTTPException(403,"Tenant required")
+    x=db.scalar(select(Company).where(Company.id==company_id,Company.tenant_id==u.tenant_id,Company.is_active.is_(True)))
+    if x is None: raise HTTPException(403,"Company is outside the current tenant")
+    return x
 
 class Labor(BaseModel):
     work_date:date
@@ -34,12 +41,15 @@ class Subcontract(BaseModel):
 
 @router.post("/work-orders/{work_order_id}/labor")
 def labor(work_order_id:int,p:Labor,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
+    _company_for_user(db,company_id,u)
     x=manufacturing_completion_service.labor(db,company_id,work_order_id,**p.model_dump());db.commit();db.refresh(x);return x
 @router.post("/work-orders/{work_order_id}/overhead")
 def overhead(work_order_id:int,p:Overhead,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
+    _company_for_user(db,company_id,u)
     x=manufacturing_completion_service.overhead(db,company_id,work_order_id,**p.model_dump());db.commit();db.refresh(x);return x
 @router.post("/work-orders/{work_order_id}/scrap")
 def scrap(work_order_id:int,p:Scrap,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
+    _company_for_user(db,company_id,u)
     if p.source_location_id is not None:
         payload=StockMoveCreate(company_id=company_id,item_id=p.item_id,variant_id=p.variant_id,source_location_id=p.source_location_id,destination_location_id=None,quantity=Decimal(str(p.quantity)),unit_cost=Decimal(str(p.unit_cost)),movement_type="issue",notes=p.reason)
         x=manufacturing_completion_service.stock_backed_scrap(db,u.tenant_id,company_id,work_order_id,payload,u.id)
@@ -48,6 +58,7 @@ def scrap(work_order_id:int,p:Scrap,company_id:int=Query(...,gt=0),db:Session=De
     db.commit();db.refresh(x);return x
 @router.post("/work-orders/{work_order_id}/byproducts")
 def byproducts(work_order_id:int,p:ByProduct,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
+    _company_for_user(db,company_id,u)
     if p.destination_location_id is not None:
         payload=StockMoveCreate(company_id=company_id,item_id=p.item_id,variant_id=p.variant_id,source_location_id=None,destination_location_id=p.destination_location_id,quantity=Decimal(str(p.quantity)),unit_cost=Decimal(str(p.unit_cost)),movement_type="receipt",notes="Manufacturing by-product receipt")
         x=manufacturing_completion_service.stock_backed_byproduct(db,u.tenant_id,company_id,work_order_id,payload,u.id)
@@ -56,14 +67,17 @@ def byproducts(work_order_id:int,p:ByProduct,company_id:int=Query(...,gt=0),db:S
     db.commit();db.refresh(x);return x
 @router.post("/work-orders/{work_order_id}/subcontract")
 def subcontract(work_order_id:int,p:Subcontract,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
+    _company_for_user(db,company_id,u)
     if p.actual_quantity > p.planned_quantity and p.status != "received": raise HTTPException(422,"Actual subcontract quantity cannot exceed planned quantity unless received")
     x=manufacturing_completion_service.subcontract(db,company_id,work_order_id,**p.model_dump());db.commit();db.refresh(x);return x
 @router.post("/work-orders/{work_order_id}/variance")
 def variance(work_order_id:int,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
+    _company_for_user(db,company_id,u)
     x=manufacturing_completion_service.variance(db,company_id,work_order_id);db.commit();db.refresh(x);return x
 
 @router.post("/work-orders/{work_order_id}/variance/post")
 def post_variance(work_order_id:int,p:GLVariance,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
+    _company_for_user(db,company_id,u)
     x=manufacturing_completion_service.post_variance(db,company_id,work_order_id,tenant_id=u.tenant_id,user_id=u.id,**p.model_dump());db.commit();db.refresh(x);return x
 
 class Settlement(BaseModel):
@@ -71,6 +85,7 @@ class Settlement(BaseModel):
 
 @router.post("/work-orders/{work_order_id}/wip/settle")
 def settle_wip(work_order_id:int,p:Settlement,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
+    _company_for_user(db,company_id,u)
     wo=db.get(ManufacturingWorkOrder,work_order_id)
     if wo is None or wo.company_id != company_id: raise HTTPException(404,"Work order not found")
     v=manufacturing_completion_service.variance(db,company_id,work_order_id)
@@ -88,6 +103,7 @@ class ProductionPayload(BaseModel):
 
 @router.post("/work-orders/{work_order_id}/produce")
 def produce(work_order_id:int,p:ProductionPayload,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
+    _company_for_user(db,company_id,u)
     result=manufacturing_completion_service.execute_production(db,u.tenant_id,company_id,work_order_id,u.id,p.quantity,p.source_location_id,p.destination_location_id)
     db.commit()
     return result
