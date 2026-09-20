@@ -464,8 +464,6 @@ def checkout(payload: Checkout, current_user: User = Depends(get_current_user), 
         now = datetime.now(timezone.utc)
         if (promotion.valid_from and now < promotion.valid_from) or (promotion.valid_to and now > promotion.valid_to):
             raise HTTPException(409, "Promotion is outside its validity window")
-        if pre_discount_subtotal < Decimal(promotion.min_subtotal or 0):
-            raise HTTPException(409, "Promotion minimum subtotal is not met")
         promotion_percent = Decimal(promotion.discount_percent or 0)
         if promotion.max_discount is not None and pre_discount_subtotal > 0:
             promotion_percent = min(promotion_percent, Decimal(promotion.max_discount) * Decimal("100") / pre_discount_subtotal)
@@ -526,6 +524,12 @@ def checkout(payload: Checkout, current_user: User = Depends(get_current_user), 
                 discount_percent=effective_discount,
             ))
             routes.append(None)
+
+    if payload.promotion_code and promotion_percent:
+        estimated_subtotal = sum((Decimal(x.unit_price) * Decimal(x.quantity) for x in lines), Decimal("0"))
+        promotion = db.scalar(select(POSPromotion).where(POSPromotion.company_id == payload.company_id, POSPromotion.code == payload.promotion_code, POSPromotion.is_active.is_(True)))
+        if promotion is None or estimated_subtotal < Decimal(promotion.min_subtotal or 0):
+            raise HTTPException(409, "Promotion minimum subtotal is not met")
 
     doc = commerce_service.create_document(db, DocumentCreate(
         company_id=payload.company_id,
