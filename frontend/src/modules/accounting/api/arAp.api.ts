@@ -6,3 +6,13 @@ export type AgingRow={direction:string;document_id:number;document_number:string
 export type AgingSummary={as_of:string;receivable:string|number;payable:string|number;net:string|number;rows:AgingRow[]};
 
 export const arApApi={aging:(asOf?:string)=>client.get<AgingSummary>("/commerce/ar-ap/aging",{params:{company_id:company(),...(asOf?{as_of:asOf}:{})}})};
+
+export type ARAllocation={document_id:number;amount:number};
+export const arApi={
+  unapplied:(paymentId:number)=>client.get("/ar/payments/"+paymentId+"/unapplied",{params:{company_id:company()}}),
+  allocate:(paymentId:number,allocations:ARAllocation[])=>client.post("/ar/payments/"+paymentId+"/allocate",{company_id:company(),payment_id:paymentId,allocations}),
+  autoMatch:(paymentId:number,partnerId:number,asOf?:string)=>client.post("/ar/payments/"+paymentId+"/auto-match",{company_id:company(),partner_id:partnerId,payment_id:paymentId,as_of:asOf}),
+  reconcile:(partnerId?:number,asOf?:string)=>client.post("/ar/reconcile",{company_id:company(),partner_id:partnerId,as_of:asOf,persist:true}),
+  credit:(partnerId:number)=>client.get("/ar/credit/"+partnerId,{params:{company_id:company()}}),
+  writeOffs:(status?:string)=>client.get("/ar/write-offs",{params:{company_id:company(),...(status?{status}:{})}}),
+};
