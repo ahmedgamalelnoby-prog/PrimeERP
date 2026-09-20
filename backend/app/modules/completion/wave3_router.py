@@ -17,7 +17,11 @@ from app.modules.pos.completion_models import POSPromotionUse
 from app.modules.restaurant.models import PosOrderLineRoute, PosTerminal, PosOutlet
 from app.modules.commerce.models import SalesDocument, SalesLine, CommercePayment, PurchaseDocument, CommercePaymentAllocation, BusinessPartner
 from app.modules.shipping.models import Shipment, ShippingCarrier
-from app.modules.treasury.completion_models import TreasuryTransaction, TreasuryDailyClosing, TreasuryForecast\nfrom app.modules.treasury.models import Cheque, ChequeEvent\nfrom app.modules.commerce.accounting_models import CommerceAccountingSettings\nfrom app.modules.accounting.journals.models.journal_entry import JournalEntry\nfrom app.modules.accounting.journals.models.journal_entry_line import JournalEntryLine
+from app.modules.treasury.completion_models import TreasuryTransaction, TreasuryDailyClosing, TreasuryForecast
+from app.modules.treasury.models import Cheque, ChequeEvent
+from app.modules.commerce.accounting_models import CommerceAccountingSettings
+from app.modules.accounting.journals.models.journal_entry import JournalEntry
+from app.modules.accounting.journals.models.journal_entry_line import JournalEntryLine
 from app.modules.manufacturing.completion_models import ManufacturingWorkOrder, ManufacturingVariance, ManufacturingConsumption
 from app.modules.catalog.models import Recipe, RecipeSkuMapping
 from app.modules.integrations.models import IntegrationProductMapping, IntegrationConnection
