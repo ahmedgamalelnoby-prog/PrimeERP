@@ -1,5 +1,6 @@
 from fastapi import APIRouter,Depends,HTTPException,Header,BackgroundTasks
 import secrets
+from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.core.permissions import require_permission
@@ -30,7 +31,7 @@ def keys(p:KeyCreate,db:Session=Depends(get_db),user:User=Depends(get_current_us
 def revoke_key(key_id:int,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     k=db.get(DeveloperApiKey,key_id);a=db.get(DeveloperApp,k.app_id) if k else None
     if not k or not a:raise HTTPException(404,"Key not found")
-    company_ok(db,a.company_id,user);k.revoked_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc);db.commit();return {"revoked":True}
+    company_ok(db,a.company_id,user);k.revoked_at=datetime.now(timezone.utc);db.commit();return {"revoked":True}
 @router.post("/webhooks",response_model=WebhookCreated,status_code=201,dependencies=[Depends(require_permission("developer.manage"))])
 def webhook(p:WebhookCreate,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     a=db.get(DeveloperApp,p.app_id)
@@ -42,15 +43,18 @@ def webhooks(company_id:int,db:Session=Depends(get_db),user:User=Depends(get_cur
 @router.post("/events/publish",dependencies=[Depends(require_permission("developer.manage"))])
 def publish(p:EventPublish,background:BackgroundTasks,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     company_ok(db,p.company_id,user)
-    if db.scalar(select(DeveloperEvent).where(DeveloperEvent.company_id==p.company_id,DeveloperEvent.event_id==p.event_id)):return {"accepted":True,"duplicate":True}
-    e=DeveloperEvent(**p.model_dump());db.add(e);db.flush();count=0
+    existing_event=db.scalar(select(DeveloperEvent).where(DeveloperEvent.company_id==p.company_id,DeveloperEvent.event_id==p.event_id))
+    if existing_event:return {"accepted":True,"duplicate":True}
+    e=DeveloperEvent(**p.model_dump());db.add(e);db.flush()
+    deliveries=[]
     hooks=list(db.scalars(select(DeveloperWebhook).join(DeveloperApp).where(DeveloperApp.company_id==p.company_id,DeveloperWebhook.is_active.is_(True))).all())
     for w in hooks:
         if w.events and p.event_type not in w.events and "*" not in w.events:continue
-        db.add(DeveloperWebhookDelivery(webhook_id=w.id,event_id=p.event_id,event_type=p.event_type,payload=p.payload));count+=1
+        d=DeveloperWebhookDelivery(webhook_id=w.id,event_id=p.event_id,event_type=p.event_type,payload=p.payload)
+        db.add(d);db.flush();deliveries.append(d.id)
     db.commit()
-    for d in db.scalars(select(DeveloperWebhookDelivery).where(DeveloperWebhookDelivery.event_id==p.event_id)).all(): background.add_task(_deliver,d.id)
-    return {"accepted":True,"deliveries_created":count}
+    for delivery_id in deliveries: background.add_task(_deliver,delivery_id)
+    return {"accepted":True,"deliveries_created":len(deliveries)}
 @router.get("/events/deliveries",dependencies=[Depends(require_permission("developer.access"))])
 def deliveries(company_id:int,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     company_ok(db,company_id,user);return [{"id":d.id,"event_id":d.event_id,"event_type":d.event_type,"status":d.status,"attempts":d.attempts,"response_code":d.response_code} for d in db.scalars(select(DeveloperWebhookDelivery).join(DeveloperWebhook).join(DeveloperApp).where(DeveloperApp.company_id==company_id).order_by(DeveloperWebhookDelivery.id.desc()).limit(200)).all()]
@@ -66,14 +70,13 @@ def custom_fields(company_id:int,entity_type:str|None=None,db:Session=Depends(ge
 def api_ping(x_api_key:str|None=Header(default=None),db:Session=Depends(get_db)):
     if not x_api_key or not authenticate_key(db,x_api_key,"api:read"):raise HTTPException(401,"Invalid API key or scope")
     return {"ok":True,"api_version":"v1"}
-
 def _deliver(delivery_id:int):
     import requests
-    from datetime import datetime,timezone
     db=SessionLocal()
     try:
         d=db.get(DeveloperWebhookDelivery,delivery_id)
         if not d or d.status=="delivered":return
+        if d.attempts>=5:return
         w=db.get(DeveloperWebhook,d.webhook_id)
         if not w or not w.is_active:d.status="disabled";db.commit();return
         ts=int(datetime.now(timezone.utc).timestamp());body={"id":d.event_id,"type":d.event_type,"data":d.payload}
@@ -86,7 +89,6 @@ def _deliver(delivery_id:int):
             d.attempts+=1;d.response_body=str(exc)[:4000];d.status="failed"
         db.commit()
     finally:db.close()
-
 @router.post("/deliveries/{delivery_id}/retry",dependencies=[Depends(require_permission("developer.manage"))])
 def retry_delivery(delivery_id:int,background:BackgroundTasks,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     d=db.get(DeveloperWebhookDelivery,delivery_id)
@@ -94,6 +96,7 @@ def retry_delivery(delivery_id:int,background:BackgroundTasks,db:Session=Depends
     w=db.get(DeveloperWebhook,d.webhook_id);a=db.get(DeveloperApp,w.app_id) if w else None
     if not a:raise HTTPException(404,"Webhook app not found")
     company_ok(db,a.company_id,user)
+    if d.status=="delivered":return {"queued":False,"delivery_id":d.id,"status":"delivered"}
     if d.attempts>=5:raise HTTPException(409,"Delivery retry limit reached")
     background.add_task(_deliver,d.id)
     return {"queued":True,"delivery_id":d.id}
