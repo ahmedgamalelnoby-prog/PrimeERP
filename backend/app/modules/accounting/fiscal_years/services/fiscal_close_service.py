@@ -52,7 +52,8 @@ class FiscalCloseService:
         counts={}
         counts["all_normal_periods_closed"]=sum(p.status in {"closed","locked"} for p in normal)==len(normal) and bool(normal)
         counts["no_unposted_journals"]=db.scalar(select(func.count(JournalEntry.id)).where(JournalEntry.tenant_id==fy.tenant_id,JournalEntry.company_id==company_id,JournalEntry.fiscal_year_id==fy.id,JournalEntry.status.in_({"draft","pending","approved"})))==0
-        counts["no_unreconciled_bank"]=db.scalar(select(func.count()).select_from(__import__("app.modules.treasury.bank_reconciliation.models",fromlist=["BankStatementLine"]).BankStatementLine).where(__import__("app.modules.treasury.bank_reconciliation.models",fromlist=["BankStatementLine"]).BankStatementLine.company_id==company_id,__import__("app.modules.treasury.bank_reconciliation.models",fromlist=["BankStatementLine"]).BankStatementLine.reconciled.is_(False)))==0
+        BankStatementLine = __import__("app.modules.treasury.bank_reconciliation.models",fromlist=["BankStatementLine"]).BankStatementLine
+        counts["no_unreconciled_bank"]=db.scalar(select(func.count()).select_from(BankStatementLine).where(BankStatementLine.company_id==company_id,BankStatementLine.status!="matched"))==0
         counts["no_pending_workflow"]=db.scalar(select(func.count(FunctionalTransaction.id)).where(FunctionalTransaction.tenant_id==fy.tenant_id,FunctionalTransaction.company_id==company_id,FunctionalTransaction.status.in_({"pending","submitted","approved"})))==0
         counts["no_open_financial_transactions"]=db.scalar(select(func.count(BusinessTransaction.id)).where(BusinessTransaction.tenant_id==fy.tenant_id,BusinessTransaction.company_id==company_id,BusinessTransaction.transaction_date>=fy.start_date,BusinessTransaction.transaction_date<=fy.end_date,BusinessTransaction.status.in_({"draft","pending","approved"})))==0
         try:
