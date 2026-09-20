@@ -18,6 +18,37 @@ def company_ok(db,cid,user):
 @router.post("/apps",response_model=AppCreated,status_code=201,dependencies=[Depends(require_permission("developer.manage"))])
 def apps(p:AppCreate,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     company_ok(db,p.company_id,user);a,s=create_app(db,user,p);return {**AppResponse.model_validate(a).model_dump(),"client_secret":s}
+@router.post("/apps/{app_id}/deactivate",dependencies=[Depends(require_permission("developer.manage"))])
+def deactivate_app(app_id:int,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
+    a=db.get(DeveloperApp,app_id)
+    if not a:raise HTTPException(404,"App not found")
+    company_ok(db,a.company_id,user)
+    a.is_active=False
+    db.commit()
+    return {"id":a.id,"is_active":False}
+
+@router.post("/apps/{app_id}/activate",dependencies=[Depends(require_permission("developer.manage"))])
+def activate_app(app_id:int,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
+    a=db.get(DeveloperApp,app_id)
+    if not a:raise HTTPException(404,"App not found")
+    company_ok(db,a.company_id,user)
+    a.is_active=True
+    db.commit()
+    return {"id":a.id,"is_active":True}
+
+@router.post("/apps/{app_id}/rotate-secret",response_model=AppCreated,dependencies=[Depends(require_permission("developer.manage"))])
+def rotate_secret(app_id:int,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
+    a=db.get(DeveloperApp,app_id)
+    if not a:raise HTTPException(404,"App not found")
+    company_ok(db,a.company_id,user)
+    if not a.is_active:raise HTTPException(409,"Cannot rotate a disabled app")
+    secret=secrets.token_urlsafe(36)
+    a.client_secret_hash=sha(secret)
+    a.rotated_at=datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(a)
+    return {**AppResponse.model_validate(a).model_dump(),"client_secret":secret}
+
 @router.get("/apps",response_model=list[AppResponse],dependencies=[Depends(require_permission("developer.access"))])
 def list_apps(company_id:int,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     company_ok(db,company_id,user);return list(db.scalars(select(DeveloperApp).where(DeveloperApp.company_id==company_id).order_by(DeveloperApp.id.desc())).all())
