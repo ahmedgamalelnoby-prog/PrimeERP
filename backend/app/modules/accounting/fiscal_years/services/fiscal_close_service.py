@@ -15,6 +15,9 @@ from app.modules.accounting.chart_of_accounts.models import AccountingSettings
 from app.modules.audit.service import record_audit_event
 from app.modules.companies.models import Company
 from app.modules.identity.models import User
+from app.modules.treasury.bank_reconciliation.models import BankStatementLine
+from app.modules.completion.models import FunctionalTransaction
+from app.modules.transactions.models import BusinessTransaction
 
 class FiscalCloseService:
     CHECKS = (
@@ -50,9 +53,7 @@ class FiscalCloseService:
         counts["all_normal_periods_closed"]=sum(p.status in {"closed","locked"} for p in normal)==len(normal) and bool(normal)
         counts["no_unposted_journals"]=db.scalar(select(func.count(JournalEntry.id)).where(JournalEntry.tenant_id==fy.tenant_id,JournalEntry.company_id==company_id,JournalEntry.fiscal_year_id==fy.id,JournalEntry.status.in_({"draft","pending","approved"})))==0
         counts["no_unreconciled_bank"]=db.scalar(select(func.count()).select_from(__import__("app.modules.treasury.bank_reconciliation.models",fromlist=["BankStatementLine"]).BankStatementLine).where(__import__("app.modules.treasury.bank_reconciliation.models",fromlist=["BankStatementLine"]).BankStatementLine.company_id==company_id,__import__("app.modules.treasury.bank_reconciliation.models",fromlist=["BankStatementLine"]).BankStatementLine.reconciled.is_(False)))==0
-        from app.modules.completion.models import FunctionalTransaction
         counts["no_pending_workflow"]=db.scalar(select(func.count(FunctionalTransaction.id)).where(FunctionalTransaction.tenant_id==fy.tenant_id,FunctionalTransaction.company_id==company_id,FunctionalTransaction.status.in_({"pending","submitted","approved"})))==0
-        from app.modules.transactions.models import BusinessTransaction
         counts["no_open_financial_transactions"]=db.scalar(select(func.count(BusinessTransaction.id)).where(BusinessTransaction.tenant_id==fy.tenant_id,BusinessTransaction.company_id==company_id,BusinessTransaction.transaction_date>=fy.start_date,BusinessTransaction.transaction_date<=fy.end_date,BusinessTransaction.status.in_({"draft","pending","approved"})))==0
         try:
             from app.modules.completion.domain_models import TaxFilingControl
