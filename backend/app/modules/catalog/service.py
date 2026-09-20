@@ -146,27 +146,23 @@ class CatalogService:
         self._product(db, company_id, product_id)
         return list(db.scalars(select(ProductCostHistory).where(ProductCostHistory.company_id == company_id, ProductCostHistory.product_id == product_id).order_by(ProductCostHistory.effective_at.desc(), ProductCostHistory.id.desc())).all())
 
-    def _recipe_would_cycle(self, db: Session, company_id: int, product_id: int, ingredient_ids: list[int]) -> bool:
-        memo: dict[int, bool] = {}
-        visiting: set[int] = set()
-
-        def reaches_target(node_id: int) -> bool:
-            if node_id == product_id:
+    def _recipe_would_cycle(self, db: Session, company_id: int, product_id: int, ingredient_refs: list[tuple[int, int | None]]) -> bool:
+        visiting: set[tuple[int, int | None]] = set()
+        memo: dict[tuple[int, int | None], bool] = {}
+        def reaches_target(node: tuple[int, int | None]) -> bool:
+            if node[0] == product_id:
                 return True
-            if node_id in memo:
-                return memo[node_id]
-            if node_id in visiting:
-                return True
-            visiting.add(node_id)
-            recipe = db.scalar(select(Recipe).options(selectinload(Recipe.lines)).where(Recipe.company_id == company_id, Recipe.product_id == node_id, Recipe.is_active.is_(True)).order_by(Recipe.version.desc()))
-            result = False
-            if recipe is not None:
-                result = any(reaches_target(line.ingredient_product_id) for line in recipe.lines)
-            visiting.remove(node_id)
-            memo[node_id] = result
+            if node in memo: return memo[node]
+            if node in visiting: return True
+            visiting.add(node)
+            item_id, variant_id = node
+            q = select(Recipe).options(selectinload(Recipe.lines)).where(Recipe.company_id == company_id, Recipe.product_id == item_id, Recipe.is_active.is_(True))
+            q = q.where(Recipe.variant_id == variant_id) if variant_id is not None else q.where(Recipe.variant_id.is_(None))
+            recipe = db.scalar(q.order_by(Recipe.version.desc()))
+            result = any(reaches_target((line.ingredient_product_id, getattr(line, "ingredient_variant_id", None))) for line in recipe.lines) if recipe is not None else False
+            visiting.remove(node); memo[node] = result
             return result
-
-        return any(reaches_target(ingredient_id) for ingredient_id in ingredient_ids)
+        return any(reaches_target(ref) for ref in ingredient_refs)
 
     @staticmethod
     def _calculate_uom_factor(line_factor_to_base: Decimal, line_category: str, ingredient_factor_to_base: Decimal, ingredient_category: str) -> Decimal:
@@ -209,16 +205,17 @@ class CatalogService:
             ))
             if variant is None:
                 raise ValueError("Recipe variant does not belong to the recipe product")
-        ingredient_ids = [line.ingredient_product_id for line in payload.lines]
-        if len(ingredient_ids) != len(set(ingredient_ids)):
+        ingredient_refs = [(line.ingredient_product_id, getattr(line, "ingredient_variant_id", None)) for line in payload.lines]
+        if len(ingredient_refs) != len(set(ingredient_refs)):
             raise ValueError("Duplicate ingredient products are not allowed in one recipe")
-        if payload.product_id in ingredient_ids:
+        if any(ref[0] == payload.product_id and (ref[1] is None or ref[1] == payload.variant_id) for ref in ingredient_refs):
             raise ValueError("A product cannot directly contain itself as an ingredient")
+        ingredient_ids = [ref[0] for ref in ingredient_refs]
         ingredients = list(db.scalars(select(InventoryItem).where(InventoryItem.company_id == payload.company_id, InventoryItem.id.in_(ingredient_ids), InventoryItem.is_active.is_(True))).all())
         if len(ingredients) != len(set(ingredient_ids)):
             raise ValueError("One or more recipe ingredients are invalid or inactive")
         ingredient_by_id = {item.id: item for item in ingredients}
-        if self._recipe_would_cycle(db, payload.company_id, payload.product_id, ingredient_ids):
+        if self._recipe_would_cycle(db, payload.company_id, payload.product_id, ingredient_refs):
             raise ValueError("Recipe would create an indirect product recipe cycle")
         current_query = select(Recipe).where(Recipe.company_id == payload.company_id, Recipe.product_id == payload.product_id, Recipe.is_active.is_(True))
         if payload.variant_id is None:
