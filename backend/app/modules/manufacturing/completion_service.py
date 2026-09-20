@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from app.modules.manufacturing.completion_models import *
 from app.modules.completion.domain_models import ManufacturingWorkOrder,ManufacturingConsumption
 from app.modules.inventory.stock_moves.models import InventoryStockMove
+from app.modules.accounting.journals.services.journal_service import journal_service
 
 class ManufacturingCompletionService:
     def _wo(self,db,company_id,work_order_id):
@@ -24,6 +25,15 @@ class ManufacturingCompletionService:
         self._wo(db,company_id,work_order_id);x=ManufacturingByProduct(company_id=company_id,work_order_id=work_order_id,**kw);db.add(x);db.flush();return x
     def subcontract(self,db,company_id,work_order_id,**kw):
         self._wo(db,company_id,work_order_id);x=ManufacturingSubcontract(company_id=company_id,work_order_id=work_order_id,**kw);db.add(x);db.flush();return x
+    def post_variance(self,db,company_id,work_order_id,*,tenant_id,user_id,journal_id,fiscal_year_id,period_id,branch_id,entry_number,entry_date,debit_account_id,credit_account_id):
+        x=self.variance(db,company_id,work_order_id)
+        amount=abs(Decimal(x.total_variance or 0))
+        if amount == 0: raise HTTPException(409,"Manufacturing variance is zero; nothing to post")
+        debit,credit=(debit_account_id,credit_account_id) if Decimal(x.total_variance or 0) >= 0 else (credit_account_id,debit_account_id)
+        entry=journal_service.create_draft(db,tenant_id=tenant_id,company_id=company_id,branch_id=branch_id,journal_id=journal_id,fiscal_year_id=fiscal_year_id,period_id=period_id,entry_number=entry_number,entry_date=entry_date,description=f"Manufacturing variance for work order {work_order_id}",lines=[{"account_combination_id":debit,"debit":amount,"credit":0},{"account_combination_id":credit,"debit":0,"credit":amount}],user_id=user_id,source_module="manufacturing",source_entity="production_variance",source_id=work_order_id,commit=False)
+        journal_service.submit(db,tenant_id=tenant_id,entry_id=entry.id,user_id=user_id,commit=False)
+        journal_service.post(db,tenant_id=tenant_id,entry_id=entry.id,user_id=user_id,commit=False)
+        x.journal_entry_id=entry.id;x.status="posted";db.flush();return x
     def variance(self,db,company_id,work_order_id):
         wo=self._wo(db,company_id,work_order_id)
         planned_m=Decimal(wo.total_material_cost or 0); actual_m=sum((Decimal(x.unit_cost or 0)*Decimal(x.quantity or 0) for x in db.scalars(select(ManufacturingConsumption).where(ManufacturingConsumption.work_order_id==wo.id))),Decimal("0"))
