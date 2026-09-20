@@ -8,6 +8,7 @@ from app.database.session import get_db
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.companies.models import Company
+from app.modules.commerce.models import BusinessPartner
 from app.core.permissions import require_permission
 from .completion_service import manufacturing_completion_service
 from app.modules.completion.domain_models import ManufacturingWorkOrder
@@ -69,6 +70,8 @@ def byproducts(work_order_id:int,p:ByProduct,company_id:int=Query(...,gt=0),db:S
 @router.post("/work-orders/{work_order_id}/subcontract",dependencies=[Depends(require_permission("manufacturing.write"))])
 def subcontract(work_order_id:int,p:Subcontract,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
     _company_for_user(db,company_id,u)
+    vendor=db.scalar(select(BusinessPartner).where(BusinessPartner.id==p.vendor_id,BusinessPartner.company_id==company_id,BusinessPartner.partner_type.in_(["vendor","both"]),BusinessPartner.is_active.is_(True)))
+    if vendor is None: raise HTTPException(422,"Subcontract vendor must be an active vendor of the selected company")
     if p.actual_quantity > p.planned_quantity and p.status != "received": raise HTTPException(422,"Actual subcontract quantity cannot exceed planned quantity unless received")
     x=manufacturing_completion_service.subcontract(db,company_id,work_order_id,**p.model_dump());db.commit();db.refresh(x);return x
 @router.post("/work-orders/{work_order_id}/variance",dependencies=[Depends(require_permission("manufacturing.post"))])
