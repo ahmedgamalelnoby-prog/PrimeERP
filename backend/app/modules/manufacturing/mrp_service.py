@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from .mrp_models import MRPPlan,MRPRequirement,MRPWorkCenter,MRPRoutingOperation,MRPScheduleSlot,MRPProductionCost
 from app.modules.catalog.models import Recipe
 from app.modules.manufacturing.production_orders.service import manufacturing_production_service
+from app.modules.completion.domain_models import ManufacturingWorkOrder
 class MRPService:
  def create_plan(self,db,company_id,plan_date,warehouse_id=None,notes=None,user_id=None):
   x=MRPPlan(company_id=company_id,plan_date=plan_date,warehouse_id=warehouse_id,notes=notes,created_by=user_id);db.add(x);db.flush();return x
@@ -13,12 +14,14 @@ class MRPService:
   plan=db.scalar(select(MRPPlan).where(MRPPlan.id==plan_id,MRPPlan.company_id==company_id).with_for_update())
   if not plan:raise HTTPException(404,"MRP plan not found")
   d=Decimal(demand);available=Decimal(on_hand)-Decimal(reserved);short=max(d-available-Decimal(supply),Decimal(0))
+  if db.scalar(select(MRPRequirement.id).where(MRPRequirement.plan_id==plan_id,MRPRequirement.item_id==item_id,MRPRequirement.variant_id==variant_id,MRPRequirement.source_type==source_type,MRPRequirement.source_id==source_id)) is not None: raise HTTPException(409,"MRP requirement already exists for this demand")
   x=MRPRequirement(plan_id=plan_id,item_id=item_id,variant_id=variant_id,demand_quantity=d,on_hand_quantity=on_hand,reserved_quantity=reserved,supply_quantity=supply,shortage_quantity=short,suggested_quantity=short,source_type=source_type,source_id=source_id);db.add(x);db.flush()
   if short>0 and tenant_id is not None and user_id is not None:
    recipe_q=select(Recipe.id).where(Recipe.company_id==company_id,Recipe.product_id==item_id,Recipe.is_active.is_(True))
    if variant_id is not None: recipe_q=recipe_q.where(Recipe.variant_id==variant_id)
    else: recipe_q=recipe_q.where(Recipe.variant_id.is_(None))
    recipe_id=db.scalar(recipe_q.order_by(Recipe.version.desc()))
+   if recipe_id is None: return x
    wo=manufacturing_production_service.create(db,tenant_id=tenant_id,user_id=user_id,company_id=company_id,number=f"MRP-{plan.id}-{x.id}",item_id=item_id,variant_id=variant_id,recipe_id=recipe_id,warehouse_id=plan.warehouse_id,planned_qty=short,planned_start=plan.plan_date,planned_end=plan.plan_date)
    x.production_order_id=wo.id;x.supply_quantity=Decimal(x.supply_quantity or 0)+short;x.shortage_quantity=max(d-Decimal(x.on_hand_quantity or 0)-Decimal(x.reserved_quantity or 0)-Decimal(x.supply_quantity or 0),Decimal(0));x.suggested_quantity=x.shortage_quantity
   return x
@@ -26,7 +29,12 @@ class MRPService:
   x=db.scalar(select(MRPPlan).where(MRPPlan.id==plan_id,MRPPlan.company_id==company_id).with_for_update())
   if not x:raise HTTPException(404,"MRP plan not found")
   if x.status not in {"draft","approved"}:raise HTTPException(409,"Plan cannot be released")
-  x.status="released";return x
+  x.status="released"
+  ids=list(db.scalars(select(MRPRequirement.production_order_id).where(MRPRequirement.plan_id==plan_id,MRPRequirement.production_order_id.is_not(None))).all())
+  if ids:
+   for wo in db.scalars(select(ManufacturingWorkOrder).where(ManufacturingWorkOrder.company_id==company_id,ManufacturingWorkOrder.id.in_(ids)).with_for_update()).all():
+    if wo.status=="draft": wo.status="released"
+  return x
  def create_work_center(self,db,company_id,code,name,capacity_hours_per_day=8,efficiency_percent=100,hourly_cost=0):
   x=MRPWorkCenter(company_id=company_id,code=code,name=name,capacity_hours_per_day=capacity_hours_per_day,efficiency_percent=efficiency_percent,hourly_cost=hourly_cost);db.add(x);db.flush();return x
  def add_routing(self,db,company_id,item_id,work_center_id,sequence,setup_minutes=0,run_minutes_per_unit=0,queue_minutes=0,move_minutes=0,scrap_percent=0,variant_id=None,description=None):
