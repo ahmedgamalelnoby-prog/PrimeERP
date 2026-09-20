@@ -27,6 +27,7 @@ from .salla_public_app_models import SallaAppEvent, SallaAppInstallation, SallaS
 from .salla_models import SallaOrder
 from .salla_service import normalize_salla_event
 from .salla_erp_finalize import finalize_salla_order
+from .salla_return_service import restore_salla_inventory
 from .salla_shipping_service import sync_salla_shipment
 
 SALLA_USER_INFO_URL = "https://accounts.salla.sa/oauth2/user/info"
@@ -631,6 +632,21 @@ def handle_app_event(db: Session, payload: dict[str, Any], event_id: str | None 
                 commerce = finalize_salla_order(
                     db, order, force_fulfillment=True, shipment=salla_shipment
                 ) if order is not None and fulfillment_requested else None
+
+                # A shipment can be cancelled/returned after it has already
+                # consumed stock. Restore only that shipment's posted moves;
+                # never return the other shipments of the same order.
+                inventory_return = None
+                if order is not None and shipment_status in {
+                    "cancelled", "canceled", "returned", "return_to_origin",
+                    "return_in_progress", "unable_to_deliver",
+                }:
+                    inventory_return = restore_salla_inventory(
+                        db,
+                        order,
+                        user_id=None,
+                        shipment_external_id=salla_shipment.external_id,
+                    )
             result = {
                 "installation_id": installation.id,
                 "event": event,
