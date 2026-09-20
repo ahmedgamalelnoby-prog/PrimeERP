@@ -65,6 +65,7 @@ from app.modules.hr.router import router as hr_router
 from app.modules.pos.router import router as pos_router
 from app.modules.pos.sessions.router import router as pos_sessions_router
 from app.modules.manufacturing.production_orders.router import router as manufacturing_work_orders_router
+from app.modules.manufacturing.mrp_router import router as manufacturing_mrp_router
 from app.modules.manufacturing.bom.router import router as manufacturing_router
 from app.modules.mobile.router import router as mobile_router
 from app.modules.platform.developer.router import router as developer_router
@@ -89,6 +90,7 @@ def build_router() -> APIRouter:
     api_router.include_router(pos_router)
     api_router.include_router(pos_sessions_router)
     api_router.include_router(manufacturing_work_orders_router)
+    api_router.include_router(manufacturing_mrp_router)
     api_router.include_router(manufacturing_router)
     api_router.include_router(mobile_router)
     api_router.include_router(developer_router)
@@ -152,6 +154,3 @@ def build_router() -> APIRouter:
 from app.modules.commerce.ap_router import router as ap_router
 api_router.include_router(ap_router, dependencies=[Depends(require_module("sales"))])
 
-from app.modules.manufacturing.mrp_router import router as manufacturing_mrp_router
-
-api_router.include_router(manufacturing_mrp_router)
