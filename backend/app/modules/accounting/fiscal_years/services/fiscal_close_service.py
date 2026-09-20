@@ -8,11 +8,10 @@ from fastapi import HTTPException, status
 from app.modules.accounting.fiscal_years.models import FiscalYear, AccountingPeriod
 from app.modules.accounting.fiscal_years.models.close_control import FiscalYearCloseChecklistItem, FiscalYearCloseRun, FiscalYearCloseAudit
 from app.modules.accounting.fiscal_years.repositories.fiscal_year_repository import fiscal_year_repository
-from app.modules.accounting.journals.models import JournalEntry, JournalEntryLine
+from app.modules.accounting.journals.models import JournalEntry, JournalEntryLine, AccountingJournal
 from app.modules.accounting.journals.services.journal_service import journal_service
 from app.modules.accounting.chart_of_accounts.models import AccountCombination, NaturalAccount
 from app.modules.branches.models import Branch
-from app.modules.accounting.journals.models import Journal
 from app.modules.taxes.models import TaxReturnDraft
 from app.modules.audit.service import record_audit_event
 from app.modules.companies.models import Company
@@ -132,8 +131,8 @@ class FiscalCloseService:
         ))
         if branch is None:
             raise HTTPException(422,"Branch does not belong to the selected company and tenant")
-        journal=db.scalar(select(Journal).where(
-            Journal.id==journal_id,
+        journal=db.scalar(select(AccountingJournal).where(
+            AccountingJournal.id==journal_id,
             Journal.company_id==fy.company_id,
             Journal.tenant_id==fy.tenant_id,
             Journal.is_active.is_(True),
