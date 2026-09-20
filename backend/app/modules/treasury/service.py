@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.commerce.models import BusinessPartner
 from app.modules.treasury.models import Cheque, ChequeEvent
+from app.modules.accounting.fiscal_years.services.fiscal_year_service import fiscal_year_service
 
 
 ALLOWED_TRANSITIONS = {
@@ -28,6 +29,8 @@ def _record_event(db: Session, cheque: Cheque, old_status: str | None, new_statu
 
 
 def create_cheque(db: Session, payload, user_id: int):
+    if hasattr(fiscal_year_service, "assert_open_for_date"):
+        fiscal_year_service.assert_open_for_date(db, company_id=payload.company_id, posting_date=payload.cheque_date)
     if payload.due_date < payload.cheque_date:
         raise ValueError("Due date cannot be earlier than cheque date")
     if payload.direction not in {"received", "issued"}:
@@ -46,6 +49,8 @@ def create_cheque(db: Session, payload, user_id: int):
 
 
 def transition_cheque(db: Session, cheque: Cheque, new_status: str, action_date: date, user_id: int, event_type: str, reference: str | None, notes: str | None):
+    if hasattr(fiscal_year_service, "assert_open_for_date"):
+        fiscal_year_service.assert_open_for_date(db, company_id=cheque.company_id, posting_date=action_date)
     locked = db.scalar(select(Cheque).where(Cheque.id == cheque.id, Cheque.company_id == cheque.company_id).with_for_update())
     if locked is None:
         raise ValueError("Cheque not found")
