@@ -14,3 +14,6 @@ __all__ = [
     "JournalEntry",
     "JournalEntryLine",
 ]
+# Backward-compatible alias used by fiscal-close and legacy integrations.
+Journal = AccountingJournal
+__all__.append("Journal")
