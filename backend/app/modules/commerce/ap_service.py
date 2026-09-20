@@ -79,22 +79,41 @@ class APService:
   if x.status!="pending":raise HTTPException(409,"Variance already decided")
   x.status="approved" if payload.approve else "rejected";x.decided_by=user.id;x.decided_at=datetime.now(timezone.utc);return x
  def three_way_match(self,db,company_id,bill_id,user_id,tolerance=Decimal("0")):
-  bill=self._bill(db,company_id,bill_id,None)
+  bill=self._bill(db,company_id,bill_id)
   from app.modules.commerce.models import PurchaseBillReceiptLink,PurchaseBillReceiptAllocation,PurchaseLine
   links=list(db.scalars(select(PurchaseBillReceiptLink).where(PurchaseBillReceiptLink.company_id==company_id,PurchaseBillReceiptLink.bill_id==bill.id)).all())
   receipt_ids=[x.receipt_id for x in links]
   receipts=list(db.scalars(select(PurchaseDocument).where(PurchaseDocument.company_id==company_id,PurchaseDocument.id.in_(receipt_ids or [-1]))).all())
-  po_qty=Decimal(0);receipt_qty=Decimal(0);bill_qty=Decimal(0)
-  for line in bill.lines: bill_qty+=Decimal(line.quantity or 0)
+  receipt_by_item={}
   for receipt in receipts:
-   for line in receipt.lines: receipt_qty+=Decimal(line.quantity or 0)
-  if receipt_ids:
-   allocations=list(db.scalars(select(PurchaseBillReceiptAllocation).where(PurchaseBillReceiptAllocation.company_id==company_id,PurchaseBillReceiptAllocation.bill_line_id.in_([x.id for x in bill.lines]))).all())
-   po_qty=sum((Decimal(a.quantity or 0) for a in allocations),Decimal(0))
-  price_expected=sum((Decimal(x.quantity or 0)*Decimal(x.unit_price or 0) for x in bill.lines),Decimal(0))
-  qty_variance=bill_qty-receipt_qty; value_variance=Decimal(bill.subtotal or 0)-price_expected
-  status="matched" if abs(qty_variance)<=tolerance and abs(value_variance)<=tolerance else "variance"
-  return {"bill_id":bill.id,"status":status,"po_receipt_qty":str(po_qty),"receipt_qty":str(receipt_qty),"bill_qty":str(bill_qty),"quantity_variance":str(qty_variance),"value_variance":str(value_variance)}
+   for line in receipt.lines:
+    key=(line.item_id,line.variant_id)
+    row=receipt_by_item.setdefault(key,{"qty":Decimal("0"),"value":Decimal("0")})
+    row["qty"]+=Decimal(line.quantity or 0)
+    row["value"]+=Decimal(line.quantity or 0)*Decimal(line.unit_price or 0)
+  allocation_rows=list(db.scalars(select(PurchaseBillReceiptAllocation).where(PurchaseBillReceiptAllocation.company_id==company_id,PurchaseBillReceiptAllocation.bill_line_id.in_([x.id for x in bill.lines] or [-1]))).all())
+  allocated_by_line={}
+  for a in allocation_rows:
+   row=allocated_by_line.setdefault(a.bill_line_id,{"qty":Decimal("0"),"value":Decimal("0"),"unit_costs":[]})
+   row["qty"]+=Decimal(a.quantity or 0);row["value"]+=Decimal(a.quantity or 0)*Decimal(a.unit_cost or 0);row["unit_costs"].append(Decimal(a.unit_cost or 0))
+  details=[];qty_variance=Decimal("0");value_variance=Decimal("0");matched=True
+  for line in bill.lines:
+   key=(line.item_id,line.variant_id);bill_qty=Decimal(line.quantity or 0);bill_price=Decimal(line.unit_price or 0)
+   alloc=allocated_by_line.get(line.id,{"qty":Decimal("0"),"value":Decimal("0"),"unit_costs":[]})
+   received_qty=alloc["qty"] or receipt_by_item.get(key,{"qty":Decimal("0")})["qty"]
+   received_value=alloc["value"] or receipt_by_item.get(key,{"value":Decimal("0")})["value"]
+   qv=bill_qty-received_qty
+   expected_value=received_value
+   actual_value=bill_qty*bill_price
+   vv=actual_value-expected_value
+   qty_variance+=qv;value_variance+=vv
+   price_variance=(bill_price-(alloc["value"]/alloc["qty"] if alloc["qty"] else (received_value/received_qty if received_qty else Decimal("0"))))
+   if abs(qv)>tolerance or abs(vv)>tolerance:
+    matched=False
+    details.append({"bill_line_id":line.id,"item_id":line.item_id,"variant_id":line.variant_id,"billed_qty":str(bill_qty),"received_qty":str(received_qty),"quantity_variance":str(qv),"billed_unit_price":str(bill_price),"received_unit_cost":str((received_value/received_qty) if received_qty else Decimal("0")),"price_variance":str(price_variance),"value_variance":str(vv)})
+  status="matched" if matched else "variance"
+  return {"bill_id":bill.id,"status":status,"receipt_ids":receipt_ids,"bill_qty":str(sum((Decimal(x.quantity or 0) for x in bill.lines),Decimal(0))),"receipt_qty":str(sum((x["qty"] for x in allocated_by_line.values()),Decimal(0))),"quantity_variance":str(qty_variance),"value_variance":str(value_variance),"details":details}
+
  def reconcile(self,db,company_id,partner_id,as_of,user_id,persist=True):
   q=[PurchaseDocument.company_id==company_id,PurchaseDocument.document_type=="bill",PurchaseDocument.status.in_({"confirmed","posted"}),PurchaseDocument.document_date<=as_of]
   if partner_id:q.append(PurchaseDocument.partner_id==partner_id)
