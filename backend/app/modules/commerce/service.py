@@ -162,12 +162,18 @@ class CommerceService:
                         + Decimal(payment.amount or 0)
                     )
 
+        from app.modules.commerce.ar_models import ARWriteOff
+        writeoffs = {}
+        if positive_docs:
+            for row in db.scalars(select(ARWriteOff).where(ARWriteOff.company_id == company_id, ARWriteOff.document_id.in_([d.id for d in positive_docs]), ARWriteOff.status == "approved")).all():
+                writeoffs[row.document_id] = writeoffs.get(row.document_id, Decimal("0")) + Decimal(row.amount or 0)
         total = Decimal("0")
         for doc in documents:
             value = Decimal(doc.total or 0)
             total += value if doc.document_type == positive_type else -value
             if doc.document_type == positive_type:
                 total -= payments_by_document.get(doc.id, Decimal("0"))
+                total -= writeoffs.get(doc.id, Decimal("0"))
         return total
 
     def enforce_credit_limit(self, db, company_id: int, document):
