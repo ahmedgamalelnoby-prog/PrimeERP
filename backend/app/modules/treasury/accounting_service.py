@@ -34,7 +34,7 @@ class TreasuryAccountingService:
             JournalEntry.tenant_id == company.tenant_id,
             JournalEntry.company_id == cheque.company_id,
             JournalEntry.source_module == "treasury",
-            JournalEntry.source_entity == "cheque_event",
+            JournalEntry.source_entity == f"cheque_event:{event_key}",
             JournalEntry.source_id == f"{cheque.id}:{event_key}",
         ))
         if existing is not None:
@@ -53,7 +53,7 @@ class TreasuryAccountingService:
             lines=lines,
             user_id=user_id,
             source_module="treasury",
-            source_entity="cheque_event",
+            source_entity=f"cheque_event:{event_key}",
             source_id=cheque.id,
             commit=False,
             currency_code=cheque.currency,
