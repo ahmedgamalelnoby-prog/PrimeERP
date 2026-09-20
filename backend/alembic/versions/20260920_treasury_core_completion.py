@@ -5,7 +5,7 @@ Revises: 20260920_fiscal_year_close_controls, 20260920_inventory_waste
 from alembic import op
 import sqlalchemy as sa
 revision="20260920_treasury_core_completion"
-down_revision=("20260920_fiscal_year_close_controls","20260920_inventory_waste")
+down_revision="20260920_inventory_waste"
 branch_labels=None
 depends_on=None
 def upgrade():
