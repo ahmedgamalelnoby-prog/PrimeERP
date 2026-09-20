@@ -50,7 +50,7 @@ class WMSService:
         if not op: raise ValueError("WMS operation not found")
         self._scope(db, tenant_id, op.company_id, op.warehouse_id)
         allowed = {"draft":{"approved","cancelled"}, "approved":{"in_progress","cancelled"}, "in_progress":{"completed","cancelled"}, "completed":set(), "cancelled":set()}
-        if target not in allowed.get(op.status, set()):
+        previous_status = op.status\n        if target not in allowed.get(op.status, set()):
             raise ValueError(f"Invalid WMS transition {op.status} -> {target}")
         if target == "in_progress":
             self._validate_tracking(db, op)
@@ -58,7 +58,7 @@ class WMSService:
             self._execute(db, tenant_id, user_id, op)
             op.posted_at = datetime.now(timezone.utc)
         op.status = target
-        record_audit_event(db, action="inventory.wms.transition", entity_type="inventory_wms_operation", entity_id=op.id, user_id=user_id, tenant_id=tenant_id, company_id=op.company_id, metadata={"from": op.status, "to": target, "reference": op.reference})
+        record_audit_event(db, action="inventory.wms.transition", entity_type="inventory_wms_operation", entity_id=op.id, user_id=user_id, tenant_id=tenant_id, company_id=op.company_id, metadata={"from": previous_status, "to": target, "reference": op.reference})
         return op
 
     def _validate_tracking(self, db, op):
