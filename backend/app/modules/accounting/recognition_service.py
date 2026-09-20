@@ -24,7 +24,10 @@ class AccountingRecognitionService:
   if x.recognized_periods==x.period_count-1:amount=remaining
   else:amount=(Decimal(str(x.total_amount))/Decimal(x.period_count)).quantize(Decimal("0.000001"),rounding=ROUND_HALF_UP)
   entry=journal_service.create_draft(db,tenant_id=user.tenant_id,company_id=x.company_id,branch_id=x.branch_id,journal_id=x.journal_id,fiscal_year_id=p.fiscal_year_id,period_id=p.id,entry_number=f"{x.kind.upper()}-{x.id}-{x.recognized_periods+1}",entry_date=run_date,description=f"{x.name} recognition {x.recognized_periods+1}/{x.period_count}",lines=[{"account_combination_id":x.debit_account_id,"debit":amount,"credit":0},{"account_combination_id":x.credit_account_id,"debit":0,"credit":amount}],user_id=user.id,currency_code=x.currency_code,source_module="accounting",source_entity=x.kind,source_id=x.id)
-  if entry.journal.requires_approval:journal_service.submit(db,tenant_id=user.tenant_id,entry_id=entry.id,user_id=user.id);x.recognized_periods+=1;x.active=x.recognized_periods<x.period_count;db.flush();return entry
+  if entry.journal.requires_approval:
+   journal_service.submit(db,tenant_id=user.tenant_id,entry_id=entry.id,user_id=user.id)
+   db.flush()
+   return entry
   journal_service.post(db,tenant_id=user.tenant_id,entry_id=entry.id,user_id=user.id)
   x.recognized_periods+=1
   if x.recognized_periods>=x.period_count:x.active=False
