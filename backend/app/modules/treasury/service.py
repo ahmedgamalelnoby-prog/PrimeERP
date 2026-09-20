@@ -67,6 +67,8 @@ def transition_cheque(db: Session, cheque: Cheque, new_status: str, action_date:
         raise ValueError(f"Cannot move cheque from {locked.status} to {new_status}")
     old_status = locked.status
     _record_event(db, locked, old_status, new_status, event_type, action_date, user_id, reference, notes)
+    if new_status == "resubmitted" and old_status == "returned":
+        treasury_accounting_service.created(db, locked, user_id)
     if new_status in {"returned", "cancelled", "reversed", "withdrawn"} and old_status not in {"returned", "cancelled", "reversed", "withdrawn"}:
         treasury_accounting_service.cancellation(db, locked, when=action_date, user_id=user_id, event_key=f"{event_type}-{action_date.isoformat()}")
     return locked
@@ -121,6 +123,7 @@ def replace_cheque(db: Session, cheque: Cheque, replacement, action_date: date, 
     db.add(new_cheque); db.flush()
     old=locked.status; locked.status="cancelled"; _record_event(db, locked, old, "cancelled", "replaced", action_date, user_id, replacement.cheque_number, replacement.notes)
     _record_event(db, new_cheque, None, new_cheque.status, "replacement_created", action_date, user_id, locked.cheque_number, replacement.notes)
+    treasury_accounting_service.created(db, new_cheque, user_id)
     return new_cheque
 
 
