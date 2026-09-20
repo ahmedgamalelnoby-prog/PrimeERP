@@ -8,9 +8,10 @@ from app.database.session import get_db
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.companies.models import Company
+from app.core.permissions import require_permission
 from .completion_models import POSModifierGroup,POSModifierOption,POSPromotion
 
-router=APIRouter(prefix="/pos/completion",tags=["POS Completion"])
+router=APIRouter(prefix="/pos/completion",tags=["POS Completion"],dependencies=[Depends(require_permission("pos.access"))])
 def company(db,cid,u):
     if u.tenant_id is None: raise HTTPException(403,"Tenant required")
     x=db.scalar(select(Company).where(Company.id==cid,Company.tenant_id==u.tenant_id,Company.is_active.is_(True)))
@@ -21,10 +22,10 @@ class OptionPayload(BaseModel):
     group_id:int=Field(gt=0);code:str=Field(min_length=1,max_length=60);name:str=Field(min_length=1,max_length=160);price_delta:float=0
 class PromotionPayload(BaseModel):
     code:str=Field(min_length=1,max_length=80);name:str=Field(min_length=1,max_length=160);discount_percent:float=Field(ge=0,le=100);min_subtotal:float=Field(default=0,ge=0);max_discount:float|None=Field(default=None,ge=0);valid_from:datetime|None=None;valid_to:datetime|None=None
-@router.post("/modifier-groups",status_code=201)
+@router.post("/modifier-groups",status_code=201,dependencies=[Depends(require_permission("pos.write"))])
 def create_group(p:GroupPayload,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
     company(db,company_id,u);x=POSModifierGroup(company_id=company_id,**p.model_dump());db.add(x);db.commit();db.refresh(x);return x
-@router.post("/modifier-options",status_code=201)
+@router.post("/modifier-options",status_code=201,dependencies=[Depends(require_permission("pos.write"))])
 def create_option(p:OptionPayload,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
     company(db,company_id,u);g=db.scalar(select(POSModifierGroup).where(POSModifierGroup.id==p.group_id,POSModifierGroup.company_id==company_id,POSModifierGroup.is_active.is_(True)))
     if g is None: raise HTTPException(422,"Modifier group is outside the company")
@@ -32,7 +33,7 @@ def create_option(p:OptionPayload,company_id:int=Query(...,gt=0),db:Session=Depe
 @router.get("/modifier-groups")
 def list_groups(company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
     company(db,company_id,u);return list(db.scalars(select(POSModifierGroup).where(POSModifierGroup.company_id==company_id,POSModifierGroup.is_active.is_(True)).order_by(POSModifierGroup.id)).all())
-@router.post("/promotions",status_code=201)
+@router.post("/promotions",status_code=201,dependencies=[Depends(require_permission("pos.write"))])
 def create_promotion(p:PromotionPayload,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
     company(db,company_id,u)
     if p.valid_from and p.valid_to and p.valid_to < p.valid_from:
