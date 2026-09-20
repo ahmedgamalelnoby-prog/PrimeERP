@@ -30,6 +30,7 @@ from app.modules.inventory.transfers.service import inventory_transfer_service
 from app.modules.commerce.payment_workflow import post_payment, reverse_payment
 from app.modules.jurisdiction.commerce_guard import capture_document_tax_snapshot, validate_document_tax_snapshot
 from app.modules.pos.completion_models import POSModifierGroup, POSModifierOption, POSPromotion, POSPromotionUse
+from app.modules.pos.sessions.models import POSSession
 from app.modules.restaurant.models import (
     Floor, RestaurantTable, OrderType,
     PreparationStation,
@@ -488,6 +489,16 @@ def checkout(payload: Checkout, current_user: User = Depends(get_current_user), 
             raise HTTPException(422, "The POS outlet must have a consumption warehouse before selling")
         if payload.warehouse_id != outlet.warehouse_id:
             raise HTTPException(422, "POS consumption warehouse must match the terminal outlet warehouse")
+        session = db.scalar(select(POSSession).where(
+            POSSession.tenant_id == current_user.tenant_id,
+            POSSession.company_id == payload.company_id,
+            POSSession.terminal_id == terminal.id,
+            POSSession.status == "open",
+        ).with_for_update())
+        if session is None:
+            raise HTTPException(409, "The POS terminal must have an open session before checkout")
+        if session.cashier_id != current_user.id:
+            raise HTTPException(403, "The current user is not the cashier assigned to the open POS session")
     lines: list[DocumentLineCreate] = []
     routes: list[int | None] = []
     pre_discount_subtotal = sum((Decimal(str(x.unit_price or 0)) * Decimal(x.quantity) for x in payload.lines), Decimal("0"))
