@@ -41,6 +41,24 @@ def create_transaction(db,p,user):
  o=TreasuryTransaction(company_id=p.company_id,branch_id=p.branch_id,transaction_date=p.transaction_date,transaction_type=p.transaction_type,account_id=p.account_id,offset_account_id=p.offset_account_id,amount=p.amount,currency=p.currency,reference=p.reference,description=p.description,status="pending_approval" if p.requires_approval else "approved",approval_status="pending" if p.requires_approval else "approved",created_by=user.id);db.add(o);db.flush()
  if not p.requires_approval:_post(db,o,user)
  return o
+def list_transactions(db,cid,user,status=None,transaction_type=None):
+ _company(db,cid,user)
+ q=select(TreasuryTransaction).where(TreasuryTransaction.company_id==cid).order_by(TreasuryTransaction.transaction_date.desc(),TreasuryTransaction.id.desc())
+ if status: q=q.where(TreasuryTransaction.status==status)
+ if transaction_type: q=q.where(TreasuryTransaction.transaction_type==transaction_type)
+ return list(db.scalars(q).all())
+
+def reverse_transaction(db,o,user):
+ if o.status!="posted": raise HTTPException(409,"Only posted treasury transactions can be reversed")
+ _company(db,o.company_id,user)
+ existing=db.scalar(select(TreasuryTransaction).where(TreasuryTransaction.company_id==o.company_id,TreasuryTransaction.reference==f"REV-TX-{o.id}"))
+ if existing is not None: raise HTTPException(409,"Treasury transaction is already reversed")
+ reverse_type={"receipt":"payment","payment":"receipt","deposit":"withdrawal","withdrawal":"deposit","transfer":"transfer"}[o.transaction_type]
+ reverse_account=o.offset_account_id if o.transaction_type=="transfer" else o.account_id
+ reverse_offset=o.account_id if o.transaction_type=="transfer" else o.offset_account_id
+ p=type("ReversalPayload",(),{"company_id":o.company_id,"branch_id":o.branch_id,"transaction_date":o.transaction_date,"transaction_type":reverse_type,"account_id":reverse_account,"offset_account_id":reverse_offset,"amount":o.amount,"currency":o.currency,"reference":f"REV-TX-{o.id}","description":f"Reversal of treasury transaction {o.id}","requires_approval":False})()
+ return create_transaction(db,p,user)
+
 def decide(db,o,approve,user):
  if o.status!="pending_approval":raise HTTPException(409,"Transaction is not pending approval")
  if not approve:o.status="cancelled";o.approval_status="rejected";return o
