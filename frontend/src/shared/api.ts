@@ -1,15 +1,11 @@
-const API_BASE_URL = (import.meta.env.VITE_API_URL || "/api/v1").replace(/\/$/, "");
+import { apiClient } from "./api";
 
 export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(API_BASE_URL + path, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...(init.headers || {}),
-    },
-    ...init,
+  const response = await apiClient.request<T>({
+    url: path,
+    method: init.method || "GET",
+    headers: init.headers,
+    data: init.body,
   });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload?.detail || "Request failed");
-  return payload as T;
+  return response.data;
 }
