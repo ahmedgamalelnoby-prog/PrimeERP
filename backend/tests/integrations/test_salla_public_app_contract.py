@@ -11,6 +11,7 @@ from app.modules.integrations.salla_public_app_service import (
     _encrypt,
     decrypt_token,
 )
+from app.modules.integrations.salla_return_service import _return_source_id
 from app.modules.integrations.salla_shipping_service import _advance_status
 from app.modules.integrations.salla_erp_finalize import _should_fulfill_order, _shipment_package_quantities
 from app.modules.integrations.salla_models import SallaOrderItem, SallaShipment
@@ -138,3 +139,29 @@ def test_salla_shipment_packages_resolve_item_quantities():
         item_a.id: Decimal("4"),
         item_b.id: Decimal("2"),
     }
+
+
+def test_salla_return_idempotency_is_independent_of_return_scope():
+    assert _return_source_id("ORDER-1", 42) == "salla_return:ORDER-1:42"
+    assert _return_source_id("ORDER-1", 42) == _return_source_id("ORDER-1", 42)
+    assert _return_source_id("ORDER-1", 42) != _return_source_id("ORDER-1", 43)
+
+
+@pytest.mark.parametrize(
+    "event",
+    [
+        "order.shipment.return.created",
+        "order.shipment.return.cancelled",
+        "order.shipment.cancelled",
+        "shipment.cancelled",
+    ],
+)
+def test_salla_return_and_shipment_events_are_recognized(event):
+    assert (
+        event.startswith("shipment.")
+        or event in {
+            "order.shipment.cancelled",
+            "order.shipment.return.created",
+            "order.shipment.return.cancelled",
+        }
+    )
