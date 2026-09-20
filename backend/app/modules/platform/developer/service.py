@@ -15,10 +15,13 @@ def create_app(db,user,p):
     a=DeveloperApp(company_id=p.company_id,created_by=user.id,name=p.name,client_id=client_id,client_secret_hash=sha(secret),redirect_uris=p.redirect_uris,scopes=p.scopes);db.add(a);db.commit();db.refresh(a);return a,secret
 def create_key(db,p):
     raw="pk_"+secrets.token_urlsafe(32);k=DeveloperApiKey(app_id=p.app_id,key_prefix=raw[:12],key_hash=sha(raw),scopes=p.scopes,expires_at=p.expires_at);db.add(k);db.commit();db.refresh(k);return k,raw
-def authenticate_key(db,raw):
+def authenticate_key(db,raw,required_scope=None):
     k=db.scalar(select(DeveloperApiKey).where(DeveloperApiKey.key_hash==sha(raw),DeveloperApiKey.revoked_at.is_(None)))
     if not k:return None
     if k.expires_at and k.expires_at<=datetime.now(timezone.utc):return None
+    if required_scope and required_scope not in set(k.scopes or []):return None
+    app=db.get(DeveloperApp,k.app_id)
+    if not app or not app.is_active:return None
     k.last_used_at=datetime.now(timezone.utc);db.commit();return k
 def sign_webhook(secret:str,timestamp:int,body:dict)->str:
     raw=f"{timestamp}.{json.dumps(body,separators=(',',':'),sort_keys=True)}".encode()
