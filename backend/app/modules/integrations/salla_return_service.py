@@ -134,7 +134,7 @@ def restore_salla_inventory(db: Session, order: SallaOrder, user_id: int) -> dic
                 {"account_combination_id": settings.cogs_account_id, "debit": 0, "credit": total_cost},
             ],
             source_entity="salla_return_cogs",
-            source_id=hash(order.external_id),
+            source_id=order.external_id,
         )
         accounting = True
     return {"status": "restored", "return_moves": returned, "cogs_reversed": accounting}
