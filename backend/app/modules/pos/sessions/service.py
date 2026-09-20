@@ -14,10 +14,11 @@ class POSSessionService:
   self.scope(db,company_id,tenant_id,terminal_id);x=db.scalar(select(POSSession).where(POSSession.company_id==company_id,POSSession.terminal_id==terminal_id,POSSession.status.in_(["open","closing"])).with_for_update())
   if x: raise HTTPException(409,"Terminal already has an open session")
   x=POSSession(tenant_id=tenant_id,company_id=company_id,terminal_id=terminal_id,cashier_id=cashier_id,opening_cash=opening_cash,expected_cash=opening_cash,notes=notes);db.add(x);db.flush();return x
- def close(self,db,tenant_id,company_id,session_id,actual_cash,notes=None):
+ def close(self,db,tenant_id,company_id,session_id,actual_cash,cashier_id,notes=None):
   x=db.scalar(select(POSSession).where(POSSession.id==session_id,POSSession.tenant_id==tenant_id,POSSession.company_id==company_id).with_for_update())
   if x is None: raise HTTPException(404,"POS session not found")
   if x.status!="open": raise HTTPException(409,"Only open sessions can be closed")
+  if x.cashier_id != cashier_id: raise HTTPException(403,"Only the cashier assigned to this POS session can close it")
   cash_total=db.scalar(select(func.coalesce(func.sum(CommercePayment.amount),0)).join(SalesDocument, SalesDocument.id==CommercePayment.document_id).where(
    CommercePayment.company_id==company_id,
    CommercePayment.document_kind=="sale",
