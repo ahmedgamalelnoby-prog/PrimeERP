@@ -14,7 +14,8 @@ def create(p:TreasuryTransactionCreate,current_user:User=Depends(get_current_use
 @router.post("/transactions/{tx_id}/decision",response_model=TreasuryTransactionResponse,dependencies=[Depends(require_permission("treasury.post"))])
 def decision(tx_id:int,p:TreasuryApproval,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
  o=db.get(TreasuryTransaction,tx_id)
- if o is None or o.company_id!=current_user.company_id:raise HTTPException(404,"Treasury transaction not found")
+ if o is None: raise HTTPException(404,"Treasury transaction not found")
+ _company(db,o.company_id,current_user)
  o=decide(db,o,p.approve,current_user);db.commit();db.refresh(o);return o
 @router.post("/daily-closing",dependencies=[Depends(require_permission("treasury.post"))])
 def close(p:TreasuryDailyCloseCreate,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
