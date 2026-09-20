@@ -17,7 +17,7 @@ from app.modules.pos.completion_models import POSPromotionUse
 from app.modules.restaurant.models import PosOrderLineRoute, PosTerminal, PosOutlet
 from app.modules.commerce.models import SalesDocument, SalesLine, CommercePayment, PurchaseDocument, CommercePaymentAllocation, BusinessPartner
 from app.modules.shipping.models import Shipment, ShippingCarrier
-from app.modules.treasury.completion_models import TreasuryTransaction, TreasuryDailyClosing, TreasuryForecast\nfrom app.modules.treasury.models import Cheque, ChequeEvent
+from app.modules.treasury.completion_models import TreasuryTransaction, TreasuryDailyClosing, TreasuryForecast\nfrom app.modules.treasury.models import Cheque, ChequeEvent\nfrom app.modules.commerce.accounting_models import CommerceAccountingSettings\nfrom app.modules.accounting.journals.models.journal_entry import JournalEntry\nfrom app.modules.accounting.journals.models.journal_entry_line import JournalEntryLine
 from app.modules.manufacturing.completion_models import ManufacturingWorkOrder, ManufacturingVariance, ManufacturingConsumption
 from app.modules.catalog.models import Recipe, RecipeSkuMapping
 from app.modules.integrations.models import IntegrationProductMapping, IntegrationConnection
@@ -834,6 +834,82 @@ def treasury_reconciliation_control(
             "expected_outflow": Decimal(str(forecast[2] or 0)),
             "expected_net": Decimal(str(forecast[1] or 0)) - Decimal(str(forecast[2] or 0)),
         },
+    }
+
+
+@router.get("/treasury/gl-reconciliation", dependencies=[Depends(require_permission("treasury.access"))])
+def treasury_gl_reconciliation(
+    company_id: int = Query(..., gt=0),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _company(db, company_id, user)
+    settings = db.scalar(
+        select(CommerceAccountingSettings).where(CommerceAccountingSettings.company_id == company_id)
+    )
+    if settings is None:
+        raise HTTPException(409, "Accounting configuration is required for treasury GL reconciliation")
+
+    treasury_rows = db.execute(
+        select(
+            TreasuryTransaction.account_id,
+            func.sum(
+                case(
+                    (TreasuryTransaction.transaction_type.in_(("receipt", "deposit")), TreasuryTransaction.amount),
+                    (TreasuryTransaction.transaction_type.in_(("payment", "withdrawal")), -TreasuryTransaction.amount),
+                    (TreasuryTransaction.transaction_type == "transfer", -TreasuryTransaction.amount),
+                    else_=0,
+                )
+            ),
+        )
+        .where(
+            TreasuryTransaction.company_id == company_id,
+            TreasuryTransaction.status == "posted",
+        )
+        .group_by(TreasuryTransaction.account_id)
+    ).all()
+    destination_rows = db.execute(
+        select(TreasuryTransaction.offset_account_id, func.sum(TreasuryTransaction.amount))
+        .where(
+            TreasuryTransaction.company_id == company_id,
+            TreasuryTransaction.status == "posted",
+            TreasuryTransaction.transaction_type == "transfer",
+        )
+        .group_by(TreasuryTransaction.offset_account_id)
+    ).all()
+
+    treasury = {account_id: Decimal(str(balance or 0)) for account_id, balance in treasury_rows}
+    for account_id, amount in destination_rows:
+        treasury[account_id] = treasury.get(account_id, Decimal("0")) + Decimal(str(amount or 0))
+
+    gl_rows = db.execute(
+        select(
+            JournalEntryLine.account_combination_id,
+            func.coalesce(func.sum(JournalEntryLine.debit), 0),
+            func.coalesce(func.sum(JournalEntryLine.credit), 0),
+        )
+        .join(JournalEntry, JournalEntry.id == JournalEntryLine.entry_id)
+        .where(
+            JournalEntry.company_id == company_id,
+            JournalEntry.status == "posted",
+            JournalEntryLine.account_combination_id == settings.default_payment_account_id,
+        )
+        .group_by(JournalEntryLine.account_combination_id)
+    ).all()
+    gl_balance = Decimal("0")
+    if gl_rows:
+        _, debit, credit = gl_rows[0]
+        gl_balance = Decimal(str(debit or 0)) - Decimal(str(credit or 0))
+    treasury_balance = treasury.get(settings.default_payment_account_id, Decimal("0"))
+    difference = treasury_balance - gl_balance
+
+    return {
+        "company_id": company_id,
+        "account_id": settings.default_payment_account_id,
+        "treasury_balance": treasury_balance,
+        "gl_balance": gl_balance,
+        "difference": difference,
+        "reconciled": difference == 0,
     }
 
 
