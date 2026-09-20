@@ -58,11 +58,6 @@ class InventoryCostingService:
                     layers.c.quantity_remaining,
                     layers.c.unit_cost,
                 ).where(*fifo_conditions)
-                    layers.c.company_id == company_id,
-                    layers.c.item_id == stock.item_id,
-                    layers.c.warehouse_id == stock.warehouse_id,
-                    layers.c.quantity_remaining > 0,
-                )
                 fifo_value = Decimal("0")
                 fifo_quantity = Decimal("0")
                 for layer_qty, layer_cost in db.execute(fifo_stmt).all():
