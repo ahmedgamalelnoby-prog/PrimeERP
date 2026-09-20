@@ -22,8 +22,12 @@ from app.modules.saas.models import Subscription, SubscriptionPlan, Tenant, Tena
 from app.modules.saas.schemas import TenantRegistrationRequest
 from app.modules.saas.service import register_trial_tenant, resolve_enabled_modules
 
-from .models import IntegrationConnection
+from .models import IntegrationConnection, IntegrationEvent
 from .salla_public_app_models import SallaAppEvent, SallaAppInstallation, SallaSSOTicket
+from .salla_models import SallaOrder
+from .salla_service import normalize_salla_event
+from .salla_erp_finalize import finalize_salla_order
+from .salla_shipping_service import sync_salla_shipment
 
 SALLA_USER_INFO_URL = "https://accounts.salla.sa/oauth2/user/info"
 
@@ -528,7 +532,87 @@ def handle_app_event(db: Session, payload: dict[str, Any], event_id: str | None 
                         pass
         elif event == "app.updated":
             installation.status = "active"
-        result = {"installation_id": installation.id, "event": event, "status": installation.status, "subscription_status": installation.subscription_status}
+
+        # Commerce webhooks cross the public-app boundary into the normalized
+        # Salla tables and then use the existing ERP execution pipeline.
+        elif event.startswith("order.") or event in {"order.created", "order.updated", "order.status.updated", "order.cancelled"}:
+            if installation.connection_id is None:
+                raise SallaPublicAppError("Salla installation has no active integration connection")
+            connection = db.scalar(select(IntegrationConnection).where(
+                IntegrationConnection.id == installation.connection_id,
+                IntegrationConnection.company_id == installation.company_id,
+                IntegrationConnection.provider == "salla",
+                IntegrationConnection.is_active.is_(True),
+            ))
+            if connection is None:
+                raise SallaPublicAppError("Salla integration connection is missing or inactive")
+            normalized_event = IntegrationEvent(
+                company_id=connection.company_id,
+                connection_id=connection.id,
+                external_event_id=event_id,
+                event_type=event,
+                payload=json.dumps(data, ensure_ascii=False),
+            )
+            counters = normalize_salla_event(db, normalized_event)
+            external_order_id = _text(data, "id", "order_id")
+            if not external_order_id:
+                raise SallaPublicAppError(f"Salla {event} webhook does not contain an order id")
+            order = db.scalar(select(SallaOrder).where(
+                SallaOrder.company_id == connection.company_id,
+                SallaOrder.connection_id == connection.id,
+                SallaOrder.external_id == external_order_id,
+            ).with_for_update())
+            if order is None:
+                raise SallaPublicAppError(f"Salla order {external_order_id} was not normalized")
+            execution = finalize_salla_order(db, order)
+            result = {
+                "installation_id": installation.id,
+                "event": event,
+                "status": installation.status,
+                "subscription_status": installation.subscription_status,
+                "commerce": execution,
+                "normalized": counters,
+            }
+        elif event.startswith("shipment.") or event in {"shipment.created", "shipment.updated", "shipment.status.updated"}:
+            if installation.connection_id is None:
+                raise SallaPublicAppError("Salla installation has no active integration connection")
+            connection = db.scalar(select(IntegrationConnection).where(
+                IntegrationConnection.id == installation.connection_id,
+                IntegrationConnection.company_id == installation.company_id,
+                IntegrationConnection.provider == "salla",
+                IntegrationConnection.is_active.is_(True),
+            ))
+            if connection is None:
+                raise SallaPublicAppError("Salla integration connection is missing or inactive")
+            normalized_event = IntegrationEvent(
+                company_id=connection.company_id,
+                connection_id=connection.id,
+                external_event_id=event_id,
+                event_type=event,
+                payload=json.dumps(data, ensure_ascii=False),
+            )
+            counters = normalize_salla_event(db, normalized_event)
+            shipment_id = _text(data, "id", "shipment_id")
+            shipment_result = None
+            if shipment_id:
+                from .salla_models import SallaShipment
+                salla_shipment = db.scalar(select(SallaShipment).where(
+                    SallaShipment.company_id == connection.company_id,
+                    SallaShipment.connection_id == connection.id,
+                    SallaShipment.external_id == shipment_id,
+                ).with_for_update())
+                if salla_shipment is None:
+                    raise SallaPublicAppError(f"Salla shipment {shipment_id} was not normalized")
+                shipment_result = sync_salla_shipment(db, salla_shipment)
+            result = {
+                "installation_id": installation.id,
+                "event": event,
+                "status": installation.status,
+                "subscription_status": installation.subscription_status,
+                "shipping": shipment_result,
+                "normalized": counters,
+            }
+        result = locals().get("result") or {"installation_id": installation.id, "event": event, "status": installation.status, "subscription_status": installation.subscription_status}
 
     event_row.status = "processed"
     event_row.result_json = result
