@@ -1,7 +1,10 @@
 from decimal import Decimal
+import inspect
+
 
 import pytest
 
+from app.modules.integrations.salla_public_app_router import establish_embedded_session
 from app.modules.integrations.salla_public_app_service import (
     SallaPublicAppError,
     _merchant_id,
@@ -84,3 +87,8 @@ def test_shipping_invalid_rate_is_rejected():
             cod_fee_percent=Decimal("101"),
             payment_method="cod",
         )
+
+
+def test_salla_embedded_session_accepts_token_from_json_body():
+    parameter = inspect.signature(establish_embedded_session).parameters["salla_token"]
+    assert getattr(parameter.default, "embed", None) is True
