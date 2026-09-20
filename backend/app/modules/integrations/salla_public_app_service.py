@@ -611,9 +611,9 @@ def handle_app_event(db: Session, payload: dict[str, Any], event_id: str | None 
                 shipment_status = str(salla_shipment.status or "").strip().lower().replace(" ", "_")
                 fulfillment_requested = shipment_status in {
                     "picked_up", "pickedup", "shipped", "in_transit", "intransit",
-                    "received_at_final_hub", "out_for_delivery", "outfordelivery",
-                    "reattempted", "to_be_reattempted", "partially_delivered",
-                    "delivered",
+                    "delivering", "received_at_final_hub",
+                    "out_for_delivery", "outfordelivery",
+                    "partially_delivered", "delivered",
                 }
                 order = None
                 if salla_shipment.order_id:
