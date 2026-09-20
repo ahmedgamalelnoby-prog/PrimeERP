@@ -149,6 +149,7 @@ def main() -> None:
         if name not in frontend_modules and name not in backend_only_allowed
     )
     frontend_to_backend = {
+        "ai-reporting": "ai_reporting",
         "egyptian-einvoice": "egyptian_einvoice",
         "products": "catalog",
         "helpdesk": "helpdesk_ai",
