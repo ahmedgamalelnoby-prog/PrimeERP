@@ -51,10 +51,20 @@ class AccountingAdvancedService:
         ps=self._period(db,tenant,kw["source_company_id"],kw["when"]);pt=self._period(db,tenant,kw["target_company_id"],kw["when"])
         src=journal_service.create_draft(db,tenant_id=tenant,company_id=kw["source_company_id"],branch_id=kw["source_branch_id"],journal_id=kw["source_journal_id"],fiscal_year_id=ps.fiscal_year_id,period_id=ps.id,entry_number=f"IC-S-{kw['reference']}",entry_date=kw["when"],description=kw["description"],lines=[{"account_combination_id":kw["source_debit_account_id"],"debit":kw["amount"],"credit":0},{"account_combination_id":kw["source_credit_account_id"],"debit":0,"credit":kw["amount"]}],user_id=user.id,source_module="intercompany",source_entity="source")
         dst=journal_service.create_draft(db,tenant_id=tenant,company_id=kw["target_company_id"],branch_id=kw["target_branch_id"],journal_id=kw["target_journal_id"],fiscal_year_id=pt.fiscal_year_id,period_id=pt.id,entry_number=f"IC-T-{kw['reference']}",entry_date=kw["when"],description=kw["description"],lines=[{"account_combination_id":kw["target_debit_account_id"],"debit":kw["amount"],"credit":0},{"account_combination_id":kw["target_credit_account_id"],"debit":0,"credit":kw["amount"]}],user_id=user.id,source_module="intercompany",source_entity="target")
-        for e in (src,dst):
-            if e.journal.requires_approval: journal_service.submit(db,tenant_id=tenant,entry_id=e.id,user_id=user.id); raise HTTPException(status_code=409,detail="Intercompany journals require independent approval")
-            journal_service.post(db,tenant_id=tenant,entry_id=e.id,user_id=user.id)
-        x=AccountingIntercompanyLink(tenant_id=tenant,source_company_id=kw["source_company_id"],target_company_id=kw["target_company_id"],source_entry_id=src.id,target_entry_id=dst.id,reference=kw["reference"],status="posted");db.add(x);db.flush();return x
+        requires_approval = src.journal.requires_approval or dst.journal.requires_approval
+        if requires_approval:
+            journal_service.submit(db,tenant_id=tenant,entry_id=src.id,user_id=user.id,commit=False)
+            journal_service.submit(db,tenant_id=tenant,entry_id=dst.id,user_id=user.id,commit=False)
+            link_status = "pending_approval"
+        else:
+            journal_service.post(db,tenant_id=tenant,entry_id=src.id,user_id=user.id,commit=False)
+            journal_service.post(db,tenant_id=tenant,entry_id=dst.id,user_id=user.id,commit=False)
+            link_status = "posted"
+        x=AccountingIntercompanyLink(tenant_id=tenant,source_company_id=kw["source_company_id"],target_company_id=kw["target_company_id"],source_entry_id=src.id,target_entry_id=dst.id,reference=kw["reference"],status=link_status)
+        db.add(x)
+        db.commit()
+        db.refresh(x)
+        return x
     def eliminate(self,db,user,**kw):
         tenant=self._scope(db,user,kw["company_id"]);p=self._period(db,tenant,kw["company_id"],kw["when"])
         e=journal_service.create_draft(db,tenant_id=tenant,company_id=kw["company_id"],branch_id=kw["branch_id"],journal_id=kw["journal_id"],fiscal_year_id=p.fiscal_year_id,period_id=p.id,entry_number=f"ELIM-{kw['consolidation_key']}-{kw['when']:%Y%m%d}",entry_date=kw["when"],description=kw["description"],lines=[{"account_combination_id":kw["debit_account_id"],"debit":kw["amount"],"credit":0},{"account_combination_id":kw["credit_account_id"],"debit":0,"credit":kw["amount"]}],user_id=user.id,source_module="consolidation",source_entity="elimination")
