@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -10,8 +10,8 @@ from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
 from app.modules.branches.models import Branch
-from app.modules.enterprise.models import FixedAsset, Budget, BudgetLine, Employee, PayrollRun, PayrollLine, Project, ProjectContract
-from app.modules.enterprise.schemas import AssetCreate, AssetResponse, EmployeeCreate, EmployeeResponse, PayrollRunCreate, PayrollPostRequest, PayrollResponse, BudgetCreate, BudgetLineCreate, BudgetResponse, ProjectCreate, ProjectResponse, ContractCreate, ContractResponse
+from app.modules.enterprise.models import FixedAsset, FixedAssetDepreciationRun, Budget, BudgetLine, Employee, PayrollRun, PayrollLine, Project, ProjectContract
+from app.modules.enterprise.schemas import AssetCreate, AssetResponse, AssetDepreciateRequest, AssetDepreciationResponse, EmployeeCreate, EmployeeResponse, PayrollRunCreate, PayrollPostRequest, PayrollResponse, BudgetCreate, BudgetLineCreate, BudgetResponse, ProjectCreate, ProjectResponse, ContractCreate, ContractResponse
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.accounting.chart_of_accounts.models import AccountCombination
@@ -56,20 +56,99 @@ def assets(company_id: int = Query(..., gt=0), db: Session = Depends(get_db), cu
     return list(db.scalars(select(FixedAsset).where(FixedAsset.company_id == company_id).order_by(FixedAsset.code)).all())
 
 
-@router.post("/assets/{asset_id}/depreciate", response_model=AssetResponse, dependencies=[Depends(require_permission("enterprise.post"))])
-def depreciate(asset_id: int, company_id: int = Query(..., gt=0), months: int = Query(1, gt=0), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+@router.post("/assets/{asset_id}/depreciate", response_model=AssetDepreciationResponse, status_code=201, dependencies=[Depends(require_permission("enterprise.post"))])
+def depreciate(asset_id: int, p: AssetDepreciateRequest, company_id: int = Query(..., gt=0), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from calendar import monthrange
+    from app.modules.accounting.fiscal_years.repositories.fiscal_year_repository import fiscal_year_repository
+    from app.modules.accounting.journals.services.journal_service import journal_service
+    from app.modules.accounting.journals.models import JournalEntry
+
     company_for_user(db, company_id, current_user)
     o = db.scalar(select(FixedAsset).where(FixedAsset.id == asset_id, FixedAsset.company_id == company_id).with_for_update())
     if not o:
         raise HTTPException(404, "Asset not found")
     if o.status != "active":
         raise HTTPException(409, "Only active assets can be depreciated")
-    monthly = max(Decimal("0"), (Decimal(o.cost) - Decimal(o.residual_value)) / Decimal(o.useful_life_months))
-    remaining = max(Decimal("0"), Decimal(o.cost) - Decimal(o.residual_value) - Decimal(o.accumulated_depreciation))
-    o.accumulated_depreciation += min(monthly * months, remaining)
+    if not all((o.asset_account_id, o.accumulated_depreciation_account_id, o.depreciation_expense_account_id)):
+        raise HTTPException(409, "Fixed asset accounting accounts must be configured before depreciation")
+    posting_date = p.posting_date or date.today()
+    if posting_date < o.acquisition_date:
+        raise HTTPException(422, "Depreciation posting date cannot precede the acquisition date")
+    existing = db.scalar(select(FixedAssetDepreciationRun).where(FixedAssetDepreciationRun.asset_id == o.id, FixedAssetDepreciationRun.posting_date == posting_date).with_for_update())
+    if existing:
+        raise HTTPException(409, "Depreciation has already been created for this asset and posting date")
+    period = fiscal_year_repository.get_period_for_date(db, current_user.tenant_id, company_id, posting_date)
+    if period is None:
+        raise HTTPException(409, "No open accounting period is available for the depreciation posting date")
+    period = fiscal_year_repository.get_period_by_id(db, period.id, current_user.tenant_id, for_update=True)
+    if period is None or period.company_id != company_id or period.status != "open" or not period.allow_posting:
+        raise HTTPException(409, "Accounting period is not open for depreciation posting")
+    branch = db.scalar(select(Branch).where(Branch.id == p.branch_id, Branch.company_id == company_id, Branch.tenant_id == current_user.tenant_id, Branch.is_active.is_(True)))
+    if branch is None:
+        raise HTTPException(422, "Depreciation branch must belong to the selected company and tenant")
+    journal = db.scalar(select(AccountingJournal).where(AccountingJournal.id == p.journal_id, AccountingJournal.tenant_id == current_user.tenant_id, AccountingJournal.company_id == company_id, AccountingJournal.is_active.is_(True)))
+    if journal is None:
+        raise HTTPException(422, "Depreciation journal must belong to the selected company and tenant and be active")
+    account_ids={o.asset_account_id,o.accumulated_depreciation_account_id,o.depreciation_expense_account_id}
+    accounts=db.scalars(select(AccountCombination).where(AccountCombination.id.in_(account_ids),AccountCombination.company_id==company_id,AccountCombination.tenant_id==current_user.tenant_id,AccountCombination.is_active.is_(True))).all()
+    if len(accounts)!=len(account_ids):
+        raise HTTPException(422, "Every fixed asset accounting account must belong to the selected company and tenant")
+    monthly=max(Decimal("0"),(Decimal(o.cost)-Decimal(o.residual_value))/Decimal(o.useful_life_months))
+    remaining=max(Decimal("0"),Decimal(o.cost)-Decimal(o.residual_value)-Decimal(o.accumulated_depreciation))
+    amount=min(monthly*p.months,remaining)
+    if amount <= 0:
+        raise HTTPException(409, "Asset is fully depreciated")
+    entry=journal_service.create_draft(
+        db,tenant_id=current_user.tenant_id,company_id=company_id,branch_id=p.branch_id,journal_id=p.journal_id,
+        fiscal_year_id=period.fiscal_year_id,period_id=period.id,entry_number=f"DEPR-{o.id}-{posting_date.isoformat()}",
+        entry_date=posting_date,description=f"Depreciation {o.code} {posting_date.isoformat()}",
+        lines=[
+            {"account_combination_id":o.depreciation_expense_account_id,"debit":amount,"credit":0,"description":f"Depreciation expense {o.code}"},
+            {"account_combination_id":o.accumulated_depreciation_account_id,"debit":0,"credit":amount,"description":f"Accumulated depreciation {o.code}"},
+        ],
+        user_id=current_user.id,source_module="enterprise",source_entity="fixed_asset_depreciation",source_id=o.id,commit=False,
+    )
+    journal_service.submit(db,tenant_id=current_user.tenant_id,entry_id=entry.id,user_id=current_user.id,commit=False)
+    run=FixedAssetDepreciationRun(tenant_id=current_user.tenant_id,company_id=company_id,asset_id=o.id,posting_date=posting_date,months=p.months,amount=amount,journal_entry_id=entry.id,status="pending")
+    db.add(run)
+    if entry.journal.requires_approval:
+        db.commit()
+        db.refresh(run)
+        return run
+    journal_service.post(db,tenant_id=current_user.tenant_id,entry_id=entry.id,user_id=current_user.id,commit=False)
+    o.accumulated_depreciation += amount
+    run.status="posted"
+    run.completed_at=datetime.now(timezone.utc)
     db.commit()
-    db.refresh(o)
-    return o
+    db.refresh(run)
+    return run
+
+@router.post("/assets/{asset_id}/depreciations/{run_id}/complete", response_model=AssetDepreciationResponse, dependencies=[Depends(require_permission("enterprise.post"))])
+def complete_depreciation(asset_id: int, run_id: int, company_id: int = Query(..., gt=0), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from app.modules.accounting.journals.models import JournalEntry
+    company_for_user(db, company_id, current_user)
+    run=db.scalar(select(FixedAssetDepreciationRun).where(FixedAssetDepreciationRun.id==run_id,FixedAssetDepreciationRun.asset_id==asset_id,FixedAssetDepreciationRun.company_id==company_id,FixedAssetDepreciationRun.tenant_id==current_user.tenant_id).with_for_update())
+    if run is None:
+        raise HTTPException(404,"Depreciation run not found")
+    if run.status=="posted":
+        return run
+    if run.status!="pending":
+        raise HTTPException(409,"Only pending depreciation runs can be completed")
+    entry=db.scalar(select(JournalEntry).where(JournalEntry.id==run.journal_entry_id,JournalEntry.tenant_id==current_user.tenant_id,JournalEntry.company_id==company_id).with_for_update())
+    if entry is None:
+        raise HTTPException(409,"Depreciation journal entry not found")
+    if entry.status!="posted":
+        raise HTTPException(409,"Depreciation journal entry must be approved and posted before completing depreciation")
+    asset=db.scalar(select(FixedAsset).where(FixedAsset.id==asset_id,FixedAsset.company_id==company_id).with_for_update())
+    if asset is None:
+        raise HTTPException(404,"Asset not found")
+    remaining=max(Decimal("0"),Decimal(asset.cost)-Decimal(asset.residual_value)-Decimal(asset.accumulated_depreciation))
+    if run.amount > remaining:
+        raise HTTPException(409,"Depreciation run exceeds the asset's remaining depreciable value")
+    asset.accumulated_depreciation += run.amount
+    run.status="posted";run.completed_at=datetime.now(timezone.utc)
+    db.commit();db.refresh(run)
+    return run
 
 
 @router.post("/employees", response_model=EmployeeResponse, status_code=201, dependencies=[Depends(require_permission("enterprise.write"))])
