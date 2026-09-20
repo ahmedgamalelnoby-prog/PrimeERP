@@ -13,7 +13,7 @@ class ClosePayload(BaseModel): company_id:int=Field(gt=0);actual_cash:Decimal=Fi
 def list_sessions(company_id:int=Query(...,gt=0),terminal_id:int|None=Query(None,gt=0),u:User=Depends(get_current_user),db:Session=Depends(get_db)):return pos_session_service.list(db,u.tenant_id,company_id,terminal_id)
 @router.post("/open",status_code=201)
 def open_session(p:OpenPayload,u:User=Depends(get_current_user),db:Session=Depends(get_db)):
- x=pos_session_service.open(db,u.tenant_id,u.id,**p.model_dump()) if False else pos_session_service.open(db,u.tenant_id,p.company_id,p.terminal_id,u.id,p.opening_cash,p.notes);db.commit();db.refresh(x);return x
+ x=pos_session_service.open(db,u.tenant_id,p.company_id,p.terminal_id,u.id,p.opening_cash,p.notes);db.commit();db.refresh(x);return x
 @router.post("/{session_id}/close")
 def close_session(session_id:int,p:ClosePayload,u:User=Depends(get_current_user),db:Session=Depends(get_db)):
  x=pos_session_service.close(db,u.tenant_id,p.company_id,session_id,p.actual_cash,p.notes);db.commit();db.refresh(x);return x
