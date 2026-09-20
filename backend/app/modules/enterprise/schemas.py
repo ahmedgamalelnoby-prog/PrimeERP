@@ -3,8 +3,21 @@ from decimal import Decimal
 from pydantic import BaseModel, Field, ConfigDict
 class AssetCreate(BaseModel):
  company_id:int=Field(gt=0); code:str; name:str; category:str; acquisition_date:date; cost:Decimal=Field(ge=0); residual_value:Decimal=Field(default=0,ge=0); useful_life_months:int=Field(gt=0)
+ asset_account_id:int|None=Field(default=None,gt=0)
+ accumulated_depreciation_account_id:int|None=Field(default=None,gt=0)
+ depreciation_expense_account_id:int|None=Field(default=None,gt=0)
 class AssetResponse(AssetCreate):
  model_config=ConfigDict(from_attributes=True); id:int; accumulated_depreciation:Decimal; status:str
+
+class AssetDepreciateRequest(BaseModel):
+ branch_id:int=Field(gt=0)
+ journal_id:int=Field(gt=0)
+ posting_date:date|None=None
+ months:int=Field(default=1,gt=0)
+
+class AssetDepreciationResponse(BaseModel):
+ model_config=ConfigDict(from_attributes=True)
+ id:int; asset_id:int; posting_date:date; months:int; amount:Decimal; journal_entry_id:int; status:str
 class EmployeeCreate(BaseModel):
  company_id:int=Field(gt=0); employee_no:str; name:str; department:str|None=None; job_title:str|None=None; hire_date:date; basic_salary:Decimal=Field(ge=0); allowances:Decimal=Field(default=0,ge=0); deductions:Decimal=Field(default=0,ge=0)
 class EmployeeResponse(EmployeeCreate):
