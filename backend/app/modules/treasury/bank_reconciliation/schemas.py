@@ -89,3 +89,4 @@ class ReconciliationCandidate(BaseModel):
     reference: str | None = None
     cheque_number: str | None = None
     transaction_date: date | None = None
+    score: int = 0
