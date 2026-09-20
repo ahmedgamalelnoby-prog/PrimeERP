@@ -34,9 +34,14 @@ def decide(db,o,approve,user):
  o.status="approved";o.approval_status="approved";o.approved_by=user.id;o.approved_at=datetime.now(timezone.utc);return _post(db,o,user)
 def daily_close(db,p,user):
  _company(db,p.company_id,user);sign=case((TreasuryTransaction.transaction_type.in_(["receipt","deposit"]),TreasuryTransaction.amount),(TreasuryTransaction.transaction_type.in_(["payment","withdrawal"]),-TreasuryTransaction.amount),else_=0);q=select(func.coalesce(func.sum(sign),0)).where(TreasuryTransaction.company_id==p.company_id,TreasuryTransaction.branch_id==p.branch_id,TreasuryTransaction.transaction_date<=p.closing_date,TreasuryTransaction.status=="posted");book=db.scalar(q) or 0;o=db.scalar(select(TreasuryDailyClosing).where(TreasuryDailyClosing.company_id==p.company_id,TreasuryDailyClosing.branch_id==p.branch_id,TreasuryDailyClosing.closing_date==p.closing_date).with_for_update())
+ if o is not None and o.status=="closed":raise HTTPException(409,"Treasury day is already closed")
  if o is None:o=TreasuryDailyClosing(company_id=p.company_id,branch_id=p.branch_id,closing_date=p.closing_date);db.add(o)
  o.book_balance=book;o.counted_balance=p.counted_balance;o.difference=p.counted_balance-book;o.status="closed";o.closed_by=user.id;o.closed_at=datetime.now(timezone.utc);o.notes=p.notes;db.flush();return o
 def forecast(db,p,user):
- _company(db,p.company_id,user);o=TreasuryForecast(company_id=p.company_id,forecast_date=p.forecast_date,expected_inflow=p.expected_inflow,expected_outflow=p.expected_outflow,opening_balance=p.opening_balance,closing_balance=p.opening_balance+p.expected_inflow-p.expected_outflow,source=p.source,created_by=user.id);db.add(o);db.flush();return o
+ _company(db,p.company_id,user)
+ existing=db.scalar(select(TreasuryForecast).where(TreasuryForecast.company_id==p.company_id,TreasuryForecast.forecast_date==p.forecast_date,TreasuryForecast.source==p.source))
+ if existing is not None:
+  existing.expected_inflow=p.expected_inflow;existing.expected_outflow=p.expected_outflow;existing.opening_balance=p.opening_balance;existing.closing_balance=p.opening_balance+p.expected_inflow-p.expected_outflow;db.flush();return existing
+ o=TreasuryForecast(company_id=p.company_id,forecast_date=p.forecast_date,expected_inflow=p.expected_inflow,expected_outflow=p.expected_outflow,opening_balance=p.opening_balance,closing_balance=p.opening_balance+p.expected_inflow-p.expected_outflow,source=p.source,created_by=user.id);db.add(o);db.flush();return o
 def positions(db,cid,user):
  _company(db,cid,user);debit=func.sum(case((TreasuryTransaction.transaction_type.in_(["receipt","deposit"]),TreasuryTransaction.amount),(TreasuryTransaction.transaction_type.in_(["payment","withdrawal"]),-TreasuryTransaction.amount),else_=0));rows=db.execute(select(TreasuryTransaction.account_id,debit.label("balance")).where(TreasuryTransaction.company_id==cid,TreasuryTransaction.status=="posted").group_by(TreasuryTransaction.account_id)).all();return [{"account_id":a,"balance":b} for a,b in rows]
