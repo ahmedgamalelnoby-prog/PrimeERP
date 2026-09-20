@@ -35,7 +35,7 @@ class TreasuryAccountingService:
             JournalEntry.company_id == cheque.company_id,
             JournalEntry.source_module == "treasury",
             JournalEntry.source_entity == f"cheque_event:{event_key}",
-            JournalEntry.source_id == f"{cheque.id}:{event_key}",
+            JournalEntry.source_id == cheque.id,
         ))
         if existing is not None:
             return existing
