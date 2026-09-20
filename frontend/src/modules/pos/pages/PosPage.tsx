@@ -22,7 +22,7 @@ export default function PosPage() {
   const [selectedMenuItem, setSelectedMenuItem] = useState("");
   const [partnerId, setPartnerId] = useState("");
   const [warehouseId, setWarehouseId] = useState("");
-  const [qty, setQty] = useState("1");
+  const [qty, setQty] = useState("1.0");
   const [method, setMethod] = useState("cash");
   const [tab, setTab] = useState<"sale" | "setup" | "kds">("sale");
 
