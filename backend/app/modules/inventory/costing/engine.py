@@ -1,7 +1,7 @@
 from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from .layer_models import InventoryCostLayer
+from app.modules.inventory.stock_moves.models import InventoryCostLayer
 class CostingEngine:
  def add_layer(self,db,**kw):
   x=InventoryCostLayer(**kw);db.add(x);db.flush();return x
