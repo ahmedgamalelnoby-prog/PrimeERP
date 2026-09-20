@@ -7,6 +7,7 @@ from app.database.session import get_db
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.manufacturing.production_orders.service import manufacturing_production_service
+from app.modules.manufacturing.completion_service import manufacturing_completion_service
 router=APIRouter(prefix="/manufacturing/work-orders",tags=["Manufacturing Work Orders"])
 class WorkOrderCreate(BaseModel):
  company_id:int=Field(gt=0);number:str=Field(min_length=1,max_length=80);item_id:int=Field(gt=0);variant_id:int|None=Field(default=None,gt=0);recipe_id:int|None=Field(default=None,gt=0);warehouse_id:int|None=Field(default=None,gt=0);planned_qty:Decimal=Field(gt=0);planned_start:date|None=None;planned_end:date|None=None
@@ -31,4 +32,4 @@ def consume(work_order_id:int,p:ConsumePayload,company_id:int=Query(...,gt=0),u:
  x=manufacturing_production_service.consume(db,u.tenant_id,u.id,company_id,work_order_id,**p.model_dump());db.commit();db.refresh(x);return x
 @router.post("/{work_order_id}/complete")
 def complete(work_order_id:int,p:CompletePayload,company_id:int=Query(...,gt=0),u:User=Depends(get_current_user),db:Session=Depends(get_db)):
- x=manufacturing_production_service.complete(db,u.tenant_id,u.id,company_id,work_order_id,**p.model_dump());db.commit();db.refresh(x);return x
+ result=manufacturing_completion_service.execute_production(db,u.tenant_id,company_id,work_order_id,u.id,p.completed_qty,None,p.destination_location_id);db.commit();return result
