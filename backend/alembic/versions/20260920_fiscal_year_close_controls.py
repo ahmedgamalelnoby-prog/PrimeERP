@@ -2,7 +2,9 @@
 from alembic import op
 import sqlalchemy as sa
 revision="20260920_fiscal_year_close_controls"
-down_revision=("20260920_accounting_recognition_schedules","20260920_enterprise_finance","20260920_pos_outlet_routing")
+# accounting_recognition_schedules already descends from enterprise_finance;
+# listing both would create an invalid ancestor/descendant merge.
+down_revision=("20260920_accounting_recognition_schedules","20260920_pos_outlet_routing")
 branch_labels=None
 depends_on=None
 
