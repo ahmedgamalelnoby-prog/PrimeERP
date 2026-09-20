@@ -12,8 +12,6 @@ on:
 permissions:
   contents: read
 
-# One Windows runner is the canonical CI executor. If another commit arrives
-# while validation is running, the older run is obsolete and is cancelled.
 concurrency:
   group: primeerp-self-hosted-release-gate-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -90,13 +88,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           python -m compileall -q app
-          python scripts/check_modular_architecture.py
-          python scripts/check_api_security.py
-          python scripts/check_production_config.py
-          python scripts/check_release_readiness.py
-          python scripts/check_alembic_graph.py
-          python scripts/check_product_architecture.py
-          python scripts/check_frontend_backend_alignment.py
+          python scripts/run_architecture_audit.py
       - name: Backend environment diagnostics
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         working-directory: backend
