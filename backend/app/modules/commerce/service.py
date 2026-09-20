@@ -420,7 +420,7 @@ class CommerceService:
         if wht_amount == 0 and getattr(payload, "auto_wht", True): wht_amount = self._auto_payment_wht(db, document=document, company_id=payload.company_id, amount=Decimal(payload.amount), document_kind=kind)
         if getattr(payload, "idempotency_key", None):
             integration_tx, integration_started = core_integration_service.begin(
-                db, user=type("Actor", (), {"tenant_id": getattr(document, "tenant_id", None), "id": user_id})(),
+                db, tenant_id=getattr(document, "tenant_id", None), actor_id=user_id,
                 company_id=payload.company_id, source_module="commerce", source_entity=f"{kind}_payment",
                 source_id=document.id, operation="post_payment", idempotency_key=payload.idempotency_key,
             )
