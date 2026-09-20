@@ -17,7 +17,8 @@ def _post(db,o,user):
  period=fiscal_year_service.assert_open_for_date(db,company_id=o.company_id,posting_date=o.transaction_date)
  if o.transaction_type in {"receipt","deposit"}: lines=[{"account_combination_id":o.account_id,"debit":o.amount,"credit":0},{"account_combination_id":o.offset_account_id,"debit":0,"credit":o.amount}]
  elif o.transaction_type in {"payment","withdrawal"}: lines=[{"account_combination_id":o.account_id,"debit":0,"credit":o.amount},{"account_combination_id":o.offset_account_id,"debit":o.amount,"credit":0}]
- else: lines=[{"account_combination_id":o.account_id,"debit":o.amount,"credit":0},{"account_combination_id":o.offset_account_id,"debit":0,"credit":o.amount}]
+ elif o.transaction_type == "transfer": lines=[{"account_combination_id":o.account_id,"debit":0,"credit":o.amount},{"account_combination_id":o.offset_account_id,"debit":o.amount,"credit":0}]
+ else: raise HTTPException(422,"Unsupported treasury transaction type")
  e=journal_service.create_draft(db,tenant_id=c.tenant_id,company_id=o.company_id,branch_id=o.branch_id or s.default_branch_id,journal_id=s.cash_journal_id,fiscal_year_id=period.fiscal_year_id,period_id=period.id,entry_number=f"TR-{o.id}",entry_date=o.transaction_date,description=o.description or f"Treasury {o.transaction_type}",lines=lines,user_id=user.id,source_module="treasury",source_entity="treasury_transaction",source_id=str(o.id),commit=False,currency_code=o.currency)
  journal_service.submit(db,tenant_id=c.tenant_id,entry_id=e.id,user_id=user.id,commit=False)
  if not e.journal.requires_approval:
