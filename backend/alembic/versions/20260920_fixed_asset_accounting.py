@@ -3,7 +3,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "20260920_fixed_asset_accounting"
-down_revision = "20260920_enterprise_business_key_guards"
+down_revision = "20260920_fiscal_year_close_controls"
 branch_labels = None
 depends_on = None
 
