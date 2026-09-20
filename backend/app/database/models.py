@@ -69,3 +69,4 @@ from app.modules.commerce.backorder_models import CommerceBackorder
 
 from app.modules.manufacturing.mrp_models import MRPPlan, MRPRequirement, MRPWorkCenter, MRPRoutingOperation, MRPScheduleSlot, MRPProductionCost
 \nfrom app.modules.crm.models import CRMLead\nfrom app.modules.hr.models import EmploymentContract\n
+from app.modules.inventory.costing.variance_models import InventoryCostVariance
