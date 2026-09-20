@@ -16,7 +16,9 @@ from app.modules.inventory.stock_moves.models import InventoryStockMove
 from app.modules.pos.completion_models import POSPromotionUse
 from app.modules.restaurant.models import PosOrderLineRoute, PosTerminal, PosOutlet
 from app.modules.commerce.models import SalesDocument, SalesLine, CommercePayment, PurchaseDocument, CommercePaymentAllocation, BusinessPartner
+from app.modules.commerce.purchase_return_models import PurchaseReturnAllocation
 from app.modules.shipping.models import Shipment, ShippingCarrier
+from app.modules.shipping.settlement_models import ShippingSettlementBatch, ShippingShipmentSettlement
 from app.modules.treasury.completion_models import TreasuryTransaction, TreasuryDailyClosing, TreasuryForecast
 from app.modules.treasury.models import Cheque, ChequeEvent
 from app.modules.commerce.accounting_models import CommerceAccountingSettings
@@ -716,14 +718,33 @@ def shipping_cod_reconciliation(
     delivered_cod = Decimal("0")
     returned_cod = Decimal("0")
     fees = Decimal("0")
+    cod_commission = Decimal("0")
+    withdrawal_fees = Decimal("0")
+    other_fees = Decimal("0")
+    settled_count = 0
+    unsettled_count = 0
     for shipment in rows:
-        cod = Decimal(str(shipment.cod_collected or 0))
-        fee = Decimal(str(shipment.shipping_fee or 0))
-        fees += fee
+        cod = Decimal(str(shipment.cod_collected or shipment.cod_amount or 0))
         if shipment.status == "delivered":
             delivered_cod += cod
         else:
             returned_cod += cod
+        settlement = db.scalar(
+            select(ShippingShipmentSettlement)
+            .join(ShippingSettlementBatch, ShippingSettlementBatch.id == ShippingShipmentSettlement.batch_id)
+            .where(
+                ShippingShipmentSettlement.shipment_id == shipment.id,
+                ShippingSettlementBatch.company_id == company_id,
+            )
+        )
+        if settlement is None:
+            unsettled_count += 1
+            continue
+        settled_count += 1
+        fees += Decimal(str(settlement.carrier_fee or 0))
+        cod_commission += Decimal(str(settlement.cod_commission or 0))
+        withdrawal_fees += Decimal(str(settlement.withdrawal_fee or 0))
+        other_fees += Decimal(str(settlement.other_fee or 0))
 
     return {
         "company_id": company_id,
@@ -731,10 +752,15 @@ def shipping_cod_reconciliation(
         "shipment_count": len(rows),
         "delivered_cod": delivered_cod,
         "returned_cod": returned_cod,
+        "settled_count": settled_count,
+        "unsettled_count": unsettled_count,
         "shipping_fees": fees,
-        "net_cod_after_shipping_fees": delivered_cod - fees,
+        "cod_commission": cod_commission,
+        "withdrawal_fees": withdrawal_fees,
+        "other_fees": other_fees,
+        "net_cod_after_all_carrier_fees": delivered_cod - fees,
+        "settlement_ready": unsettled_count == 0,
     }
-
 
 @router.get("/treasury/cheque-integration", dependencies=[Depends(require_permission("treasury.access"))])
 def cheque_integration(
