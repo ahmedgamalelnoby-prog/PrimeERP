@@ -12,7 +12,6 @@ from app.modules.commerce.models import CommercePayment, CommercePaymentAllocati
 from app.modules.jurisdiction.models import TaxSnapshot
 from app.modules.jurisdiction.tax_posting_guard import validate_payment_wht
 from app.modules.accounting.fiscal_years.services.fiscal_year_service import fiscal_year_service
-from app.modules.commerce.accounting_service import commerce_accounting_service
 
 
 PAYMENT_METHODS = {"cash", "bank_transfer", "card", "cheque", "wallet", "cod", "other"}
@@ -301,15 +300,5 @@ def reverse_payment(
         if document is not None:
             document.paid_total = Decimal(document.paid_total or 0) - payment_amount
 
-    db.flush()
-    # Reverse the original payment's accounting entry in the same transaction.
-    # This keeps the subledger paid_total/allocation reversal and GL reversal atomic.
-    commerce_accounting_service.post_payment_reversal(
-        db,
-        payment,
-        document,
-        user_id=0,
-        reversal_date=reversal_date,
-    )
     db.flush()
     return document, payment, reversal
