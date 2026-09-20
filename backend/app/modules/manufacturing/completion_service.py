@@ -45,6 +45,7 @@ class ManufacturingCompletionService:
         x.stock_move_id=move.id;db.flush();return x
     def execute_production(self,db,tenant_id,company_id,work_order_id,user_id,quantity,source_location_id=None,destination_location_id=None):
         wo=self._wo(db,company_id,work_order_id)
+        if wo.status not in {"released","in_progress"}: raise HTTPException(409,"Work order must be released or in progress")
         qty=Decimal(str(quantity))
         if qty <= 0: raise HTTPException(400,"Production quantity must be positive")
         starting_completed=Decimal(wo.completed_qty or 0)
