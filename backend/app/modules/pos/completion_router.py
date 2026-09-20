@@ -35,6 +35,8 @@ def list_groups(company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User
 @router.post("/promotions",status_code=201)
 def create_promotion(p:PromotionPayload,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
     company(db,company_id,u)
+    if p.valid_from and p.valid_to and p.valid_to < p.valid_from:
+        raise HTTPException(422,"Promotion valid_to cannot be earlier than valid_from")
     if db.scalar(select(POSPromotion).where(POSPromotion.company_id==company_id,POSPromotion.code==p.code)): raise HTTPException(409,"Promotion code already exists")
     x=POSPromotion(company_id=company_id,**p.model_dump());db.add(x);db.commit();db.refresh(x);return x
 @router.get("/promotions/validate")
