@@ -59,6 +59,16 @@ def _deliveries(db: Session, order: SallaOrder, shipment_external_id: str | None
     ).all()
 
 
+def _return_source_id(order_external_id: str, move_id: int) -> str:
+    """Return idempotency key for one original Salla fulfillment stock move.
+
+    The key deliberately does not include the shipment/event scope so a later
+    order-level return cannot restore a move that was already restored by a
+    shipment-level return.
+    """
+    return f"salla_return:{order_external_id}:{move_id}"
+
+
 def restore_salla_inventory(db: Session, order: SallaOrder, user_id: int, shipment_external_id: str | None = None) -> dict:
     """Restore fulfilled Salla stock exactly once and reverse its COGS."""
     deliveries = _deliveries(db, order, shipment_external_id=shipment_external_id)
@@ -94,11 +104,12 @@ def restore_salla_inventory(db: Session, order: SallaOrder, user_id: int, shipme
     if destination is None:
         raise ValueError(f"Salla return {order.external_id} cannot restore stock: warehouse has no active location")
 
+    return_key = f"{order.external_id}:shipment:{shipment_external_id}" if shipment_external_id else str(order.external_id)
     total_cost = Decimal("0")
     returned = 0
+    newly_returned = 0
     for move in source_moves:
-        return_key = f"{order.external_id}:shipment:{shipment_external_id}" if shipment_external_id else str(order.external_id)
-        source_id = f"{return_key}:{move.id}"
+        source_id = _return_source_id(str(order.external_id), move.id)
         existing = db.scalar(
             select(InventoryStockMove).where(
                 InventoryStockMove.company_id == order.company_id,
@@ -109,8 +120,8 @@ def restore_salla_inventory(db: Session, order: SallaOrder, user_id: int, shipme
             )
         )
         if existing:
-            total_cost += Decimal(existing.quantity) * Decimal(existing.unit_cost or 0)
-            returned += 1
+            # This move was already restored by an earlier shipment/order
+            # return. Do not count it again for COGS or create another receipt.
             continue
 
         payload = StockMoveCreate(
@@ -131,8 +142,11 @@ def restore_salla_inventory(db: Session, order: SallaOrder, user_id: int, shipme
         inventory_stock_move_service.post(db, company_id=order.company_id, move_id=ret.id)
         total_cost += Decimal(ret.quantity) * Decimal(ret.unit_cost or 0)
         returned += 1
+        newly_returned += 1
 
     accounting = False
+    if newly_returned == 0:
+        return {"status": "already_restored", "return_moves": 0, "cogs_reversed": False}
     if total_cost > 0:
         settings = commerce_accounting_service._settings(db, order.company_id)
         commerce_accounting_service._post(
