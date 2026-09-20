@@ -9,6 +9,7 @@ from app.modules.companies.models import Company
 from app.modules.manufacturing.completion_models import InventoryStockPolicy,InventoryCostReconciliation
 from app.modules.inventory.items.models import InventoryStock
 from app.modules.catalog.models import ProductCostHistory
+from app.modules.inventory.stock_moves.models import InventoryCostLayer
 
 router=APIRouter(prefix="/inventory/completion",tags=["Inventory Completion"])
 def company(db,cid,u):
@@ -38,8 +39,16 @@ def reconcile(company_id:int=Query(...,gt=0),warehouse_id:int=Query(...,gt=0),it
     stock=db.scalar(select(InventoryStock).where(InventoryStock.company_id==company_id,InventoryStock.warehouse_id==warehouse_id,InventoryStock.item_id==item_id).with_for_update())
     if stock is None: raise HTTPException(404,"Inventory stock not found")
     qty=__import__("decimal").Decimal(str(stock.quantity_on_hand or 0));sub=qty*__import__("decimal").Decimal(str(stock.average_cost or 0))
-    hist=db.scalar(select(ProductCostHistory).where(ProductCostHistory.company_id==company_id,ProductCostHistory.product_id==item_id).order_by(ProductCostHistory.effective_at.desc(),ProductCostHistory.id.desc()))
-    unit=__import__("decimal").Decimal(str(hist.cost)) if hist else __import__("decimal").Decimal(str(stock.average_cost or 0))
-    value=qty*unit;diff=value-sub
+    method=method.lower()
+    if method not in {"standard","weighted_average","fifo","actual"}: raise HTTPException(422,"Unsupported costing method")
+    if method == "weighted_average": value=sub
+    elif method == "fifo":
+        layers=db.scalars(select(InventoryCostLayer).where(InventoryCostLayer.company_id==company_id,InventoryCostLayer.item_id==item_id,InventoryCostLayer.warehouse_id==warehouse_id,InventoryCostLayer.quantity_remaining>0).order_by(InventoryCostLayer.id)).all()
+        value=sum((__import__("decimal").Decimal(x.quantity_remaining)*__import__("decimal").Decimal(x.unit_cost) for x in layers),__import__("decimal").Decimal("0"))
+    else:
+        hist=db.scalar(select(ProductCostHistory).where(ProductCostHistory.company_id==company_id,ProductCostHistory.product_id==item_id).order_by(ProductCostHistory.effective_at.desc(),ProductCostHistory.id.desc()))
+        unit=__import__("decimal").Decimal(str(hist.cost)) if hist else __import__("decimal").Decimal(str(stock.average_cost or 0))
+        value=qty*unit
+    diff=value-sub
     x=InventoryCostReconciliation(company_id=company_id,item_id=item_id,warehouse_id=warehouse_id,method=method,quantity=qty,subledger_value=sub,recomputed_value=value,difference=diff,status="matched" if diff==0 else "variance")
     db.add(x);db.commit();db.refresh(x);return x
