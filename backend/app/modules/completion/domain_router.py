@@ -7,6 +7,7 @@ from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from .domain_service import domain_completion_service
 from .domain_models import *
+from app.modules.audit.service import record_audit_event
 
 router=APIRouter(prefix="/completion/domains",tags=["Domain Completion"])
 
@@ -106,7 +107,7 @@ def workflow(p:dict,db:Session=Depends(get_db),u:User=Depends(get_current_user))
 def workflow_decision(workflow_id:int,step_id:int,status:str=Query(...),reason:str|None=Query(None),company_id:int=Query(...),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
     company(db,company_id,u);x=db.scalar(select(WorkflowApprovalStep).where(WorkflowApprovalStep.id==step_id,WorkflowApprovalStep.workflow_id==workflow_id).with_for_update())
     if not x: raise HTTPException(404,"Workflow step not found")
-    x,w=domain_completion_service.workflow_decide(db,x,status,reason,u.id);db.commit();db.refresh(x);db.refresh(w);return {"step":x,"workflow":w}
+    x,w=domain_completion_service.workflow_decide(db,x,status,reason,u.id);record_audit_event(db, action="workflow.decision", entity_type="workflow_approval_step", entity_id=x.id, user_id=u.id, tenant_id=u.tenant_id, company_id=company_id, metadata={"workflow_id":workflow_id,"status":status,"reason":reason});db.commit();db.refresh(x);db.refresh(w);return {"step":x,"workflow":w}
 
 
 class WorkflowRulePayload(__import__("pydantic").BaseModel):
@@ -158,4 +159,4 @@ def delegate_workflow(workflow_id:int,delegated_to:int=Query(...,gt=0),company_i
     company(db,company_id,u)
     w=db.scalar(select(WorkflowInstance).where(WorkflowInstance.id==workflow_id,WorkflowInstance.tenant_id==u.tenant_id,WorkflowInstance.company_id==company_id).with_for_update())
     if w is None: raise HTTPException(404,"Workflow not found")
-    w.delegated_to=delegated_to;db.commit();db.refresh(w);return w
+    w.delegated_to=delegated_to;record_audit_event(db, action="workflow.delegate", entity_type="workflow_instance", entity_id=w.id, user_id=u.id, tenant_id=u.tenant_id, company_id=company_id, metadata={"delegated_to":delegated_to});db.commit();db.refresh(w);return w
