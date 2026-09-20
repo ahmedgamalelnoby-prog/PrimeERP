@@ -15,6 +15,8 @@ from app.modules.commerce.models import CommercePayment, SalesDocument, Purchase
 from app.modules.commerce.schemas import PartnerCreate, PartnerResponse, DocumentCreate, DocumentResponse, PaymentCreate, PaymentResponse, PaymentReverse, AgingSummary, PartnerStatement
 from app.modules.commerce.sales_return_schemas import SalesReturnCreate
 from app.modules.commerce.sales_return_service import sales_return_service
+from app.modules.commerce.purchase_return_schemas import PurchaseReturnCreate
+from app.modules.commerce.purchase_return_service import purchase_return_service
 from app.modules.commerce.service import commerce_service
 from app.modules.commerce.ap_completion_service import ap_completion_service
 from app.modules.companies.models import Company
@@ -95,6 +97,18 @@ def create_sales_return(payload: SalesReturnCreate, current_user: User = Depends
     try: obj = sales_return_service.create_and_post(db, payload, current_user.id, current_user.tenant_id); db.commit(); db.refresh(obj); return obj
     except ValueError as exc: db.rollback(); raise HTTPException(status_code=400, detail=str(exc)) from exc
     except IntegrityError as exc: db.rollback(); raise HTTPException(status_code=409, detail="The sales return conflicts with an existing allocation or document") from exc
+
+
+@router.post("/purchases/returns", response_model=DocumentResponse, status_code=201, dependencies=[Depends(require_permission("commerce.post"))])
+def create_purchase_return(payload: PurchaseReturnCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company_for_user(db, payload.company_id, current_user)
+    try:
+        obj = purchase_return_service.create_and_post(db, payload, current_user.id, current_user.tenant_id)
+        db.commit(); db.refresh(obj); return obj
+    except ValueError as exc:
+        db.rollback(); raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        db.rollback(); raise HTTPException(status_code=409, detail="The purchase return conflicts with an existing allocation or document") from exc
 
 
 @router.post("/purchases/documents", response_model=DocumentResponse, status_code=201, dependencies=[Depends(require_permission("commerce.write"))])
