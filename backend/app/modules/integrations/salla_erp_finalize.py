@@ -88,21 +88,83 @@ def _build_delivery(db: Session, order: SallaOrder, invoice: SalesDocument, ship
 
     already_delivered: dict[int, Decimal] = {}
     if shipment is not None:
-        prior_maps = db.scalars(select(IntegrationMapping).where(
-            IntegrationMapping.company_id == order.company_id,
-            IntegrationMapping.connection_id == order.connection_id,
-            IntegrationMapping.entity_type == "salla_shipment_delivery",
-        )).all()
-        prior_ids = [m.local_id for m in prior_maps if m.local_id]
-        if prior_ids:
-            prior_docs = db.scalars(select(SalesDocument).where(
-                SalesDocument.company_id == order.company_id,
-                SalesDocument.id.in_(prior_ids),
-                SalesDocument.document_type == "delivery",
+        # Only aggregate deliveries belonging to this Salla order. The
+        # previous implementation queried every shipment-delivery mapping in
+        # the same connection, so fulfillment of Order B could reduce the
+        # remaining quantity available for Order A when both used the same ERP
+        # item/SKU.
+        shipment_external_ids = set(
+            str(value)
+            for value in db.scalars(
+                select(SallaShipment.external_id).where(
+                    SallaShipment.company_id == order.company_id,
+                    SallaShipment.connection_id == order.connection_id,
+                    (
+                        (SallaShipment.order_id == order.id)
+                        | (SallaShipment.order_external_id == str(order.external_id))
+                    ),
+                )
+            ).all()
+            if value
+        )
+        if shipment_external_ids:
+            prior_maps = db.scalars(select(IntegrationMapping).where(
+                IntegrationMapping.company_id == order.company_id,
+                IntegrationMapping.connection_id == order.connection_id,
+                IntegrationMapping.entity_type == "salla_shipment_delivery",
+                IntegrationMapping.external_id.in_(shipment_external_ids),
             )).all()
-            for doc in prior_docs:
-                for line in doc.lines:
-                    already_delivered[line.item_id] = already_delivered.get(line.item_id, Decimal("0")) + Decimal(line.quantity or 0)
+            prior_ids = [m.local_id for m in prior_maps if m.local_id]
+            if prior_ids:
+                prior_docs = db.scalars(select(SalesDocument).where(
+                    SalesDocument.company_id == order.company_id,
+                    SalesDocument.id.in_(prior_ids),
+                    SalesDocument.document_type == "delivery",
+                )).all()
+                for doc in prior_docs:
+                    for line in doc.lines:
+                        already_delivered[line.item_id] = (
+                            already_delivered.get(line.item_id, Decimal("0"))
+                            + Decimal(line.quantity or 0)
+                        )
+
+    # Aggregate shipment quantities by ERP inventory item. A Salla order can
+    # contain multiple lines with the same SKU, so matching each invoice line
+    # to the first Salla line can otherwise repeat the same package quantity.
+    requested_by_item: dict[int, Decimal] = {}
+    if shipment is not None:
+        for oi in order_items:
+            requested = shipment_quantities.get(oi.id, Decimal("0"))
+            if requested <= 0:
+                continue
+            matching_invoice_lines = [
+                line for line in invoice.lines
+                if line.item_id
+                and (
+                    (line.description or "") == (oi.name or "")
+                    or str(
+                        db.scalar(
+                            select(InventoryItem.sku).where(
+                                InventoryItem.id == line.item_id,
+                                InventoryItem.company_id == order.company_id,
+                            )
+                        ) or ""
+                    ).strip() == str(oi.sku or "").strip()
+                )
+            ]
+            for line in matching_invoice_lines:
+                requested_by_item[line.item_id] = (
+                    requested_by_item.get(line.item_id, Decimal("0")) + requested
+                )
+                break
+
+    pending_by_item = {
+        item_id: max(
+            requested - already_delivered.get(item_id, Decimal("0")),
+            Decimal("0"),
+        )
+        for item_id, requested in requested_by_item.items()
+    }
 
     stock_lines: list[SalesLine] = []
     for source_line in invoice.lines:
@@ -117,20 +179,11 @@ def _build_delivery(db: Session, order: SallaOrder, invoice: SalesDocument, ship
         if shipment is None:
             quantity = Decimal(source_line.quantity or 0)
         else:
-            matching_items = [
-                oi for oi in order_items
-                if oi.id in shipment_quantities
-                and ((source_line.description or "") == (oi.name or "")
-                     or str(item.sku or "").strip() == str(oi.sku or "").strip())
-            ]
-            if not matching_items:
+            remaining = pending_by_item.get(item.id, Decimal("0"))
+            if remaining <= 0:
                 continue
-            requested = shipment_quantities[matching_items[0].id]
-            remaining = max(
-                Decimal(matching_items[0].quantity or 0) - already_delivered.get(item.id, Decimal("0")),
-                Decimal("0"),
-            )
-            quantity = min(requested, remaining)
+            quantity = min(Decimal(source_line.quantity or 0), remaining)
+            pending_by_item[item.id] = remaining - quantity
 
         if quantity <= 0:
             continue
