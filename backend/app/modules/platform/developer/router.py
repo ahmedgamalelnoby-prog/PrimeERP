@@ -79,7 +79,7 @@ def _deliver(delivery_id:int):
             d.status="disabled";db.commit();return
         now=datetime.now(timezone.utc)
         if d.attempts>=MAX_DELIVERY_ATTEMPTS:
-            d.status="dead_letter";db.commit();return
+            d.status="failed";d.next_attempt_at=None;db.commit();return
         if d.next_attempt_at and d.next_attempt_at>now:return
         ts=int(now.timestamp());body={"id":d.event_id,"type":d.event_type,"data":d.payload}
         try:
@@ -88,7 +88,7 @@ def _deliver(delivery_id:int):
             if 200<=r.status_code<300:
                 d.status="delivered";d.delivered_at=datetime.now(timezone.utc);d.next_attempt_at=None
             elif d.attempts>=MAX_DELIVERY_ATTEMPTS:
-                d.status="dead_letter";d.next_attempt_at=None
+                d.status="failed";d.next_attempt_at=None
             else:
                 d.status="failed";d.next_attempt_at=now+timedelta(seconds=min(3600,2**d.attempts*30))
         except Exception as exc:
