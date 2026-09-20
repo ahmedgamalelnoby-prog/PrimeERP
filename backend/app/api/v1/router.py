@@ -60,7 +60,7 @@ from app.modules.jurisdiction.router import router as jurisdiction_router
 from app.modules.reports.router import router as reports_router
 from app.modules.helpdesk_ai.router import router as helpdesk_router
 from app.modules.ai_reporting.router import router as ai_reporting_router
-from app.modules.crm.api import router as crm_router
+from app.modules.crm.router import router as crm_router
 from app.modules.hr.router import router as hr_router
 from app.modules.pos.router import router as pos_router
 from app.modules.pos.sessions.router import router as pos_sessions_router
