@@ -49,6 +49,28 @@ This registry is the single source of truth for functional completion. A module 
 | Frontend parity | 🟡 IN PROGRESS | Every production API/workflow exposed through coherent UI and error/state handling. |
 | Release Gate | 🔴 BLOCKED | Starts only after all functional modules are CLOSED. |
 
+## Latest completion checkpoint — 2026-09-20
+
+### Accounting — 🟡 IN PROGRESS
+- Fiscal year close now validates branch, journal, retained-earnings account, and prevents a second completed close run.
+- Year-end tax gate now uses the canonical `TaxReturnDraft` workflow; missing/unreconciled tax returns no longer silently pass the close checklist.
+- Financial summary no longer classifies every credit-normal P&L account as revenue; explicit account categories are honored and unsupported categories fail loudly.
+- Remaining closure blockers: complete Tax/E-Invoice integration and Accounting frontend parity, then perform the final Accounting review.
+
+### Commerce / Sales / Purchasing — 🟡 IN PROGRESS
+- Sales and purchase returns now have stock-backed allocation controls and accounting integration.
+- Payment idempotency/reversal and AR/AP allocation controls are in place.
+- Remaining closure blockers: final end-to-end UI parity and reconciliation of every document/payment/return path before marking CLOSED.
+
+### Inventory / WMS — 🟡 IN PROGRESS
+- WMS tenant/company/warehouse/location/reservation controls are hardened.
+- FIFO valuation now isolates cost layers by variant where the layer schema supports variants.
+- Inventory accounting configuration now enforces tenant + company account ownership.
+- Remaining closure blockers: complete reservation/transfer/costing/period-lock/report/frontend review as one integrated workflow.
+
+### Process rule
+The next work should continue with the active module's closure checklist. A module is not marked CLOSED because one endpoint works; it is closed only after its full workflow and integrations pass the documented completion definition. Closed modules are not reopened for unrelated enhancements.
+
 ## First completion pass
 Treasury received a broad integration hardening pass:
 - fixed treasury runtime use of Decimal in positions;
