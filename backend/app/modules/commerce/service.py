@@ -529,8 +529,13 @@ class CommerceService:
             )).all():
                 offsets[note.partner_id] = offsets.get(note.partner_id, Decimal("0")) + Decimal(note.total or 0)
 
+            from app.modules.commerce.ar_models import ARWriteOff
+            writeoffs = {}
+            if document_ids:
+                for row in db.scalars(select(ARWriteOff).where(ARWriteOff.company_id == company_id, ARWriteOff.document_id.in_(document_ids), ARWriteOff.status == "approved", ARWriteOff.created_at <= as_of)).all():
+                    writeoffs[row.document_id] = writeoffs.get(row.document_id, Decimal("0")) + Decimal(row.amount or 0)
             for document in documents:
-                paid_as_of = payments_by_document.get(document.id, Decimal("0"))
+                paid_as_of = payments_by_document.get(document.id, Decimal("0")) + writeoffs.get(document.id, Decimal("0"))
                 outstanding = Decimal(document.total or 0) - paid_as_of
                 partner_offset = offsets.get(document.partner_id, Decimal("0"))
                 if partner_offset > 0:
@@ -620,6 +625,10 @@ class CommerceService:
         allocation_by_payment = {}
         for allocation in allocations:
             allocation_by_payment.setdefault(allocation.payment_id, []).append(allocation)
+
+        from app.modules.commerce.ar_models import ARWriteOff
+        for row in db.scalars(select(ARWriteOff).where(ARWriteOff.company_id == company_id, ARWriteOff.partner_id == partner_id, ARWriteOff.status == "approved", ARWriteOff.created_at <= cutoff).order_by(ARWriteOff.created_at, ARWriteOff.id)).all():
+            events.append((row.created_at.date(), 20_000_000 + row.id, "writeoff", f"WO-{row.id}", Decimal("0"), Decimal(row.amount)))
 
         for payment in payments:
             targets = allocation_by_payment.get(payment.id)
