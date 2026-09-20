@@ -8,7 +8,7 @@ from app.modules.inventory.items.models import InventoryItem
 from app.modules.inventory.locations.models import InventoryLocation
 from app.modules.inventory.stock_moves.schemas import StockMoveCreate
 from app.modules.inventory.stock_moves.service import inventory_stock_move_service
-from app.modules.inventory.adjustments.models import InventoryAdjustment
+from app.modules.inventory.adjustments.models import InventoryAdjustment\nfrom app.modules.companies.models import Company
 
 
 class InventoryAdjustmentService:
@@ -51,7 +51,7 @@ class InventoryAdjustmentService:
         source_location_id = adjustment.location_id if adjustment.direction == "decrease" else None
         destination_location_id = adjustment.location_id if adjustment.direction == "increase" else None
         move = inventory_stock_move_service.create_draft(db, StockMoveCreate(company_id=company_id, item_id=adjustment.item_id, variant_id=adjustment.variant_id, source_location_id=source_location_id, destination_location_id=destination_location_id, quantity=Decimal(adjustment.quantity), unit_cost=Decimal(adjustment.unit_cost or 0), movement_type="adjustment", reference=adjustment.reference or f"ADJ-{adjustment.id}", source_module="inventory/adjustments", source_entity="inventory_adjustment", source_id=str(adjustment.id), notes=adjustment.reason))
-        inventory_stock_move_service.post(db, company_id=company_id, move_id=move.id)
+        inventory_stock_move_service.post(db, tenant_id=db.scalar(select(Company.tenant_id).where(Company.id==company_id)), company_id=company_id, move_id=move.id, user_id=0)
         adjustment.status = "posted"
         db.flush()
         return adjustment
