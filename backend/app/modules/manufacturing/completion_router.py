@@ -44,6 +44,7 @@ def byproducts(work_order_id:int,p:ByProduct,company_id:int=Query(...,gt=0),db:S
     x=manufacturing_completion_service.byproduct(db,company_id,work_order_id,**p.model_dump());db.commit();db.refresh(x);return x
 @router.post("/work-orders/{work_order_id}/subcontract")
 def subcontract(work_order_id:int,p:Subcontract,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
+    if p.actual_quantity > p.planned_quantity and p.status != "received": raise HTTPException(422,"Actual subcontract quantity cannot exceed planned quantity unless received")
     x=manufacturing_completion_service.subcontract(db,company_id,work_order_id,**p.model_dump());db.commit();db.refresh(x);return x
 @router.post("/work-orders/{work_order_id}/variance")
 def variance(work_order_id:int,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
