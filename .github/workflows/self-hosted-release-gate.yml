@@ -116,6 +116,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Continue'
           Get-ChildItem -File -Filter '*.log' -ErrorAction SilentlyContinue | Sort-Object Name | ForEach-Object { Write-Host "===== $($_.Name) ====="; Get-Content -Path $_.FullName -ErrorAction SilentlyContinue }
+          if (Test-Path architecture-audit.log) { Get-Content architecture-audit.log }
           if (Test-Path pytest-junit.xml) { Get-Content pytest-junit.xml }
           python -m pip list --format=freeze 2>&1
       - name: Upload backend test diagnostics
@@ -125,6 +126,7 @@ jobs:
           name: primeerp-backend-test-diagnostics-${{ github.run_id }}
           path: |
             backend/*.log
+            backend/architecture-audit.log
             backend/pytest-junit.xml
           if-no-files-found: warn
           retention-days: 7
