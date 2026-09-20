@@ -3,12 +3,14 @@ from fastapi import APIRouter,Depends,Query,HTTPException
 from pydantic import BaseModel,Field
 from decimal import Decimal
 from sqlalchemy.orm import Session
+from sqlalchemy import select
 from app.database.session import get_db
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from .completion_service import manufacturing_completion_service
 from app.modules.completion.domain_models import ManufacturingWorkOrder
 from app.modules.accounting.journals.services.journal_service import journal_service
+from app.modules.inventory.stock_moves.schemas import StockMoveCreate
 
 router=APIRouter(prefix="/manufacturing/completion",tags=["Manufacturing Completion"])
 
@@ -39,7 +41,7 @@ def overhead(work_order_id:int,p:Overhead,company_id:int=Query(...,gt=0),db:Sess
 @router.post("/work-orders/{work_order_id}/scrap")
 def scrap(work_order_id:int,p:Scrap,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
     if p.source_location_id is not None:
-        payload=type("StockPayload",(),{"company_id":company_id,"item_id":p.item_id,"variant_id":p.variant_id,"source_location_id":p.source_location_id,"destination_location_id":None,"quantity":p.quantity,"unit_cost":p.unit_cost,"movement_type":"issue","notes":p.reason})()
+        payload=StockMoveCreate(company_id=company_id,item_id=p.item_id,variant_id=p.variant_id,source_location_id=p.source_location_id,destination_location_id=None,quantity=Decimal(str(p.quantity)),unit_cost=Decimal(str(p.unit_cost)),movement_type="issue",notes=p.reason)
         x=manufacturing_completion_service.stock_backed_scrap(db,u.tenant_id,company_id,work_order_id,payload,u.id)
     else:
         x=manufacturing_completion_service.scrap(db,company_id,work_order_id,**p.model_dump(exclude={"source_location_id"}))
@@ -47,7 +49,7 @@ def scrap(work_order_id:int,p:Scrap,company_id:int=Query(...,gt=0),db:Session=De
 @router.post("/work-orders/{work_order_id}/byproducts")
 def byproducts(work_order_id:int,p:ByProduct,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
     if p.destination_location_id is not None:
-        payload=type("StockPayload",(),{"company_id":company_id,"item_id":p.item_id,"variant_id":p.variant_id,"source_location_id":None,"destination_location_id":p.destination_location_id,"quantity":p.quantity,"unit_cost":p.unit_cost,"movement_type":"receipt","notes":"Manufacturing by-product receipt"})()
+        payload=StockMoveCreate(company_id=company_id,item_id=p.item_id,variant_id=p.variant_id,source_location_id=None,destination_location_id=p.destination_location_id,quantity=Decimal(str(p.quantity)),unit_cost=Decimal(str(p.unit_cost)),movement_type="receipt",notes="Manufacturing by-product receipt")
         x=manufacturing_completion_service.stock_backed_byproduct(db,u.tenant_id,company_id,work_order_id,payload,u.id)
     else:
         x=manufacturing_completion_service.byproduct(db,company_id,work_order_id,**p.model_dump(exclude={"destination_location_id"}))
@@ -79,6 +81,17 @@ def settle_wip(work_order_id:int,p:Settlement,company_id:int=Query(...,gt=0),db:
     journal_service.submit(db,tenant_id=u.tenant_id,entry_id=entry.id,user_id=u.id,commit=False);journal_service.post(db,tenant_id=u.tenant_id,entry_id=entry.id,user_id=u.id,commit=False)
     v.wip_journal_entry_id=entry.id;db.commit();db.refresh(v);return v
 
+class ProductionPayload(BaseModel):
+    quantity:Decimal=Field(gt=0)
+    source_location_id:int|None=Field(default=None,gt=0)
+    destination_location_id:int|None=Field(default=None,gt=0)
+
+@router.post("/work-orders/{work_order_id}/produce")
+def produce(work_order_id:int,p:ProductionPayload,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
+    result=manufacturing_completion_service.execute_production(db,u.tenant_id,company_id,work_order_id,u.id,p.quantity,p.source_location_id,p.destination_location_id)
+    db.commit()
+    return result
+
 class FinalizePayload(BaseModel):
     close_status:str="closed"
 
@@ -88,6 +101,7 @@ def finalize_work_order(work_order_id:int,p:FinalizePayload,company_id:int=Query
     if wo is None: raise HTTPException(404,"Work order not found")
     if getattr(wo,"status",None)=="cancelled": raise HTTPException(409,"Cancelled work orders cannot be finalized")
     if getattr(wo,"status",None)=="closed": return {"work_order_id":wo.id,"status":wo.status,"variance_id":None}
+    if Decimal(wo.completed_qty or 0) < Decimal(wo.planned_qty or 0): raise HTTPException(409,"Work order cannot be finalized before planned quantity is fully produced")
     v=manufacturing_completion_service.variance(db,company_id,work_order_id)
     wo.status=p.close_status
     db.commit()
