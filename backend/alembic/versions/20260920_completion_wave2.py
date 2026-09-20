@@ -6,6 +6,8 @@ down_revision="20260920_cost_mrp_completion"
 branch_labels=None
 depends_on=None
 def upgrade():
+ op.add_column("recipe_lines",sa.Column("ingredient_variant_id",sa.Integer(),sa.ForeignKey("product_variants.id",ondelete="RESTRICT"),nullable=True))
+ op.create_index("ix_recipe_lines_ingredient_variant_id","recipe_lines",["ingredient_variant_id"])
  op.add_column("mrp_requirements",sa.Column("production_order_id",sa.Integer(),sa.ForeignKey("manufacturing_work_orders.id",ondelete="SET NULL"),nullable=True))
  op.create_index("ix_mrp_requirements_production_order_id","mrp_requirements",["production_order_id"])
  op.create_table("manufacturing_labor_actuals",sa.Column("id",sa.Integer(),primary_key=True),sa.Column("company_id",sa.Integer(),sa.ForeignKey("companies.id",ondelete="CASCADE"),nullable=False),sa.Column("work_order_id",sa.Integer(),sa.ForeignKey("manufacturing_work_orders.id",ondelete="CASCADE"),nullable=False),sa.Column("user_id",sa.Integer(),sa.ForeignKey("users.id",ondelete="RESTRICT")),sa.Column("work_date",sa.Date(),nullable=False),sa.Column("minutes",sa.Numeric(12,2),nullable=False),sa.Column("hourly_rate",sa.Numeric(18,6),nullable=False),sa.Column("amount",sa.Numeric(20,6),nullable=False))
@@ -17,6 +19,8 @@ def upgrade():
  op.create_table("inventory_stock_policies",sa.Column("id",sa.Integer(),primary_key=True),sa.Column("company_id",sa.Integer(),sa.ForeignKey("companies.id",ondelete="CASCADE"),nullable=False),sa.Column("warehouse_id",sa.Integer(),sa.ForeignKey("inventory_warehouses.id",ondelete="CASCADE")),sa.Column("allow_negative",sa.Boolean(),nullable=False,server_default=sa.false()),sa.Column("warning_threshold",sa.Numeric(20,6),nullable=False,server_default="0"),sa.Column("costing_method",sa.String(20),nullable=False,server_default="weighted_average"),sa.Column("is_active",sa.Boolean(),nullable=False,server_default=sa.true()))
  op.create_table("inventory_cost_reconciliations",sa.Column("id",sa.Integer(),primary_key=True),sa.Column("company_id",sa.Integer(),sa.ForeignKey("companies.id",ondelete="CASCADE"),nullable=False),sa.Column("item_id",sa.Integer(),sa.ForeignKey("inventory_items.id",ondelete="RESTRICT"),nullable=False),sa.Column("warehouse_id",sa.Integer(),sa.ForeignKey("inventory_warehouses.id",ondelete="RESTRICT"),nullable=False),sa.Column("method",sa.String(20),nullable=False),sa.Column("quantity",sa.Numeric(20,6),nullable=False),sa.Column("subledger_value",sa.Numeric(20,6),nullable=False),sa.Column("recomputed_value",sa.Numeric(20,6),nullable=False),sa.Column("difference",sa.Numeric(20,6),nullable=False),sa.Column("status",sa.String(20),nullable=False,server_default="matched"),sa.Column("created_at",sa.DateTime(timezone=True),server_default=sa.func.now(),nullable=False))
 def downgrade():
+ op.drop_index("ix_recipe_lines_ingredient_variant_id",table_name="recipe_lines")
+ op.drop_column("recipe_lines","ingredient_variant_id")
  op.drop_index("ix_mrp_requirements_production_order_id",table_name="mrp_requirements")
  op.drop_column("mrp_requirements","production_order_id")
  for t in ["inventory_cost_reconciliations","inventory_stock_policies","manufacturing_variances","manufacturing_subcontracts","manufacturing_byproducts","manufacturing_scrap","manufacturing_overhead_actuals","manufacturing_labor_actuals"]: op.drop_table(t)
