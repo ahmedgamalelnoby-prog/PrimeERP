@@ -29,7 +29,7 @@ from app.modules.inventory.transfers.schemas import TransferCreate
 from app.modules.inventory.transfers.service import inventory_transfer_service
 from app.modules.commerce.payment_workflow import post_payment, reverse_payment
 from app.modules.jurisdiction.commerce_guard import capture_document_tax_snapshot, validate_document_tax_snapshot
-from app.modules.pos.completion_models import POSModifierOption, POSPromotion, POSPromotionUse
+from app.modules.pos.completion_models import POSModifierGroup, POSModifierOption, POSPromotion, POSPromotionUse
 from app.modules.restaurant.models import (
     Floor, RestaurantTable, OrderType,
     PreparationStation,
@@ -162,6 +162,34 @@ def _terminal(db: Session, company_id: int, terminal_id: int) -> PosTerminal:
     if terminal is None:
         raise HTTPException(422, "POS terminal does not belong to the company or is inactive")
     return terminal
+
+def _modifier_options(db: Session, company_id: int, option_ids: list[int]) -> list[POSModifierOption]:
+    if not option_ids:
+        return []
+    if len(option_ids) != len(set(option_ids)):
+        raise HTTPException(422, "Duplicate POS modifier options are not allowed")
+    rows = list(db.execute(
+        select(POSModifierOption, POSModifierGroup)
+        .join(POSModifierGroup, POSModifierGroup.id == POSModifierOption.group_id)
+        .where(
+            POSModifierOption.id.in_(option_ids),
+            POSModifierOption.is_active.is_(True),
+            POSModifierGroup.company_id == company_id,
+            POSModifierGroup.is_active.is_(True),
+        )
+    ).all())
+    if len(rows) != len(option_ids):
+        raise HTTPException(422, "One or more POS modifier options are invalid, inactive, or outside the company")
+    counts = {}
+    groups = {}
+    for option, group in rows:
+        counts[group.id] = counts.get(group.id, 0) + 1
+        groups[group.id] = group
+    for group_id, count in counts.items():
+        group = groups[group_id]
+        if count > int(group.max_select or 0):
+            raise HTTPException(422, f"Modifier group {group.name} allows at most {group.max_select} selections")
+    return [option for option, _group in rows]
 
 
 @router.get("/sales")
@@ -499,9 +527,7 @@ def checkout(payload: Checkout, current_user: User = Depends(get_current_user), 
             if menu_item is None or terminal_menu is None or route is None:
                 raise HTTPException(422, "This menu item is not enabled and routed on this POS terminal")
             price = _menu_price(db, payload.company_id, menu_item, terminal_menu.price_list_id, line.quantity)
-            options = list(db.scalars(select(POSModifierOption).where(POSModifierOption.id.in_(line.modifier_option_ids), POSModifierOption.is_active.is_(True))).all()) if line.modifier_option_ids else []
-            if len(options) != len(set(line.modifier_option_ids)):
-                raise HTTPException(422, "One or more POS modifier options are invalid or inactive")
+            options = _modifier_options(db, payload.company_id, line.modifier_option_ids)
             modifier_delta = sum((Decimal(o.price_delta or 0) for o in options), Decimal("0"))
             base_discount = Decimal(line.discount_percent)
             effective_discount = Decimal("100") - (Decimal("100") - base_discount) * (Decimal("100") - promotion_percent) / Decimal("100")
@@ -518,9 +544,7 @@ def checkout(payload: Checkout, current_user: User = Depends(get_current_user), 
                 raise HTTPException(422, "Each POS line requires menu_item_id or item_id")
             if line.unit_price is None:
                 raise HTTPException(422, "unit_price is required for a non-menu POS line")
-            options = list(db.scalars(select(POSModifierOption).where(POSModifierOption.id.in_(line.modifier_option_ids), POSModifierOption.is_active.is_(True))).all()) if line.modifier_option_ids else []
-            if len(options) != len(set(line.modifier_option_ids)):
-                raise HTTPException(422, "One or more POS modifier options are invalid or inactive")
+            options = _modifier_options(db, payload.company_id, line.modifier_option_ids)
             modifier_delta = sum((Decimal(o.price_delta or 0) for o in options), Decimal("0"))
             base_discount = Decimal(line.discount_percent)
             effective_discount = Decimal("100") - (Decimal("100") - base_discount) * (Decimal("100") - promotion_percent) / Decimal("100")
