@@ -22,6 +22,7 @@ from app.modules.platform.tenants.router import router as tenants_router
 from app.modules.saas.router import router as saas_router
 from app.modules.transactions.api.router import router as transactions_router
 from app.modules.commerce.router import router as commerce_router
+from app.modules.commerce.ar_router import router as ar_router
 from app.modules.enterprise.router import router as enterprise_router
 from app.modules.shipping.router import router as shipping_router
 from app.modules.shipping.settlement_router import router as shipping_settlement_router
@@ -106,6 +107,7 @@ def build_router() -> APIRouter:
     api_router.include_router(catalog_bundle_router, dependencies=[Depends(require_module("inventory"))])
     api_router.include_router(pricing_engine_router, dependencies=[Depends(require_module("inventory"))])
     api_router.include_router(commerce_router, dependencies=[Depends(require_module("sales"))])
+    api_router.include_router(ar_router, dependencies=[Depends(require_module("sales"))])
     api_router.include_router(enterprise_router, dependencies=[Depends(require_module("enterprise"))])
     api_router.include_router(commissions_router, dependencies=[Depends(require_module("enterprise"))])
     api_router.include_router(shipping_router)
