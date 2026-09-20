@@ -15,31 +15,48 @@ from app.modules.inventory.stock_moves.schemas import StockMoveCreate
 from app.modules.inventory.stock_moves.service import inventory_stock_move_service
 
 
-def _delivery(db: Session, order: SallaOrder) -> SalesDocument | None:
-    mapping = db.scalar(
+def _deliveries(db: Session, order: SallaOrder) -> list[SalesDocument]:
+    mappings = db.scalars(
         select(IntegrationMapping).where(
             IntegrationMapping.company_id == order.company_id,
             IntegrationMapping.connection_id == order.connection_id,
-            IntegrationMapping.entity_type == "salla_delivery",
             IntegrationMapping.external_id == str(order.external_id),
+            IntegrationMapping.entity_type.in_(
+                ["salla_delivery", "salla_shipment_delivery"]
+            ),
         )
-    )
-    if not mapping:
-        return None
-    return db.scalar(
+    ).all()
+    ids = {m.local_id for m in mappings if m.local_id}
+    if not ids:
+        return []
+    return db.scalars(
         select(SalesDocument).where(
-            SalesDocument.id == mapping.local_id,
+            SalesDocument.id.in_(ids),
             SalesDocument.company_id == order.company_id,
             SalesDocument.document_type == "delivery",
         )
-    )
+    ).all()
 
 
 def restore_salla_inventory(db: Session, order: SallaOrder, user_id: int) -> dict:
     """Restore fulfilled Salla stock exactly once and reverse its COGS."""
-    delivery = _delivery(db, order)
-    if delivery is None or not delivery.warehouse_id:
+    deliveries = _deliveries(db, order)
+    if not deliveries:
         return {"status": "no_delivery", "return_moves": 0, "cogs_reversed": False}
+
+    all_source_moves = []
+    for delivery in deliveries:
+        if not delivery.warehouse_id:
+            continue
+        all_source_moves.extend(db.scalars(
+            select(InventoryStockMove).where(
+                InventoryStockMove.company_id == order.company_id,
+                InventoryStockMove.source_module == "commerce",
+                InventoryStockMove.source_entity == "sales_delivery",
+                InventoryStockMove.source_id.like(f"{delivery.id}:%"),
+                InventoryStockMove.status == "posted",
+            )
+        ).all())
 
     source_moves = db.scalars(
         select(InventoryStockMove).where(
@@ -53,9 +70,10 @@ def restore_salla_inventory(db: Session, order: SallaOrder, user_id: int) -> dic
     if not source_moves:
         return {"status": "delivery_not_posted", "return_moves": 0, "cogs_reversed": False}
 
+    delivery_for_location = deliveries[0]
     destination = db.scalar(
         select(InventoryLocation).where(
-            InventoryLocation.warehouse_id == delivery.warehouse_id,
+            InventoryLocation.warehouse_id == delivery_for_location.warehouse_id,
             InventoryLocation.company_id == order.company_id,
             InventoryLocation.is_active.is_(True),
         ).order_by(InventoryLocation.id)
@@ -107,16 +125,16 @@ def restore_salla_inventory(db: Session, order: SallaOrder, user_id: int) -> dic
             db,
             company_id=order.company_id,
             user_id=user_id,
-            entry_date=delivery.document_date,
+            entry_date=delivery_for_location.document_date,
             journal_id=settings.sales_journal_id,
-            entry_number=f"RET-COGS-{delivery.id}",
+            entry_number=f"RET-COGS-{order.external_id}",
             description=f"COGS reversal for Salla return {order.external_id}",
             lines=[
                 {"account_combination_id": settings.inventory_account_id, "debit": total_cost, "credit": 0},
                 {"account_combination_id": settings.cogs_account_id, "debit": 0, "credit": total_cost},
             ],
             source_entity="salla_return_cogs",
-            source_id=delivery.id,
+            source_id=hash(order.external_id),
         )
         accounting = True
     return {"status": "restored", "return_moves": returned, "cogs_reversed": accounting}
