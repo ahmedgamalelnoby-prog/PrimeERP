@@ -35,9 +35,9 @@ This registry is the single source of truth for functional completion. A module 
 | Commerce / Sales / Purchasing | 🟡 IN PROGRESS | Sales/purchase lifecycle, AR/AP, payments, returns, allocations, accounting and inventory integration. |
 | Inventory / WMS | 🟡 IN PROGRESS | Reservations, picking, transfers, costing, negative stock policy, warehouse/location isolation, accounting integration. |
 | Treasury / Cheques | 🟡 IN PROGRESS | Treasury transaction lifecycle, cheque lifecycle + GL, bank reconciliation, daily closing, forecasts, all-account reconciliation, tenant isolation, reports/UI. |
-| Manufacturing / MRP | 🟡 IN PROGRESS | Production/WIP/FG, BOM/recipe, scrap/by-product, subcontracting, variance and accounting closure. |
-| POS / Restaurant | 🟡 IN PROGRESS | POS → recipe → outlet stock → consumption → payment → COGS, KDS, modifiers/promotions, refunds/voids, outlet profitability. |
-| Shipping | 🟡 IN PROGRESS | Shipment lifecycle, terminal delivered state, returns, carrier pricing, COD settlement/reconciliation, GL. |
+| Manufacturing / MRP | 🟢 COMPLETE | Production/WIP/FG, BOM/recipe, scrap/by-product, subcontracting, variance and accounting closure. |
+| POS / Restaurant | 🟢 COMPLETE | POS → recipe → outlet stock → consumption → payment → COGS, KDS, modifiers/promotions, refunds/voids, outlet profitability. |
+| Shipping | 🟢 COMPLETE | Shipment lifecycle, terminal delivered state, returns, carrier pricing, COD settlement/reconciliation, GL. |
 | Catalog / Products / Recipes | 🟡 IN PROGRESS | SKU/variant lifecycle, recipes, external SKU mappings and downstream integrations. |
 | CRM / Sales | 🟡 IN PROGRESS | Lead → opportunity → quotation → customer/order integration and accounting/fulfillment links. |
 | HR / Organization | 🟡 IN PROGRESS | Employees/departments/users, organization scope and approval/permission integration. |
@@ -79,3 +79,16 @@ Treasury received a broad integration hardening pass:
 - made cheque GL idempotency unique per cheque event without violating the integer source-id contract.
 
 No release tests are being run in this functional-completion phase. The final Release Gate remains a separate phase after all modules are closed.
+### Manufacturing / MRP — 🟢 COMPLETE (functional closure; Release Gate pending)
+- Production order/work-order lifecycle, recipe explosion, variant-aware ingredients, reservations, material consumption, finished-goods receipt and partial production are connected.
+- Labor, overhead, subcontracting, scrap/by-product, production costing, variance posting and WIP settlement are integrated with Accounting/Inventory.
+- Work-order finalization and output idempotency are hardened.
+- MRP requirements, shortage-driven production, work centers, routings, scheduling conflicts and production-cost records are connected.
+- Tenant/company isolation and transition controls are enforced. Final Release Gate remains pending.
+### POS / Restaurant — 🟢 COMPLETE (functional closure; Release Gate pending)
+- Outlet/branch/warehouse, terminals, menus/prices, stations/KDS routing, recipes, outlet consumption, modifiers, promotions, checkout, payments, refunds and voids are connected.
+- Restaurant flow supports outlet warehouse consumption and preparation routing. Final Release Gate remains pending.
+### Shipping — 🟢 COMPLETE (functional closure; Release Gate pending)
+- Carrier/method master data, pricing rules, shipment lifecycle, terminal delivered state, returns, COD, carrier fees, withdrawal/card fees, settlement, reconciliation and GL events are connected.
+- Shipment/company/tenant/account/journal/branch controls are enforced. Final Release Gate remains pending.
+
