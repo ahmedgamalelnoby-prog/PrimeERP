@@ -22,6 +22,8 @@ class Scrap(BaseModel):
     item_id:int=Field(gt=0);variant_id:int|None=None;quantity:float=Field(gt=0);unit_cost:float=Field(ge=0);reason:str=Field(min_length=1,max_length=300);stock_move_id:int|None=None
 class ByProduct(BaseModel):
     item_id:int=Field(gt=0);variant_id:int|None=None;quantity:float=Field(gt=0);unit_cost:float=Field(ge=0);stock_move_id:int|None=None
+class GLVariance(BaseModel):
+    journal_id:int=Field(gt=0);fiscal_year_id:int=Field(gt=0);period_id:int=Field(gt=0);branch_id:int=Field(gt=0);entry_number:str=Field(min_length=1,max_length=80);entry_date:date;debit_account_id:int=Field(gt=0);credit_account_id:int=Field(gt=0)
 class Subcontract(BaseModel):
     vendor_id:int=Field(gt=0);service_reference:str=Field(min_length=1,max_length=120);planned_quantity:float=Field(gt=0);actual_quantity:float=Field(ge=0);unit_cost:float=Field(ge=0);status:str="planned"
 
@@ -43,3 +45,7 @@ def subcontract(work_order_id:int,p:Subcontract,company_id:int=Query(...,gt=0),d
 @router.post("/work-orders/{work_order_id}/variance")
 def variance(work_order_id:int,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
     x=manufacturing_completion_service.variance(db,company_id,work_order_id);db.commit();db.refresh(x);return x
+
+@router.post("/work-orders/{work_order_id}/variance/post")
+def post_variance(work_order_id:int,p:GLVariance,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
+    x=manufacturing_completion_service.post_variance(db,company_id,work_order_id,tenant_id=u.tenant_id,user_id=u.id,**p.model_dump());db.commit();db.refresh(x);return x
