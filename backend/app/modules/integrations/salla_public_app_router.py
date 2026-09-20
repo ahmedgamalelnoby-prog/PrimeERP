@@ -77,7 +77,7 @@ async def receive_salla_app_event(
 
 @router.post("/embedded/session")
 def establish_embedded_session(
-    salla_token: str,
+    salla_token: str = Body(..., embed=True, min_length=1, max_length=4096),
     db: Session = Depends(get_db),
 ):
     """Verify Salla Embedded SDK token and mint a short-lived PrimeERP JWT."""
