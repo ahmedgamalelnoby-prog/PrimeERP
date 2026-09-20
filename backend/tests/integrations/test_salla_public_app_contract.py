@@ -115,6 +115,15 @@ def test_salla_shipment_milestone_can_explicitly_request_fulfillment():
     assert _should_fulfill_order(order, force_fulfillment=True) is True
 
 
+@pytest.mark.parametrize(
+    "fulfillment_status",
+    ["pending", "created", "cancelled"],
+)
+def test_salla_pending_or_non_fulfillment_states_do_not_consume_inventory(fulfillment_status):
+    order = type("Order", (), {"status": "created", "fulfillment_status": fulfillment_status})()
+    assert _should_fulfill_order(order) is False
+
+
 def test_salla_shipment_packages_resolve_item_quantities():
     item_a = SallaOrderItem(id=1, external_id="101", sku="SKU-A", quantity=10)
     item_b = SallaOrderItem(id=2, external_id="102", sku="SKU-B", quantity=3)
