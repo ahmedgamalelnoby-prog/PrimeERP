@@ -5,7 +5,7 @@ The actual constraint correction is performed by
 compatibility node so existing migration references stay resolvable.
 """
 revision = "20260919_split_payment_allocations"
-down_revision = "20260919_payment_allocation_split_fix"
+down_revision = "20260919_payment_idempotency_constraint"
 branch_labels = None
 depends_on = None
 
