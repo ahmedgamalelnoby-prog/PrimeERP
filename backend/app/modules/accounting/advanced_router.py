@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.database.session import get_db
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
+from app.core.permissions import require_permission
 from .advanced_service import accounting_advanced_service
 router=APIRouter(prefix="/accounting/advanced",tags=["Accounting Advanced"],dependencies=[Depends(require_permission("accounting.access"))])
 class AutoRule(BaseModel): company_id:int;name:str;source_module:str;source_entity:str;journal_id:int;branch_id:int;debit_account_id:int;credit_account_id:int;currency_code:str="EGP";auto_approve:bool=True;auto_post:bool=True
