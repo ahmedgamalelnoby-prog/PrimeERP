@@ -71,6 +71,19 @@ jobs:
           @('POSTGRES_DB=primeerp_ci','POSTGRES_USER=primeerp',"POSTGRES_PASSWORD=$pgPassword","SECRET_KEY=$secretKey",'CORS_ORIGINS=https://erp.example.com','APP_ENV=production','DEBUG=false','ETA_ENABLED=false','WHATSAPP_ENABLED=false') | Set-Content -Encoding utf8 .env
           "PRIMEERP_CI_POSTGRES_PASSWORD=$pgPassword" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "PRIMEERP_CI_SECRET_KEY=$secretKey" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Backend dependency install
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+        working-directory: backend
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install --upgrade pip --disable-pip-version-check --no-input 2>&1 | Tee-Object pip-upgrade.log
+          $code = $LASTEXITCODE; if ($code -ne 0) { throw "pip upgrade failed with exit code $code" }
+          python -m pip install -r requirements.txt --disable-pip-version-check --no-input 2>&1 | Tee-Object requirements-install.log
+          $code = $LASTEXITCODE; if ($code -ne 0) { throw "requirements installation failed with exit code $code" }
+          python -m pip install pytest --disable-pip-version-check --no-input 2>&1 | Tee-Object pytest-install.log
+          $code = $LASTEXITCODE; if ($code -ne 0) { throw "pytest installation failed with exit code $code" }
+          python -m pip check 2>&1 | Tee-Object pip-check.log
+          $code = $LASTEXITCODE; if ($code -ne 0) { throw "pip check failed with exit code $code" }
       - name: Backend compile and architecture checks
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         working-directory: backend
@@ -93,19 +106,6 @@ jobs:
           python -c "import sys,platform; print('Python executable:', sys.executable); print('Python implementation:', platform.python_implementation()); print('Platform:', platform.platform()); print('Architecture:', platform.architecture()[0])"
           python -m pip --version
           python -m pip list --format=columns
-      - name: Backend dependency install
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
-        working-directory: backend
-        run: |
-          $ErrorActionPreference = 'Stop'
-          python -m pip install --upgrade pip --disable-pip-version-check --no-input 2>&1 | Tee-Object pip-upgrade.log
-          $code = $LASTEXITCODE; if ($code -ne 0) { throw "pip upgrade failed with exit code $code" }
-          python -m pip install -r requirements.txt --disable-pip-version-check --no-input 2>&1 | Tee-Object requirements-install.log
-          $code = $LASTEXITCODE; if ($code -ne 0) { throw "requirements installation failed with exit code $code" }
-          python -m pip install pytest --disable-pip-version-check --no-input 2>&1 | Tee-Object pytest-install.log
-          $code = $LASTEXITCODE; if ($code -ne 0) { throw "pytest installation failed with exit code $code" }
-          python -m pip check 2>&1 | Tee-Object pip-check.log
-          $code = $LASTEXITCODE; if ($code -ne 0) { throw "pip check failed with exit code $code" }
       - name: Backend unit tests
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         working-directory: backend
