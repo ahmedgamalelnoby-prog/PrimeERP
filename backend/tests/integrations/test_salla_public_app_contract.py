@@ -12,7 +12,8 @@ from app.modules.integrations.salla_public_app_service import (
     decrypt_token,
 )
 from app.modules.integrations.salla_shipping_service import _advance_status
-from app.modules.integrations.salla_erp_finalize import _should_fulfill_order
+from app.modules.integrations.salla_erp_finalize import _should_fulfill_order, _shipment_package_quantities
+from app.modules.integrations.salla_models import SallaOrderItem, SallaShipment
 from app.modules.shipping.service import (
     ShippingValidationError,
     calculate_shipping_fee,
@@ -112,3 +113,19 @@ def test_salla_fulfillment_status_allows_inventory_fulfillment(fulfillment_statu
 def test_salla_shipment_milestone_can_explicitly_request_fulfillment():
     order = type("Order", (), {"status": "created", "fulfillment_status": "pending"})()
     assert _should_fulfill_order(order, force_fulfillment=True) is True
+
+
+def test_salla_shipment_packages_resolve_item_quantities():
+    item_a = SallaOrderItem(external_id="101", sku="SKU-A", quantity=10)
+    item_b = SallaOrderItem(external_id="102", sku="SKU-B", quantity=3)
+    shipment = SallaShipment(
+        external_id="S-1",
+        packages=[
+            {"item_id": 101, "sku": "SKU-A", "quantity": 4},
+            {"external_id": "102", "sku": "SKU-B", "quantity": 2},
+        ],
+    )
+    assert _shipment_package_quantities(shipment, [item_a, item_b]) == {
+        item_a.id: Decimal("4"),
+        item_b.id: Decimal("2"),
+    }
