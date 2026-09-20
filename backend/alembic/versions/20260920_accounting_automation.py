@@ -1,0 +1,11 @@
+"""Accrual, deferral, recurring journal and allocation foundations."""
+from alembic import op
+import sqlalchemy as sa
+revision="20260920_accounting_automation";down_revision="20260920_functional_completion_core";branch_labels=None;depends_on=None
+def upgrade():
+ op.create_table("journal_automations",sa.Column("id",sa.Integer(),primary_key=True),sa.Column("company_id",sa.Integer(),sa.ForeignKey("companies.id",ondelete="CASCADE"),nullable=False),sa.Column("kind",sa.String(20),nullable=False),sa.Column("name",sa.String(160),nullable=False),sa.Column("journal_id",sa.Integer(),sa.ForeignKey("accounting_journals.id",ondelete="RESTRICT"),nullable=False),sa.Column("branch_id",sa.Integer(),sa.ForeignKey("branches.id",ondelete="RESTRICT"),nullable=False),sa.Column("start_date",sa.Date(),nullable=False),sa.Column("end_date",sa.Date()),sa.Column("frequency",sa.String(20),nullable=False,server_default="monthly"),sa.Column("amount",sa.Numeric(20,6),nullable=False),sa.Column("debit_account_id",sa.Integer(),nullable=False),sa.Column("credit_account_id",sa.Integer(),nullable=False),sa.Column("currency_code",sa.String(3),nullable=False,server_default="EGP"),sa.Column("status",sa.String(20),nullable=False,server_default="active"),sa.Column("description",sa.Text()),sa.Column("created_at",sa.DateTime(timezone=True),server_default=sa.func.now(),nullable=False))
+ op.create_index("ix_journal_automations_company","journal_automations",["company_id"])
+ op.create_table("journal_allocations",sa.Column("id",sa.Integer(),primary_key=True),sa.Column("company_id",sa.Integer(),sa.ForeignKey("companies.id",ondelete="CASCADE"),nullable=False),sa.Column("source_entry_id",sa.Integer(),sa.ForeignKey("journal_entries.id",ondelete="CASCADE"),nullable=False),sa.Column("target_account_id",sa.Integer(),nullable=False),sa.Column("amount",sa.Numeric(20,6),nullable=False),sa.Column("dimension_key",sa.String(100)),sa.Column("status",sa.String(20),nullable=False,server_default="draft"),sa.Column("created_at",sa.DateTime(timezone=True),server_default=sa.func.now(),nullable=False))
+ op.create_index("ix_journal_allocations_company","journal_allocations",["company_id"])
+def downgrade():
+ op.drop_table("journal_allocations");op.drop_index("ix_journal_automations_company",table_name="journal_automations");op.drop_table("journal_automations")
