@@ -1,4 +1,4 @@
-from fastapi import APIRouter,Depends,HTTPException,Header
+from fastapi import APIRouter,Depends,HTTPException,Header,BackgroundTasks
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.core.permissions import require_permission
@@ -8,7 +8,7 @@ from app.modules.identity.models import User
 from app.modules.companies.models import Company
 from app.modules.platform.developer.models import DeveloperApp,DeveloperApiKey,DeveloperWebhook,DeveloperEvent,DeveloperWebhookDelivery,DeveloperCustomField
 from app.modules.platform.developer.schemas import *
-from app.modules.platform.developer.service import create_app,create_key,authenticate_key,sha,encrypt_secret
+from app.modules.platform.developer.service import create_app,create_key,authenticate_key,sha,encrypt_secret,decrypt_secret,sign_webhook
 router=APIRouter(prefix="/developer",tags=["Developer Platform"])
 def company_ok(db,cid,user):
     if not user.tenant_id or not db.scalar(select(Company.id).where(Company.id==cid,Company.tenant_id==user.tenant_id)):raise HTTPException(404,"Company not found")
@@ -61,3 +61,31 @@ def custom_fields(company_id:int,entity_type:str|None=None,db:Session=Depends(ge
 def api_ping(x_api_key:str|None=Header(default=None),db:Session=Depends(get_db)):
     if not x_api_key or not authenticate_key(db,x_api_key):raise HTTPException(401,"Invalid API key")
     return {"ok":True,"api_version":"v1"}
+
+def _deliver(db,delivery_id:int):
+    import requests
+    from datetime import datetime,timezone
+    d=db.get(DeveloperWebhookDelivery,delivery_id)
+    if not d or d.status=="delivered":return
+    w=db.get(DeveloperWebhook,d.webhook_id)
+    if not w or not w.is_active:d.status="disabled";db.commit();return
+    ts=int(datetime.now(timezone.utc).timestamp());body={"id":d.event_id,"type":d.event_type,"data":d.payload}
+    try:
+        r=requests.post(w.url,json=body,headers={"Content-Type":"application/json","X-PrimeERP-Event":d.event_type,"X-PrimeERP-Timestamp":str(ts),"X-PrimeERP-Signature":"sha256="+sign_webhook(decrypt_secret(w.secret_encrypted),ts,body)},timeout=10)
+        d.attempts+=1;d.response_code=r.status_code;d.response_body=r.text[:4000]
+        if 200<=r.status_code<300:d.status="delivered";d.delivered_at=datetime.now(timezone.utc)
+        else:d.status="failed"
+    except Exception as exc:
+        d.attempts+=1;d.response_body=str(exc)[:4000];d.status="failed"
+    db.commit()
+
+@router.post("/deliveries/{delivery_id}/retry",dependencies=[Depends(require_permission("developer.manage"))])
+def retry_delivery(delivery_id:int,background:BackgroundTasks,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
+    d=db.get(DeveloperWebhookDelivery,delivery_id)
+    if not d:raise HTTPException(404,"Delivery not found")
+    w=db.get(DeveloperWebhook,d.webhook_id);a=db.get(DeveloperApp,w.app_id) if w else None
+    if not a:raise HTTPException(404,"Webhook app not found")
+    company_ok(db,a.company_id,user)
+    if d.attempts>=5:raise HTTPException(409,"Delivery retry limit reached")
+    background.add_task(_deliver,db,d.id)
+    return {"queued":True,"delivery_id":d.id}
