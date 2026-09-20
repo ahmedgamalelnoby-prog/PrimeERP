@@ -10,6 +10,8 @@ from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from .models import CRMLead
 from app.modules.completion.domain_models import CRMOpportunity,CRMActivity
+from app.modules.commerce.schemas import DocumentCreate, DocumentLineCreate
+from app.modules.commerce.service import commerce_service
 router=APIRouter(prefix="/crm",tags=["CRM"])
 def scope(db,user,company_id):
     if user.tenant_id is None or db.scalar(select(Company).where(Company.id==company_id,Company.tenant_id==user.tenant_id)) is None: raise HTTPException(403,"Company is outside the current tenant")
@@ -19,6 +21,8 @@ class OppIn(BaseModel):
     name:str=Field(min_length=1,max_length=200); lead_id:int|None=None; amount:Decimal=Field(default=0,ge=0); probability:Decimal=Field(default=0,ge=0,le=100); expected_close:date|None=None; owner_id:int|None=None; notes:str|None=None
 class StageIn(BaseModel):
     stage:str=Field(pattern="^(qualification|proposal|negotiation|won|lost)$"); lost_reason:str|None=None
+class ConvertIn(BaseModel):
+    partner_id:int=Field(gt=0); item_id:int=Field(gt=0); variant_id:int|None=Field(default=None,gt=0); quantity:Decimal=Field(gt=0); unit_price:Decimal=Field(ge=0); number:str=Field(min_length=1,max_length=60); document_date:date; warehouse_id:int|None=Field(default=None,gt=0)
 class ActivityIn(BaseModel):
     activity_type:str=Field(pattern="^(call|meeting|email|task|followup)$"); subject:str=Field(min_length=1,max_length=255); due_at:datetime|None=None; assigned_to:int|None=None; notes:str|None=None
 @router.post("/leads",status_code=201)
@@ -51,6 +55,18 @@ def opportunity_stage(opportunity_id:int,p:StageIn,company_id:int=Query(...,gt=0
     if not o:raise HTTPException(404,"Opportunity not found")
     if p.stage=="lost" and not p.lost_reason:raise HTTPException(422,"Lost reason is required")
     o.stage=p.stage;o.status="won" if p.stage=="won" else ("lost" if p.stage=="lost" else "open");o.lost_reason=p.lost_reason;db.commit();return o
+@router.post("/opportunities/{opportunity_id}/convert-to-quotation", status_code=201)
+def convert_to_quotation(opportunity_id:int,p:ConvertIn,company_id:int=Query(...,gt=0),user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+    scope(db,user,company_id)
+    opp=db.scalar(select(CRMOpportunity).where(CRMOpportunity.id==opportunity_id,CRMOpportunity.company_id==company_id).with_for_update())
+    if not opp: raise HTTPException(404,"Opportunity not found")
+    if opp.stage!="won": raise HTTPException(409,"Only won opportunities can be converted to a quotation")
+    payload=DocumentCreate(company_id=company_id,partner_id=p.partner_id,document_type="quotation",number=p.number,document_date=p.document_date,warehouse_id=p.warehouse_id,lines=[DocumentLineCreate(item_id=p.item_id,variant_id=p.variant_id,quantity=p.quantity,unit_price=p.unit_price)])
+    try:
+        doc=commerce_service.create_document(db,payload); db.commit(); db.refresh(doc); return doc
+    except ValueError as exc:
+        db.rollback(); raise HTTPException(422,str(exc)) from exc
+
 @router.post("/opportunities/{opportunity_id}/activities",status_code=201)
 def activity(opportunity_id:int,p:ActivityIn,company_id:int=Query(...,gt=0),user:User=Depends(get_current_user),db:Session=Depends(get_db)):
     scope(db,user,company_id)
