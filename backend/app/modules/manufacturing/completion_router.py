@@ -90,12 +90,24 @@ def settle_wip(work_order_id:int,p:Settlement,company_id:int=Query(...,gt=0),db:
     wo=db.get(ManufacturingWorkOrder,work_order_id)
     if wo is None or wo.company_id != company_id: raise HTTPException(404,"Work order not found")
     v=manufacturing_completion_service.variance(db,company_id,work_order_id)
-    if v.wip_journal_entry_id: raise HTTPException(409,"WIP is already settled")
+    if v.wip_journal_entry_id:
+        existing_entry=db.scalar(select(__import__("app.modules.accounting.journals.models",fromlist=["JournalEntry"]).JournalEntry).where(__import__("app.modules.accounting.journals.models",fromlist=["JournalEntry"]).JournalEntry.id==v.wip_journal_entry_id,__import__("app.modules.accounting.journals.models",fromlist=["JournalEntry"]).JournalEntry.tenant_id==u.tenant_id,__import__("app.modules.accounting.journals.models",fromlist=["JournalEntry"]).JournalEntry.company_id==company_id).with_for_update())
+        if existing_entry is None: raise HTTPException(409,"WIP settlement journal entry was not found")
+        if existing_entry.status=="posted": return v
+        if existing_entry.status=="pending": raise HTTPException(409,"WIP settlement journal is awaiting approval")
+        if existing_entry.status=="approved":
+            journal_service.post(db,tenant_id=u.tenant_id,entry_id=existing_entry.id,user_id=u.id,commit=False)
+            db.commit();db.refresh(v);return v
+        raise HTTPException(409,f"WIP settlement journal is in {existing_entry.status} status")
     total=Decimal(v.actual_material or 0)+Decimal(v.actual_labor or 0)+Decimal(v.actual_overhead or 0)-Decimal(v.byproduct_credit or 0)
     if total <= 0: raise HTTPException(409,"No positive WIP balance to settle")
     entry=journal_service.create_draft(db,tenant_id=u.tenant_id,company_id=company_id,branch_id=p.branch_id,journal_id=p.journal_id,fiscal_year_id=p.fiscal_year_id,period_id=p.period_id,entry_number=p.entry_number,entry_date=p.entry_date,description=f"WIP settlement for work order {work_order_id}",lines=[{"account_combination_id":p.wip_account_id,"debit":0,"credit":total},{"account_combination_id":p.finished_goods_account_id,"debit":total,"credit":0}],user_id=u.id,source_module="manufacturing",source_entity="wip_settlement",source_id=work_order_id,commit=False)
-    journal_service.submit(db,tenant_id=u.tenant_id,entry_id=entry.id,user_id=u.id,commit=False);journal_service.post(db,tenant_id=u.tenant_id,entry_id=entry.id,user_id=u.id,commit=False)
-    v.wip_journal_entry_id=entry.id;db.commit();db.refresh(v);return v
+    journal_service.submit(db,tenant_id=u.tenant_id,entry_id=entry.id,user_id=u.id,commit=False)
+    v.wip_journal_entry_id=entry.id
+    if entry.journal.requires_approval:
+        db.commit();db.refresh(v);return v
+    journal_service.post(db,tenant_id=u.tenant_id,entry_id=entry.id,user_id=u.id,commit=False)
+    db.commit();db.refresh(v);return v
 
 class ProductionPayload(BaseModel):
     quantity:Decimal=Field(gt=0)
