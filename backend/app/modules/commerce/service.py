@@ -19,6 +19,7 @@ from app.modules.inventory.stock_moves.service import inventory_stock_move_servi
 from app.modules.inventory.warehouses.models import InventoryWarehouse
 from app.modules.accounting.fiscal_years.services.fiscal_year_service import fiscal_year_service
 from app.modules.treasury.models import Cheque, ChequeEvent
+from app.modules.commerce.backorder_service import backorder_service
 
 SALE_TYPES = {"quotation", "order", "delivery", "invoice", "credit_note"}
 PURCHASE_TYPES = {"requisition", "rfq", "order", "receipt", "bill", "debit_note"}
@@ -325,6 +326,20 @@ class CommerceService:
             commerce_accounting_service.post_purchase_receipt(db, obj, user_id)
             obj.status = "received" if complete else "partially_received"
         db.flush()
+        if kind in {"sale", "purchase"}:
+            if complete:
+                from app.modules.commerce.backorder_models import CommerceBackorder
+                open_backorders = db.scalars(select(CommerceBackorder).where(
+                    CommerceBackorder.company_id == company_id,
+                    CommerceBackorder.source_kind == kind,
+                    CommerceBackorder.source_document_id == obj.id,
+                    CommerceBackorder.status == "open",
+                ).with_for_update()).all()
+                for backorder in open_backorders:
+                    backorder.status = "fulfilled"
+                    backorder.fulfilled_quantity = backorder.quantity
+            else:
+                backorder_service.generate_for_document(db, company_id=company_id, document_id=obj.id, kind=kind)
         return obj
 
     @staticmethod
