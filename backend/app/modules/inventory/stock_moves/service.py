@@ -20,6 +20,7 @@ from app.modules.inventory.stock_moves.location_stock import InventoryLocationSt
 from app.modules.inventory.stock_moves.models import InventoryAccountingConfig, InventoryCostLayer, InventoryStockMove, InventoryValuationAllocation
 from app.modules.inventory.stock_moves.repository import inventory_stock_move_repository
 from app.modules.inventory.reservations.models import InventoryReservation
+from app.modules.audit.service import record_audit_event
 
 
 class InventoryStockMoveService:
@@ -206,6 +207,14 @@ class InventoryStockMoveService:
             self._post_accounting(db, tenant_id=tenant_id, company_id=company_id, move=move, user_id=user_id)
         move.status = "posted"
         move.posted_at = datetime.now(timezone.utc)
+        record_audit_event(
+            db, action="inventory.stock_move.post", entity_type="inventory_stock_move",
+            entity_id=move.id, user_id=user_id, tenant_id=tenant_id, company_id=company_id,
+            metadata={"source_module": move.source_module, "source_entity": move.source_entity,
+                      "source_id": move.source_id, "item_id": move.item_id,
+                      "variant_id": move.variant_id, "quantity": str(move.quantity),
+                      "movement_type": move.movement_type, "unit_cost": str(move.unit_cost)}
+        )
         db.flush()
         return move
 
