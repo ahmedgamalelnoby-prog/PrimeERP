@@ -46,7 +46,7 @@ This registry is the single source of truth for functional completion. A module 
 | Reports / BI / AI | 🟢 COMPLETE | Financial/operational reports, dashboards, AI analysis and scheduled delivery. |
 | Integrations | 🟢 COMPLETE | Salla and other commerce/shipping integrations, webhooks and end-to-end orchestration. |
 | Security / Audit / Approvals | 🟢 COMPLETE | RBAC, record-level isolation, API-key security, sessions, approvals, audit and controls. |
-| Frontend parity | 🟡 IN PROGRESS | Every production API/workflow exposed through coherent UI and error/state handling. |
+| Frontend parity | 🟡 IN PROGRESS | Final cross-module UI/API parity sweep remains; module-specific screens are present for core operations, while some secondary modules still use the Module Workbench. |
 | Release Gate | 🔴 BLOCKED | Starts only after all functional modules are CLOSED. |
 
 ## Latest completion checkpoint — 2026-09-20
