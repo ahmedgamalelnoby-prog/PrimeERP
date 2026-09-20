@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 class AppCreate(BaseModel):
     company_id:int=Field(gt=0);name:str=Field(min_length=2,max_length=160);redirect_uris:list[str]=[];scopes:list[str]=[]
 class AppResponse(BaseModel):
-    id:int;company_id:int;name:str;client_id:str;scopes:list[str];is_active:bool;created_at:datetime
+    id:int;company_id:int;name:str;client_id:str;scopes:list[str];is_active:bool;created_at:datetime;rotated_at:datetime|None=None
     model_config={"from_attributes":True}
 class AppCreated(AppResponse):
     client_secret:str
