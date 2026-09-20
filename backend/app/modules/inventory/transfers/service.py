@@ -103,7 +103,7 @@ class InventoryTransferService:
                     reference=transfer.reference,
                     source_module="inventory/transfers",
                     source_entity="inventory_transfer",
-                    source_id=f"{transfer.id}:{line.id}",
+                    source_id=f"{transfer.id}:{line.id}:issue",
                 ),
             )
             inventory_stock_move_service.post(db, tenant_id=tenant_id, company_id=company_id, move_id=move.id, user_id=user_id)
@@ -137,7 +137,7 @@ class InventoryTransferService:
                     reference=transfer.reference,
                     source_module="inventory/transfers",
                     source_entity="inventory_transfer",
-                    source_id=str(transfer.id),
+                    source_id=f"{transfer.id}:{line.id}:receipt",
                 ),
             )
             inventory_stock_move_service.post(db, tenant_id=tenant_id, company_id=company_id, move_id=move.id, user_id=user_id)
