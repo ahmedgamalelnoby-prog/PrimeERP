@@ -84,6 +84,11 @@ class ShippingStatusService:
         if new_status == shipment.status:
             return []
         old_status = shipment.status
+        # Delivered is a terminal commercial state. RTO/return flows must
+        # complete before delivery; a delivered shipment cannot be moved
+        # backward into a return lifecycle.
+        if old_status == "delivered":
+            raise ValueError("Delivered shipment is final and cannot transition to another status")
         old_status_row = db.scalar(select(ShippingOrderStatus).where(
             ShippingOrderStatus.company_id == shipment.company_id,
             ShippingOrderStatus.code == old_status,
