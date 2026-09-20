@@ -17,6 +17,10 @@ class Elimination(BaseModel): company_id:int;branch_id:int;journal_id:int;when:d
 def auto_rule(p:AutoRule,db:Session=Depends(get_db),u:User=Depends(get_current_user)):return accounting_advanced_service.create_rule(db,u,**p.model_dump())
 @router.post("/auto-post")
 def auto_post(p:AutoPost,db:Session=Depends(get_db),u:User=Depends(get_current_user)):return accounting_advanced_service.post_source(db,u,**p.model_dump())
+class RulePost(BaseModel):
+ company_id:int;source_module:str;source_entity:str;source_id:int;when:date;amount:Decimal=Field(gt=0);description:str
+@router.post("/auto-post/by-rule")
+def auto_post_by_rule(p:RulePost,db:Session=Depends(get_db),u:User=Depends(get_current_user)):return accounting_advanced_service.post_by_rule(db,u,**p.model_dump())
 @router.post("/fx-revaluation")
 def fx(p:FX,db:Session=Depends(get_db),u:User=Depends(get_current_user)):return accounting_advanced_service.fx_revalue(db,u,**p.model_dump())
 @router.post("/intercompany")
