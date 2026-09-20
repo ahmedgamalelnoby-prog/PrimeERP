@@ -12,6 +12,7 @@ from app.modules.inventory.warehouses.models import InventoryWarehouse
 from app.modules.inventory.stock_moves.models import InventoryStockMove
 from app.modules.inventory.stock_moves.schemas import StockMoveCreate
 from app.modules.inventory.stock_moves.service import inventory_stock_move_service
+from app.modules.inventory.reservations.models import InventoryReservation
 from app.modules.audit.service import record_audit_event
 from .models import WMSOperation, WMSOperationLine, InventoryTrackingUnit
 
@@ -39,6 +40,16 @@ class WMSService:
                     loc = db.scalar(select(InventoryLocation).where(InventoryLocation.id == loc_id, InventoryLocation.company_id == payload.company_id, InventoryLocation.warehouse_id == payload.warehouse_id, InventoryLocation.is_active.is_(True)))
                     if not loc:
                         raise ValueError("Location must belong to the selected warehouse")
+            if line.reservation_id is not None:
+                reservation = db.scalar(select(InventoryReservation).where(InventoryReservation.id == line.reservation_id, InventoryReservation.company_id == payload.company_id).with_for_update())
+                if reservation is None or reservation.status != "active":
+                    raise ValueError("WMS reservation must be active and belong to the company")
+                if reservation.item_id != line.item_id or reservation.variant_id != line.variant_id or reservation.location_id != line.source_location_id:
+                    raise ValueError("WMS reservation does not match item, variant, or source location")
+                if Decimal(reservation.quantity) != Decimal(line.quantity):
+                    raise ValueError("WMS line quantity must exactly match the reservation quantity")
+                if op.operation_type not in {"picking", "dispatch"}:
+                    raise ValueError("Reservations can only be consumed by picking or dispatch operations")
             if line.serial_number and line.quantity != Decimal("1"):
                 raise ValueError("A serial-tracked line must have quantity 1")
             op.lines.append(WMSOperationLine(**line.model_dump()))
@@ -98,7 +109,7 @@ class WMSService:
                 movement = "receipt" if delta > 0 else "issue"
                 line.quantity = abs(delta)
                 source, dest = (None, dest) if delta > 0 else (source, None)
-            payload = StockMoveCreate(company_id=op.company_id, item_id=line.item_id, variant_id=line.variant_id, source_location_id=source, destination_location_id=dest, quantity=line.quantity, unit_cost=line.unit_cost, movement_type=movement, source_module="inventory_wms", source_entity=op.operation_type, source_id=f"{op.id}:{line.id}", reference=op.reference, notes=op.notes)
+            payload = StockMoveCreate(company_id=op.company_id, item_id=line.item_id, variant_id=line.variant_id, source_location_id=source, destination_location_id=dest, quantity=line.quantity, unit_cost=line.unit_cost, movement_type=movement, source_module="inventory_wms", source_entity=op.operation_type, source_id=f"{op.id}:{line.id}", reference=op.reference, notes=op.notes, reservation_id=line.reservation_id)
             move = inventory_stock_move_service.create_draft(db, payload)
             posted = inventory_stock_move_service.post(db, tenant_id=tenant_id, company_id=op.company_id, move_id=move.id, user_id=user_id)
             line.stock_move_id = posted.id
