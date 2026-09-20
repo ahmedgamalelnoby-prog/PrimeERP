@@ -15,8 +15,8 @@ from app.modules.inventory.items.models import InventoryStock
 from app.modules.inventory.stock_moves.models import InventoryStockMove
 from app.modules.pos.completion_models import POSPromotionUse
 from app.modules.restaurant.models import PosOrderLineRoute, PosTerminal, PosOutlet
-from app.modules.commerce.models import SalesDocument, SalesLine, CommercePayment
-from app.modules.shipping.models import Shipment
+from app.modules.commerce.models import SalesDocument, SalesLine, CommercePayment, PurchaseDocument, CommercePaymentAllocation, BusinessPartner
+from app.modules.shipping.models import Shipment, ShippingCarrier
 from app.modules.treasury.completion_models import TreasuryTransaction
 from app.modules.manufacturing.completion_models import ManufacturingWorkOrder, ManufacturingVariance, ManufacturingConsumption
 from app.modules.catalog.models import Recipe, RecipeSkuMapping
@@ -475,3 +475,180 @@ def salla_readiness(
         "ready": missing_recipe == 0,
         "items": result,
     }
+
+
+@router.get("/finance/integration-tower", dependencies=[Depends(require_permission("commerce.access"))])
+def finance_integration_tower(
+    company_id: int = Query(..., gt=0),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _company(db, company_id, user)
+
+    sales = db.scalars(
+        select(SalesDocument).where(
+            SalesDocument.company_id == company_id,
+            SalesDocument.document_type.in_(("invoice", "order")),
+            SalesDocument.status.notin_(("draft", "cancelled")),
+        )
+    ).all()
+    purchases = db.scalars(
+        select(PurchaseDocument).where(
+            PurchaseDocument.company_id == company_id,
+            PurchaseDocument.document_type.in_(("bill", "order")),
+            PurchaseDocument.status.notin_(("draft", "cancelled")),
+        )
+    ).all()
+
+    ar_total = sum((Decimal(str(x.total or 0)) - Decimal(str(x.paid_total or 0)) for x in sales), Decimal("0"))
+    ap_total = sum((Decimal(str(x.total or 0)) - Decimal(str(x.paid_total or 0)) for x in purchases), Decimal("0"))
+
+    payments = db.scalars(
+        select(CommercePayment).where(
+            CommercePayment.company_id == company_id,
+            CommercePayment.status == "posted",
+        )
+    ).all()
+    allocation_mismatches = []
+    for payment in payments:
+        allocated = db.scalar(
+            select(func.coalesce(func.sum(CommercePaymentAllocation.amount), 0)).where(
+                CommercePaymentAllocation.company_id == company_id,
+                CommercePaymentAllocation.payment_id == payment.id,
+                CommercePaymentAllocation.status == "active",
+            )
+        ) or 0
+        difference = Decimal(str(payment.amount or 0)) - Decimal(str(allocated or 0))
+        if difference != 0:
+            allocation_mismatches.append({
+                "payment_id": payment.id,
+                "amount": Decimal(str(payment.amount or 0)),
+                "allocated": Decimal(str(allocated or 0)),
+                "difference": difference,
+            })
+
+    carrier_rows = db.execute(
+        select(
+            ShippingCarrier.id,
+            ShippingCarrier.name,
+            func.count(Shipment.id),
+            func.coalesce(func.sum(Shipment.cod_collected), 0),
+            func.coalesce(func.sum(Shipment.shipping_fee), 0),
+        )
+        .outerjoin(Shipment, Shipment.carrier_id == ShippingCarrier.id)
+        .where(ShippingCarrier.company_id == company_id)
+        .group_by(ShippingCarrier.id, ShippingCarrier.name)
+        .order_by(ShippingCarrier.id)
+    ).all()
+
+    return {
+        "company_id": company_id,
+        "receivables": {
+            "document_count": len(sales),
+            "outstanding": ar_total,
+        },
+        "payables": {
+            "document_count": len(purchases),
+            "outstanding": ap_total,
+        },
+        "payment_reconciliation": {
+            "posted_payment_count": len(payments),
+            "allocation_mismatch_count": len(allocation_mismatches),
+            "mismatches": allocation_mismatches,
+        },
+        "shipping_carriers": [
+            {
+                "carrier_id": carrier_id,
+                "carrier_name": name,
+                "shipment_count": count,
+                "cod_collected": Decimal(str(cod or 0)),
+                "shipping_fee": Decimal(str(fee or 0)),
+                "net_before_other_carrier_charges": Decimal(str(cod or 0)) - Decimal(str(fee or 0)),
+            }
+            for carrier_id, name, count, cod, fee in carrier_rows
+        ],
+        "healthy": not allocation_mismatches,
+    }
+
+
+@router.get("/inventory/costing-tower", dependencies=[Depends(require_permission("inventory.access"))])
+def inventory_costing_tower(
+    company_id: int = Query(..., gt=0),
+    warehouse_id: int | None = Query(default=None, gt=0),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _company(db, company_id, user)
+    stmt = select(InventoryStock).where(InventoryStock.company_id == company_id)
+    if warehouse_id is not None:
+        stmt = stmt.where(InventoryStock.warehouse_id == warehouse_id)
+    stocks = db.scalars(stmt).all()
+
+    negative = []
+    zero_cost = []
+    total_value = Decimal("0")
+    for stock in stocks:
+        qty = Decimal(str(stock.quantity_on_hand or 0))
+        cost = Decimal(str(stock.average_cost or 0))
+        value = qty * cost
+        total_value += value
+        if qty < 0:
+            negative.append({
+                "warehouse_id": stock.warehouse_id,
+                "item_id": stock.item_id,
+                "quantity": qty,
+                "value": value,
+            })
+        if qty > 0 and cost <= 0:
+            zero_cost.append({
+                "warehouse_id": stock.warehouse_id,
+                "item_id": stock.item_id,
+                "quantity": qty,
+            })
+
+    return {
+        "company_id": company_id,
+        "stock_value": total_value,
+        "stock_rows": len(stocks),
+        "negative_stock_count": len(negative),
+        "zero_cost_stock_count": len(zero_cost),
+        "negative_stock": negative,
+        "zero_cost_stock": zero_cost,
+        "healthy": not negative and not zero_cost,
+    }
+
+
+@router.get("/manufacturing/production-finance", dependencies=[Depends(require_permission("inventory.access"))])
+def manufacturing_production_finance(
+    company_id: int = Query(..., gt=0),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _company(db, company_id, user)
+    work_orders = db.scalars(
+        select(ManufacturingWorkOrder).where(ManufacturingWorkOrder.company_id == company_id)
+    ).all()
+    rows = []
+    for wo in work_orders:
+        variance = db.scalar(
+            select(ManufacturingVariance)
+            .where(ManufacturingVariance.work_order_id == wo.id)
+            .order_by(ManufacturingVariance.id.desc())
+        )
+        rows.append({
+            "work_order_id": wo.id,
+            "number": wo.number,
+            "status": wo.status,
+            "planned_quantity": Decimal(str(wo.planned_qty or 0)),
+            "completed_quantity": Decimal(str(wo.completed_qty or 0)),
+            "remaining_quantity": max(
+                Decimal(str(wo.planned_qty or 0)) - Decimal(str(wo.completed_qty or 0)),
+                Decimal("0"),
+            ),
+            "material_cost": Decimal(str(wo.total_material_cost or 0)),
+            "labor_cost": Decimal(str(wo.total_labor_cost or 0)),
+            "overhead_cost": Decimal(str(wo.total_overhead_cost or 0)),
+            "variance": Decimal(str(variance.total_variance or 0)) if variance else Decimal("0"),
+            "variance_status": variance.status if variance else None,
+        })
+    return rows
