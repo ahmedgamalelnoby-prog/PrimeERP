@@ -147,7 +147,18 @@ class ARService:
         if partner_id and ids: pquery.append(CommercePayment.document_id.in_(ids))
         payments=list(db.scalars(select(CommercePayment).where(*pquery)).all())
         unapplied=sum((self.unapplied(db,p) for p in payments),Decimal(0))
-        details={"invoice_open":str(invoice_open),"unapplied_payments":str(unapplied),"issues":issues}
+        gl_balance=None
+        gl_difference=Decimal("0")
+        if partner_id is None:
+            from app.modules.accounting.journals.models import JournalEntry, JournalEntryLine
+            from app.modules.commerce.accounting_models import CommerceAccountingSettings
+            settings=db.scalar(select(CommerceAccountingSettings).where(CommerceAccountingSettings.company_id==company_id))
+            if settings is not None:
+                gl_balance=Decimal(str(db.scalar(select(func.coalesce(func.sum(JournalEntryLine.debit-JournalEntryLine.credit),0)).join(JournalEntry,JournalEntry.id==JournalEntryLine.entry_id).where(JournalEntry.company_id==company_id,JournalEntry.status=="posted",JournalEntry.entry_date<=as_of,JournalEntryLine.account_combination_id==settings.ar_account_id)) or 0))
+                subledger_balance=sum((Decimal(d.total or 0) for d in invoices),Decimal(0))-sum((by_doc.get(d.id,Decimal(0)) for d in invoices),Decimal(0))-sum((Decimal(w.amount or 0) for w in db.scalars(select(ARWriteOff).where(ARWriteOff.company_id==company_id,ARWriteOff.status=="approved",ARWriteOff.created_at<=as_of)).all()),Decimal(0))
+                gl_difference=gl_balance-subledger_balance
+                if abs(gl_difference)>Decimal("0.01"): issues.append({"type":"gl_subledger_mismatch","amount":str(gl_difference)})
+        details={"invoice_open":str(invoice_open),"unapplied_payments":str(unapplied),"gl_balance":str(gl_balance) if gl_balance is not None else None,"gl_difference":str(gl_difference),"issues":issues}
         status="balanced" if not issues else "exception"
         if persist:
             row=ARReconciliation(company_id=company_id,partner_id=partner_id,as_of=as_of,status=status,discrepancy_amount=sum((Decimal(x.get("amount","0")) for x in issues),Decimal(0)),details_json=json.dumps(details,default=str),reconciled_by=user_id);db.add(row);db.flush()
