@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.modules.commerce.accounting_service import commerce_accounting_service
 from app.modules.commerce.models import SalesDocument
 from app.modules.integrations.models import IntegrationMapping
-from app.modules.integrations.salla_models import SallaOrder
+from app.modules.integrations.salla_models import SallaOrder, SallaShipment
 from app.modules.inventory.locations.models import InventoryLocation
 from app.modules.inventory.stock_moves.models import InventoryStockMove
 from app.modules.inventory.stock_moves.schemas import StockMoveCreate
@@ -16,11 +16,30 @@ from app.modules.inventory.stock_moves.service import inventory_stock_move_servi
 
 
 def _deliveries(db: Session, order: SallaOrder) -> list[SalesDocument]:
+    """Resolve every ERP delivery created for this Salla order.
+
+    Order-level deliveries are keyed by the order external ID, while
+    shipment-level deliveries are keyed by the shipment external ID. Looking
+    up only the order ID would silently miss partial-shipment deliveries.
+    """
+    external_ids = {str(order.external_id)}
+    shipment_ids = db.scalars(
+        select(SallaShipment.external_id).where(
+            SallaShipment.company_id == order.company_id,
+            SallaShipment.connection_id == order.connection_id,
+            (
+                (SallaShipment.order_id == order.id)
+                | (SallaShipment.order_external_id == str(order.external_id))
+            ),
+        )
+    ).all()
+    external_ids.update(str(value) for value in shipment_ids if value)
+
     mappings = db.scalars(
         select(IntegrationMapping).where(
             IntegrationMapping.company_id == order.company_id,
             IntegrationMapping.connection_id == order.connection_id,
-            IntegrationMapping.external_id == str(order.external_id),
+            IntegrationMapping.external_id.in_(external_ids),
             IntegrationMapping.entity_type.in_(
                 ["salla_delivery", "salla_shipment_delivery"]
             ),
@@ -34,7 +53,7 @@ def _deliveries(db: Session, order: SallaOrder) -> list[SalesDocument]:
             SalesDocument.id.in_(ids),
             SalesDocument.company_id == order.company_id,
             SalesDocument.document_type == "delivery",
-        )
+        ).order_by(SalesDocument.id)
     ).all()
 
 
