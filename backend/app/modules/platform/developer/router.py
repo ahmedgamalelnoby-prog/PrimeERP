@@ -28,11 +28,11 @@ def revoke_key(key_id:int,db:Session=Depends(get_db),user:User=Depends(get_curre
     k=db.get(DeveloperApiKey,key_id);a=db.get(DeveloperApp,k.app_id) if k else None
     if not k or not a:raise HTTPException(404,"Key not found")
     company_ok(db,a.company_id,user);k.revoked_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc);db.commit();return {"revoked":True}
-@router.post("/webhooks",response_model=WebhookResponse,status_code=201,dependencies=[Depends(require_permission("developer.manage"))])
+@router.post("/webhooks",response_model=WebhookCreated,status_code=201,dependencies=[Depends(require_permission("developer.manage"))])
 def webhook(p:WebhookCreate,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     a=db.get(DeveloperApp,p.app_id)
     if not a:raise HTTPException(404,"App not found")
-    company_ok(db,a.company_id,user);secret=secrets.token_urlsafe(32);w=DeveloperWebhook(app_id=a.id,url=p.url,secret_hash=sha(secret),events=p.events);db.add(w);db.commit();db.refresh(w);return w
+    company_ok(db,a.company_id,user);secret=secrets.token_urlsafe(32);w=DeveloperWebhook(app_id=a.id,url=p.url,secret_hash=sha(secret),events=p.events);db.add(w);db.commit();db.refresh(w);return {**WebhookResponse.model_validate(w).model_dump(),"signing_secret":secret}
 @router.get("/webhooks",response_model=list[WebhookResponse],dependencies=[Depends(require_permission("developer.access"))])
 def webhooks(company_id:int,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     company_ok(db,company_id,user);return list(db.scalars(select(DeveloperWebhook).join(DeveloperApp).where(DeveloperApp.company_id==company_id)).all())
