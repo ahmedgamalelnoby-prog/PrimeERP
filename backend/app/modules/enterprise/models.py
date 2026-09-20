@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, CheckConstraint, Column, Date, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Column, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from app.database.base import Base
 
 class FixedAsset(Base):
@@ -6,6 +6,9 @@ class FixedAsset(Base):
     id=Column(Integer,primary_key=True); company_id=Column(Integer,ForeignKey('companies.id',ondelete='CASCADE'),nullable=False,index=True)
     code=Column(String(50),nullable=False); name=Column(String(200),nullable=False); category=Column(String(100),nullable=False)
     acquisition_date=Column(Date,nullable=False); cost=Column(Numeric(18,4),nullable=False); residual_value=Column(Numeric(18,4),nullable=False,server_default='0'); useful_life_months=Column(Integer,nullable=False)
+    asset_account_id=Column(Integer,ForeignKey('account_combinations.id',ondelete='RESTRICT'),nullable=True,index=True)
+    accumulated_depreciation_account_id=Column(Integer,ForeignKey('account_combinations.id',ondelete='RESTRICT'),nullable=True,index=True)
+    depreciation_expense_account_id=Column(Integer,ForeignKey('account_combinations.id',ondelete='RESTRICT'),nullable=True,index=True)
     depreciation_method=Column(String(30),nullable=False,server_default='straight_line'); accumulated_depreciation=Column(Numeric(18,4),nullable=False,server_default='0'); status=Column(String(20),nullable=False,server_default='active')
     __table_args__=(UniqueConstraint('company_id','code',name='uq_fixed_assets_company_code'),CheckConstraint('cost >= 0',name='ck_asset_cost'),CheckConstraint('residual_value >= 0',name='ck_asset_residual'),CheckConstraint('useful_life_months > 0',name='ck_asset_life'),CheckConstraint("status IN ('draft','active','disposed')",name='ck_asset_status'))
 class Budget(Base):
@@ -35,3 +38,19 @@ class ProjectContract(Base):
     __tablename__='project_contracts'
     id=Column(Integer,primary_key=True); company_id=Column(Integer,ForeignKey('companies.id',ondelete='CASCADE'),nullable=False,index=True); project_id=Column(Integer,ForeignKey('projects.id',ondelete='CASCADE'),nullable=False,index=True); contract_no=Column(String(80),nullable=False); customer_id=Column(Integer,nullable=True); contract_value=Column(Numeric(18,4),nullable=False); start_date=Column(Date); end_date=Column(Date); retention_percent=Column(Numeric(8,4),nullable=False,server_default='0'); status=Column(String(20),nullable=False,server_default='draft'); terms=Column(Text)
     __table_args__=(UniqueConstraint('company_id','contract_no',name='uq_project_contracts_company_contract_no'),)
+
+
+class FixedAssetDepreciationRun(Base):
+    __tablename__='fixed_asset_depreciation_runs'
+    id=Column(Integer,primary_key=True)
+    tenant_id=Column(Integer,ForeignKey('tenants.id',ondelete='CASCADE'),nullable=False,index=True)
+    company_id=Column(Integer,ForeignKey('companies.id',ondelete='CASCADE'),nullable=False,index=True)
+    asset_id=Column(Integer,ForeignKey('fixed_assets.id',ondelete='CASCADE'),nullable=False,index=True)
+    posting_date=Column(Date,nullable=False)
+    months=Column(Integer,nullable=False)
+    amount=Column(Numeric(18,4),nullable=False)
+    journal_entry_id=Column(Integer,ForeignKey('journal_entries.id',ondelete='RESTRICT'),nullable=False,index=True)
+    status=Column(String(20),nullable=False,server_default='pending')
+    created_at=Column(DateTime(timezone=True),server_default='now()',nullable=False)
+    completed_at=Column(DateTime(timezone=True))
+    __table_args__=(UniqueConstraint('asset_id','posting_date',name='uq_fixed_asset_depr_asset_date'),CheckConstraint('months > 0',name='ck_fixed_asset_depr_months'),CheckConstraint('amount >= 0',name='ck_fixed_asset_depr_amount'),CheckConstraint("status IN ('pending','posted','cancelled')",name='ck_fixed_asset_depr_status'),)
