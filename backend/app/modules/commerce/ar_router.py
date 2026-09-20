@@ -41,6 +41,13 @@ def auto_match(payment_id:int,payload:ARAutoMatchRequest,current_user:User=Depen
     if payload.payment_id!=payment_id:raise HTTPException(400,"Payment id mismatch")
     company(db,payload.company_id,current_user);result=run(lambda:ar_service.auto_match(db,payload.company_id,payment_id,current_user.id,payload.as_of));db.commit();return result
 
+@router.post("/payments/{payment_id}/reverse",dependencies=[Depends(require_permission("commerce.reverse"))])
+def reverse_advance(payment_id:int,payload:ARAdvanceReceiptRequest,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+    company(db,payload.company_id,current_user)
+    from app.modules.commerce.service import commerce_service
+    obj=run(lambda:commerce_service.reverse_payment(db,payload.company_id,payment_id,payload.payment_date,payload.notes,current_user.id));db.commit()
+    return {"payment_id":payment_id,"status":"reversed","reversal_date":payload.payment_date}
+
 @router.get("/payments/{payment_id}/unapplied")
 def unapplied(payment_id:int,company_id:int=Query(...,gt=0),current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
     company(db,company_id,current_user);p=ar_service._payment(db,company_id,payment_id);return {"payment_id":p.id,"amount":str(p.amount),"allocated":str(Decimal(str(p.amount))-ar_service.unapplied(db,p)),"unapplied":str(ar_service.unapplied(db,p))}
