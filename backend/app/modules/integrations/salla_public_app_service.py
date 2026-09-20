@@ -629,7 +629,7 @@ def handle_app_event(db: Session, payload: dict[str, Any], event_id: str | None 
                         SallaOrder.connection_id == connection.id,
                     ).with_for_update())
                 commerce = finalize_salla_order(
-                    db, order, force_fulfillment=True
+                    db, order, force_fulfillment=True, shipment=salla_shipment
                 ) if order is not None and fulfillment_requested else None
             result = {
                 "installation_id": installation.id,
