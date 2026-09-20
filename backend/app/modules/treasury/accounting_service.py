@@ -59,7 +59,7 @@ class TreasuryAccountingService:
             currency_code=cheque.currency,
         )
         journal_service.submit(db, tenant_id=company.tenant_id, entry_id=entry.id, user_id=user_id, commit=False)
-        if not db.scalar(select(JournalEntry).where(JournalEntry.id == entry.id)).journal.requires_approval:
+        if not entry.journal.requires_approval:
             journal_service.post(db, tenant_id=company.tenant_id, entry_id=entry.id, user_id=user_id, commit=False)
         return entry
 
