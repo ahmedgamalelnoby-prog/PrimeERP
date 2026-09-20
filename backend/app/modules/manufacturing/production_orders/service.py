@@ -22,6 +22,9 @@ class ManufacturingProductionService:
         if kw.get("recipe_id") and db.scalar(select(Recipe.id).where(Recipe.id==kw["recipe_id"],Recipe.company_id==kw["company_id"],Recipe.product_id==kw["item_id"],Recipe.is_active.is_(True))) is None:
             raise HTTPException(422,"Recipe does not belong to the company/product")
         x=ManufacturingWorkOrder(company_id=kw["company_id"],warehouse_id=kw.get("warehouse_id"),item_id=kw["item_id"],variant_id=kw.get("variant_id"),recipe_id=kw.get("recipe_id"),number=kw["number"],planned_qty=kw["planned_qty"],planned_start=kw.get("planned_start"),planned_end=kw.get("planned_end"))
+        # Preserve explicit planned cost inputs when the model exposes them; completion/variance uses these fields when present.
+        for _field in ("planned_material_cost","planned_labor_cost","planned_overhead_cost"):
+            if _field in kw and hasattr(x,_field): setattr(x,_field,kw[_field])
         db.add(x);db.flush();return x
     def transition(self,db,tenant_id,company_id,work_order_id,status):
         self.scope(db,company_id,tenant_id);x=db.scalar(select(ManufacturingWorkOrder).where(ManufacturingWorkOrder.id==work_order_id,ManufacturingWorkOrder.company_id==company_id).with_for_update())
@@ -74,7 +77,10 @@ class ManufacturingProductionService:
         if q<=0 or q>remaining: raise HTTPException(422,"Invalid completed quantity; quantity exceeds remaining work-order quantity")
         cost=Decimal(output_unit_cost) if output_unit_cost is not None else (Decimal(wo.total_material_cost or 0)+Decimal(wo.total_labor_cost or 0)+Decimal(wo.total_overhead_cost or 0))/q
         if cost<=0: raise HTTPException(422,"Production output requires positive valuation")
-        m=inventory_stock_move_service.create_draft(db,StockMoveCreate(company_id=company_id,item_id=wo.item_id,variant_id=wo.variant_id,destination_location_id=destination_location_id,quantity=q,unit_cost=cost,movement_type="receipt",reference=wo.number,source_module="manufacturing",source_entity="work_order_output",source_id=f"wo:{wo.id}:output:{q}"))
+        output_key=f"wo:{wo.id}:output:{Decimal(wo.completed_qty or 0)}:{q}"
+        existing= db.scalar(select(InventoryStockMove).where(InventoryStockMove.company_id==company_id,InventoryStockMove.source_module=="manufacturing",InventoryStockMove.source_entity=="work_order_output",InventoryStockMove.source_id==output_key,InventoryStockMove.status=="posted"))
+        if existing is not None: return wo
+        m=inventory_stock_move_service.create_draft(db,StockMoveCreate(company_id=company_id,item_id=wo.item_id,variant_id=wo.variant_id,destination_location_id=destination_location_id,quantity=q,unit_cost=cost,movement_type="receipt",reference=wo.number,source_module="manufacturing",source_entity="work_order_output",source_id=output_key))
         inventory_stock_move_service.post(db,tenant_id=tenant_id,company_id=company_id,move_id=m.id,user_id=user_id)
         wo.completed_qty=Decimal(wo.completed_qty or 0)+q
         wo.status="completed" if wo.completed_qty>=Decimal(wo.planned_qty or 0) else "in_progress"
