@@ -37,7 +37,7 @@ def webhook(p:WebhookCreate,db:Session=Depends(get_db),user:User=Depends(get_cur
 def webhooks(company_id:int,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     company_ok(db,company_id,user);return list(db.scalars(select(DeveloperWebhook).join(DeveloperApp).where(DeveloperApp.company_id==company_id)).all())
 @router.post("/events/publish",dependencies=[Depends(require_permission("developer.manage"))])
-def publish(p:EventPublish,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
+def publish(p:EventPublish,background:BackgroundTasks,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     company_ok(db,p.company_id,user)
     if db.scalar(select(DeveloperEvent).where(DeveloperEvent.company_id==p.company_id,DeveloperEvent.event_id==p.event_id)):return {"accepted":True,"duplicate":True}
     e=DeveloperEvent(**p.model_dump());db.add(e);db.flush();count=0
@@ -45,7 +45,9 @@ def publish(p:EventPublish,db:Session=Depends(get_db),user:User=Depends(get_curr
     for w in hooks:
         if w.events and p.event_type not in w.events and "*" not in w.events:continue
         db.add(DeveloperWebhookDelivery(webhook_id=w.id,event_id=p.event_id,event_type=p.event_type,payload=p.payload));count+=1
-    db.commit();return {"accepted":True,"deliveries_created":count}
+    db.commit()
+    for d in db.scalars(select(DeveloperWebhookDelivery).where(DeveloperWebhookDelivery.event_id==p.event_id)).all(): background.add_task(_deliver,d.id)
+    return {"accepted":True,"deliveries_created":count}
 @router.get("/events/deliveries",dependencies=[Depends(require_permission("developer.access"))])
 def deliveries(company_id:int,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     company_ok(db,company_id,user);return [{"id":d.id,"event_id":d.event_id,"event_type":d.event_type,"status":d.status,"attempts":d.attempts,"response_code":d.response_code} for d in db.scalars(select(DeveloperWebhookDelivery).join(DeveloperWebhook).join(DeveloperApp).where(DeveloperApp.company_id==company_id).order_by(DeveloperWebhookDelivery.id.desc()).limit(200)).all()]
