@@ -664,14 +664,14 @@ def return_reconciliation(
     sales_returns = db.scalars(
         select(SalesDocument).where(
             SalesDocument.company_id == company_id,
-            SalesDocument.document_type == "sales_return",
+            SalesDocument.document_type == "credit_note",
             SalesDocument.status.notin_(("draft", "cancelled")),
         )
     ).all()
     purchase_returns = db.scalars(
         select(PurchaseDocument).where(
             PurchaseDocument.company_id == company_id,
-            PurchaseDocument.document_type == "purchase_return",
+            PurchaseDocument.document_type == "debit_note",
             PurchaseDocument.status.notin_(("draft", "cancelled")),
         )
     ).all()
