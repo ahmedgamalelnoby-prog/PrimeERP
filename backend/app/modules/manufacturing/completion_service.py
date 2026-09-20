@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from app.modules.manufacturing.completion_models import *
 from app.modules.completion.domain_models import ManufacturingWorkOrder,ManufacturingConsumption
 from app.modules.inventory.stock_moves.models import InventoryStockMove
+from app.modules.inventory.stock_moves.service import inventory_stock_move_service
 from app.modules.accounting.journals.services.journal_service import journal_service
 
 class ManufacturingCompletionService:
@@ -21,8 +22,22 @@ class ManufacturingCompletionService:
         self._wo(db,company_id,work_order_id);x=ManufacturingOverheadActual(company_id=company_id,work_order_id=work_order_id,**kw);db.add(x);db.flush();return x
     def scrap(self,db,company_id,work_order_id,**kw):
         self._wo(db,company_id,work_order_id);x=ManufacturingScrap(company_id=company_id,work_order_id=work_order_id,**kw);db.add(x);db.flush();return x
+    def stock_backed_scrap(self,db,tenant_id,company_id,work_order_id,p,user_id):
+        self._wo(db,company_id,work_order_id)
+        move=inventory_stock_move_service.create_draft(db,p)
+        move.source_module="manufacturing";move.source_entity="production_scrap";move.source_id=str(work_order_id)
+        move=inventory_stock_move_service.post(db,tenant_id=tenant_id,company_id=company_id,move_id=move.id,user_id=user_id)
+        x=ManufacturingScrap(company_id=company_id,work_order_id=work_order_id,item_id=p.item_id,variant_id=p.variant_id,quantity=p.quantity,unit_cost=p.unit_cost,reason=p.notes or "Production scrap",stock_move_id=move.id)
+        db.add(x);db.flush();return x
     def byproduct(self,db,company_id,work_order_id,**kw):
         self._wo(db,company_id,work_order_id);x=ManufacturingByProduct(company_id=company_id,work_order_id=work_order_id,**kw);db.add(x);db.flush();return x
+    def stock_backed_byproduct(self,db,tenant_id,company_id,work_order_id,p,user_id):
+        self._wo(db,company_id,work_order_id)
+        move=inventory_stock_move_service.create_draft(db,p)
+        move.source_module="manufacturing";move.source_entity="production_byproduct";move.source_id=str(work_order_id)
+        move=inventory_stock_move_service.post(db,tenant_id=tenant_id,company_id=company_id,move_id=move.id,user_id=user_id)
+        x=ManufacturingByProduct(company_id=company_id,work_order_id=work_order_id,item_id=p.item_id,variant_id=p.variant_id,quantity=p.quantity,unit_cost=p.unit_cost,stock_move_id=move.id)
+        db.add(x);db.flush();return x
     def subcontract(self,db,company_id,work_order_id,**kw):
         self._wo(db,company_id,work_order_id);x=ManufacturingSubcontract(company_id=company_id,work_order_id=work_order_id,**kw);db.add(x);db.flush();return x
     def post_variance(self,db,company_id,work_order_id,*,tenant_id,user_id,journal_id,fiscal_year_id,period_id,branch_id,entry_number,entry_date,debit_account_id,credit_account_id):
