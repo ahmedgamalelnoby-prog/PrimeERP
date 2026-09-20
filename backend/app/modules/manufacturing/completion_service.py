@@ -69,7 +69,7 @@ class ManufacturingCompletionService:
             source_key=f"{work_order_id}:{line.id}:{starting_completed}:{qty}"
             reservation_payload=ReservationCreate(company_id=company_id,item_id=item_id,variant_id=getattr(line,"ingredient_variant_id",None),location_id=source_location_id,quantity=required,source_module="manufacturing",source_entity="production_material",source_id=source_key,reference=f"WO-{work_order_id}",notes=f"Reserved for production work order {work_order_id}")
             reservation=inventory_reservation_service.reserve(db,reservation_payload)
-            payload=StockMoveCreate(company_id=company_id,item_id=item_id,variant_id=reservation.variant_id,quantity=required,unit_cost=Decimal("0"),movement_type="issue",source_location_id=source_location_id,transaction_date=date.today(),source_module="manufacturing",source_entity="production_material",source_id=source_key,notes=f"Material consumption for work order {work_order_id}")
+            payload=StockMoveCreate(company_id=company_id,item_id=item_id,variant_id=reservation.variant_id,quantity=required,unit_cost=Decimal("0"),movement_type="issue",source_location_id=source_location_id,reservation_id=reservation.id,transaction_date=date.today(),source_module="manufacturing",source_entity="production_material",source_id=source_key,notes=f"Material consumption for work order {work_order_id}")
             move=inventory_stock_move_service.create_draft(db,payload)
             move=inventory_stock_move_service.post(db,tenant_id=tenant_id,company_id=company_id,move_id=move.id,user_id=user_id)
             existing=db.scalar(select(ManufacturingConsumption).where(ManufacturingConsumption.work_order_id==wo.id,ManufacturingConsumption.stock_move_id==move.id))
