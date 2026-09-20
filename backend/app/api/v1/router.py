@@ -60,6 +60,8 @@ from app.modules.ai_reporting.router import router as ai_reporting_router
 from app.modules.crm.api import router as crm_router
 from app.modules.hr.router import router as hr_router
 from app.modules.pos.router import router as pos_router
+from app.modules.pos.sessions.router import router as pos_sessions_router
+from app.modules.manufacturing.production_orders.router import router as manufacturing_work_orders_router
 from app.modules.manufacturing.bom.router import router as manufacturing_router
 from app.modules.mobile.router import router as mobile_router
 from app.modules.platform.developer.router import router as developer_router
@@ -82,6 +84,8 @@ def build_router() -> APIRouter:
     api_router.include_router(crm_router)
     api_router.include_router(hr_router)
     api_router.include_router(pos_router)
+    api_router.include_router(pos_sessions_router)
+    api_router.include_router(manufacturing_work_orders_router)
     api_router.include_router(manufacturing_router)
     api_router.include_router(mobile_router)
     api_router.include_router(developer_router)
