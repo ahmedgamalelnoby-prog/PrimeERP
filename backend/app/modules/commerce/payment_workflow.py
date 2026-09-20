@@ -227,16 +227,18 @@ def reverse_payment(
         raise ValueError("Only an original posted payment can be reversed")
 
     model = SalesDocument if payment.document_kind == "sale" else PurchaseDocument
-    document = db.scalar(
-        select(model)
-        .where(
-            model.id == payment.document_id,
-            model.company_id == company_id,
+    document = None
+    if payment.document_id is not None:
+        document = db.scalar(
+            select(model)
+            .where(
+                model.id == payment.document_id,
+                model.company_id == company_id,
+            )
+            .with_for_update()
         )
-        .with_for_update()
-    )
-    if document is None:
-        raise ValueError("Document not found")
+        if document is None:
+            raise ValueError("Document not found")
 
     allocations = list(
         db.scalars(
@@ -255,7 +257,7 @@ def reverse_payment(
         allocation_total = sum((Decimal(a.amount) for a in allocations), Decimal("0"))
         if allocation_total != payment_amount:
             raise ValueError("Payment allocations do not reconcile to payment amount")
-    elif Decimal(document.paid_total or 0) < payment_amount:
+    elif document is not None and Decimal(document.paid_total or 0) < payment_amount:
         raise ValueError("Document paid total is inconsistent")
 
     payment.status = "reversed"
@@ -295,7 +297,8 @@ def reverse_payment(
     else:
         # Legacy payments may predate automatic allocation creation. Keep
         # reversal accounting-correct for those records as well.
-        document.paid_total = Decimal(document.paid_total or 0) - payment_amount
+        if document is not None:
+            document.paid_total = Decimal(document.paid_total or 0) - payment_amount
 
     db.flush()
     return document, payment, reversal
