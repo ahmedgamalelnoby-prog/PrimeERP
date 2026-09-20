@@ -56,8 +56,6 @@ def add_line(db, statement, payload):
     db.add(obj); db.flush(); return obj, True
 
 def create_session(db,payload,user):
-    if hasattr(fiscal_year_service, "assert_open_for_date"):
-        fiscal_year_service.assert_open_for_date(db, company_id=payload.company_id, posting_date=payload.reconciliation_date)
     ensure_company(db,payload.company_id,user)
     st=db.scalar(select(BankStatement).where(BankStatement.id==payload.statement_id,BankStatement.company_id==payload.company_id,BankStatement.bank_account_id==payload.bank_account_id))
     if not st: raise ValueError("Statement not found")
