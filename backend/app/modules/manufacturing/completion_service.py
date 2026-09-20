@@ -6,6 +6,9 @@ from fastapi import HTTPException
 from app.modules.manufacturing.completion_models import *
 from app.modules.completion.domain_models import ManufacturingWorkOrder,ManufacturingConsumption
 from app.modules.inventory.stock_moves.models import InventoryStockMove
+from app.modules.inventory.stock_moves.schemas import StockMoveCreate
+from app.modules.inventory.locations.models import InventoryLocation
+from app.modules.catalog.models import Recipe, RecipeLine
 from app.modules.inventory.stock_moves.service import inventory_stock_move_service
 from app.modules.accounting.journals.services.journal_service import journal_service
 
@@ -40,6 +43,48 @@ class ManufacturingCompletionService:
         move=inventory_stock_move_service.create_draft(db,p)
         move=inventory_stock_move_service.post(db,tenant_id=tenant_id,company_id=company_id,move_id=move.id,user_id=user_id)
         x.stock_move_id=move.id;db.flush();return x
+    def execute_production(self,db,tenant_id,company_id,work_order_id,user_id,quantity,source_location_id=None,destination_location_id=None):
+        wo=self._wo(db,company_id,work_order_id)
+        qty=Decimal(str(quantity))
+        if qty <= 0: raise HTTPException(400,"Production quantity must be positive")
+        remaining=Decimal(wo.planned_qty or 0)-Decimal(wo.completed_qty or 0)
+        if qty > remaining: raise HTTPException(409,"Production quantity exceeds remaining work-order quantity")
+        if wo.recipe_id is None: raise HTTPException(409,"Work order has no recipe")
+        recipe=db.scalar(select(Recipe).where(Recipe.id==wo.recipe_id,Recipe.company_id==company_id,Recipe.is_active.is_(True)))
+        if recipe is None: raise HTTPException(404,"Recipe not found")
+        if source_location_id is None:
+            source_location_id=db.scalar(select(InventoryLocation.id).where(InventoryLocation.company_id==company_id,InventoryLocation.warehouse_id==wo.warehouse_id,InventoryLocation.is_active.is_(True),InventoryLocation.location_type=="storage").order_by(InventoryLocation.id).limit(1))
+        if destination_location_id is None: destination_location_id=db.scalar(select(InventoryLocation.id).where(InventoryLocation.company_id==company_id,InventoryLocation.warehouse_id==wo.warehouse_id,InventoryLocation.is_active.is_(True),InventoryLocation.location_type.in_(["receiving","storage"])).order_by(InventoryLocation.location_type.desc(),InventoryLocation.id).limit(1))
+        if source_location_id is None or destination_location_id is None: raise HTTPException(409,"Production requires active source and destination warehouse locations")
+        if source_location_id == destination_location_id: raise HTTPException(409,"Production source and destination locations must differ")
+        scale=qty/Decimal(recipe.yield_quantity or 1)
+        material_total=Decimal("0")
+        for line in db.scalars(select(RecipeLine).where(RecipeLine.recipe_id==recipe.id).order_by(RecipeLine.line_no)).all():
+            item_id=line.ingredient_item_id or line.ingredient_product_id
+            required=Decimal(line.quantity or 0)*scale*(Decimal("1")+Decimal(line.waste_percentage or 0)/Decimal("100"))
+            payload=StockMoveCreate(company_id=company_id,item_id=item_id,quantity=required,unit_cost=Decimal("0"),movement_type="issue",source_location_id=source_location_id,transaction_date=date.today(),source_module="manufacturing",source_entity="production_material",source_id=f"{work_order_id}:{line.id}:{qty}",notes=f"Material consumption for work order {work_order_id}")
+            move=inventory_stock_move_service.create_draft(db,payload)
+            move=inventory_stock_move_service.post(db,tenant_id=tenant_id,company_id=company_id,move_id=move.id,user_id=user_id)
+            existing=db.scalar(select(ManufacturingConsumption).where(ManufacturingConsumption.work_order_id==wo.id,ManufacturingConsumption.stock_move_id==move.id))
+            if existing is None:
+                existing=ManufacturingConsumption(work_order_id=wo.id,item_id=item_id,quantity=required,unit_cost=move.unit_cost or 0,stock_move_id=move.id);db.add(existing)
+            material_total += Decimal(move.unit_cost or 0)*required
+        actual_l=Decimal(db.scalar(select(func.coalesce(func.sum(ManufacturingLaborActual.amount),0)).where(ManufacturingLaborActual.work_order_id==wo.id)) or 0)
+        actual_o=Decimal(db.scalar(select(func.coalesce(func.sum(ManufacturingOverheadActual.amount),0)).where(ManufacturingOverheadActual.work_order_id==wo.id)) or 0)
+        subcontract=Decimal(db.scalar(select(func.coalesce(func.sum(ManufacturingSubcontract.actual_quantity*ManufacturingSubcontract.unit_cost),0)).where(ManufacturingSubcontract.work_order_id==wo.id,ManufacturingSubcontract.status!="cancelled")) or 0)
+        total_cost=material_total+actual_l+actual_o+subcontract
+        unit_cost=total_cost/qty if qty else Decimal("0")
+        payload=StockMoveCreate(company_id=company_id,item_id=wo.item_id,variant_id=wo.variant_id,quantity=qty,unit_cost=unit_cost,movement_type="receipt",destination_location_id=destination_location_id,transaction_date=date.today(),source_module="manufacturing",source_entity="production_output",source_id=f"{work_order_id}:{qty}:{Decimal(wo.completed_qty or 0)}",notes=f"Finished goods receipt for work order {work_order_id}")
+        output=inventory_stock_move_service.create_draft(db,payload)
+        output=inventory_stock_move_service.post(db,tenant_id=tenant_id,company_id=company_id,move_id=output.id,user_id=user_id)
+        wo.completed_qty=Decimal(wo.completed_qty or 0)+qty
+        wo.status="completed" if wo.completed_qty >= Decimal(wo.planned_qty or 0) else "in_progress"
+        wo.total_material_cost=material_total
+        if wo.actual_start is None: wo.actual_start=date.today()
+        if wo.completed_qty >= Decimal(wo.planned_qty or 0): wo.actual_end=date.today()
+        db.flush()
+        return {"work_order_id":wo.id,"produced_quantity":qty,"completed_quantity":wo.completed_qty,"remaining_quantity":Decimal(wo.planned_qty or 0)-Decimal(wo.completed_qty or 0),"status":wo.status,"material_cost":material_total,"finished_goods_unit_cost":unit_cost,"output_stock_move_id":output.id}
+
     def subcontract(self,db,company_id,work_order_id,**kw):
         self._wo(db,company_id,work_order_id);x=ManufacturingSubcontract(company_id=company_id,work_order_id=work_order_id,**kw);db.add(x);db.flush();return x
     def post_variance(self,db,company_id,work_order_id,*,tenant_id,user_id,journal_id,fiscal_year_id,period_id,branch_id,entry_number,entry_date,debit_account_id,credit_account_id):
