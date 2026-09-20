@@ -40,6 +40,18 @@ def asset(p: AssetCreate, db: Session = Depends(get_db), current_user: User = De
     company_for_user(db, p.company_id, current_user)
     if p.residual_value > p.cost:
         raise HTTPException(422, "Residual value cannot exceed asset cost")
+    account_ids={p.asset_account_id,p.accumulated_depreciation_account_id,p.depreciation_expense_account_id}
+    if any(account_ids) and not all(account_ids):
+        raise HTTPException(422, "Asset, accumulated depreciation, and depreciation expense accounts must be configured together")
+    if all(account_ids):
+        accounts=db.scalars(select(AccountCombination).where(
+            AccountCombination.id.in_(account_ids),
+            AccountCombination.company_id==p.company_id,
+            AccountCombination.tenant_id==current_user.tenant_id,
+            AccountCombination.is_active.is_(True),
+        )).all()
+        if len(accounts)!=3:
+            raise HTTPException(422, "Fixed asset accounting accounts must belong to the selected company and tenant")
     o = FixedAsset(**p.model_dump())
     db.add(o)
     try:
