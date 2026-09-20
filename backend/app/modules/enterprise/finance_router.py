@@ -54,10 +54,6 @@ def run(p:ConsolidationRunCreate,db:Session=Depends(get_db),user:User=Depends(ge
     existing=db.scalar(select(ConsolidationRun).where(ConsolidationRun.group_id==g.id,ConsolidationRun.period_start==p.period_start,ConsolidationRun.period_end==p.period_end))
     if existing:
         return {"run_id":existing.id,"status":existing.status,"duplicate":True,"total_debit":existing.total_debit,"total_credit":existing.total_credit,"elimination_total":existing.elimination_total}
-    if p.period_end < p.period_start:raise HTTPException(422,"Consolidation period is invalid")
-    existing=db.scalar(select(ConsolidationRun).where(ConsolidationRun.group_id==g.id,ConsolidationRun.period_start==p.period_start,ConsolidationRun.period_end==p.period_end).order_by(ConsolidationRun.id.desc()))
-    if existing and existing.status in ("calculated","approved","closed"):
-        return {"run_id":existing.id,"status":existing.status,"total_debit":existing.total_debit,"total_credit":existing.total_credit,"elimination_total":existing.elimination_total,"duplicate":True}
     members=list(db.scalars(select(ConsolidationMember).where(ConsolidationMember.group_id==g.id,ConsolidationMember.is_active.is_(True))).all())
     if not members:raise HTTPException(422,"Consolidation group has no active members")
     r=ConsolidationRun(group_id=g.id,period_start=p.period_start,period_end=p.period_end,status="draft",created_by=user.id);db.add(r);db.flush()
