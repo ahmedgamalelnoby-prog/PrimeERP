@@ -8,6 +8,7 @@ from app.modules.completion.domain_models import ManufacturingWorkOrder, Manufac
 from app.modules.catalog.models import Recipe, RecipeLine
 from app.modules.inventory.stock_moves.schemas import StockMoveCreate
 from app.modules.inventory.stock_moves.service import inventory_stock_move_service
+from app.modules.inventory.stock_moves.models import InventoryStockMove
 from app.modules.companies.models import Company
 
 class ManufacturingProductionService:
@@ -43,13 +44,22 @@ class ManufacturingProductionService:
             nested_q=nested_q.where(Recipe.variant_id==line.ingredient_variant_id) if getattr(line,"ingredient_variant_id",None) is not None else nested_q.where(Recipe.variant_id.is_(None))
             nested=db.scalar(nested_q.order_by(Recipe.version.desc()))
             if nested: out.extend(self.explode(db,company_id,nested,q,seen))
-            else: out.append({"item_id":line.ingredient_item_id or line.ingredient_product_id,"quantity":q,"uom_id":line.uom_id})
+            else: out.append({"item_id":line.ingredient_item_id or line.ingredient_product_id,"variant_id":getattr(line,"ingredient_variant_id",None),"quantity":q,"uom_id":line.uom_id})
         return out
     def consume(self,db,tenant_id,user_id,company_id,work_order_id,source_location_id,item_id,quantity,unit_cost=0,variant_id=None):
         self.scope(db,company_id,tenant_id);wo=db.scalar(select(ManufacturingWorkOrder).where(ManufacturingWorkOrder.id==work_order_id,ManufacturingWorkOrder.company_id==company_id).with_for_update())
         if wo is None: raise HTTPException(404,"Work order not found")
         if wo.status not in {"released","in_progress"}: raise HTTPException(409,"Work order must be released or in progress")
         source=f"wo:{wo.id}:consume:{item_id}:{variant_id or 0}:{quantity}"
+        existing_move=db.scalar(select(InventoryStockMove).where(
+            InventoryStockMove.company_id==company_id,
+            InventoryStockMove.source_module=="manufacturing",
+            InventoryStockMove.source_entity=="work_order_consumption",
+            InventoryStockMove.source_id==source,
+            InventoryStockMove.status=="posted",
+        ))
+        if existing_move is not None:
+            return existing_move
         m=inventory_stock_move_service.create_draft(db,StockMoveCreate(company_id=company_id,item_id=item_id,variant_id=variant_id,source_location_id=source_location_id,quantity=quantity,unit_cost=unit_cost,movement_type="issue",reference=wo.number,source_module="manufacturing",source_entity="work_order_consumption",source_id=source))
         inventory_stock_move_service.post(db,tenant_id=tenant_id,company_id=company_id,move_id=m.id,user_id=user_id)
         if db.scalar(select(ManufacturingConsumption.id).where(ManufacturingConsumption.work_order_id==wo.id,ManufacturingConsumption.stock_move_id==m.id)) is None:
@@ -60,9 +70,14 @@ class ManufacturingProductionService:
         if wo is None: raise HTTPException(404,"Work order not found")
         if wo.status not in {"released","in_progress"}: raise HTTPException(409,"Work order must be released or in progress")
         q=Decimal(completed_qty)
-        if q<=0 or q>Decimal(wo.planned_qty): raise HTTPException(422,"Invalid completed quantity")
+        remaining=Decimal(wo.planned_qty or 0)-Decimal(wo.completed_qty or 0)
+        if q<=0 or q>remaining: raise HTTPException(422,"Invalid completed quantity; quantity exceeds remaining work-order quantity")
         cost=Decimal(output_unit_cost) if output_unit_cost is not None else (Decimal(wo.total_material_cost or 0)+Decimal(wo.total_labor_cost or 0)+Decimal(wo.total_overhead_cost or 0))/q
         if cost<=0: raise HTTPException(422,"Production output requires positive valuation")
         m=inventory_stock_move_service.create_draft(db,StockMoveCreate(company_id=company_id,item_id=wo.item_id,variant_id=wo.variant_id,destination_location_id=destination_location_id,quantity=q,unit_cost=cost,movement_type="receipt",reference=wo.number,source_module="manufacturing",source_entity="work_order_output",source_id=f"wo:{wo.id}:output:{q}"))
-        inventory_stock_move_service.post(db,tenant_id=tenant_id,company_id=company_id,move_id=m.id,user_id=user_id);wo.completed_qty+=q;wo.status="completed";wo.actual_end=date.today();db.flush();return wo
+        inventory_stock_move_service.post(db,tenant_id=tenant_id,company_id=company_id,move_id=m.id,user_id=user_id)
+        wo.completed_qty=Decimal(wo.completed_qty or 0)+q
+        wo.status="completed" if wo.completed_qty>=Decimal(wo.planned_qty or 0) else "in_progress"
+        if wo.status=="completed": wo.actual_end=date.today()
+        db.flush();return wo
 manufacturing_production_service=ManufacturingProductionService()
