@@ -1,7 +1,7 @@
 import { useEffect,useState } from "react";
+import { apiRequest } from "../../../shared/api";
 type Report={key:string;name:string}; type Schedule={id:number;name:string;report_key:string;frequency:string;channels:string[];recipients:string[];include_ai:boolean;is_active:boolean};
-const API_BASE=(import.meta.env.VITE_API_URL||"/api/v1").replace(/\/$/,"");
-async function api<T>(path:string,init?:RequestInit):Promise<T>{const r=await fetch(API_BASE+path,{credentials:"include",headers:{"Content-Type":"application/json",...(init?.headers||{})},...init});const p=await r.json();if(!r.ok)throw new Error(p?.detail||"Request failed");return p}
+const api = apiRequest
 export default function AIReportingPage(){const [reports,setReports]=useState<Report[]>([]),[schedules,setSchedules]=useState<Schedule[]>([]),[message,setMessage]=useState(""),[name,setName]=useState("Weekly Management Summary"),[reportKey,setReportKey]=useState("management_summary"),[frequency,setFrequency]=useState("weekly"),[channel,setChannel]=useState("email"),[recipients,setRecipients]=useState("");
 const load=async()=>{try{const [c,s]=await Promise.all([api<{data:{reports:Report[]}}>("/ai-reporting/catalog"),api<{data:{schedules:Schedule[]}}>("/ai-reporting/schedules")]);setReports(c.data.reports);setSchedules(s.data.schedules)}catch(e){setMessage(e instanceof Error?e.message:"Unable to load AI Reporting")}};useEffect(()=>{void load()},[]);
 const create=async()=>{try{await api("/ai-reporting/schedules",{method:"POST",body:JSON.stringify({name,report_key:reportKey,frequency,channels:[channel],recipients:recipients.split(",").map(x=>x.trim()).filter(Boolean),include_ai:true})});setMessage("تم إنشاء الجدولة بنجاح");setRecipients("");await load()}catch(e){setMessage(e instanceof Error?e.message:"تعذر إنشاء الجدول")}};
