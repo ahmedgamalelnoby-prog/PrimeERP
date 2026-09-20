@@ -604,12 +604,40 @@ def handle_app_event(db: Session, payload: dict[str, Any], event_id: str | None 
                 if salla_shipment is None:
                     raise SallaPublicAppError(f"Salla shipment {shipment_id} was not normalized")
                 shipment_result = sync_salla_shipment(db, salla_shipment)
+
+                # Shipment events are the authoritative fulfillment signal.
+                # A pending/created shipment must not consume ERP stock, while
+                # shipped-or-later must finalize the linked Salla order.
+                shipment_status = str(salla_shipment.status or "").strip().lower().replace(" ", "_")
+                fulfillment_requested = shipment_status in {
+                    "picked_up", "pickedup", "shipped", "in_transit", "intransit",
+                    "received_at_final_hub", "out_for_delivery", "outfordelivery",
+                    "reattempted", "to_be_reattempted", "partially_delivered",
+                    "delivered",
+                }
+                order = None
+                if salla_shipment.order_id:
+                    order = db.scalar(select(SallaOrder).where(
+                        SallaOrder.id == salla_shipment.order_id,
+                        SallaOrder.company_id == connection.company_id,
+                        SallaOrder.connection_id == connection.id,
+                    ).with_for_update())
+                elif salla_shipment.order_external_id:
+                    order = db.scalar(select(SallaOrder).where(
+                        SallaOrder.external_id == salla_shipment.order_external_id,
+                        SallaOrder.company_id == connection.company_id,
+                        SallaOrder.connection_id == connection.id,
+                    ).with_for_update())
+                commerce = finalize_salla_order(
+                    db, order, force_fulfillment=True
+                ) if order is not None and fulfillment_requested else None
             result = {
                 "installation_id": installation.id,
                 "event": event,
                 "status": installation.status,
                 "subscription_status": installation.subscription_status,
                 "shipping": shipment_result,
+                "commerce": commerce,
                 "normalized": counters,
             }
         result = locals().get("result") or {"installation_id": installation.id, "event": event, "status": installation.status, "subscription_status": installation.subscription_status}
