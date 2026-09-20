@@ -45,12 +45,33 @@ class ManufacturingCompletionService:
         move=inventory_stock_move_service.create_draft(db,p)
         move=inventory_stock_move_service.post(db,tenant_id=tenant_id,company_id=company_id,move_id=move.id,user_id=user_id)
         x.stock_move_id=move.id;db.flush();return x
-    def execute_production(self,db,tenant_id,company_id,work_order_id,user_id,quantity,source_location_id=None,destination_location_id=None):
+    def execute_production(self,db,tenant_id,company_id,work_order_id,user_id,quantity,source_location_id=None,destination_location_id=None,idempotency_key=None):
         wo=self._wo(db,company_id,work_order_id)
         if wo.status not in {"released","in_progress"}: raise HTTPException(409,"Work order must be released or in progress")
         qty=Decimal(str(quantity))
         if qty <= 0: raise HTTPException(400,"Production quantity must be positive")
         starting_completed=Decimal(wo.completed_qty or 0)
+        production_source_id = f"{work_order_id}:idempotency:{idempotency_key}" if idempotency_key else f"{work_order_id}:{qty}:{starting_completed}"
+        if idempotency_key:
+            existing_output = db.scalar(select(InventoryStockMove).where(
+                InventoryStockMove.company_id == company_id,
+                InventoryStockMove.source_module == "manufacturing",
+                InventoryStockMove.source_entity == "production_output",
+                InventoryStockMove.source_id == production_source_id,
+                InventoryStockMove.status == "posted",
+            ).with_for_update())
+            if existing_output is not None:
+                return {
+                    "work_order_id": work_order_id,
+                    "produced_quantity": existing_output.quantity,
+                    "completed_quantity": wo.completed_qty,
+                    "remaining_quantity": Decimal(wo.planned_qty or 0) - Decimal(wo.completed_qty or 0),
+                    "status": wo.status,
+                    "material_cost": Decimal("0"),
+                    "finished_goods_unit_cost": existing_output.unit_cost,
+                    "output_stock_move_id": existing_output.id,
+                    "idempotent_replay": True,
+                }
         remaining=Decimal(wo.planned_qty or 0)-starting_completed
         if qty > remaining: raise HTTPException(409,"Production quantity exceeds remaining work-order quantity")
         if wo.recipe_id is None: raise HTTPException(409,"Work order has no recipe")
@@ -84,7 +105,7 @@ class ManufacturingCompletionService:
         incremental_cost=cumulative_cost-prior_output_value
         if incremental_cost < 0: incremental_cost=Decimal("0")
         unit_cost=incremental_cost/qty if qty else Decimal("0")
-        payload=StockMoveCreate(company_id=company_id,item_id=wo.item_id,variant_id=wo.variant_id,quantity=qty,unit_cost=unit_cost,movement_type="receipt",destination_location_id=destination_location_id,transaction_date=date.today(),source_module="manufacturing",source_entity="production_output",source_id=f"{work_order_id}:{qty}:{Decimal(wo.completed_qty or 0)}",notes=f"Finished goods receipt for work order {work_order_id}")
+        payload=StockMoveCreate(company_id=company_id,item_id=wo.item_id,variant_id=wo.variant_id,quantity=qty,unit_cost=unit_cost,movement_type="receipt",destination_location_id=destination_location_id,transaction_date=date.today(),source_module="manufacturing",source_entity="production_output",source_id=production_source_id,notes=f"Finished goods receipt for work order {work_order_id}")
         output=inventory_stock_move_service.create_draft(db,payload)
         output=inventory_stock_move_service.post(db,tenant_id=tenant_id,company_id=company_id,move_id=output.id,user_id=user_id)
         wo.completed_qty=Decimal(wo.completed_qty or 0)+qty
