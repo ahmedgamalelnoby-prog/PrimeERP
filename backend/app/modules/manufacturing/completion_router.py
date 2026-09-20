@@ -12,6 +12,7 @@ from app.modules.commerce.models import BusinessPartner
 from app.core.permissions import require_permission
 from .completion_service import manufacturing_completion_service
 from app.modules.completion.domain_models import ManufacturingWorkOrder
+from app.modules.accounting.journals.models import JournalEntry
 from app.modules.accounting.journals.services.journal_service import journal_service
 from app.modules.inventory.stock_moves.schemas import StockMoveCreate
 
@@ -138,6 +139,18 @@ def finalize_work_order(work_order_id:int,p:FinalizePayload,company_id:int=Query
     if getattr(wo,"status",None)=="closed": return {"work_order_id":wo.id,"status":wo.status,"variance_id":None}
     if Decimal(wo.completed_qty or 0) < Decimal(wo.planned_qty or 0): raise HTTPException(409,"Work order cannot be finalized before planned quantity is fully produced")
     v=manufacturing_completion_service.variance(db,company_id,work_order_id)
+    if v.status == "pending_approval":
+        raise HTTPException(409, "Manufacturing variance is awaiting independent journal approval before finalization")
+    if v.wip_journal_entry_id:
+        wip_entry=db.scalar(select(JournalEntry).where(
+            JournalEntry.id==v.wip_journal_entry_id,
+            JournalEntry.tenant_id==u.tenant_id,
+            JournalEntry.company_id==company_id,
+        ))
+        if wip_entry is None:
+            raise HTTPException(409, "WIP settlement journal entry was not found")
+        if wip_entry.status != "posted":
+            raise HTTPException(409, "WIP settlement must be posted before the work order can be finalized")
     wo.status=p.close_status
     db.commit()
     return {"work_order_id":wo.id,"status":wo.status,"variance_id":v.id,"total_variance":v.total_variance}
