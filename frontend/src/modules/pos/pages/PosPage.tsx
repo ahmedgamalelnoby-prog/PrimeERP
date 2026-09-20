@@ -34,6 +34,8 @@ export default function PosPage() {
 
   const activeMenu = useMemo(() => menus.find(x => String(x.id) === selectedMenu), [menus, selectedMenu]);
   const activeMenuItem = useMemo(() => activeMenu?.items?.find((x: AnyRow) => String(x.id) === selectedMenuItem), [activeMenu, selectedMenuItem]);
+  const activeTerminal = useMemo(() => terminals.find(x => String(x.id) === selectedTerminal), [terminals, selectedTerminal]);
+  const activeOutlet = useMemo(() => outlets.find(x => String(x.id) === String(activeTerminal?.outlet_id)), [outlets, activeTerminal]);
 
   async function load() {
     if (!cid) return;
@@ -173,8 +175,8 @@ export default function PosPage() {
         <h2 className="font-bold">طلب من المنيو</h2>
         <div className="grid gap-3 md:grid-cols-2">
           <input required value={partnerId} onChange={e => setPartnerId(e.target.value)} placeholder="Customer/Partner ID" className="rounded-lg border px-3 py-2"/>
-          <input required value={warehouseId} readOnly placeholder="Consumption Warehouse (auto from outlet)" className="rounded-lg border bg-muted px-3 py-2"/>
-          <select required value={selectedTerminal} onChange={e => setSelectedTerminal(e.target.value)} className="rounded-lg border px-3 py-2"><option value="">POS / المكان</option>{terminals.map(x => <option key={x.id} value={x.id}>{x.name} — Outlet {x.outlet_id}</option>)}</select>
+          <input required value={warehouseId || (activeOutlet?.warehouse_id ? String(activeOutlet.warehouse_id) : "")} readOnly placeholder="Consumption Warehouse (auto from outlet)" className="rounded-lg border bg-muted px-3 py-2"/>
+          <select required value={selectedTerminal} onChange={e => { const id=e.target.value; setSelectedTerminal(id); const terminal=terminals.find(x=>String(x.id)===id); const outlet=outlets.find(x=>String(x.id)===String(terminal?.outlet_id)); setWarehouseId(outlet?.warehouse_id ? String(outlet.warehouse_id) : ""); }} className="rounded-lg border px-3 py-2"><option value="">POS / المكان</option>{terminals.map(x => <option key={x.id} value={x.id}>{x.name} — Outlet {x.outlet_id}</option>)}</select>
           <select required value={selectedMenu} onChange={e => {setSelectedMenu(e.target.value);setSelectedMenuItem("")}} className="rounded-lg border px-3 py-2"><option value="">Menu</option>{menus.map(x => <option key={x.id} value={x.id}>{x.name_ar}</option>)}</select>
           <select required value={selectedMenuItem} onChange={e => setSelectedMenuItem(e.target.value)} className="rounded-lg border px-3 py-2 md:col-span-2"><option value="">اختر من المنيو</option>{activeMenu?.items?.map((x:AnyRow) => <option key={x.id} value={x.id}>#{x.id} Product {x.product_id}{x.sale_price_override != null ? ` — ${x.sale_price_override}` : ""}</option>)}</select>
           <input required type="number" min="0.01" step="0.01" value={qty} onChange={e => setQty(e.target.value)} placeholder="الكمية" className="rounded-lg border px-3 py-2"/>
