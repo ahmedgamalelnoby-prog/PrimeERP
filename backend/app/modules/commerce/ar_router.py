@@ -8,7 +8,7 @@ from app.database.session import get_db
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.companies.models import Company
-from app.modules.commerce.ar_schemas import ARAutoMatchRequest, ARAllocateRequest, ARWriteOffRequest, ARWriteOffDecision, ARReconcileRequest
+from app.modules.commerce.ar_schemas import ARAutoMatchRequest, ARAllocateRequest, ARWriteOffRequest, ARWriteOffDecision, ARReconcileRequest, ARAdvanceReceiptRequest
 from app.modules.commerce.ar_models import ARWriteOff
 from app.modules.commerce.ar_service import ar_service
 
@@ -24,6 +24,12 @@ def run(fn):
     try:return fn()
     except HTTPException:raise
     except ValueError as e:raise HTTPException(400,str(e)) from e
+
+@router.post("/advance-receipts",dependencies=[Depends(require_permission("commerce.payment"))])
+def advance_receipt(payload:ARAdvanceReceiptRequest,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+    company(db,payload.company_id,current_user)
+    obj=run(lambda:ar_service.create_advance(db,payload.company_id,payload,current_user.id));db.commit();db.refresh(obj)
+    return {"payment_id":obj.id,"partner_id":obj.partner_id,"amount":str(obj.amount),"unapplied":str(ar_service.unapplied(db,obj)),"status":obj.status}
 
 @router.post("/payments/{payment_id}/allocate",dependencies=[Depends(require_permission("commerce.payment"))])
 def allocate(payment_id:int,payload:ARAllocateRequest,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
