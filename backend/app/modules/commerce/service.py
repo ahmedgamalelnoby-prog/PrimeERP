@@ -22,6 +22,7 @@ from app.modules.treasury.models import Cheque, ChequeEvent
 from app.modules.treasury.service import transition_cheque
 from app.modules.treasury.accounting_service import treasury_accounting_service
 from app.modules.commerce.backorder_service import backorder_service
+from app.modules.audit.service import record_audit_event
 
 SALE_TYPES = {"quotation", "order", "delivery", "invoice", "credit_note"}
 PURCHASE_TYPES = {"requisition", "rfq", "order", "receipt", "bill", "debit_note"}
