@@ -101,6 +101,7 @@ class PurchaseLine(Base):
     discount_percent = Column(Numeric(8, 4), nullable=False, default=0)
     tax_percent = Column(Numeric(8, 4), nullable=False, default=0)
     line_total = Column(Numeric(18, 4), nullable=False, default=0)
+    fulfilled_quantity = Column(Numeric(18, 4), nullable=False, default=0)
     document = relationship("PurchaseDocument", back_populates="lines")
 
 
