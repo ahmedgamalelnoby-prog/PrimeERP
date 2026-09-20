@@ -652,12 +652,13 @@ def handle_app_event(db: Session, payload: dict[str, Any], event_id: str | None 
                 # physical stock has been received back. Restore inventory only
                 # when the normalized shipment itself reaches a return state.
                 inventory_return = None
+                # Return/cancel webhook creation alone does not prove that
+                # inventory has physically returned. The normalized shipment
+                # status is the single source of truth for stock restoration.
                 if order is not None and shipment_status in {
-                        "cancelled", "canceled", "returned", "return_to_origin",
-                        "return_in_progress", "restoring", "restored",
-                    }
-                    or event_return
-                ):
+                    "cancelled", "canceled", "returned", "return_to_origin",
+                    "return_in_progress", "restoring", "restored",
+                }:
                     inventory_return = restore_salla_inventory(
                         db,
                         order,
