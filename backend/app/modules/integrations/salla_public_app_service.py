@@ -27,6 +27,7 @@ from .salla_public_app_models import SallaAppEvent, SallaAppInstallation, SallaS
 from .salla_models import SallaOrder
 from .salla_service import normalize_salla_event
 from .salla_erp_finalize import finalize_salla_order
+from .salla_erp_service import _system_user_id
 from .salla_return_service import restore_salla_inventory
 from .salla_shipping_service import sync_salla_shipment
 
@@ -644,7 +645,7 @@ def handle_app_event(db: Session, payload: dict[str, Any], event_id: str | None 
                     inventory_return = restore_salla_inventory(
                         db,
                         order,
-                        user_id=None,
+                        user_id=_system_user_id(db, order.company_id),
                         shipment_external_id=salla_shipment.external_id,
                     )
             result = {
