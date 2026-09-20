@@ -52,6 +52,14 @@ class AccountingAdvancedService:
         tenant=self._scope(db,user,kw["company_id"]);p=self._period(db,tenant,kw["company_id"],kw["when"])
         e=journal_service.create_draft(db,tenant_id=tenant,company_id=kw["company_id"],branch_id=kw["branch_id"],journal_id=kw["journal_id"],fiscal_year_id=p.fiscal_year_id,period_id=p.id,entry_number=f"ELIM-{kw['consolidation_key']}-{kw['when']:%Y%m%d}",entry_date=kw["when"],description=kw["description"],lines=[{"account_combination_id":kw["debit_account_id"],"debit":kw["amount"],"credit":0},{"account_combination_id":kw["credit_account_id"],"debit":0,"credit":kw["amount"]}],user_id=user.id,source_module="consolidation",source_entity="elimination")
         e=self._post(db,tenant,e,user.id);x=AccountingElimination(tenant_id=tenant,company_id=kw["company_id"],consolidation_key=kw["consolidation_key"],journal_entry_id=e.id,amount=kw["amount"],description=kw["description"]);db.add(x);db.flush();return x
+    def reverse_source(self,db,user,*,company_id,source_module,source_entity,source_id,reversal_date=None,reason=None):
+        tenant=self._scope(db,user,company_id)
+        link=db.scalar(select(AccountingPostingLink).where(AccountingPostingLink.tenant_id==tenant,AccountingPostingLink.company_id==company_id,AccountingPostingLink.source_module==source_module,AccountingPostingLink.source_entity==source_entity,AccountingPostingLink.source_id==str(source_id)).with_for_update())
+        if link is None: raise HTTPException(status_code=404,detail="Accounting posting link not found")
+        if link.reversal_entry_id is not None: raise HTTPException(status_code=409,detail="Source posting has already been reversed")
+        reversal=journal_service.reverse(db,tenant_id=tenant,entry_id=link.journal_entry_id,user_id=user.id,reversal_date=reversal_date,reason=reason)
+        link.reversal_entry_id=reversal.id;link.status="reversed";db.flush();return reversal
+
     def diagnostics(self,db,user,**kw):
         tenant=self._scope(db,user,kw["company_id"]);q=select(JournalEntry).where(JournalEntry.tenant_id==tenant,JournalEntry.company_id==kw["company_id"])
         if kw.get("start_date"):q=q.where(JournalEntry.entry_date>=kw["start_date"])
