@@ -33,8 +33,8 @@ def decision(tx_id:int,p:TreasuryApproval,current_user:User=Depends(get_current_
 @router.post("/daily-closing",dependencies=[Depends(require_permission("treasury.post"))])
 def close(p:TreasuryDailyCloseCreate,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
  o=daily_close(db,p,current_user);db.commit();db.refresh(o);return o
-@router.post("/forecast")
+@router.post("/forecast",dependencies=[Depends(require_permission("treasury.write"))])
 def make_forecast(p:TreasuryForecastCreate,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
  o=forecast(db,p,current_user);db.commit();db.refresh(o);return o
-@router.get("/positions")
+@router.get("/positions",dependencies=[Depends(require_permission("treasury.access"))])
 def get_positions(company_id:int=Query(...,gt=0),current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):return positions(db,company_id,current_user)
