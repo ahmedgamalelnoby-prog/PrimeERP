@@ -16,6 +16,8 @@ class WebhookCreate(BaseModel):
 class WebhookResponse(BaseModel):
     id:int;app_id:int;url:str;events:list[str];is_active:bool
     model_config={"from_attributes":True}
+class WebhookCreated(WebhookResponse):
+    signing_secret:str
 class EventPublish(BaseModel):
     company_id:int=Field(gt=0);event_id:str=Field(min_length=3,max_length=160);event_type:str=Field(min_length=2,max_length=160);payload:dict
 class CustomFieldCreate(BaseModel):
