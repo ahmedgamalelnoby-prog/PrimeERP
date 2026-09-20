@@ -7,6 +7,8 @@ from app.modules.companies.models import Company
 from app.modules.accounting.fiscal_years.services.fiscal_year_service import fiscal_year_service
 from app.modules.accounting.journals.services.journal_service import journal_service
 from app.modules.commerce.accounting_models import CommerceAccountingSettings
+from app.modules.accounting.chart_of_accounts.models import AccountCombination
+from app.modules.branches.models import Branch
 def _company(db,cid,user):
  if user.tenant_id is None: raise HTTPException(403,"User is not assigned to a tenant")
  c=db.scalar(select(Company).where(Company.id==cid,Company.tenant_id==user.tenant_id,Company.is_active.is_(True)))
@@ -31,6 +33,11 @@ def _post(db,o,user):
 def create_transaction(db,p,user):
  _company(db,p.company_id,user);fiscal_year_service.assert_open_for_date(db,company_id=p.company_id,posting_date=p.transaction_date)
  if p.account_id==p.offset_account_id:raise HTTPException(422,"Treasury accounts must be different")
+ accounts=db.scalars(select(AccountCombination).where(AccountCombination.id.in_([p.account_id,p.offset_account_id]),AccountCombination.company_id==p.company_id,AccountCombination.is_active.is_(True))).all()
+ if len({a.id for a in accounts}) != 2: raise HTTPException(422,"Treasury accounts must be active accounts belonging to the selected company")
+ if p.branch_id is not None:
+  branch=db.scalar(select(Branch).where(Branch.id==p.branch_id,Branch.company_id==p.company_id))
+  if branch is None: raise HTTPException(422,"Branch is outside the selected company")
  o=TreasuryTransaction(company_id=p.company_id,branch_id=p.branch_id,transaction_date=p.transaction_date,transaction_type=p.transaction_type,account_id=p.account_id,offset_account_id=p.offset_account_id,amount=p.amount,currency=p.currency,reference=p.reference,description=p.description,status="pending_approval" if p.requires_approval else "approved",approval_status="pending" if p.requires_approval else "approved",created_by=user.id);db.add(o);db.flush()
  if not p.requires_approval:_post(db,o,user)
  return o
