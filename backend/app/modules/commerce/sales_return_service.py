@@ -39,7 +39,7 @@ class SalesReturnService:
         if variant_id is not None and db.scalar(select(ProductVariant.id).where(ProductVariant.id == variant_id, ProductVariant.company_id == company_id, ProductVariant.product_id == item_id, ProductVariant.is_active.is_(True))) is None:
             raise ValueError("Original delivery variant is invalid or inactive")
 
-    def create_and_post(self, db: Session, payload: SalesReturnCreate, user_id: int):
+    def create_and_post(self, db: Session, payload: SalesReturnCreate, user_id: int, tenant_id: int | None = None):
         partner = db.scalar(select(BusinessPartner).where(BusinessPartner.id == payload.partner_id, BusinessPartner.company_id == payload.company_id, BusinessPartner.is_active.is_(True)).with_for_update())
         if partner is None or partner.partner_type not in {"customer", "both"}:
             raise ValueError("Customer was not found or is not valid for sales returns")
