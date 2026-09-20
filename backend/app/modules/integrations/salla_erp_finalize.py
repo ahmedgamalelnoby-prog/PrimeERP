@@ -204,7 +204,7 @@ def _build_delivery(db: Session, order: SallaOrder, invoice: SalesDocument, ship
 
 
 _FULFILLMENT_STATES = {
-    "processing", "shipped", "in_transit", "out_for_delivery",
+    "processing", "shipped", "in_transit", "delivering", "out_for_delivery",
     "delivered", "fulfilled", "partially_fulfilled", "completed",
 }
 _SHIPMENT_FULFILLMENT_STATES = {
