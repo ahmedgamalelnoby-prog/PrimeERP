@@ -88,7 +88,7 @@ class ManufacturingVariance(Base):
     wip_journal_entry_id=Column(Integer,ForeignKey("journal_entries.id",ondelete="SET NULL"))
     status=Column(String(20),nullable=False,server_default="calculated")
     created_at=Column(DateTime(timezone=True),server_default=func.now(),nullable=False)
-    __table_args__=(UniqueConstraint("work_order_id","status",name="uq_mfg_variance_work_order_status"),CheckConstraint("status IN ('calculated','posted','reversed')","ck_mfg_variance_status"),)
+    __table_args__=(UniqueConstraint("work_order_id","status",name="uq_mfg_variance_work_order_status"),CheckConstraint("status IN ('calculated','pending_approval','posted','reversed')","ck_mfg_variance_status"),)
 
 class InventoryStockPolicy(Base):
     __tablename__="inventory_stock_policies"
