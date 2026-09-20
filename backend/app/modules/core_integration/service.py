@@ -10,8 +10,10 @@ ACTIVE_STATUSES = {"processing", "completed", "failed", "reversed"}
 
 
 class CoreIntegrationService:
-    def begin(self, db, *, user, company_id, source_module, source_entity, source_id, operation, idempotency_key):
-        if not getattr(user, "tenant_id", None):
+    def begin(self, db, *, user=None, tenant_id=None, actor_id=None, company_id, source_module, source_entity, source_id, operation, idempotency_key):
+        effective_tenant_id = tenant_id if tenant_id is not None else getattr(user, "tenant_id", None)
+        effective_actor_id = actor_id if actor_id is not None else getattr(user, "id", None)
+        if not effective_tenant_id:
             raise HTTPException(403, "Tenant context is required")
         if not idempotency_key or not str(idempotency_key).strip():
             raise HTTPException(422, "Idempotency key is required")
@@ -22,20 +24,20 @@ class CoreIntegrationService:
             ).with_for_update()
         )
         if existing is not None:
-            if existing.tenant_id != user.tenant_id:
+            if existing.tenant_id != effective_tenant_id:
                 raise HTTPException(403, "Idempotency key belongs to another tenant")
             if existing.source_module != source_module or existing.source_entity != source_entity or str(existing.source_id) != str(source_id):
                 raise HTTPException(409, "Idempotency key is already bound to another transaction")
             return existing, False
         tx = IntegrationTransaction(
-            tenant_id=user.tenant_id,
+            tenant_id=effective_tenant_id,
             company_id=company_id,
             source_module=source_module,
             source_entity=source_entity,
             source_id=str(source_id),
             operation=operation,
             idempotency_key=str(idempotency_key).strip(),
-            actor_id=user.id,
+            actor_id=effective_actor_id,
             status="processing",
         )
         db.add(tx)
@@ -51,7 +53,7 @@ class CoreIntegrationService:
                 raise
             return existing, False
         record_audit_event(db, action="core.transaction.begin", entity_type="integration_transaction",
-                            entity_id=tx.id, user_id=user.id, tenant_id=user.tenant_id,
+                            entity_id=tx.id, user_id=effective_actor_id, tenant_id=effective_tenant_id,
                             company_id=company_id, metadata={"operation": operation, "source": f"{source_module}:{source_entity}:{source_id}"})
         return tx, True
 
