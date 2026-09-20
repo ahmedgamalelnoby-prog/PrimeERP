@@ -20,6 +20,7 @@ from app.modules.inventory.stock_moves.location_stock import InventoryLocationSt
 from app.modules.inventory.stock_moves.models import InventoryAccountingConfig, InventoryCostLayer, InventoryStockMove, InventoryValuationAllocation
 from app.modules.inventory.stock_moves.repository import inventory_stock_move_repository
 from app.modules.inventory.reservations.models import InventoryReservation
+from app.modules.manufacturing.completion_models import InventoryStockPolicy
 from app.modules.audit.service import record_audit_event
 
 
@@ -147,6 +148,8 @@ class InventoryStockMoveService:
         source_balance = self._location_balance(db, company_id, move.item_id, variant_id, move.source_location_id, lock=True) if move.source_location_id else None
         destination_balance = self._location_balance(db, company_id, move.item_id, variant_id, move.destination_location_id, lock=True) if move.destination_location_id else None
         source_warehouse_id = source_balance.location.warehouse_id if source_balance else None
+        negative_policy = db.scalar(select(InventoryStockPolicy).where(InventoryStockPolicy.company_id == company_id, InventoryStockPolicy.warehouse_id == source_warehouse_id, InventoryStockPolicy.is_active.is_(True))) if source_warehouse_id else None
+        allow_negative = bool(negative_policy.allow_negative) if negative_policy is not None else False
         destination_warehouse_id = destination_balance.location.warehouse_id if destination_balance else None
         unit_cost = Decimal(move.unit_cost or 0)
         fifo_allocations: list[tuple[InventoryCostLayer, Decimal, Decimal]] = []
@@ -155,12 +158,12 @@ class InventoryStockMoveService:
         if source_balance:
             on_hand = Decimal(source_balance.quantity_on_hand or 0)
             reserved = Decimal(source_balance.quantity_reserved or 0)
-            if move.movement_type in {"issue", "transfer", "adjustment"} and on_hand - reserved < quantity:
+            if not allow_negative and move.movement_type in {"issue", "transfer", "adjustment"} and on_hand - reserved < quantity:
                 raise ValueError("Insufficient available stock after excluding reserved quantity")
-            if on_hand < quantity:
+            if not allow_negative and on_hand < quantity:
                 raise ValueError("Insufficient stock at source location")
             warehouse_source = self._warehouse_stock(db, company_id, move.item_id, variant_id, source_warehouse_id)
-            if move.movement_type in {"issue", "transfer", "adjustment"} and Decimal(warehouse_source.quantity_on_hand or 0) - Decimal(warehouse_source.quantity_reserved or 0) < quantity:
+            if not allow_negative and move.movement_type in {"issue", "transfer", "adjustment"} and Decimal(warehouse_source.quantity_on_hand or 0) - Decimal(warehouse_source.quantity_reserved or 0) < quantity:
                 raise ValueError("Insufficient available warehouse stock after excluding reserved quantity")
             if item.costing_method == "fifo":
                 fifo_allocations = self._consume_fifo_layers(db, company_id, move.item_id, variant_id, source_warehouse_id, quantity)
