@@ -24,7 +24,7 @@ from app.modules.inventory.transfers.schemas import TransferCreate
 from app.modules.inventory.transfers.service import inventory_transfer_service
 from app.modules.commerce.payment_workflow import post_payment, reverse_payment
 from app.modules.jurisdiction.commerce_guard import capture_document_tax_snapshot, validate_document_tax_snapshot
-from app.modules.pos.completion_models import POSModifierOption, POSPromotion
+from app.modules.pos.completion_models import POSModifierOption, POSPromotion, POSPromotionUse
 from app.modules.restaurant.models import (
     Floor, RestaurantTable, OrderType,
     PreparationStation,
@@ -536,6 +536,13 @@ def checkout(payload: Checkout, current_user: User = Depends(get_current_user), 
         warehouse_id=payload.warehouse_id,
         lines=lines,
     ))
+    if payload.promotion_code:
+        promotion = db.scalar(select(POSPromotion).where(POSPromotion.company_id == payload.company_id, POSPromotion.code == payload.promotion_code, POSPromotion.is_active.is_(True)))
+        if promotion is not None:
+            discount_value = Decimal(doc.subtotal or 0) * promotion_percent / Decimal("100")
+            if promotion.max_discount is not None:
+                discount_value = min(discount_value, Decimal(promotion.max_discount))
+            db.add(POSPromotionUse(promotion_id=promotion.id, sales_document_id=doc.id, discount_amount=discount_value))
     # POS checkout is a sell + immediate fulfillment. Stocked menu items are issued
     # directly; recipe-backed menu items consume their ingredients from the outlet warehouse.
     direct_lines = []
