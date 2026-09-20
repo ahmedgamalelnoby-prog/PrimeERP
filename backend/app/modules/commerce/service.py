@@ -17,6 +17,7 @@ from app.modules.inventory.stock_moves.models import InventoryStockMove
 from app.modules.inventory.stock_moves.schemas import StockMoveCreate
 from app.modules.inventory.stock_moves.service import inventory_stock_move_service
 from app.modules.inventory.warehouses.models import InventoryWarehouse
+from app.modules.accounting.fiscal_years.services.fiscal_year_service import fiscal_year_service
 from app.modules.treasury.models import Cheque, ChequeEvent
 
 SALE_TYPES = {"quotation", "order", "delivery", "invoice", "credit_note"}
@@ -186,6 +187,10 @@ class CommerceService:
         if not obj: raise ValueError("Document not found")
         if obj.status != "draft": raise ValueError("Only draft documents can be confirmed")
         if not obj.lines: raise ValueError("A document must contain at least one line before confirmation")
+        # Every financial document is subject to the same fiscal-period control before confirmation/posting.
+        if obj.document_type in {"invoice","credit_note","bill","debit_note"}:
+            if hasattr(fiscal_year_service, "assert_open_for_date"):
+                fiscal_year_service.assert_open_for_date(db, company_id=company_id, posting_date=obj.document_date)
         if kind == "sale":
             self.enforce_credit_limit(db, company_id, obj)
         obj.status = "confirmed"; db.flush()
