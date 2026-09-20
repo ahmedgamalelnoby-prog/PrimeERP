@@ -9,6 +9,8 @@ from app.modules.identity.models import User
 from app.modules.mobile.models import MobileDevice,MobileSession,MobileTask,MobileScanEvent
 from app.modules.mobile.schemas import *
 from app.modules.mobile.service import register_device,sync
+from app.modules.inventory.warehouses.models import InventoryWarehouse
+from app.modules.branches.models import Branch
 router=APIRouter(prefix="/mobile",tags=["Mobile Execution"])
 
 def company_ok(db,company_id,user):
@@ -28,7 +30,8 @@ def open_session(p:SessionCreate,db:Session=Depends(get_db),user:User=Depends(ge
     if not d: raise HTTPException(404,"Device not found")
     old=db.scalar(select(MobileSession).where(MobileSession.device_id==d.id,MobileSession.status=="open"))
     if old: old.status="closed";old.closed_at=datetime.now(timezone.utc)
-    if p.warehouse_id and not db.scalar(select(__import__("app.modules.inventory.warehouses.models",fromlist=["Warehouse"]).Warehouse.id).where(__import__("app.modules.inventory.warehouses.models",fromlist=["Warehouse"]).Warehouse.id==p.warehouse_id,__import__("app.modules.inventory.warehouses.models",fromlist=["Warehouse"]).Warehouse.company_id==d.company_id)): raise HTTPException(404,"Warehouse not found")
+    if p.warehouse_id and not db.scalar(select(InventoryWarehouse.id).where(InventoryWarehouse.id==p.warehouse_id,InventoryWarehouse.company_id==d.company_id,InventoryWarehouse.is_active.is_(True))): raise HTTPException(404,"Warehouse not found")
+    if p.branch_id and not db.scalar(select(Branch.id).where(Branch.id==p.branch_id,Branch.company_id==d.company_id)): raise HTTPException(404,"Branch not found")
     s=MobileSession(device_id=d.id,user_id=user.id,warehouse_id=p.warehouse_id,branch_id=p.branch_id);db.add(s);db.commit();db.refresh(s);return s
 
 @router.post("/sessions/{session_id}/close",response_model=SessionResponse,dependencies=[Depends(require_permission("mobile.write"))])
