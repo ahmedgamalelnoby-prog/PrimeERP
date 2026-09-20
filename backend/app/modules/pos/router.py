@@ -23,6 +23,8 @@ from app.modules.inventory.warehouses.models import InventoryWarehouse
 from app.modules.inventory.locations.models import InventoryLocation
 from app.modules.inventory.stock_moves.schemas import StockMoveCreate
 from app.modules.inventory.stock_moves.service import inventory_stock_move_service
+from app.modules.inventory.reservations.schemas import ReservationCreate
+from app.modules.inventory.reservations.service import inventory_reservation_service
 from app.modules.inventory.transfers.schemas import TransferCreate
 from app.modules.inventory.transfers.service import inventory_transfer_service
 from app.modules.commerce.payment_workflow import post_payment, reverse_payment
@@ -394,11 +396,12 @@ def _expand_recipe(db: Session, company_id: int, item_id: int, variant_id: int |
     for line in recipe.lines:
         component = line.ingredient_item_id or line.ingredient_product_id
         qty = Decimal(line.quantity) * factor * (Decimal("1") + Decimal(line.waste_percentage or 0) / Decimal("100"))
-        nested = _active_recipe(db, company_id, component, None)
+        nested_variant = getattr(line, "ingredient_variant_id", None)
+        nested = _active_recipe(db, company_id, component, nested_variant)
         if nested:
-            result.extend(_expand_recipe(db, company_id, component, None, qty, visited))
+            result.extend(_expand_recipe(db, company_id, component, nested_variant, qty, visited))
         else:
-            result.append((component, None, qty))
+            result.append((component, nested_variant, qty))
     visited.remove(key)
     return result
 
@@ -415,11 +418,13 @@ def _post_recipe_consumption(db: Session, *, company_id: int, tenant_id: int, us
         ))
         if existing:
             continue
+        reservation = inventory_reservation_service.reserve(db, ReservationCreate(company_id=company_id, item_id=item_id, variant_id=variant_id, location_id=source_location_id, quantity=qty, source_module="pos", source_entity="recipe_consumption", source_id=source_id, reference=reference, notes=f"POS recipe reservation for sale {sale_id}, line {sale_line.id}"))
         move = inventory_stock_move_service.create_draft(db, StockMoveCreate(
             company_id=company_id, item_id=item_id, variant_id=variant_id,
             source_location_id=source_location_id, destination_location_id=None,
             quantity=qty, unit_cost=0, movement_type="issue", reference=reference,
             source_module="pos", source_entity="recipe_consumption", source_id=source_id,
+            reservation_id=reservation.id,
             notes=f"POS recipe consumption for sale {sale_id}, line {sale_line.id}",
         ))
         inventory_stock_move_service.post(db, tenant_id=tenant_id, company_id=company_id, move_id=move.id, user_id=user_id)
