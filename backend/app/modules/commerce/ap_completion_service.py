@@ -33,7 +33,19 @@ class APCompletionService:
 
     def supplier_statement(self,db,company_id,partner_id,from_date=None,to_date=None,as_of=None):
         from app.modules.commerce.service import commerce_service
-        return commerce_service.partner_statement(db,company_id,partner_id,"vendor",from_date,to_date,as_of)
+        result=commerce_service.partner_statement(db,company_id,partner_id,"vendor",from_date,to_date,as_of)
+        cutoff=as_of or to_date or date.today()
+        q=[APWriteOff.company_id==company_id,APWriteOff.partner_id==partner_id,APWriteOff.status=="approved",APWriteOff.created_at<=datetime.combine(cutoff,datetime.max.time())]
+        for w in db.scalars(select(APWriteOff).where(*q).order_by(APWriteOff.created_at,APWriteOff.id)).all():
+            event_date=w.created_at.date()
+            if from_date and event_date<from_date: continue
+            result["rows"].append({"date":event_date,"document_type":"writeoff","document_id":w.document_id,"reference":f"AP-WO-{w.id}","debit":Decimal("0"),"credit":Decimal(w.amount),"balance":Decimal("0")})
+        result["rows"].sort(key=lambda x:(x["date"],str(x["reference"])))
+        balance=Decimal(result.get("opening_balance",0))
+        for row in result["rows"]:
+            balance+=Decimal(row.get("debit",0))-Decimal(row.get("credit",0));row["balance"]=balance
+        result["closing_balance"]=balance
+        return result
 
     def decide_writeoff(self,db,company_id,writeoff_id,approve,reason,user_id):
         x=db.scalar(select(APWriteOff).where(APWriteOff.id==writeoff_id,APWriteOff.company_id==company_id).with_for_update())
@@ -117,7 +129,7 @@ class APCompletionService:
         from app.modules.commerce.accounting_models import CommerceAccountingSettings
         settings=db.scalar(select(CommerceAccountingSettings).where(CommerceAccountingSettings.company_id==company_id))
         gl_balance=None; gl_difference=Decimal("0")
-        if settings is not None:
+        if settings is not None and partner_id is None:
             gl_balance=Decimal(str(db.scalar(select(func.coalesce(func.sum(JournalEntryLine.debit-JournalEntryLine.credit),0)).join(JournalEntry,JournalEntry.id==JournalEntryLine.entry_id).where(JournalEntry.company_id==company_id,JournalEntry.status=="posted",JournalEntry.entry_date<=as_of,JournalEntryLine.account_combination_id==settings.ap_account_id)) or 0))
             dq=[PurchaseDocument.company_id==company_id,PurchaseDocument.document_type=="debit_note",PurchaseDocument.status.in_({"confirmed","posted"}),PurchaseDocument.document_date<=as_of]
             if partner_id:dq.append(PurchaseDocument.partner_id==partner_id)
