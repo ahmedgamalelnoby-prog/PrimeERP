@@ -9,6 +9,7 @@ from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.companies.models import Company
 from app.modules.commerce.ar_schemas import ARAutoMatchRequest, ARAllocateRequest, ARWriteOffRequest, ARWriteOffDecision, ARReconcileRequest, ARAdvanceReceiptRequest
+from app.modules.commerce.schemas import PaymentReverse
 from app.modules.commerce.ar_models import ARWriteOff
 from app.modules.commerce.ar_service import ar_service
 
@@ -42,7 +43,7 @@ def auto_match(payment_id:int,payload:ARAutoMatchRequest,current_user:User=Depen
     company(db,payload.company_id,current_user);result=run(lambda:ar_service.auto_match(db,payload.company_id,payment_id,current_user.id,payload.as_of));db.commit();return result
 
 @router.post("/payments/{payment_id}/reverse",dependencies=[Depends(require_permission("commerce.reverse"))])
-def reverse_advance(payment_id:int,payload:ARAdvanceReceiptRequest,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+def reverse_advance(payment_id:int,payload:PaymentReverse,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
     company(db,payload.company_id,current_user)
     from app.modules.commerce.service import commerce_service
     obj=run(lambda:commerce_service.reverse_payment(db,payload.company_id,payment_id,payload.payment_date,payload.notes,current_user.id));db.commit()
