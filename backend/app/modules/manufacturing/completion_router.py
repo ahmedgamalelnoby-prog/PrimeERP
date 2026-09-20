@@ -68,3 +68,17 @@ def settle_wip(work_order_id:int,p:Settlement,company_id:int=Query(...,gt=0),db:
     entry=journal_service.create_draft(db,tenant_id=u.tenant_id,company_id=company_id,branch_id=p.branch_id,journal_id=p.journal_id,fiscal_year_id=p.fiscal_year_id,period_id=p.period_id,entry_number=p.entry_number,entry_date=p.entry_date,description=f"WIP settlement for work order {work_order_id}",lines=[{"account_combination_id":p.wip_account_id,"debit":0,"credit":total},{"account_combination_id":p.finished_goods_account_id,"debit":total,"credit":0}],user_id=u.id,source_module="manufacturing",source_entity="wip_settlement",source_id=work_order_id,commit=False)
     journal_service.submit(db,tenant_id=u.tenant_id,entry_id=entry.id,user_id=u.id,commit=False);journal_service.post(db,tenant_id=u.tenant_id,entry_id=entry.id,user_id=u.id,commit=False)
     v.wip_journal_entry_id=entry.id;db.commit();db.refresh(v);return v
+
+class FinalizePayload(BaseModel):
+    close_status:str="closed"
+
+@router.post("/work-orders/{work_order_id}/finalize")
+def finalize_work_order(work_order_id:int,p:FinalizePayload,company_id:int=Query(...,gt=0),db:Session=Depends(get_db),u:User=Depends(get_current_user)):
+    wo=db.scalar(select(ManufacturingWorkOrder).where(ManufacturingWorkOrder.id==work_order_id,ManufacturingWorkOrder.company_id==company_id).with_for_update())
+    if wo is None: raise HTTPException(404,"Work order not found")
+    if getattr(wo,"status",None)=="cancelled": raise HTTPException(409,"Cancelled work orders cannot be finalized")
+    if getattr(wo,"status",None)=="closed": return {"work_order_id":wo.id,"status":wo.status,"variance_id":None}
+    v=manufacturing_completion_service.variance(db,company_id,work_order_id)
+    wo.status=p.close_status
+    db.commit()
+    return {"work_order_id":wo.id,"status":wo.status,"variance_id":v.id,"total_variance":v.total_variance}
