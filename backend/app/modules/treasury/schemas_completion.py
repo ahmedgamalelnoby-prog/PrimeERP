@@ -9,3 +9,6 @@ class TreasuryForecastCreate(BaseModel): company_id:int=Field(gt=0); forecast_da
 class TreasuryTransactionResponse(BaseModel):
  model_config=ConfigDict(from_attributes=True)
  id:int; company_id:int; branch_id:int|None; transaction_date:date; transaction_type:str; account_id:int; offset_account_id:int; amount:Decimal; currency:str; reference:str|None; description:str|None; status:str; approval_status:str; journal_entry_id:int|None
+
+class TreasuryTransactionListResponse(TreasuryTransactionResponse):
+    pass
