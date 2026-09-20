@@ -118,9 +118,10 @@ class ManufacturingCompletionService:
             if x is None:
                 raise HTTPException(409,"Closed or cancelled work orders require a calculated variance before finalization")
             return x
-        planned_m=Decimal(wo.total_material_cost or 0); actual_m=sum((Decimal(x.unit_cost or 0)*Decimal(x.quantity or 0) for x in db.scalars(select(ManufacturingConsumption).where(ManufacturingConsumption.work_order_id==wo.id))),Decimal("0"))
-        planned_l=Decimal(0); actual_l=Decimal(db.scalar(select(func.coalesce(func.sum(ManufacturingLaborActual.amount),0)).where(ManufacturingLaborActual.work_order_id==wo.id)) or 0)
-        planned_o=Decimal(wo.total_overhead_cost or 0); actual_o=Decimal(db.scalar(select(func.coalesce(func.sum(ManufacturingOverheadActual.amount),0)).where(ManufacturingOverheadActual.work_order_id==wo.id)) or 0)
+        planned_m=Decimal(getattr(wo,"planned_material_cost",0) or 0); actual_m=sum((Decimal(x.unit_cost or 0)*Decimal(x.quantity or 0) for x in db.scalars(select(ManufacturingConsumption).where(ManufacturingConsumption.work_order_id==wo.id))),Decimal("0"))
+        if planned_m == 0 and getattr(wo,"planned_qty",None): planned_m=Decimal(wo.total_material_cost or 0) if Decimal(wo.completed_qty or 0)==0 else Decimal(0)
+        planned_l=Decimal(getattr(wo,"planned_labor_cost",0) or 0); actual_l=Decimal(db.scalar(select(func.coalesce(func.sum(ManufacturingLaborActual.amount),0)).where(ManufacturingLaborActual.work_order_id==wo.id)) or 0)
+        planned_o=Decimal(getattr(wo,"planned_overhead_cost",0) or 0); actual_o=Decimal(db.scalar(select(func.coalesce(func.sum(ManufacturingOverheadActual.amount),0)).where(ManufacturingOverheadActual.work_order_id==wo.id)) or 0)
         scrap=Decimal(db.scalar(select(func.coalesce(func.sum(ManufacturingScrap.quantity*ManufacturingScrap.unit_cost),0)).where(ManufacturingScrap.work_order_id==wo.id)) or 0)
         byp=Decimal(db.scalar(select(func.coalesce(func.sum(ManufacturingByProduct.quantity*ManufacturingByProduct.unit_cost),0)).where(ManufacturingByProduct.work_order_id==wo.id)) or 0)
         subcontract=Decimal(db.scalar(select(func.coalesce(func.sum(ManufacturingSubcontract.actual_quantity*ManufacturingSubcontract.unit_cost),0)).where(ManufacturingSubcontract.work_order_id==wo.id,ManufacturingSubcontract.status!="cancelled")) or 0)
