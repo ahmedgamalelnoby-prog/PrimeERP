@@ -36,6 +36,13 @@ def create_cheque(db: Session, payload, user_id: int):
         raise ValueError("Due date cannot be earlier than cheque date")
     if payload.direction not in {"received", "issued"}:
         raise ValueError("Direction must be received or issued")
+    existing = db.scalar(select(Cheque).where(
+        Cheque.company_id == payload.company_id,
+        Cheque.direction == payload.direction,
+        Cheque.cheque_number == payload.cheque_number,
+    ))
+    if existing is not None:
+        raise ValueError("Cheque number already exists for this company and direction")
     if payload.partner_id is not None:
         partner = db.scalar(select(BusinessPartner).where(BusinessPartner.id == payload.partner_id, BusinessPartner.company_id == payload.company_id))
         if partner is None:
