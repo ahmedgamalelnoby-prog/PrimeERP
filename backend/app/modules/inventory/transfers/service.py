@@ -2,6 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.modules.inventory.items.models import InventoryItem
+from app.modules.catalog.models import ProductVariant
 from app.modules.inventory.locations.models import InventoryLocation
 from app.modules.inventory.stock_moves.schemas import StockMoveCreate
 from app.modules.inventory.stock_moves.service import inventory_stock_move_service
@@ -53,6 +54,9 @@ class InventoryTransferService:
             )
             if item is None:
                 raise ValueError(f"Item {line.item_id} is invalid for this company")
+            if line.variant_id is not None:
+                variant = db.scalar(select(ProductVariant).where(ProductVariant.id==line.variant_id, ProductVariant.company_id==payload.company_id, ProductVariant.product_id==item.id, ProductVariant.is_active.is_(True)))
+                if variant is None: raise ValueError(f"Variant {line.variant_id} is invalid for this item/company")
 
             src = self._location(db, payload.company_id, line.source_location_id)
             dst = self._location(db, payload.company_id, line.destination_location_id)
@@ -65,6 +69,7 @@ class InventoryTransferService:
                 InventoryTransferLine(
                     transfer_id=transfer.id,
                     item_id=line.item_id,
+                    variant_id=line.variant_id,
                     source_location_id=line.source_location_id,
                     destination_location_id=line.destination_location_id,
                     quantity=line.quantity,
