@@ -369,6 +369,16 @@ def _menu_price(db: Session, company_id: int, menu_item: MenuItem, price_list_id
 @router.post("/checkout", dependencies=[Depends(require_permission("commerce.payment"))])
 def checkout(payload: Checkout, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company(db, payload.company_id, current_user)
+    # Offline replay can happen after the original request committed but its
+    # response was lost. Reuse the existing invoice by company + POS number.
+    existing = db.scalar(select(SalesDocument).where(
+        SalesDocument.company_id == payload.company_id,
+        SalesDocument.number == payload.number,
+        SalesDocument.document_type == "invoice",
+    ))
+    if existing is not None:
+        return existing
+
     terminal = _terminal(db, payload.company_id, payload.terminal_id) if payload.terminal_id else None
     if terminal is not None:
         outlet = db.get(PosOutlet, terminal.outlet_id)
