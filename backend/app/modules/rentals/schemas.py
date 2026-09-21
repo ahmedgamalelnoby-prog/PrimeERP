@@ -58,3 +58,25 @@ class ChargeRead(BaseModel):
     total_amount:Decimal
     status:str
     model_config={"from_attributes":True}
+
+
+class ReceiptCreate(BaseModel):
+    charge_id:int
+    payment_date:date
+    amount:Decimal=Field(gt=0)
+    method:str="cash"
+    reference:str|None=None
+
+class RenewalCreate(BaseModel):
+    number:str
+    start_date:date
+    end_date:date
+    pricing_type:str|None=None
+    fixed_rent:Decimal|None=None
+    minimum_guarantee:Decimal|None=None
+    revenue_share_percent:Decimal|None=None
+    maintenance_amount:Decimal|None=None
+    security_deposit:Decimal|None=None
+    vat_percent:Decimal|None=None
+    wht_percent:Decimal|None=None
+    notes:str|None=None
