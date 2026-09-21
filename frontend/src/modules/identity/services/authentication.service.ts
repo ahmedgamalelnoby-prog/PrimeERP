@@ -112,7 +112,20 @@ async function login(
 }
 
 async function logout(): Promise<void> {
-  storage.clear();
+  const refreshToken = storage.getRefreshToken();
+
+  try {
+    if (refreshToken) {
+      await client.post("/identity/logout", {
+        refresh_token: refreshToken,
+      });
+    }
+  } catch (error) {
+    // Logout must remain local even if the API is unavailable.
+    console.warn("Remote logout failed; clearing local session.", error);
+  } finally {
+    storage.clear();
+  }
 }
 
 async function getCurrentUser(): Promise<AuthenticatedUser> {
