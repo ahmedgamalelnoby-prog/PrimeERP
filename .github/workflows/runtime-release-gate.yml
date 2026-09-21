@@ -54,61 +54,43 @@ jobs:
             'ETA_ENABLED=false'
             'WHATSAPP_ENABLED=false'
           ) | Set-Content -Encoding utf8 .env
-          @(
-            'services:'
-            '  db:'
-            '    container_name: null'
-            '  migrate:'
-            '    container_name: null'
-            '  backend:'
-            '    container_name: null'
-            '    ports:'
-            '      - "8002:8001"'
-            '  backend-test:'
-            '    container_name: null'
-            '  report-worker:'
-            '    container_name: null'
-            '  frontend:'
-            '    container_name: null'
-            '    ports:'
-            '      - "3001:80"'
-          ) | Set-Content -Encoding utf8 ci-runtime-compose.yml
+          Get-Content docker-compose.yml | Where-Object { $_ -notmatch '^\\s+container_name:' } | Set-Content -Encoding utf8 ci-docker-compose.yml
 
       - name: Validate Compose
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
           $env:COMPOSE_PROJECT_NAME = 'primeerp-runtime-ci'
-          docker compose -f docker-compose.yml -f ci-runtime-compose.yml config
+          docker compose -f docker-compose.yml -f ci-docker-compose.yml config
 
       - name: Build runtime images
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
           $env:COMPOSE_PROJECT_NAME = 'primeerp-runtime-ci'
-          docker compose -f docker-compose.yml -f ci-runtime-compose.yml build --pull migrate backend backend-test report-worker frontend
+          docker compose -f docker-compose.yml -f ci-docker-compose.yml build --pull migrate backend backend-test report-worker frontend
 
       - name: Start database and migrations
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
           $env:COMPOSE_PROJECT_NAME = 'primeerp-runtime-ci'
-          docker compose -f docker-compose.yml -f ci-runtime-compose.yml up -d db migrate
+          docker compose -f docker-compose.yml -f ci-docker-compose.yml up -d db migrate
           $deadline = (Get-Date).AddMinutes(10)
           while ((Get-Date) -lt $deadline) {
-            $migrateId = docker compose -f docker-compose.yml -f ci-runtime-compose.yml ps -aq migrate
+            $migrateId = docker compose -f docker-compose.yml -f ci-docker-compose.yml ps -aq migrate
             if ($migrateId) {
               $status = docker inspect -f '{{.State.Status}}' $migrateId 2>$null
               if ($status -eq 'exited') {
                 $code = docker inspect -f '{{.State.ExitCode}}' $migrateId
                 if ($code -eq '0') { Write-Host 'Migrations: PASS'; exit 0 }
-                docker compose -f docker-compose.yml -f ci-runtime-compose.yml logs migrate
+                docker compose -f docker-compose.yml -f ci-docker-compose.yml logs migrate
                 throw "Migration failed with exit code $code"
               }
             }
             Start-Sleep -Seconds 4
           }
-          docker compose -f docker-compose.yml -f ci-runtime-compose.yml logs migrate
+          docker compose -f docker-compose.yml -f ci-docker-compose.yml logs migrate
           throw 'Migration did not finish.'
 
       - name: Start production runtime
@@ -116,7 +98,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $env:COMPOSE_PROJECT_NAME = 'primeerp-runtime-ci'
-          docker compose -f docker-compose.yml -f ci-runtime-compose.yml up -d backend frontend report-worker
+          docker compose -f docker-compose.yml -f ci-docker-compose.yml up -d backend frontend report-worker
 
       - name: Wait for runtime containers
         shell: powershell
@@ -125,9 +107,9 @@ jobs:
           $env:COMPOSE_PROJECT_NAME = 'primeerp-runtime-ci'
           $deadline = (Get-Date).AddMinutes(10)
           while ((Get-Date) -lt $deadline) {
-            $backendId = docker compose -f docker-compose.yml -f ci-runtime-compose.yml ps -q backend
-            $frontendId = docker compose -f docker-compose.yml -f ci-runtime-compose.yml ps -q frontend
-            $workerId = docker compose -f docker-compose.yml -f ci-runtime-compose.yml ps -q report-worker
+            $backendId = docker compose -f docker-compose.yml -f ci-docker-compose.yml ps -q backend
+            $frontendId = docker compose -f docker-compose.yml -f ci-docker-compose.yml ps -q frontend
+            $workerId = docker compose -f docker-compose.yml -f ci-docker-compose.yml ps -q report-worker
             if ($backendId -and $frontendId -and $workerId) {
               $backend = docker inspect -f '{{.State.Health.Status}}' $backendId 2>$null
               $frontend = docker inspect -f '{{.State.Status}}' $frontendId 2>$null
@@ -139,8 +121,8 @@ jobs:
             }
             Start-Sleep -Seconds 5
           }
-          docker compose -f docker-compose.yml -f ci-runtime-compose.yml ps
-          docker compose -f docker-compose.yml -f ci-runtime-compose.yml logs --tail=200 db migrate backend frontend report-worker
+          docker compose -f docker-compose.yml -f ci-docker-compose.yml ps
+          docker compose -f docker-compose.yml -f ci-docker-compose.yml logs --tail=200 db migrate backend frontend report-worker
           throw 'Runtime containers did not reach expected state.'
 
       - name: Validate backend readiness
@@ -183,8 +165,8 @@ jobs:
         shell: powershell
         run: |
           $env:COMPOSE_PROJECT_NAME = 'primeerp-runtime-ci'
-          docker compose -f docker-compose.yml -f ci-runtime-compose.yml ps
-          docker compose -f docker-compose.yml -f ci-runtime-compose.yml logs --tail=200 backend frontend report-worker
+          docker compose -f docker-compose.yml -f ci-docker-compose.yml ps
+          docker compose -f docker-compose.yml -f ci-docker-compose.yml logs --tail=200 backend frontend report-worker
 
       - name: Cleanup
         if: always()
@@ -192,5 +174,5 @@ jobs:
         shell: powershell
         run: |
           $env:COMPOSE_PROJECT_NAME = 'primeerp-runtime-ci'
-          docker compose -f docker-compose.yml -f ci-runtime-compose.yml down -v --remove-orphans 2>&1 | Out-Null
-          Remove-Item .env,ci-runtime-compose.yml -Force -ErrorAction SilentlyContinue
+          docker compose -f docker-compose.yml -f ci-docker-compose.yml down -v --remove-orphans 2>&1 | Out-Null
+          Remove-Item .env,ci-docker-compose.yml -Force -ErrorAction SilentlyContinue
