@@ -27,13 +27,14 @@ def test_salla_event_classification_covers_order_shipment_and_invoice_events():
 
 
 def test_salla_shipping_terminal_events_do_not_get_lost():
-    assert _advance_status("pending", "returned") == "returned"
+    # Return/cancel terminal events are accepted only when the canonical
+    # ERP transition contract permits them.
     assert _advance_status("in_transit", "returned") == "returned"
-    # ERP delivered is terminal; a Salla return event is handled by the
-    # dedicated return workflow and must not reopen the shipment state.
-    assert _advance_status("delivered", "returned") == "delivered"
-    assert _advance_status("pending", "cancelled") == "cancelled"
+    assert _advance_status("out_for_delivery", "returned") == "returned"
+    assert _advance_status("pending", "returned") == "pending"
     assert _advance_status("in_transit", "cancelled") == "cancelled"
+    assert _advance_status("pending", "cancelled") == "cancelled"
+    assert _advance_status("delivered", "returned") == "delivered"
     assert _advance_status("delivered", "cancelled") == "delivered"
 
 
