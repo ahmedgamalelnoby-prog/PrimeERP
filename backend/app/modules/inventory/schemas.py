@@ -59,6 +59,7 @@ class IssueLineCreate(BaseModel):
     quantity:Decimal=Field(gt=0)
 class IssueCreate(BaseModel):
     warehouse_id:int
+    reservation_id:int|None=None
     issue_type:str="consumption"
     reference_type:str|None=None
     reference_id:int|None=None
