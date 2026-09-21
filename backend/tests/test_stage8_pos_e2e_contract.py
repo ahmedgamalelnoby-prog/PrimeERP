@@ -33,3 +33,20 @@ def test_stage8_migration_remains_downstream_of_stage7_financial_hardening():
     migration = (ROOT / "alembic/versions/20260921_pos_financial_hardening.py").read_text()
     assert 'down_revision = "20260921_stage7_domain_merge"' in migration
     assert 'op.add_column("pos_sessions", sa.Column("closing_cash"' in migration
+
+
+def test_stage8_frontend_pos_is_registered_and_operational():
+    root = ROOT.parent / "../frontend/src/modules/pos"
+    page = (root / "pages/PosPage.tsx").read_text()
+    service = (root / "services/pos.service.ts").read_text()
+    router = (ROOT.parent / "../frontend/src/app/router/AppRouter.tsx").read_text()
+    sidebar = (ROOT.parent / "../frontend/src/components/layout/AppSidebar.tsx").read_text()
+
+    assert "تشغيل POS" in page
+    assert '"/pos/outlets"' in service
+    assert '"/pos/sessions/open"' in service
+    assert '"/pos/orders"' in service
+    assert '"/pos/payments"' in service
+    assert '"/pos/sessions/"' in service
+    assert 'path="/pos"' in router
+    assert 'path: "/pos"' in sidebar
