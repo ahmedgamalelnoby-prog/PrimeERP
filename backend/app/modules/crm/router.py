@@ -8,7 +8,8 @@ from app.database.session import get_db
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
-from .models import CRMLead\nfrom app.modules.completion.domain_models import CRMOpportunity,CRMActivity
+from .models import CRMLead
+from app.modules.completion.domain_models import CRMOpportunity,CRMActivity
 router=APIRouter(prefix="/crm",tags=["CRM"])
 def scope(db,user,company_id):
     if user.tenant_id is None or db.scalar(select(Company).where(Company.id==company_id,Company.tenant_id==user.tenant_id)) is None: raise HTTPException(403,"Company is outside the current tenant")
