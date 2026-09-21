@@ -2,7 +2,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
-from .models import RentalProperty,RentalUnit,RentalTenant,RentalContract,RentalCharge
+from .models import RentalProperty,RentalUnit,RentalTenant,RentalContract,RentalCharge,RentalReceipt
 from .accounting_service import rental_accounting_service
 
 class RentalService:
@@ -67,3 +67,29 @@ class RentalService:
     def list_contracts(self,db,tenant_id,company_id): return list(db.scalars(self._scope(RentalContract,company_id,tenant_id).order_by(RentalContract.start_date.desc())).all())
     def list_charges(self,db,tenant_id,company_id): return list(db.scalars(self._scope(RentalCharge,company_id,tenant_id).order_by(RentalCharge.charge_date.desc()).limit(500)).all())
 rental_service=RentalService()
+
+
+    def collect(self,db,tenant_id,company_id,payload,user_id):
+        charge=db.scalar(self._scope(RentalCharge,company_id,tenant_id).where(RentalCharge.id==payload.charge_id).with_for_update())
+        if charge is None: raise HTTPException(404,"Charge not found")
+        if charge.status not in {"posted","approved"}: raise HTTPException(409,"Charge is not collectible in its current status")
+        received=sum((Decimal(r.amount or 0) for r in db.scalars(select(RentalReceipt).where(RentalReceipt.charge_id==charge.id,RentalReceipt.status.in_({"pending","posted"}))).all()),Decimal("0"))
+        amount=Decimal(payload.amount)
+        if amount<=0: raise HTTPException(422,"Receipt amount must be positive")
+        if received+amount>Decimal(charge.total_amount): raise HTTPException(409,"Receipt exceeds outstanding balance")
+        receipt=RentalReceipt(tenant_id=tenant_id,company_id=company_id,charge_id=charge.id,payment_date=payload.payment_date,amount=amount,method=payload.method,reference=payload.reference,status="pending")
+        db.add(receipt);db.flush()
+        from .accounting_service import rental_accounting_service
+        rental_accounting_service.post_receipt(db,receipt,user_id)
+        return receipt
+
+    def renew_contract(self,db,tenant_id,company_id,contract_id,payload):
+        old=db.scalar(self._scope(RentalContract,company_id,tenant_id).where(RentalContract.id==contract_id).with_for_update())
+        if old is None: raise HTTPException(404,"Contract not found")
+        if old.status not in {"active","terminated"}: raise HTTPException(409,"Only active or terminated contracts can be renewed")
+        if payload.start_date<=old.end_date: raise HTTPException(422,"Renewal must start after the previous contract end date")
+        if payload.end_date<payload.start_date: raise HTTPException(422,"Invalid renewal dates")
+        overlap=db.scalar(self._scope(RentalContract,company_id,tenant_id).where(RentalContract.unit_id==old.unit_id,RentalContract.status.in_({"draft","active","renewed"}),RentalContract.start_date<=payload.end_date,RentalContract.end_date>=payload.start_date))
+        if overlap: raise HTTPException(409,"Renewal period overlaps another contract")
+        new=RentalContract(tenant_id=tenant_id,company_id=company_id,branch_id=old.branch_id,unit_id=old.unit_id,rental_tenant_id=old.rental_tenant_id,number=payload.number,start_date=payload.start_date,end_date=payload.end_date,status="renewed",pricing_type=payload.pricing_type or old.pricing_type,fixed_rent=payload.fixed_rent if payload.fixed_rent is not None else old.fixed_rent,minimum_guarantee=payload.minimum_guarantee if payload.minimum_guarantee is not None else old.minimum_guarantee,revenue_share_percent=payload.revenue_share_percent if payload.revenue_share_percent is not None else old.revenue_share_percent,maintenance_amount=payload.maintenance_amount if payload.maintenance_amount is not None else old.maintenance_amount,security_deposit=payload.security_deposit if payload.security_deposit is not None else old.security_deposit,vat_percent=payload.vat_percent if payload.vat_percent is not None else old.vat_percent,wht_percent=payload.wht_percent if payload.wht_percent is not None else old.wht_percent,notes=payload.notes)
+        db.add(new);old.status="terminated";db.flush();return new
