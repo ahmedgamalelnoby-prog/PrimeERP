@@ -47,3 +47,17 @@ def test_system_health_and_openapi_routes_exist() -> None:
     routes = _openapi_operations(app)
     assert ("GET", "/health") in routes
     assert app.openapi_url == "/api/v1/openapi.json"
+
+
+def test_master_data_and_inventory_routes_are_registered():
+    routes = _openapi_operations(app)
+    assert ("GET", "/api/v1/companies") in routes
+    assert ("GET", "/api/v1/branches") in routes
+    assert ("GET", "/api/v1/customers") in routes
+    assert ("GET", "/api/v1/products") in routes
+    assert ("GET", "/api/v1/inventory/warehouses") in routes
+    assert ("POST", "/api/v1/inventory/movements") in routes
+    assert ("POST", "/api/v1/inventory/transfers") in routes
+    assert ("POST", "/api/v1/inventory/reservations") in routes
+    assert ("POST", "/api/v1/inventory/reservations/{reservation_id}/release") in routes
+    assert ("POST", "/api/v1/inventory/issues") in routes
