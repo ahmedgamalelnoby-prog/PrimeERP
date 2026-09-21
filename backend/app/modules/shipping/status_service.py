@@ -29,7 +29,9 @@ DEFAULT_STATUSES = [
         "recognize_cod_fee", "recognize_payment_withdrawal_fee"
     ]),
     ("returning", "Returning", "قيد الاسترجاع", None, 80, []),
-    ("failed", "Delivery Failed", "فشل التسليم", None, 75, []),\n    ("rto", "Return to Origin", "مرتجع للمصدر", None, 85, ["reverse_revenue", "reverse_shipping_revenue", "reverse_cod_receivable", "recognize_return_cost"]),\n    ("returned", "Returned", "مرتجع", None, 90, [
+    ("failed", "Delivery Failed", "فشل التسليم", None, 75, []),
+    ("rto", "Return to Origin", "مرتجع للمصدر", None, 85, ["reverse_revenue", "reverse_shipping_revenue", "reverse_cod_receivable", "recognize_return_cost"]),
+    ("returned", "Returned", "مرتجع", None, 90, [
         "reverse_revenue", "reverse_shipping_revenue", "reverse_cod_receivable", "recognize_return_cost"
     ]),
     ("cancelled", "Cancelled", "ملغي", None, 100, []),
