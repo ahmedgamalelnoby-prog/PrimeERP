@@ -1,10 +1,8 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, UniqueConstraint
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, UniqueConstraint
 from app.database.base import Base
-
 
 class CommerceAccountingSettings(Base):
     __tablename__ = "commerce_accounting_settings"
-
     id = Column(Integer, primary_key=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
     sales_journal_id = Column(Integer, ForeignKey("accounting_journals.id", ondelete="RESTRICT"), nullable=False)
@@ -24,5 +22,12 @@ class CommerceAccountingSettings(Base):
     default_payment_account_id = Column(Integer, ForeignKey("account_combinations.id", ondelete="RESTRICT"), nullable=False)
     default_branch_id = Column(Integer, ForeignKey("branches.id", ondelete="RESTRICT"), nullable=False)
     auto_post = Column(Boolean, nullable=False, default=True)
-
     __table_args__ = (UniqueConstraint("company_id", name="uq_commerce_accounting_settings_company"),)
+
+class POSPaymentAccountMapping(Base):
+    __tablename__ = "pos_payment_account_mappings"
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    method = Column(String(20), nullable=False)
+    account_combination_id = Column(Integer, ForeignKey("account_combinations.id", ondelete="RESTRICT"), nullable=False)
+    __table_args__ = (UniqueConstraint("company_id", "method", name="uq_pos_payment_account_mapping"),)

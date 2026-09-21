@@ -3,7 +3,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-
 ReservationStatus = Literal["active", "released", "consumed", "cancelled"]
 
 
@@ -20,6 +19,13 @@ class ReservationCreate(BaseModel):
     notes: str | None = None
 
 
+class ReservationConsume(BaseModel):
+    quantity: Decimal | None = Field(default=None, gt=0)
+    source_module: str = Field(default="inventory", min_length=1, max_length=80)
+    source_entity: str = Field(default="reservation", min_length=1, max_length=80)
+    source_id: str | None = Field(default=None, min_length=1, max_length=120)
+
+
 class ReservationResponse(BaseModel):
     id: int
     company_id: int
@@ -27,6 +33,7 @@ class ReservationResponse(BaseModel):
     variant_id: int | None
     location_id: int
     quantity: Decimal
+    consumed_quantity: Decimal
     status: ReservationStatus
     source_module: str
     source_entity: str
