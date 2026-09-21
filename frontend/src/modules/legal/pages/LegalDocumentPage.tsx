@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { ArrowRight, FileText, Loader2, ShieldCheck } from "lucide-react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { getLegalDocument, type LegalDocumentType } from "@/modules/legal/services/legal.service";
 
 export default function LegalDocumentPage() {
-  const { type } = useParams<{ type: LegalDocumentType }>();
-  const documentType: LegalDocumentType = type === "privacy" ? "privacy" : "terms";
+  const location = useLocation();
+  const documentType: LegalDocumentType = location.pathname === "/privacy" ? "privacy" : "terms";
   const [document,setDocument]=useState<Awaited<ReturnType<typeof getLegalDocument>>|null>(null);
   const [loading,setLoading]=useState(true);
   useEffect(()=>{let active=true;setLoading(true);getLegalDocument(documentType).then(data=>{if(active)setDocument(data)}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[documentType]);
