@@ -72,11 +72,6 @@ const menuItems: MenuItem[] = [
         icon: List,
       },
       {
-        title: "إضافة مستخدم",
-        path: "/users/new",
-        icon: PlusCircle,
-      },
-      {
         title: "الأدوار والصلاحيات",
         path: "/roles",
         icon: ShieldCheck,
@@ -91,11 +86,6 @@ const menuItems: MenuItem[] = [
         title: "قائمة الشركات",
         path: "/companies",
         icon: List,
-      },
-      {
-        title: "إضافة شركة",
-        path: "/companies/new",
-        icon: PlusCircle,
       },
       {
         title: "الفروع",
@@ -119,11 +109,6 @@ const menuItems: MenuItem[] = [
         icon: List,
       },
       {
-        title: "إضافة عميل",
-        path: "/customers/new",
-        icon: PlusCircle,
-      },
-      {
         title: "تقارير العملاء",
         path: "/customers/reports",
         icon: FileText,
@@ -138,16 +123,6 @@ const menuItems: MenuItem[] = [
         title: "قائمة المنتجات",
         path: "/products",
         icon: List,
-      },
-      {
-        title: "إضافة منتج",
-        path: "/products/new",
-        icon: PlusCircle,
-      },
-      {
-        title: "التصنيفات",
-        path: "/products/categories",
-        icon: ClipboardList,
       },
       {
         title: "وحدات القياس",
@@ -169,11 +144,6 @@ const menuItems: MenuItem[] = [
         title: "المخازن",
         path: "/inventory/warehouses",
         icon: Building2,
-      },
-      {
-        title: "حركات المخزون",
-        path: "/inventory/movements",
-        icon: ClipboardList,
       },
       {
         title: "تقارير المخزون",
@@ -216,11 +186,6 @@ const menuItems: MenuItem[] = [
         title: "الطلبات",
         path: "/sales/orders",
         icon: ClipboardList,
-      },
-      {
-        title: "إضافة طلب",
-        path: "/sales/orders/new",
-        icon: PlusCircle,
       },
       {
         title: "تقارير المبيعات",
