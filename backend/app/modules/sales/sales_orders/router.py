@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.database.session import get_db
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
-from .schemas import SalesOrderCreate,SalesOrderResponse,SalesOrderAction
+from .schemas import SalesOrderCreate,SalesOrderResponse,SalesOrderAction,SalesOrderFulfill
 from .service import sales_order_service
 router=APIRouter()
 @router.get("/sales-orders",response_model=list[SalesOrderResponse])
@@ -17,3 +17,7 @@ def get_order(order_id:int,db:Session=Depends(get_db),current_user:User=Depends(
 def confirm(order_id:int,payload:SalesOrderAction,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):return sales_order_service.transition(db,current_user,order_id,"draft","confirmed")
 @router.post("/sales-orders/{order_id}/cancel",response_model=SalesOrderResponse)
 def cancel(order_id:int,payload:SalesOrderAction,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):return sales_order_service.transition(db,current_user,order_id,"draft","cancelled")
+@router.post("/sales-orders/{order_id}/reserve",response_model=SalesOrderResponse)
+def reserve(order_id:int,payload:SalesOrderFulfill,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):return sales_order_service.reserve(db,current_user,order_id,payload)
+@router.post("/sales-orders/{order_id}/issue",response_model=SalesOrderResponse)
+def issue(order_id:int,payload:SalesOrderFulfill,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):return sales_order_service.issue(db,current_user,order_id,payload)
