@@ -16,7 +16,8 @@ from app.modules.inventory.locations.models import InventoryLocation
 from app.modules.inventory.stock_moves.models import InventoryStockMove
 from app.modules.inventory.stock_moves.schemas import StockMoveCreate
 from app.modules.inventory.stock_moves.service import inventory_stock_move_service
-from app.modules.inventory.warehouses.models import InventoryWarehouse\nfrom app.modules.audit.service import record_audit_event
+from app.modules.inventory.warehouses.models import InventoryWarehouse
+from app.modules.audit.service import record_audit_event
 
 
 class SalesReturnService:
