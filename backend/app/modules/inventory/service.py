@@ -86,6 +86,25 @@ class InventoryService:
                 b.reserved_quantity+=qty; db.add(StockReservationLine(reservation_id=reservation.id,product_id=line.product_id,location_id=loc.id,quantity=qty))
             db.commit(); db.refresh(reservation); return reservation
         except Exception: db.rollback(); raise
+    def release_reservation(self,db,tenant_id,reservation_id):
+        reservation=db.scalar(select(StockReservation).where(StockReservation.id==reservation_id,StockReservation.tenant_id==tenant_id))
+        if not reservation: raise HTTPException(404,"Reservation not found")
+        if reservation.status!="reserved": raise HTTPException(409,"Reservation is not active")
+        lines=list(db.scalars(select(StockReservationLine).where(StockReservationLine.reservation_id==reservation.id)).all())
+        try:
+            for line in lines:
+                loc=self._location(db,tenant_id,line.location_id)
+                b=self._balance(db,tenant_id,loc.warehouse_id,loc.id,line.product_id,True)
+                if b.reserved_quantity < line.quantity: raise HTTPException(409,"Reservation balance is inconsistent")
+                b.reserved_quantity-=line.quantity
+            reservation.status="released"
+            db.commit()
+            db.refresh(reservation)
+            return reservation
+        except Exception:
+            db.rollback()
+            raise
+
     def issue(self,db,tenant_id,payload):
         warehouse=self._warehouse(db,tenant_id,payload.warehouse_id); issue=StockIssue(tenant_id=tenant_id,warehouse_id=warehouse.id,issue_type=payload.issue_type,reference_type=payload.reference_type,reference_id=payload.reference_id,notes=payload.notes); db.add(issue); db.flush()
         try:
