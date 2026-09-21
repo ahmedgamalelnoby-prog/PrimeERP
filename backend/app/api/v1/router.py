@@ -10,6 +10,8 @@ from app.modules.platform.tenants.router import router as tenants_router
 from app.modules.legal.router import router as legal_router
 from app.modules.companies.router import router as companies_router
 from app.modules.branches.router import router as branches_router
+from app.modules.customers.router import router as customers_router
+from app.modules.products.router import router as products_router
 
 
 def build_router() -> APIRouter:
@@ -28,5 +30,7 @@ def build_router() -> APIRouter:
     api_router.include_router(tenants_router, prefix="/platform")
     api_router.include_router(companies_router)
     api_router.include_router(branches_router)
+    api_router.include_router(customers_router)
+    api_router.include_router(products_router)
     api_router.include_router(legal_router)
     return api_router
