@@ -48,7 +48,7 @@ jobs:
             'POSTGRES_USER=primeerp'
             "POSTGRES_PASSWORD=$pgPassword"
             "SECRET_KEY=$secretKey"
-            'CORS_ORIGINS=http://localhost:3001'
+            'CORS_ORIGINS=https://erp.example.com'
             'APP_ENV=production'
             'DEBUG=false'
             'ETA_ENABLED=false'
