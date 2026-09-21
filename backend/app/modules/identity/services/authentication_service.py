@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import func
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.context import get_optional_request_context
@@ -13,6 +13,7 @@ from app.modules.identity.schemas.auth import LoginRequest
 from app.modules.identity.services.password_service import password_service
 from app.modules.identity.services.refresh_token_service import RefreshTokenReuseError, refresh_token_service
 from app.modules.identity.services.token_service import token_service
+from app.modules.roles.models import Permission, Role, role_permissions
 from app.modules.saas.models import Subscription, SystemModule, Tenant, TenantModule
 
 
@@ -44,6 +45,7 @@ class AuthenticationService:
             self._ensure_subscription_allows_login(tenant, subscription)
             enabled_modules = self._get_enabled_modules(db, tenant.id)
 
+        permissions = self._get_permission_codes(db, user)
         user.last_login = datetime.now(timezone.utc)
         access_token, expires_in = token_service.create_access_token(user)
         refresh_token = refresh_token_service.issue(db, user.id)
@@ -73,8 +75,27 @@ class AuthenticationService:
                 "tenant_status": tenant.status if tenant else None,
                 "subscription_status": subscription.status if subscription else None,
                 "enabled_modules": enabled_modules,
+                "permissions": permissions,
             },
         }
+
+    def _get_permission_codes(self, db: Session, user) -> list[str]:
+        if user.is_platform_admin or user.is_superuser:
+            return ["*"]
+        if not user.role_id:
+            return []
+        statement = (
+            select(Permission.name)
+            .join(role_permissions, role_permissions.c.permission_id == Permission.id)
+            .join(Role, Role.id == role_permissions.c.role_id)
+            .where(
+                role_permissions.c.role_id == user.role_id,
+                Role.is_active.is_(True),
+                Permission.is_active.is_(True),
+            )
+            .order_by(Permission.name.asc())
+        )
+        return list(db.scalars(statement).all())
 
     def _login_key(self, payload: LoginRequest) -> str:
         tenant = (payload.tenant_slug or "").strip().lower()

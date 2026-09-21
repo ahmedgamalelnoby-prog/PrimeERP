@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ElementType } from "react";
 
 import {
@@ -34,6 +34,8 @@ interface SubMenuItem {
   title: string;
   path: string;
   icon: ElementType;
+  permission?: string;
+  module?: string;
 }
 
 interface MenuItem {
@@ -41,6 +43,8 @@ interface MenuItem {
   icon: ElementType;
   path?: string;
   children?: SubMenuItem[];
+  permission?: string;
+  module?: string;
 }
 
 const menuItems: MenuItem[] = [
@@ -55,55 +59,67 @@ const menuItems: MenuItem[] = [
     title: "المستخدمون",
     icon: Users,
     children: [
-      { title: "قائمة المستخدمين", path: "/users", icon: List },
-      { title: "الأدوار والصلاحيات", path: "/roles", icon: ShieldCheck },
+      { title: "قائمة المستخدمين", path: "/users", icon: List, permission: "identity.users.access" },
+      { title: "الأدوار والصلاحيات", path: "/roles", icon: ShieldCheck, permission: "identity.roles.access" },
     ],
   },
   {
     title: "الشركات",
+    module: "enterprise",
+    permission: "company.access",
     icon: Building2,
     children: [
-      { title: "قائمة الشركات", path: "/companies", icon: List },
-      { title: "الفروع", path: "/branches", icon: GitBranch },
+      { title: "قائمة الشركات", path: "/companies", icon: List, permission: "company.access" },
+      { title: "الفروع", path: "/branches", icon: GitBranch, permission: "company.access" },
     ],
   },
   {
     title: "العملاء",
+    module: "sales",
+    permission: "commerce.access",
     icon: UserRound,
     children: [
-      { title: "قائمة العملاء", path: "/customers", icon: List },
+      { title: "قائمة العملاء", path: "/customers", icon: List, permission: "commerce.access" },
     ],
   },
   {
     title: "المنتجات",
+    module: "inventory",
+    permission: "inventory.access",
     icon: Package,
     children: [
-      { title: "قائمة المنتجات", path: "/products", icon: List },
+      { title: "قائمة المنتجات", path: "/products", icon: List, permission: "inventory.access" },
     ],
   },
   {
     title: "المخزون",
+    module: "inventory",
+    permission: "inventory.access",
     icon: Warehouse,
     children: [
-      { title: "نظرة عامة", path: "/inventory", icon: Warehouse },
-      { title: "المخازن", path: "/inventory/warehouses", icon: Building2 },
+      { title: "نظرة عامة", path: "/inventory", icon: Warehouse, permission: "inventory.access" },
+      { title: "المخازن", path: "/inventory/warehouses", icon: Building2, permission: "inventory.access" },
     ],
   },
   {
     title: "الحسابات",
+    module: "accounting",
+    permission: "accounting.access",
     icon: Calculator,
     children: [
-      { title: "نظرة عامة", path: "/accounting", icon: Calculator },
-      { title: "دليل الحسابات", path: "/accounting/chart-of-accounts", icon: List },
-      { title: "القيود اليومية", path: "/accounting/journal-entries", icon: FileText },
-      { title: "التقارير المالية", path: "/accounting/reports", icon: BarChart3 },
+      { title: "نظرة عامة", path: "/accounting", icon: Calculator, permission: "accounting.access" },
+      { title: "دليل الحسابات", path: "/accounting/chart-of-accounts", icon: List, permission: "accounting.access" },
+      { title: "القيود اليومية", path: "/accounting/journal-entries", icon: FileText, permission: "accounting.access" },
+      { title: "التقارير المالية", path: "/accounting/reports", icon: BarChart3, permission: "accounting.access" },
     ],
   },
   {
     title: "المبيعات",
+    module: "sales",
+    permission: "commerce.access",
     icon: ShoppingCart,
     children: [
-      { title: "الطلبات", path: "/sales/orders", icon: ClipboardList },
+      { title: "الطلبات", path: "/sales/orders", icon: ClipboardList, permission: "commerce.access" },
     ],
   },
 ];
@@ -113,12 +129,31 @@ export default function AppSidebar({
   onClose,
 }: AppSidebarProps) {
   const location = useLocation();
+  const { user } = useAuth();
+  const { hasPermission, hasModule } = usePermissions();
 
   const [expandedMenus, setExpandedMenus] =
     useState<string[]>([]);
 
+  const visibleMenuItems = useMemo(
+    () => menuItems
+      .map((item) => ({
+        ...item,
+        children: item.children?.filter((child) =>
+          (!child.permission || hasPermission(child.permission)) &&
+          (!child.module || hasModule(child.module)),
+        ),
+      }))
+      .filter((item) =>
+        Boolean(item.children?.length) &&
+        (!item.permission || hasPermission(item.permission)) &&
+        (!item.module || hasModule(item.module)),
+      ),
+    [hasPermission, hasModule, user?.id],
+  );
+
   useEffect(() => {
-    const activeParents = menuItems
+    const activeParents = visibleMenuItems
       .filter((item) =>
         item.children?.some((child) =>
           location.pathname.startsWith(child.path),
@@ -134,7 +169,7 @@ export default function AppSidebar({
         ]),
       ),
     );
-  }, [location.pathname]);
+  }, [location.pathname, visibleMenuItems]);
 
   const toggleMenu = (title: string) => {
     setExpandedMenus((current) =>
@@ -203,7 +238,7 @@ export default function AppSidebar({
           </p>
 
           <div className="space-y-1">
-            {menuItems.map((item) => {
+            {visibleMenuItems.map((item) => {
               const Icon = item.icon;
               const expanded =
                 expandedMenus.includes(

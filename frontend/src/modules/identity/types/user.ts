@@ -14,4 +14,5 @@ export interface AuthenticatedUser {
   tenant_status: string | null;
   subscription_status: string | null;
   enabled_modules: string[];
+  permissions: string[];
 }

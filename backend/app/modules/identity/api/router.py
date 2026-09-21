@@ -80,6 +80,7 @@ def get_me(
         "tenant_status": tenant.status if tenant else None,
         "subscription_status": subscription_status,
         "enabled_modules": enabled_modules,
+        "permissions": permissions,
     }
 
 
