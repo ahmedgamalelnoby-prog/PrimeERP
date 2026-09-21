@@ -60,7 +60,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $env:COMPOSE_PROJECT_NAME = 'primeerp-runtime-ci'
-          Get-Content docker-compose.yml | Where-Object { $_ -notmatch '^\\s+container_name:' } | Set-Content -Encoding utf8 ci-base-compose.yml
+          Get-Content docker-compose.yml | Where-Object { $_ -notmatch '^\s+container_name:' } | Set-Content -Encoding utf8 ci-base-compose.yml
           @('services:','  backend:','    ports:','      - "8002:8001"','  frontend:','    ports:','      - "3001:80"') | Set-Content -Encoding utf8 ci-runtime-compose.yml
           docker compose -f ci-base-compose.yml -f ci-runtime-compose.yml config
 
