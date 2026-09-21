@@ -25,6 +25,9 @@ import {
   useLocation,
 } from "react-router-dom";
 
+import { useAuth } from "@/modules/identity/context/AuthContext";
+import { usePermissions } from "@/modules/identity/hooks/usePermissions";
+
 interface AppSidebarProps {
   open: boolean;
   onClose: () => void;

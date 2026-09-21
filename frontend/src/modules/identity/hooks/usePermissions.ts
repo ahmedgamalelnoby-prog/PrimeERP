@@ -26,5 +26,16 @@ export function usePermissions() {
     [user],
   );
 
-  return { hasPermission, hasModule };
+  const hasResourceAccess = useCallback(
+    (resource: string) =>
+      Boolean(
+        user?.is_platform_admin ||
+          user?.is_superuser ||
+          user?.permissions?.includes("*") ||
+          user?.permissions?.some((code) => code === resource || code.startsWith(`${resource}.`)),
+      ),
+    [user],
+  );
+
+  return { hasPermission, hasModule, hasResourceAccess };
 }
