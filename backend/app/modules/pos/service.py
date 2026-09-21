@@ -121,7 +121,11 @@ class POSService:
                     draft=inventory_stock_move_service.create_draft(db,move)
                     inventory_stock_move_service.post(db,tenant_id=c.tenant_id,company_id=cid,move_id=draft.id,user_id=user.id)
         _,settings,_,_,_,_=self._accounting_context(db,cid,user,datetime.now(timezone.utc).date())
-        self._post(db,cid=cid,user=user,entry_number=f"POS-{o.id}",description=f"POS order {o.number}",source_entity="pos_order",source_id=o.id,lines=[{"account_combination_id":settings.ar_account_id,"debit":Decimal(o.total),"credit":0,"description":f"POS AR {o.number}"},{"account_combination_id":settings.sales_account_id,"debit":0,"credit":Decimal(o.subtotal),"description":f"POS sales {o.number}"},{"account_combination_id:settings.output_vat_account_id,"debit":0,"credit":Decimal(o.tax_total),"description":f"POS VAT {o.number}"}])
+        self._post(db, cid=cid, user=user, entry_number=f"POS-{o.id}", description=f"POS order {o.number}", source_entity="pos_order", source_id=o.id, lines=[
+            {"account_combination_id": settings.ar_account_id, "debit": Decimal(o.total), "credit": 0, "description": f"POS AR {o.number}"},
+            {"account_combination_id": settings.sales_account_id, "debit": 0, "credit": Decimal(o.subtotal), "description": f"POS sales {o.number}"},
+            {"account_combination_id": settings.output_vat_account_id, "debit": 0, "credit": Decimal(o.tax_total), "description": f"POS VAT {o.number}"},
+        ])
         o.status="finalized";o.finalized_at=datetime.now(timezone.utc);db.flush();return o
 
     def pay(self,db,p,user):
