@@ -10,6 +10,8 @@ from app.modules.saas.models import (
 )
 from app.modules.platform.plans.models import Plan
 from app.modules.companies.models import Company
+from app.modules.customers.models import Customer
+from app.modules.products.models import Product, ProductCategory, ProductUnit
 from app.modules.branches.models import Branch
 from app.modules.identity.models.user import User
 from app.modules.roles.models import Permission, Role, role_permissions
@@ -25,7 +27,7 @@ from app.modules.accounting.journals.models import AccountingJournal, JournalEnt
 
 __all__ = [
     "Tenant", "SubscriptionPlan", "Subscription", "SystemModule", "PlanModule", "TenantModule",
-    "Plan", "Company", "Branch", "User", "Role", "Permission", "role_permissions",
+    "Plan", "Company", "Branch", "Customer", "Product", "ProductCategory", "ProductUnit", "User", "Role", "Permission", "role_permissions",
     "LegalDocument", "LegalAcceptance", "IntegrationEvent", "IntegrationMapping",
     "Floor", "RestaurantTable", "PreparationStation", "OrderType",
     "AccountingDepartment", "AccountingCostCenter", "NaturalAccount", "AccountCombination", "AccountingSettings",
