@@ -54,3 +54,19 @@ class ChequeEventResponse(BaseModel):
     reference: str | None
     notes: str | None
     created_by: int | None
+
+
+class TreasuryAccountingSettingsPayload(BaseModel):
+    company_id: int = Field(gt=0)
+    journal_id: int = Field(gt=0)
+    default_branch_id: int = Field(gt=0)
+    received_cheques_account_id: int = Field(gt=0)
+    under_collection_account_id: int = Field(gt=0)
+    returned_cheques_account_id: int = Field(gt=0)
+    issued_cheques_account_id: int = Field(gt=0)
+    bank_account_id: int = Field(gt=0)
+    auto_post: bool = True
+
+
+class TreasuryAccountingSettingsResponse(TreasuryAccountingSettingsPayload):
+    model_config = ConfigDict(from_attributes=True)

@@ -33,7 +33,7 @@ class JournalService:
         journal = journal_repository.get_journal(db, journal_id, tenant_id, company_id)
         if journal is None or not journal.is_active:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Accounting journal not found")
-        if not journal.allow_manual_entries and source_module != "commerce":
+        if not journal.allow_manual_entries and source_module is None:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Manual entries are disabled for this journal")
         if len(lines) < 2:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Journal entry requires at least two lines")
