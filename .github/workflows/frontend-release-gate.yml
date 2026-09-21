@@ -1,0 +1,95 @@
+name: PrimeERP Frontend Release Gate
+
+on:
+  push:
+    branches:
+      - main
+      - 'feature/**'
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-release-gate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: primeerp-frontend-release-gate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend-release-gate:
+    name: Frontend install, typecheck, lint and production build
+    runs-on: [self-hosted, Windows, X64, PrimeERP]
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Normalize Node PATH
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $nodePath = 'C:\Program Files\nodejs'
+          if (Test-Path $nodePath) {
+            $nodePath | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          }
+
+      - name: Verify Node and npm
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          node --version
+          npm --version
+
+      - name: Clean frontend install
+        working-directory: frontend
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          npm ci
+
+      - name: Typecheck
+        working-directory: frontend
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          npm run typecheck
+
+      - name: Lint
+        working-directory: frontend
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          npm run lint
+
+      - name: Production build
+        working-directory: frontend
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          npm run build
+          if (-not (Test-Path dist/index.html)) {
+            throw 'Frontend production build did not produce dist/index.html'
+          }
+
+      - name: Verify build output
+        working-directory: frontend
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = Get-ChildItem -Path dist -Recurse -File
+          if ($files.Count -lt 1) {
+            throw 'Frontend dist directory is empty.'
+          }
+          Write-Host ("Frontend build files: " + $files.Count)
+          Get-FileHash dist/index.html -Algorithm SHA256
+
+      - name: Upload frontend build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: primeerp-frontend-dist-${{ github.sha }}
+          path: frontend/dist
+          if-no-files-found: error
+          retention-days: 7
