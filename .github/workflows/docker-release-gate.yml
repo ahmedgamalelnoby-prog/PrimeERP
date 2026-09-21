@@ -1,0 +1,134 @@
+name: PrimeERP Docker Release Gate
+
+on:
+  push:
+    branches:
+      - main
+      - 'feature/**'
+  pull_request:
+    paths:
+      - 'docker-compose.yml'
+      - 'backend/Dockerfile'
+      - 'backend/requirements.txt'
+      - 'frontend/Dockerfile'
+      - 'frontend/nginx.conf'
+      - '.dockerignore'
+      - '.github/workflows/docker-release-gate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: primeerp-docker-release-gate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docker-release-gate:
+    name: Compose validation and production image builds
+    runs-on: [self-hosted, Windows, X64, PrimeERP]
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Verify Docker
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          docker version
+          docker compose version
+          docker info
+
+      - name: Prepare isolated CI environment
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pgPassword = [guid]::NewGuid().ToString('N')
+          $secretKey = ([guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToString('N'))
+          @(
+            'POSTGRES_DB=primeerp_docker_ci'
+            'POSTGRES_USER=primeerp'
+            "POSTGRES_PASSWORD=$pgPassword"
+            "SECRET_KEY=$secretKey"
+            'CORS_ORIGINS=https://erp.example.com'
+            'APP_ENV=production'
+            'DEBUG=false'
+            'ETA_ENABLED=false'
+            'WHATSAPP_ENABLED=false'
+          ) | Set-Content -Encoding utf8 .env
+
+      - name: Validate Compose configuration
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          docker compose config
+
+      - name: Build backend production image
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          docker compose build --pull backend
+
+      - name: Build migration image
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          docker compose build --pull migrate
+
+      - name: Build backend test image
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          docker compose build --pull backend-test
+
+      - name: Build report worker image
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          docker compose build --pull report-worker
+
+      - name: Build frontend production image
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          docker compose build --pull frontend
+
+      - name: Verify built images
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $images = @(
+            'primeerp-backend',
+            'primeerp-migrate',
+            'primeerp-backend-test',
+            'primeerp-report-worker',
+            'primeerp-frontend'
+          )
+          foreach ($image in $images) {
+            $exists = docker image inspect $image 2>$null
+            if ($LASTEXITCODE -ne 0 -or -not $exists) {
+              throw "Expected image was not built: $image"
+            }
+            Write-Host "Docker image verified: $image"
+          }
+
+      - name: Compose service graph validation
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $services = docker compose config --services
+          $expected = @('db','migrate','backend','backend-test','report-worker','frontend')
+          foreach ($service in $expected) {
+            if ($services -notcontains $service) {
+              throw "Missing Compose service: $service"
+            }
+          }
+          Write-Host 'Compose service graph: PASS'
+
+      - name: Cleanup
+        if: always()
+        shell: powershell
+        run: |
+          docker compose down -v --remove-orphans 2>$null
+          Remove-Item .env -Force -ErrorAction SilentlyContinue
