@@ -6,14 +6,12 @@ import {
   Building2,
   Calculator,
   ChevronDown,
-  PlusCircle,
   ClipboardList,
   FileText,
   GitBranch,
   LayoutDashboard,
   List,
   Package,
-  Settings,
   ShieldCheck,
   ShoppingCart,
   UserRound,
@@ -50,148 +48,62 @@ const menuItems: MenuItem[] = [
     title: "لوحة التحكم",
     icon: LayoutDashboard,
     children: [
-      {
-        title: "الرئيسية",
-        path: "/dashboard",
-        icon: LayoutDashboard,
-      },
-      {
-        title: "التقارير المختصرة",
-        path: "/dashboard/reports",
-        icon: BarChart3,
-      },
+      { title: "الرئيسية", path: "/dashboard", icon: LayoutDashboard },
     ],
   },
   {
     title: "المستخدمون",
     icon: Users,
     children: [
-      {
-        title: "قائمة المستخدمين",
-        path: "/users",
-        icon: List,
-      },
-      {
-        title: "الأدوار والصلاحيات",
-        path: "/roles",
-        icon: ShieldCheck,
-      },
+      { title: "قائمة المستخدمين", path: "/users", icon: List },
+      { title: "الأدوار والصلاحيات", path: "/roles", icon: ShieldCheck },
     ],
   },
   {
     title: "الشركات",
     icon: Building2,
     children: [
-      {
-        title: "قائمة الشركات",
-        path: "/companies",
-        icon: List,
-      },
-      {
-        title: "الفروع",
-        path: "/branches",
-        icon: GitBranch,
-      },
-      {
-        title: "إعدادات الشركات",
-        path: "/companies/settings",
-        icon: Settings,
-      },
+      { title: "قائمة الشركات", path: "/companies", icon: List },
+      { title: "الفروع", path: "/branches", icon: GitBranch },
     ],
   },
   {
     title: "العملاء",
     icon: UserRound,
     children: [
-      {
-        title: "قائمة العملاء",
-        path: "/customers",
-        icon: List,
-      },
-      {
-        title: "تقارير العملاء",
-        path: "/customers/reports",
-        icon: FileText,
-      },
+      { title: "قائمة العملاء", path: "/customers", icon: List },
     ],
   },
   {
     title: "المنتجات",
     icon: Package,
     children: [
-      {
-        title: "قائمة المنتجات",
-        path: "/products",
-        icon: List,
-      },
-      {
-        title: "وحدات القياس",
-        path: "/products/units",
-        icon: Settings,
-      },
+      { title: "قائمة المنتجات", path: "/products", icon: List },
     ],
   },
   {
     title: "المخزون",
     icon: Warehouse,
     children: [
-      {
-        title: "نظرة عامة",
-        path: "/inventory",
-        icon: Warehouse,
-      },
-      {
-        title: "المخازن",
-        path: "/inventory/warehouses",
-        icon: Building2,
-      },
-      {
-        title: "تقارير المخزون",
-        path: "/inventory/reports",
-        icon: BarChart3,
-      },
+      { title: "نظرة عامة", path: "/inventory", icon: Warehouse },
+      { title: "المخازن", path: "/inventory/warehouses", icon: Building2 },
     ],
   },
   {
     title: "الحسابات",
     icon: Calculator,
     children: [
-      {
-        title: "نظرة عامة",
-        path: "/accounting",
-        icon: Calculator,
-      },
-      {
-        title: "دليل الحسابات",
-        path: "/accounting/chart-of-accounts",
-        icon: List,
-      },
-      {
-        title: "القيود اليومية",
-        path: "/accounting/journal-entries",
-        icon: FileText,
-      },
-      {
-        title: "التقارير المالية",
-        path: "/accounting/reports",
-        icon: BarChart3,
-      },
+      { title: "نظرة عامة", path: "/accounting", icon: Calculator },
+      { title: "دليل الحسابات", path: "/accounting/chart-of-accounts", icon: List },
+      { title: "القيود اليومية", path: "/accounting/journal-entries", icon: FileText },
+      { title: "التقارير المالية", path: "/accounting/reports", icon: BarChart3 },
     ],
   },
   {
     title: "المبيعات",
     icon: ShoppingCart,
     children: [
-      {
-        title: "الطلبات",
-        path: "/sales/orders",
-        icon: ClipboardList,
-      },
-      {
-        title: "تقارير المبيعات",
-        path: "/sales/reports",
-        icon: BarChart3,
-      },
+      { title: "الطلبات", path: "/sales/orders", icon: ClipboardList },
     ],
   },
 ];
