@@ -108,6 +108,7 @@ class MaintenanceCreate(BaseModel):
     actual_cost:Decimal=Field(default=Decimal("0"),ge=0)
     charge_to_tenant:bool=False
     status:str="open"
+    completed_date:date|None=None
 class InsuranceCreate(BaseModel):
     contract_id:int
     policy_number:str

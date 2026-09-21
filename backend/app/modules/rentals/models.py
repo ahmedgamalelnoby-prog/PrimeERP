@@ -101,6 +101,7 @@ class RentalCharge(Base):
     vat_amount=Column(Numeric(18,4),nullable=False,default=0)
     wht_amount=Column(Numeric(18,4),nullable=False,default=0)
     total_amount=Column(Numeric(18,4),nullable=False)
+    due_date=Column(Date,nullable=True)
     status=Column(String(30),nullable=False,default="draft")
     __table_args__=(CheckConstraint("base_amount >= 0",name="ck_rental_charge_base"),CheckConstraint("total_amount >= 0",name="ck_rental_charge_total"),UniqueConstraint("contract_id","period_start","period_end",name="uq_rental_charge_contract_period"),)
 
