@@ -24,15 +24,11 @@ class IntegrationProcessingError(RuntimeError):
 
 
 def _retry_delay(attempt: int) -> int:
-    return min(MAX_RETRY_SECONDS, BASE_RETRY_SECONDS ** min(max(attempt, 1), 8))
+    return min(MAX_RETRY_SECONDS, BASE_RETRY_SECONDS ** min(max(attempt, 1), 9))
 
 
 def claim_next_event(db: Session, *, company_id: int | None = None) -> IntegrationEvent | None:
-    """Atomically claim one due event for a worker transaction.
-
-    PostgreSQL SKIP LOCKED allows multiple workers to process different events
-    without taking a global queue lock.
-    """
+    """Atomically claim one due event for a worker transaction."""
     now = datetime.now(timezone.utc)
     stmt = (
         select(IntegrationEvent)
@@ -73,7 +69,7 @@ def process_one(
         event.processed_at = datetime.now(timezone.utc)
         event.last_error = None
         db.commit()
-    except Exception as exc:  # handler failures must never kill the worker
+    except Exception as exc:
         db.rollback()
         event = db.scalar(select(IntegrationEvent).where(IntegrationEvent.id == event.id).with_for_update())
         if event is None:
