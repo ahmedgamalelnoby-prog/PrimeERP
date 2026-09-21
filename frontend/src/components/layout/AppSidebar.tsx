@@ -62,8 +62,8 @@ const menuItems: MenuItem[] = [
     title: "المستخدمون",
     icon: Users,
     children: [
-      { title: "قائمة المستخدمين", path: "/users", icon: List, permission: "identity.users.access" },
-      { title: "الأدوار والصلاحيات", path: "/roles", icon: ShieldCheck, permission: "identity.roles.access" },
+      { title: "قائمة المستخدمين", path: "/users", icon: List, permission: "users.access" },
+      { title: "الأدوار والصلاحيات", path: "/roles", icon: ShieldCheck, permission: "users.access" },
     ],
   },
   {
