@@ -29,3 +29,7 @@ def transfer(payload:TransferCreate,status_code:int=201,db:Session=Depends(get_d
 def reservation(payload:ReservationCreate,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)): return inventory_service.reserve(db,_tenant(current_user),payload)
 @router.post("/issues",status_code=201)
 def issue(payload:IssueCreate,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)): return inventory_service.issue(db,_tenant(current_user),payload)
+
+@router.post("/reservations/{reservation_id}/release")
+def release_reservation(reservation_id:int,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):
+    return inventory_service.release_reservation(db,_tenant(current_user),reservation_id)
