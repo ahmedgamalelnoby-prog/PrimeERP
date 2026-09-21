@@ -61,7 +61,8 @@ class WMSService:
         if not op: raise ValueError("WMS operation not found")
         self._scope(db, tenant_id, op.company_id, op.warehouse_id)
         allowed = {"draft":{"approved","cancelled"}, "approved":{"in_progress","cancelled"}, "in_progress":{"completed","cancelled"}, "completed":set(), "cancelled":set()}
-        previous_status = op.status\n        if target not in allowed.get(op.status, set()):
+        previous_status = op.status
+        if target not in allowed.get(op.status, set()):
             raise ValueError(f"Invalid WMS transition {op.status} -> {target}")
         if target == "in_progress":
             self._validate_tracking(db, op)
