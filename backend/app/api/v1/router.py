@@ -46,6 +46,7 @@ from app.modules.saas.entitlements import require_module
 from app.modules.jurisdiction.router import router as jurisdiction_router
 from app.modules.reports.router import router as reports_router
 from app.modules.dashboard.router import router as dashboard_router
+from app.modules.pos.router import router as pos_router
 
 
 def build_router() -> APIRouter:
@@ -82,6 +83,7 @@ def build_router() -> APIRouter:
     api_router.include_router(egyptian_einvoice_router, dependencies=[Depends(require_module("einvoice"))])
     api_router.include_router(reports_router)
     api_router.include_router(dashboard_router)
+    api_router.include_router(pos_router, dependencies=[Depends(require_module("sales"))])
     api_router.include_router(audit_router)
     api_router.include_router(integrations_public_router)
     api_router.include_router(plans_router)
