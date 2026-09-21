@@ -98,19 +98,23 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $images = @(
-            'primeerp-backend',
-            'primeerp-migrate',
-            'primeerp-backend-test',
-            'primeerp-report-worker',
-            'primeerp-frontend'
-          )
-          foreach ($image in $images) {
-            $exists = docker image inspect $image 2>$null
-            if ($LASTEXITCODE -ne 0 -or -not $exists) {
-              throw "Expected image was not built: $image"
+          $configuredImages = @(docker compose config --images)
+          $expectedServices = @('backend','migrate','backend-test','report-worker','frontend')
+          foreach ($service in $expectedServices) {
+            $serviceConfig = docker compose config --format json | ConvertFrom-Json
+            $image = $serviceConfig.services.$service.image
+            if ([string]::IsNullOrWhiteSpace($image)) {
+              $project = (docker compose config --format json | ConvertFrom-Json).name
+              $image = "$project-$service"
             }
-            Write-Host "Docker image verified: $image"
+            if ($configuredImages -notcontains $image) {
+              throw "Expected Compose image is not configured: $image (service: $service)"
+            }
+            docker image inspect $image | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+              throw "Configured image was not built: $image (service: $service)"
+            }
+            Write-Host "Docker image verified: $service -> $image"
           }
 
       - name: Compose service graph validation
