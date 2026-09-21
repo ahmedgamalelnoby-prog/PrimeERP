@@ -35,6 +35,8 @@ class StatusChange(BaseModel):
 class ReturnCreate(BaseModel):
  reason:str|None=None
 class SettlementCreate(BaseModel):
+ company_id:int
+ branch_id:int
  carrier_id:int
  settlement_date:date
  orders_amount:Decimal=Field(default=0,ge=0)
