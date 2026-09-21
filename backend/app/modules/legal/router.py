@@ -162,7 +162,10 @@ def _require_platform_admin(current_user: User) -> User:
 
 @router.get("")
 def list_legal_documents(db: Session = Depends(get_db)):
-    return {"success":True,"data":[_serialize(_get_or_create(db,"terms")),_serialize(_get_or_create(db,"privacy"))]}
+    """Return only documents that are currently published to public consumers."""
+    documents = [_get_or_create(db, "terms"), _get_or_create(db, "privacy")]
+    published = [document for document in documents if document.is_published]
+    return {"success": True, "data": [_serialize(document) for document in published]}
 
 @router.get("/acceptance/status")
 def legal_acceptance_status(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
