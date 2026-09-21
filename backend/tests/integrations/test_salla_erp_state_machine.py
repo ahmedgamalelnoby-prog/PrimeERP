@@ -48,3 +48,16 @@ def test_processed_salla_order_with_missing_invoice_fails_loudly():
 
     with pytest.raises(service.SallaERPExecutionError, match="missing ERP invoice"):
         service.execute_salla_order(db, order, user_id=7)
+
+
+from app.modules.integrations.salla_shipping_service import _advance_status
+
+
+def test_salla_delivery_event_cannot_reopen_delivered_shipment():
+    assert _advance_status("delivered", "returned") == "delivered"
+    assert _advance_status("delivered", "cancelled") == "delivered"
+
+
+def test_salla_return_event_respects_erp_transition_contract():
+    assert _advance_status("out_for_delivery", "returned") == "returned"
+    assert _advance_status("pending", "returned") == "pending"
