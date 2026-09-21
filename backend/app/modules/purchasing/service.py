@@ -77,6 +77,6 @@ class PurchasingService:
         if inv.tax:
             if not p.tax_account_id: raise HTTPException(422,"Tax account is required")
             lines[0].debit=debit; lines.insert(1,JournalLineCreate(account_combination_id=p.tax_account_id,debit=inv.tax,description=f"Input tax {inv.invoice_number}"))
-        je=journal_service.create_entry(db,JournalEntryCreate(company_id=inv.company_id,branch_id=inv.branch_id,journal_id=p.journal_id,fiscal_year_id=p.fiscal_year_id,period_id=p.period_id,entry_date=inv.invoice_date,description=f"Purchase invoice {inv.invoice_number}",source_module="purchasing",source_entity="purchase_invoice",source_id=inv.id,lines=lines),u)
+        je=journal_service.create_entry(db,JournalEntryCreate(company_id=inv.company_id,branch_id=inv.branch_id,journal_id=p.journal_id,fiscal_year_id=p.fiscal_year_id,period_id=p.period_id,entry_date=inv.invoice_date,description=f"Purchase invoice {inv.invoice_number}",source_module="purchasing",source_entity="purchase_invoice",source_id=inv.id,lines=lines),u,auto_post=True)
         inv.journal_entry_id=je.id; inv.status="posted"; db.commit(); db.refresh(inv); return inv
 purchasing_service=PurchasingService()
