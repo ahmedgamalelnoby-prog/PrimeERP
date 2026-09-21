@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.sql import func
 
 from app.database.base import Base
@@ -33,7 +33,10 @@ class IntegrationEvent(Base):
     processed_at = Column(DateTime(timezone=True), nullable=True)
     last_error = Column(Text, nullable=True)
     received_at = Column(DateTime, nullable=False, server_default=func.now())
-    __table_args__ = (UniqueConstraint("connection_id", "external_event_id", name="uq_integration_event_external_id"),)
+    __table_args__ = (
+        UniqueConstraint("connection_id", "external_event_id", name="uq_integration_event_external_id"),
+        CheckConstraint("status IN ('received','queued','processing','processed','dead_letter')", name="ck_integration_events_status"),
+    )
 
 
 class IntegrationMapping(Base):
