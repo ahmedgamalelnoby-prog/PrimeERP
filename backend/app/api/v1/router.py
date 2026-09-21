@@ -18,7 +18,7 @@ from app.modules.inventory.costing.revaluation_router import router as inventory
 from app.modules.inventory.completion_router import router as inventory_completion_router
 from app.modules.commerce.backorder_router import router as commerce_backorder_router
 from app.modules.legal.router import router as legal_router
-from app.modules.platform.api.router import router as platform_modules_router
+from app.modules.platform.api.router import router as platform_modules_router, dashboard_router
 from app.modules.platform.entitlements.router import router as entitlements_router
 from app.modules.platform.features.router import router as features_router
 from app.modules.platform.plans.router import router as plans_router
@@ -112,6 +112,7 @@ def build_router() -> APIRouter:
     api_router.include_router(finance_completion_router)
     api_router.include_router(domain_completion_router)
     api_router.include_router(platform_modules_router)
+    api_router.include_router(dashboard_router)
     api_router.include_router(saas_router, prefix="/saas", tags=["saas"])
     api_router.include_router(transactions_router, prefix="/transactions", tags=["transactions"])
     api_router.include_router(fiscal_years_router, prefix="/accounting/fiscal-years", tags=["accounting-fiscal-years"], dependencies=[Depends(require_module("accounting"))])
