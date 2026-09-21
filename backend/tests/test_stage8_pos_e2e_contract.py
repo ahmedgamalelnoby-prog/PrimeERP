@@ -36,11 +36,11 @@ def test_stage8_migration_remains_downstream_of_stage7_financial_hardening():
 
 
 def test_stage8_frontend_pos_is_registered_and_operational():
-    root = ROOT.parent / "../frontend/src/modules/pos"
+    root = ROOT.parent.parent / "frontend/src/modules/pos"
     page = (root / "pages/PosPage.tsx").read_text()
     service = (root / "services/pos.service.ts").read_text()
-    router = (ROOT.parent / "../frontend/src/app/router/AppRouter.tsx").read_text()
-    sidebar = (ROOT.parent / "../frontend/src/components/layout/AppSidebar.tsx").read_text()
+    router = (ROOT.parent.parent / "frontend/src/app/router/AppRouter.tsx").read_text()
+    sidebar = (ROOT.parent.parent / "frontend/src/components/layout/AppSidebar.tsx").read_text()
 
     assert "تشغيل POS" in page
     assert '"/pos/outlets"' in service
