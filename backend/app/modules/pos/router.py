@@ -1,4 +1,5 @@
 from fastapi import APIRouter,Depends,HTTPException
+from sqlalchemy import select
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.identity.dependencies import get_current_user
