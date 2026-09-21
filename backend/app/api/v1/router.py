@@ -16,6 +16,7 @@ from app.modules.products.router import router as products_router
 from app.modules.inventory.router import router as inventory_router
 from app.modules.sales.sales_orders.router import router as sales_orders_router
 from app.modules.sales.invoices.router import router as sales_invoices_router
+from app.modules.purchasing.router import router as purchasing_router
 def build_router()->APIRouter:
     api_router=APIRouter()
     api_router.include_router(identity_router,prefix="/identity",tags=["identity"])
@@ -34,5 +35,6 @@ def build_router()->APIRouter:
     api_router.include_router(inventory_router)
     api_router.include_router(sales_orders_router,prefix="/sales",tags=["sales-orders"])
     api_router.include_router(sales_invoices_router,prefix="/sales",tags=["sales-invoices"])
+    api_router.include_router(purchasing_router,prefix="/purchasing",tags=["purchasing"])
     api_router.include_router(legal_router)
     return api_router
