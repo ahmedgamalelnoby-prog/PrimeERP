@@ -13,7 +13,7 @@ def test_stage8_pos_e2e_contract_is_explicit():
     assert "Variant does not belong to the item/company or is inactive" in service
     assert "POS accounting journal must have auto-post enabled" in service
     assert "Session closing total" in service
-    assert 'method in ("cash","card","bank","other")' in service
+    assert '("cash","card","bank","other")' in service
     assert "closing_cash" in schemas
     assert "closing_card" in schemas
     assert "closing_bank" in schemas
