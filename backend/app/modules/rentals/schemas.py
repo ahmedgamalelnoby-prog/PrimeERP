@@ -67,6 +67,17 @@ class ReceiptCreate(BaseModel):
     method:str="cash"
     reference:str|None=None
 
+class ReceiptRead(BaseModel):
+    id:int
+    charge_id:int
+    payment_date:date
+    amount:Decimal
+    method:str
+    reference:str|None=None
+    status:str
+    journal_entry_id:int|None=None
+    model_config={"from_attributes":True}
+
 class RenewalCreate(BaseModel):
     number:str
     start_date:date
