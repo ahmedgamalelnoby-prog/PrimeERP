@@ -44,9 +44,13 @@ class RentalAccountingService:
         if fy is None: raise HTTPException(409,"Fiscal year for rental posting was not found")
         entry=journal_service.create_draft(db,tenant_id=charge.tenant_id,company_id=charge.company_id,branch_id=settings.default_branch_id,journal_id=journal.id,fiscal_year_id=fy.id,period_id=period.id,entry_number=f"RENT-{charge.id}",entry_date=charge.charge_date,description=f"Rental charge {charge.id}",lines=lines,user_id=user_id,source_module="rentals",source_entity="rental_charge",source_id=charge.id,commit=False)
         journal_service.submit(db,tenant_id=charge.tenant_id,entry_id=entry.id,user_id=user_id,commit=False)
-        if journal.requires_approval: journal_service.approve(db,tenant_id=charge.tenant_id,entry_id=entry.id,user_id=user_id,commit=False)
-        if settings.auto_post and journal.auto_post:
-            journal_service.post(db,tenant_id=charge.tenant_id,entry_id=entry.id,user_id=user_id,commit=False); charge.status="posted"
-        else: charge.status="approved"
+        if journal.requires_approval:
+            # Approval must be performed by a second authorized user.
+            charge.status="pending"
+        elif settings.auto_post and journal.auto_post:
+            journal_service.post(db,tenant_id=charge.tenant_id,entry_id=entry.id,user_id=user_id,commit=False)
+            charge.status="posted"
+        else:
+            charge.status="approved"
         db.flush(); return entry
 rental_accounting_service=RentalAccountingService()
