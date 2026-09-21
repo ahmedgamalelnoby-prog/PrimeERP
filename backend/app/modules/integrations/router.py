@@ -20,6 +20,7 @@ from .salla_service import normalize_salla_event
 from .salla_sync import full_sync
 from .salla_erp_finalize import finalize_salla_order
 from .salla_shipping_service import sync_salla_shipment
+from .processor import process_one
 
 MAX_WEBHOOK_BODY_BYTES = 1_048_576
 router = APIRouter(prefix="/integrations", tags=["Integrations"], dependencies=[Depends(require_permission("integrations.access")), Depends(require_module("integrations"))])
@@ -58,30 +59,33 @@ def _event_identity(payload: dict, event_header: str | None, event_id_header: st
         external_event_id = f"sha256:{event_digest}"
     return str(external_event_id), str(event_type)
 
-def _process_event(db: Session, event: IntegrationEvent) -> dict:
-    try:
-        result = normalize_salla_event(db, event)
-        event_key = event.event_type.lower().replace("_", ".")
-        if event_key.startswith("order"):
-            payload = json.loads(event.payload) if isinstance(event.payload, str) else event.payload
-            data = payload.get("data", payload) if isinstance(payload, dict) else {}
-            order_id = data.get("id") or data.get("order_id")
-            if order_id is not None:
-                order = db.scalar(select(SallaOrder).where(SallaOrder.connection_id == event.connection_id, SallaOrder.external_id == str(order_id)))
-                if order: result["erp"] = finalize_salla_order(db, order)
-        elif event_key.startswith("shipment") or "shipment." in event_key:
-            payload = json.loads(event.payload) if isinstance(event.payload, str) else event.payload
-            data = payload.get("data", payload) if isinstance(payload, dict) else {}
-            shipment_id = data.get("id") or data.get("shipment_id")
-            if shipment_id is not None:
-                shipment = db.scalar(select(SallaShipment).where(SallaShipment.connection_id == event.connection_id, SallaShipment.external_id == str(shipment_id)))
-                if shipment: result["erp_shipping"] = sync_salla_shipment(db, shipment)
-        event.status = "processed"; event.processed_at = datetime.now(timezone.utc); event.last_error = None; db.commit(); return result
-    except Exception as exc:
-        db.rollback(); failed = db.scalar(select(IntegrationEvent).where(IntegrationEvent.id == event.id))
-        if failed is not None:
-            failed.status = "failed"; failed.attempts = (failed.attempts or 0) + 1; failed.last_error = str(exc)[:4000]; failed.next_attempt_at = datetime.now(timezone.utc) + timedelta(seconds=min(300, 2 ** min(failed.attempts, 8))); db.commit()
-        return {"error": str(exc)}
+def _handle_salla_event(db: Session, event: IntegrationEvent) -> dict:
+    result = normalize_salla_event(db, event)
+    event_key = event.event_type.lower().replace("_", ".")
+    if event_key.startswith("order"):
+        payload = json.loads(event.payload) if isinstance(event.payload, str) else event.payload
+        data = payload.get("data", payload) if isinstance(payload, dict) else {}
+        order_id = data.get("id") or data.get("order_id")
+        if order_id is not None:
+            order = db.scalar(select(SallaOrder).where(SallaOrder.connection_id == event.connection_id, SallaOrder.external_id == str(order_id)))
+            if order:
+                result["erp"] = finalize_salla_order(db, order)
+    elif event_key.startswith("shipment") or "shipment." in event_key:
+        payload = json.loads(event.payload) if isinstance(event.payload, str) else event.payload
+        data = payload.get("data", payload) if isinstance(payload, dict) else {}
+        shipment_id = data.get("id") or data.get("shipment_id")
+        if shipment_id is not None:
+            shipment = db.scalar(select(SallaShipment).where(SallaShipment.connection_id == event.connection_id, SallaShipment.external_id == str(shipment_id)))
+            if shipment:
+                result["erp_shipping"] = sync_salla_shipment(db, shipment)
+    return result
+
+
+def _process_event(db: Session, event: IntegrationEvent) -> IntegrationEvent:
+    result = process_one(db, lambda claimed_event: _handle_salla_event(db, claimed_event), company_id=event.company_id, event_id=event.id)
+    if result is None:
+        raise HTTPException(409, "Integration event is not eligible for processing")
+    return result
 
 def _rows(db: Session, model, company_id: int, limit: int): return db.scalars(select(model).where(model.company_id == company_id).order_by(model.id.desc()).limit(limit)).all()
 def _json_rows(rows): return [{c.name: getattr(row, c.name) for c in row.__table__.columns} for row in rows]
@@ -139,7 +143,7 @@ async def receive_salla_webhook_public(connection_id: int, request: Request, x_s
     try: db.commit(); db.refresh(event)
     except IntegrityError: db.rollback(); return {"accepted": True, "duplicate": True}
     result = _process_event(db, event)
-    return {"accepted": True, "duplicate": False, "event_id": event.id, "status": "processed" if "error" not in result else "failed", "normalized": result}
+    return {"accepted": True, "duplicate": False, "event_id": result.id, "status": result.status, "attempts": result.attempts}
 
 @router.post("/salla/{connection_id}/webhook", status_code=202, dependencies=[Depends(require_permission("integrations.post"))])
 def receive_salla_webhook(connection_id: int, payload: WebhookEventCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -151,7 +155,7 @@ def receive_salla_webhook(connection_id: int, payload: WebhookEventCreate, curre
     try: db.commit(); db.refresh(event)
     except IntegrityError: db.rollback(); return {"accepted": True, "duplicate": True}
     result = _process_event(db, event)
-    return {"accepted": True, "duplicate": False, "event_id": event.id, "status": "processed" if "error" not in result else "failed", "normalized": result}
+    return {"accepted": True, "duplicate": False, "event_id": result.id, "status": result.status, "attempts": result.attempts}
 
 @router.get("/salla/orders", status_code=200)
 def list_salla_orders(company_id: int = Query(..., gt=0), limit: int = Query(100, ge=1, le=500), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -183,7 +187,15 @@ def retry_event(event_id: int, company_id: int = Query(..., gt=0), current_user:
     event = db.scalar(select(IntegrationEvent).where(IntegrationEvent.id == event_id, IntegrationEvent.company_id == company_id).with_for_update())
     if event is None: raise HTTPException(404, "Integration event not found")
     if event.status == "processed": raise HTTPException(409, "Processed events cannot be retried")
-    if event.attempts >= 10: event.status = "dead_letter"; db.commit(); raise HTTPException(409, "Maximum retry attempts reached; event moved to dead letter")
-    event.attempts += 1; event.status = "queued"; event.next_attempt_at = datetime.now(timezone.utc) + timedelta(seconds=min(300, 2 ** min(event.attempts, 8))); event.last_error = None; db.commit()
+    if event.status == "dead_letter": raise HTTPException(409, "Dead-letter events require explicit administrative replay")
+    if event.attempts >= 10:
+        event.status = "dead_letter"
+        event.next_attempt_at = None
+        db.commit()
+        raise HTTPException(409, "Maximum retry attempts reached; event moved to dead letter")
+    event.status = "queued"
+    event.next_attempt_at = datetime.now(timezone.utc)
+    event.last_error = None
+    db.commit()
     result = _process_event(db, event)
-    return {"accepted": True, "event_id": event.id, "status": "processed" if "error" not in result else "failed", "attempts": event.attempts, "normalized": result}
+    return {"accepted": True, "event_id": result.id, "status": result.status, "attempts": result.attempts}
