@@ -1,0 +1,42 @@
+name: PrimeERP Self-Hosted Runner Canary
+
+on:
+  push:
+    branches:
+      - diagnostic/self-hosted-runner-canary
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    name: Self-hosted runner canary
+    runs-on: [self-hosted, Windows, X64, PrimeERP]
+    timeout-minutes: 10
+    steps:
+      - name: Runner identity
+        shell: pwsh
+        run: |
+          Write-Host "Runner: $env:RUNNER_NAME"
+          Write-Host "OS: $env:RUNNER_OS"
+          Write-Host "Arch: $env:RUNNER_ARCH"
+          whoami
+          Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, BuildNumber
+
+      - name: Toolchain
+        shell: pwsh
+        run: |
+          python --version
+          node --version
+          npm --version
+          git --version
+          docker version
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Docker smoke test
+        shell: pwsh
+        run: |
+          docker info
