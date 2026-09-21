@@ -30,7 +30,7 @@ class InvoiceService:
   if inv.tax_total:
    if not p.tax_account_id:raise HTTPException(422,"Tax account is required when invoice has tax")
    lines.append(JournalLineCreate(account_combination_id=p.tax_account_id,credit=inv.tax_total))
-  je=journal_service.create_entry(db,JournalEntryCreate(company_id=inv.company_id,branch_id=inv.branch_id,journal_id=p.journal_id,fiscal_year_id=p.fiscal_year_id,period_id=p.period_id,entry_date=inv.invoice_date,posting_date=inv.invoice_date,description=f"Sales invoice {inv.invoice_number}",currency_code=inv.currency_code,lines=lines,source_module="sales",source_entity="sales_invoice",source_id=inv.id),u)
+  je=journal_service.create_entry(db,JournalEntryCreate(company_id=inv.company_id,branch_id=inv.branch_id,journal_id=p.journal_id,fiscal_year_id=p.fiscal_year_id,period_id=p.period_id,entry_date=inv.invoice_date,posting_date=inv.invoice_date,description=f"Sales invoice {inv.invoice_number}",currency_code=inv.currency_code,lines=lines,source_module="sales",source_entity="sales_invoice",source_id=inv.id),u,auto_post=True)
   inv.journal_entry_id=je.id;inv.status="posted";db.commit();db.refresh(inv);return inv
  def get(self,db,u,i):
   t=self.tenant(u);o=db.scalar(select(SalesInvoice).where(SalesInvoice.id==i,SalesInvoice.tenant_id==t))
