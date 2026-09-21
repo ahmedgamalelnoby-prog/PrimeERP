@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "react-hot-toast";
 import { getDashboardSummary, type DashboardSummary } from "../services/dashboard.service";
 import { buildBusinessUnits } from "../data/dashboard.data";
-import { StatisticCard } from "../components/dashboard/StatisticCard";
+import StatisticCard from "../components/dashboard/StatisticCard";
 import BusinessUnitsSummary from "../components/dashboard/BusinessUnitsSummary";
 import QuickActions from "../components/dashboard/QuickActions";
 
