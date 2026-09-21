@@ -19,6 +19,7 @@ import ProductsPage from "@/modules/products/pages/ProductsPage";
 import InventoryPage from "@/modules/inventory/pages/InventoryPage";
 import CompaniesPage from "@/modules/companies/pages/CompaniesPage";
 import BranchesPage from "@/modules/branches/pages/BranchesPage";
+import SalesOrdersPage from "@/modules/sales/pages/SalesOrdersPage";
 
 function ComingSoonPage({ title }: { title: string }) {
   return (
@@ -90,8 +91,8 @@ export default function AppRouter() {
           <Route path="/accounting/journal-entries" element={<ComingSoonPage title="القيود اليومية" />} />
           <Route path="/accounting/reports" element={<ComingSoonPage title="التقارير المالية" />} />
 
-          <Route path="/sales/orders" element={<ComingSoonPage title="طلبات المبيعات" />} />
-          <Route path="/sales/orders/new" element={<ComingSoonPage title="إضافة طلب" />} />
+          <Route path="/sales/orders" element={<SalesOrdersPage />} />
+          <Route path="/sales/orders/new" element={<SalesOrdersPage createOnly />} />
           <Route path="/sales/reports" element={<ComingSoonPage title="تقارير المبيعات" />} />
 
           <Route path="*" element={<ComingSoonPage title="الصفحة غير موجودة" />} />
