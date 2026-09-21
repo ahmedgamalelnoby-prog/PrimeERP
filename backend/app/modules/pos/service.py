@@ -36,8 +36,9 @@ class POSService:
         c=self._company(db,p.company_id,user)
         if not c: raise ValueError("Company is outside the current tenant")
         b=db.scalar(select(Branch).where(Branch.id==p.branch_id,Branch.company_id==c.id,Branch.tenant_id==c.tenant_id,Branch.is_active.is_(True)))
+        if not b: raise ValueError("Branch is invalid or belongs to another tenant/company")
         loc=db.scalar(select(InventoryLocation).join(InventoryWarehouse, InventoryWarehouse.id==InventoryLocation.warehouse_id).where(InventoryLocation.id==p.inventory_location_id,InventoryLocation.company_id==c.id,InventoryLocation.is_active.is_(True),InventoryLocation.is_virtual.is_(False),InventoryWarehouse.company_id==c.id,InventoryWarehouse.branch_id==b.id,InventoryWarehouse.is_active.is_(True)))
-        if not b or not loc: raise ValueError("Branch or inventory location is invalid or belongs to another branch")
+        if not loc: raise ValueError("Inventory location is invalid or belongs to another branch")
         o=POSOutlet(**p.model_dump());db.add(o);db.flush();return o
 
     def create_device(self, db, p, user):
@@ -121,16 +122,19 @@ class POSService:
             if recipe:
                 ingredients=db.scalars(select(RecipeLine).where(RecipeLine.recipe_id==recipe.id).order_by(RecipeLine.line_no)).all()
                 for rl in ingredients:
-                    qty=(Decimal(line.quantity)*Decimal(rl.quantity)/Decimal(recipe.yield_quantity)).quantize(Decimal("0.000001"),ROUND_HALF_UP)
+                    qty=(Decimal(line.quantity)*Decimal(rl.quantity)/Decimal(recipe.yield_quantity))
+                    qty=(qty*Decimal(rl.conversion_factor_to_product_uom or 1))
+                    qty=(qty*(Decimal("1") + (Decimal(rl.waste_percentage or 0)/Decimal("100"))))
+                    qty=qty.quantize(Decimal("0.000001"),ROUND_HALF_UP)
                     source_id=f"{line.id}:{rl.line_no}"
-                    existing_move=db.scalar(select(InventoryStockMove).where(InventoryStockMove.company_id==cid,InventoryStockMove.source_module=="pos",__import__("app.modules.inventory.stock_moves.models",fromlist=["InventoryStockMove"]).InventoryStockMove.source_entity=="pos_order_line",__import__("app.modules.inventory.stock_moves.models",fromlist=["InventoryStockMove"]).InventoryStockMove.source_id==source_id))
+                    existing_move=db.scalar(select(InventoryStockMove).where(InventoryStockMove.company_id==cid,InventoryStockMove.source_module=="pos",InventoryStockMove.source_entity=="pos_order_line",InventoryStockMove.source_id==source_id))
                     if not existing_move:
                         move=StockMoveCreate(company_id=cid,item_id=rl.ingredient_product_id,variant_id=None,source_location_id=outlet.inventory_location_id,quantity=qty,unit_cost=0,movement_type="issue",source_module="pos",source_entity="pos_order_line",source_id=source_id,notes=f"POS recipe consumption {o.number}")
                         draft=inventory_stock_move_service.create_draft(db,move)
                         inventory_stock_move_service.post(db,tenant_id=c.tenant_id,company_id=cid,move_id=draft.id,user_id=user.id)
             else:
                 source_id=str(line.id)
-                existing_move=db.scalar(select(__import__("app.modules.inventory.stock_moves.models",fromlist=["InventoryStockMove"]).InventoryStockMove).where(__import__("app.modules.inventory.stock_moves.models",fromlist=["InventoryStockMove"]).InventoryStockMove.company_id==cid,__import__("app.modules.inventory.stock_moves.models",fromlist=["InventoryStockMove"]).InventoryStockMove.source_module=="pos",__import__("app.modules.inventory.stock_moves.models",fromlist=["InventoryStockMove"]).InventoryStockMove.source_entity=="pos_order_line",__import__("app.modules.inventory.stock_moves.models",fromlist=["InventoryStockMove"]).InventoryStockMove.source_id==source_id))
+                existing_move=db.scalar(select(InventoryStockMove).where(InventoryStockMove.company_id==cid,InventoryStockMove.source_module=="pos",InventoryStockMove.source_entity=="pos_order_line",InventoryStockMove.source_id==source_id))
                 if not existing_move:
                     move=StockMoveCreate(company_id=cid,item_id=line.item_id,variant_id=line.variant_id,source_location_id=outlet.inventory_location_id,quantity=line.quantity,unit_cost=0,movement_type="issue",source_module="pos",source_entity="pos_order_line",source_id=source_id,notes=f"POS stock consumption {o.number}")
                     draft=inventory_stock_move_service.create_draft(db,move)
