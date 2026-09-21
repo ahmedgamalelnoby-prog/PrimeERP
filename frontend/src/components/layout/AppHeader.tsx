@@ -9,7 +9,7 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const userName = user?.full_name || user?.username || user?.email || "مستخدم";
-  const role = user?.is_platform_admin || user?.is_superuser ? "Super Admin" : (user?.role_name || user?.role || "مستخدم النظام");
+  const role = user?.is_platform_admin || user?.is_superuser ? "Super Admin" : "مستخدم النظام";
   const handleLogout = () => { logout(); navigate("/login", { replace: true }); };
 
   return (
