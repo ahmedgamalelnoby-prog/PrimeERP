@@ -62,6 +62,17 @@ def transfer(p:TransferCreate,db:Session=Depends(get_db),current_user:User=Depen
     if a.id==b.id: raise HTTPException(422,"Transfer accounts must differ")
     seq=numbering_service.generate_next_number(db,t,a.company_id,a.branch_id,"TREASURY_TRANSFER",commit=False)
     x=TreasuryTransfer(tenant_id=t,transfer_number=seq["generated_number"],created_by=current_user.id,**p.model_dump()); db.add(x); db.commit(); db.refresh(x); return x
+@router.post("/transfers/{transfer_id}/post",status_code=200)
+def post_transfer(transfer_id:int,p:TreasuryPosting,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):
+    t=tenant(current_user); x=db.scalar(select(TreasuryTransfer).where(TreasuryTransfer.id==transfer_id,TreasuryTransfer.tenant_id==t))
+    if not x: raise HTTPException(404,"Treasury transfer not found")
+    if x.status=="reversed": raise HTTPException(409,"Reversed transfer cannot be posted")
+    a=account(db,t,x.from_account_id); b=account(db,t,x.to_account_id)
+    if not a.accounting_account_combination_id or not b.accounting_account_combination_id: raise HTTPException(422,"Both treasury accounts must be linked to accounting accounts")
+    lines=[JournalLineCreate(account_combination_id=b.accounting_account_combination_id,debit=x.amount),JournalLineCreate(account_combination_id=a.accounting_account_combination_id,credit=x.amount)]
+    je=journal_service.create_entry(db,JournalEntryCreate(company_id=a.company_id,branch_id=a.branch_id,journal_id=p.journal_id,fiscal_year_id=p.fiscal_year_id,period_id=p.period_id,entry_date=x.transfer_date,description=f"Treasury transfer {x.transfer_number}",lines=lines,source_module="treasury",source_entity="treasury_transfer",source_id=x.id),current_user)
+    x.status="posted"; db.commit(); db.refresh(x); return x
+
 @router.post("/cheques",status_code=201)
 def cheque(p:ChequeCreate,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):
     t=tenant(current_user); account(db,t,p.treasury_account_id); x=Cheque(tenant_id=t,**p.model_dump()); db.add(x); db.commit(); db.refresh(x); return x
