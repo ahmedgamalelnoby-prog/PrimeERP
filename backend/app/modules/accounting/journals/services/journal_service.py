@@ -82,12 +82,13 @@ class JournalService:
             base_debit=line.debit*line.exchange_rate; base_credit=line.credit*line.exchange_rate
             db.add(JournalEntryLine(tenant_id=tenant,entry_id=entry.id,line_number=i,account_combination_id=ac.id,department_id=ac.department_id,cost_center_id=ac.cost_center_id,description=line.description,reference=line.reference,debit=line.debit,credit=line.credit,currency_code=line.currency_code,exchange_rate=line.exchange_rate,base_debit=base_debit,base_credit=base_credit))
         try:
-            db.commit()
             if auto_post:
-                entry=self.approve(db,entry.id,user)
-                entry=self.post(db,entry.id,user)
+                if entry.total_debit != entry.total_credit or entry.total_debit <= 0: raise HTTPException(status_code=422,detail="Journal entry must be balanced and positive")
+                entry.status="approved"; entry.approved_by=user.id; entry.approved_at=datetime.now(timezone.utc)
+                entry.status="posted"; entry.posted_by=user.id; entry.posted_at=datetime.now(timezone.utc)
+                db.commit(); db.refresh(entry)
             else:
-                db.refresh(entry)
+                db.commit(); db.refresh(entry)
             return entry
         except IntegrityError as e: db.rollback(); raise HTTPException(status_code=409,detail="Journal entry number or scope conflict") from e
 
