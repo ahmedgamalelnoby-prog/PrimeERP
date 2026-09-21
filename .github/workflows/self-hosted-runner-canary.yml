@@ -34,7 +34,7 @@ jobs:
           docker version
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Docker smoke test
         shell: powershell
