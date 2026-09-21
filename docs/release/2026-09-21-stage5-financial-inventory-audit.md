@@ -3,20 +3,13 @@
 Date: 2026-09-21
 Base: 78bfdcd399b43c3211e8fafecd0a26c873c4bc83
 
-## Root-cause fix implemented
+## Migration audit correction
 
-### Inventory reservation schema/runtime drift
-The reservation ORM/service already required `variant_id`, and reservation logic queried/created variant-aware balances, but the original `20260911_reservations` migration did not create `inventory_reservations.variant_id`.
+The first Stage 5 patch incorrectly treated `inventory_reservations.variant_id` as missing from the migration graph. A deeper migration-graph review found that the existing `20260914_variant_inventory_dimension` migration already adds `variant_id`, its foreign key, and its index to `inventory_reservations`.
 
-This was a real release risk: a fresh database could successfully migrate the reservation table and then fail at runtime when the variant-aware service executed.
+The Stage 5 follow-up therefore **removed** the duplicate `20260921_reservation_variant_alignment` migration. This is the root-cause correction: the release graph must have one canonical owner for the schema change, not a second migration that fails with `DuplicateColumn` on a fresh database.
 
-Stage 5 adds a forward-only Alembic migration:
-`20260921_reservation_variant_alignment`
-
-It adds:
-- `inventory_reservations.variant_id`
-- FK to `product_variants.id`
-- index on `variant_id`
+A regression contract test now verifies that the canonical `20260914_variant_inventory_dimension` migration declares the reservation variant dimension.
 
 The frozen RC remains untouched.
 
@@ -34,7 +27,7 @@ The lifecycle layer is present and row-locked. However, the dedicated accounting
 
 ## Tenant isolation audit
 
-Inventory reservation routes validate that the requested company belongs to the current user's tenant before invoking the service. Reservation service queries consistently scope by company_id and reservation mutations use company-scoped row locks.
+Inventory reservation routes validate that the requested company belongs to the current user’s tenant before invoking the service. Reservation service queries consistently scope by company_id and reservation mutations use company-scoped row locks.
 
 Treasury list/events/transition operations are company-scoped as well.
 
@@ -48,8 +41,10 @@ Partial consumption is not silently emulated: the current domain model represent
 
 ## Release decision
 
-Stage 5 implementation finding fixed:
-- migration/model mismatch for reservation variants.
+Stage 5 correction completed:
+- removed duplicate reservation variant migration;
+- restored a single canonical migration owner;
+- added a regression contract test for that canonical migration.
 
 Stage 5 findings still open:
 - exact Treasury → GL posting contract;
