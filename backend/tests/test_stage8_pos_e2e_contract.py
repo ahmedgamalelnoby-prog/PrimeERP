@@ -48,6 +48,6 @@ def test_stage8_frontend_pos_is_registered_and_operational():
     assert '"/pos/sessions/open"' in service
     assert '"/pos/orders"' in service
     assert '"/pos/payments"' in service
-    assert '"/pos/sessions/"' in service
+    assert "/pos/sessions/" in service
     assert 'path="/pos"' in router
     assert 'path: "/pos"' in sidebar
