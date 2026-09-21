@@ -18,6 +18,7 @@ from app.modules.sales.sales_orders.router import router as sales_orders_router
 from app.modules.sales.invoices.router import router as sales_invoices_router
 from app.modules.purchasing.router import router as purchasing_router
 from app.modules.pos.router import router as pos_router
+from app.modules.treasury.router import router as treasury_router
 def build_router()->APIRouter:
     api_router=APIRouter()
     api_router.include_router(identity_router,prefix="/identity",tags=["identity"])
@@ -38,5 +39,6 @@ def build_router()->APIRouter:
     api_router.include_router(sales_invoices_router,prefix="/sales",tags=["sales-invoices"])
     api_router.include_router(purchasing_router,prefix="/purchasing",tags=["purchasing"])
     api_router.include_router(pos_router,prefix="/pos",tags=["pos"])
+    api_router.include_router(treasury_router,prefix="/treasury",tags=["treasury"])
     api_router.include_router(legal_router)
     return api_router
