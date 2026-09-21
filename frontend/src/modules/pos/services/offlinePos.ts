@@ -35,7 +35,7 @@ const DEVICE_KEY = "primeerp-pos-device-id";
 
 function uuid(): string {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
-  return \`\${Date.now()}-\${Math.random().toString(36).slice(2)}\`;
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function openDb(): Promise<IDBDatabase> {
