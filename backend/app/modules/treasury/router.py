@@ -71,7 +71,7 @@ def post_transfer(transfer_id:int,p:TreasuryPosting,db:Session=Depends(get_db),c
     if not a.accounting_account_combination_id or not b.accounting_account_combination_id: raise HTTPException(422,"Both treasury accounts must be linked to accounting accounts")
     lines=[JournalLineCreate(account_combination_id=b.accounting_account_combination_id,debit=x.amount),JournalLineCreate(account_combination_id=a.accounting_account_combination_id,credit=x.amount)]
     je=journal_service.create_entry(db,JournalEntryCreate(company_id=a.company_id,branch_id=a.branch_id,journal_id=p.journal_id,fiscal_year_id=p.fiscal_year_id,period_id=p.period_id,entry_date=x.transfer_date,description=f"Treasury transfer {x.transfer_number}",lines=lines,source_module="treasury",source_entity="treasury_transfer",source_id=x.id),current_user,auto_post=True)
-    x.status="posted"; db.commit(); db.refresh(x); return x
+    x.journal_entry_id=je.id; x.status="posted"; db.commit(); db.refresh(x); return x
 
 @router.post("/cheques",status_code=201)
 def cheque(p:ChequeCreate,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):
