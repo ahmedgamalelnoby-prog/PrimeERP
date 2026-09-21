@@ -62,11 +62,14 @@ jobs:
             python -m compileall -q app
             $env:DATABASE_URL = "postgresql+psycopg://primeerp:primeerp@127.0.0.1:55432/primeerp_ci"
             python -m alembic upgrade head
+            if ($LASTEXITCODE -ne 0) { throw "Alembic upgrade failed with exit code $LASTEXITCODE." }
             python -m alembic check
+            if ($LASTEXITCODE -ne 0) { throw "Alembic check failed with exit code $LASTEXITCODE." }
             if (Test-Path tests) {
               $tests = Get-ChildItem tests -Recurse -Filter "test_*.py" -File
               if ($tests.Count -gt 0) {
                 python -m pytest -q
+            if ($LASTEXITCODE -ne 0) { throw "Backend pytest failed with exit code $LASTEXITCODE." }
               } else {
                 Write-Host "No backend tests found; compile and migration checks passed."
               }
@@ -78,7 +81,9 @@ jobs:
             Push-Location frontend
             npm ci
             npm run lint
+            if ($LASTEXITCODE -ne 0) { throw "Frontend lint failed with exit code $LASTEXITCODE." }
             npm run build
+            if ($LASTEXITCODE -ne 0) { throw "Frontend build failed with exit code $LASTEXITCODE." }
             Pop-Location
 
             $tracked = git ls-files
