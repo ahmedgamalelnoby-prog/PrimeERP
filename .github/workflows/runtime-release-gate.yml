@@ -96,7 +96,7 @@ services:
           docker compose -f docker-compose.yml -f ci-runtime-compose.yml up -d db migrate
           $deadline = (Get-Date).AddMinutes(10)
           while ((Get-Date) -lt $deadline) {
-            $migrateId = docker compose -f docker-compose.yml -f ci-runtime-compose.yml ps -q migrate
+            $migrateId = docker compose -f docker-compose.yml -f ci-runtime-compose.yml ps -aq migrate
             $status = if ($migrateId) { docker inspect -f '{{.State.Status}}' $migrateId 2>$null } else { '' }
             if ($status -eq 'exited') {
               $code = docker inspect -f '{{.State.ExitCode}}' $migrateId
