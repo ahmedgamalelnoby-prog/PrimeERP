@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.commerce.models import BusinessPartner
 from app.modules.treasury.models import Cheque, ChequeEvent
+from app.modules.treasury.accounting_service import treasury_accounting_service
 
 
 ALLOWED_TRANSITIONS = {
@@ -24,7 +25,10 @@ ALLOWED_TRANSITIONS = {
 def _record_event(db: Session, cheque: Cheque, old_status: str | None, new_status: str, event_type: str, event_date: date, user_id: int | None, reference: str | None, notes: str | None):
     cheque.status = new_status
     cheque.updated_at = datetime.now(timezone.utc)
-    db.add(ChequeEvent(company_id=cheque.company_id, cheque_id=cheque.id, event_type=event_type, from_status=old_status, to_status=new_status, event_date=event_date, reference=reference, notes=notes, created_by=user_id, created_at=datetime.now(timezone.utc)))
+    event = ChequeEvent(company_id=cheque.company_id, cheque_id=cheque.id, event_type=event_type, from_status=old_status, to_status=new_status, event_date=event_date, reference=reference, notes=notes, created_by=user_id, created_at=datetime.now(timezone.utc))
+    db.add(event)
+    db.flush()
+    return event
 
 
 def create_cheque(db: Session, payload, user_id: int):
@@ -41,7 +45,8 @@ def create_cheque(db: Session, payload, user_id: int):
     cheque = Cheque(**payload.model_dump(), status=status, created_at=now, updated_at=now)
     db.add(cheque)
     db.flush()
-    _record_event(db, cheque, None, status, "created", payload.cheque_date, user_id, None, payload.notes)
+    event = _record_event(db, cheque, None, status, "created", payload.cheque_date, user_id, None, payload.notes)
+    treasury_accounting_service.post_event(db, cheque, event, user_id)
     return cheque
 
 
@@ -51,7 +56,8 @@ def transition_cheque(db: Session, cheque: Cheque, new_status: str, action_date:
         raise ValueError("Cheque not found")
     if new_status not in ALLOWED_TRANSITIONS.get(locked.status, set()):
         raise ValueError(f"Cannot move cheque from {locked.status} to {new_status}")
-    _record_event(db, locked, locked.status, new_status, event_type, action_date, user_id, reference, notes)
+    event = _record_event(db, locked, locked.status, new_status, event_type, action_date, user_id, reference, notes)
+    treasury_accounting_service.post_event(db, locked, event, user_id)
     return locked
 
 
