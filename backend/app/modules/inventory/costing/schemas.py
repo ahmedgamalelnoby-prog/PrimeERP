@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 class InventoryValuationRow(BaseModel):
     item_id: int
+    variant_id: int | None = None
     warehouse_id: int
     quantity_on_hand: Decimal
     average_cost: Decimal

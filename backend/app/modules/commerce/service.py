@@ -17,7 +17,9 @@ from app.modules.inventory.stock_moves.models import InventoryStockMove
 from app.modules.inventory.stock_moves.schemas import StockMoveCreate
 from app.modules.inventory.stock_moves.service import inventory_stock_move_service
 from app.modules.inventory.warehouses.models import InventoryWarehouse
+from app.modules.accounting.fiscal_years.services.fiscal_year_service import fiscal_year_service
 from app.modules.treasury.models import Cheque, ChequeEvent
+from app.modules.commerce.backorder_service import backorder_service
 
 SALE_TYPES = {"quotation", "order", "delivery", "invoice", "credit_note"}
 PURCHASE_TYPES = {"requisition", "rfq", "order", "receipt", "bill", "debit_note"}
@@ -161,12 +163,18 @@ class CommerceService:
                         + Decimal(payment.amount or 0)
                     )
 
+        from app.modules.commerce.ar_models import ARWriteOff
+        writeoffs = {}
+        if positive_docs:
+            for row in db.scalars(select(ARWriteOff).where(ARWriteOff.company_id == company_id, ARWriteOff.document_id.in_([d.id for d in positive_docs]), ARWriteOff.status == "approved")).all():
+                writeoffs[row.document_id] = writeoffs.get(row.document_id, Decimal("0")) + Decimal(row.amount or 0)
         total = Decimal("0")
         for doc in documents:
             value = Decimal(doc.total or 0)
             total += value if doc.document_type == positive_type else -value
             if doc.document_type == positive_type:
                 total -= payments_by_document.get(doc.id, Decimal("0"))
+                total -= writeoffs.get(doc.id, Decimal("0"))
         return total
 
     def enforce_credit_limit(self, db, company_id: int, document):
@@ -186,8 +194,15 @@ class CommerceService:
         if not obj: raise ValueError("Document not found")
         if obj.status != "draft": raise ValueError("Only draft documents can be confirmed")
         if not obj.lines: raise ValueError("A document must contain at least one line before confirmation")
+        # Every financial document is subject to the same fiscal-period control before confirmation/posting.
+        if obj.document_type in {"invoice","credit_note","bill","debit_note"}:
+            if hasattr(fiscal_year_service, "assert_open_for_date"):
+                fiscal_year_service.assert_open_for_date(db, company_id=company_id, posting_date=obj.document_date)
         if kind == "sale":
             self.enforce_credit_limit(db, company_id, obj)
+        # Inventory documents are also transactional events; their accounting period must be open.
+        if obj.document_type in {"delivery", "receipt"} and hasattr(fiscal_year_service, "assert_open_for_date"):
+            fiscal_year_service.assert_open_for_date(db, company_id=company_id, posting_date=obj.document_date)
         obj.status = "confirmed"; db.flush()
         if user_id is not None:
             if kind == "sale":
@@ -250,9 +265,15 @@ class CommerceService:
                 expanded.extend(expand_recipe(recipe_line.ingredient_product_id, None, line_qty, visited))
             return expanded
 
+        any_remaining = False
         for line in obj.lines:
+            already = Decimal(getattr(line, "fulfilled_quantity", 0) or 0)
+            remaining = Decimal(line.quantity) - already
+            if remaining <= 0:
+                continue
+            any_remaining = True
             if kind == "sale":
-                components = expand_recipe(line.item_id, line.variant_id, Decimal(line.quantity), set())
+                components = expand_recipe(line.item_id, line.variant_id, remaining, set())
                 for component_index, (component_item_id, component_variant_id, component_qty) in enumerate(components, start=1):
                     source_id = f"{obj.id}:{line.id}:component:{component_index}:{component_item_id}:{component_variant_id or 0}"
                     existing = db.scalar(select(InventoryStockMove).where(
@@ -288,17 +309,37 @@ class CommerceService:
                 payload = StockMoveCreate(
                     company_id=company_id, item_id=line.item_id, variant_id=getattr(line, "variant_id", None),
                     movement_type="receipt", source_location_id=None, destination_location_id=loc.id,
-                    quantity=line.quantity, unit_cost=net_unit_cost, transaction_date=obj.document_date,
+                    quantity=remaining, unit_cost=net_unit_cost, transaction_date=obj.document_date,
                     reference=obj.number, source_module="commerce", source_entity=source_entity,
                     source_id=source_id, notes="Purchase receipt",
                 )
                 move = inventory_stock_move_service.create_draft(db, payload)
                 inventory_stock_move_service.post(db, tenant_id=tenant_id, company_id=company_id, move_id=move.id, user_id=user_id)
+            line.fulfilled_quantity = already + remaining
+        if not any_remaining:
+            return obj
+        complete = all(Decimal(getattr(line, "fulfilled_quantity", 0) or 0) >= Decimal(line.quantity) for line in obj.lines)
         if kind == "sale":
             commerce_accounting_service.post_sales_delivery_cogs(db, obj, user_id)
+            obj.status = "fulfilled" if complete else "partially_fulfilled"
         else:
             commerce_accounting_service.post_purchase_receipt(db, obj, user_id)
-        obj.status = "fulfilled" if kind == "sale" else "received"; db.flush()
+            obj.status = "received" if complete else "partially_received"
+        db.flush()
+        if kind in {"sale", "purchase"}:
+            if complete:
+                from app.modules.commerce.backorder_models import CommerceBackorder
+                open_backorders = db.scalars(select(CommerceBackorder).where(
+                    CommerceBackorder.company_id == company_id,
+                    CommerceBackorder.source_kind == kind,
+                    CommerceBackorder.source_document_id == obj.id,
+                    CommerceBackorder.status == "open",
+                ).with_for_update()).all()
+                for backorder in open_backorders:
+                    backorder.status = "fulfilled"
+                    backorder.fulfilled_quantity = backorder.quantity
+            else:
+                backorder_service.generate_for_document(db, company_id=company_id, document_id=obj.id, kind=kind)
         return obj
 
     @staticmethod
@@ -314,10 +355,12 @@ class CommerceService:
         amount = Decimal(self._payment_value(payment, "amount") or 0)
         if company_id is None or payment_id is None or document_kind is None or amount <= 0:
             raise ValueError("Payment result is missing allocation identity fields")
-        targets = allocations or [{"document_id": document.id, "amount": amount}]
-        allocation_total = sum((Decimal(a["amount"]) for a in targets), Decimal("0"))
-        if allocation_total != amount:
-            raise ValueError("Payment allocations must equal the payment amount")
+        if allocations:
+            targets = allocations
+        else:
+            outstanding = Decimal(document.total or 0) - Decimal(document.paid_total or 0)
+            default_amount = min(amount, max(outstanding, Decimal("0")))
+            targets = ([{"document_id": document.id, "amount": default_amount}] if default_amount > 0 else [])
         model = SalesDocument if document_kind == "sale" else PurchaseDocument
         positive_type = "invoice" if document_kind == "sale" else "bill"
         # The source document was already locked and validated by pay(). Reuse it
@@ -348,6 +391,8 @@ class CommerceService:
             if target_doc is None:
                 raise ValueError("Payment allocation document must be an open invoice/bill for the same partner")
             outstanding = Decimal(target_doc.total or 0) - Decimal(target_doc.paid_total or 0)
+            if target_amount <= 0:
+                continue
             if target_amount > outstanding:
                 raise ValueError("Payment allocation exceeds document outstanding balance")
             existing = db.scalar(select(CommercePaymentAllocation).where(
@@ -378,6 +423,8 @@ class CommerceService:
 
     def pay(self, db, payload, kind, user_id: int | None = None):
         model = SalesDocument if kind == "sale" else PurchaseDocument; allowed_types = {"invoice"} if kind == "sale" else {"bill"}
+        integration_tx = None
+        integration_started = False
         document = db.scalar(select(model).where(model.id == payload.document_id, model.company_id == payload.company_id).with_for_update())
         if document is None: raise ValueError("Document not found")
         document_type = getattr(document, "document_type", "invoice" if kind == "sale" else "bill")
@@ -386,7 +433,13 @@ class CommerceService:
         if document_status not in {"confirmed", "posted"}: raise ValueError("Document must be confirmed or posted before payment")
         wht_amount = Decimal(payload.wht_amount or 0)
         if wht_amount == 0 and getattr(payload, "auto_wht", True): wht_amount = self._auto_payment_wht(db, document=document, company_id=payload.company_id, amount=Decimal(payload.amount), document_kind=kind)
-        payment_result = post_payment(db, company_id=payload.company_id, document_kind=kind, document_id=payload.document_id, amount=payload.amount, payment_date=payload.payment_date, method=payload.method, wht_amount=wht_amount, reference=payload.reference, notes=payload.notes, idempotency_key=payload.idempotency_key, update_document_paid_total=not bool(getattr(payload, "allocations", None)))
+        if getattr(payload, "idempotency_key", None):
+            integration_tx, integration_started = core_integration_service.begin(
+                db, tenant_id=getattr(document, "tenant_id", None), actor_id=user_id,
+                company_id=payload.company_id, source_module="commerce", source_entity=f"{kind}_payment",
+                source_id=document.id, operation="post_payment", idempotency_key=payload.idempotency_key,
+            )
+        payment_result = post_payment(db, company_id=payload.company_id, document_kind=kind, document_id=payload.document_id, amount=payload.amount, payment_date=payload.payment_date, method=payload.method, wht_amount=wht_amount, reference=payload.reference, notes=payload.notes, idempotency_key=payload.idempotency_key, update_document_paid_total=False)
         if isinstance(payment_result, tuple) and len(payment_result) == 2:
             document, payment = payment_result
         else:
@@ -443,6 +496,11 @@ class CommerceService:
                     created_at=now,
                 ))
         if user_id is not None: commerce_accounting_service.post_payment(db, payment, document, user_id)
+        if integration_tx is not None and integration_started:
+            core_integration_service.complete(db, integration_tx, user_id=user_id)
+        record_audit_event(db, action="commerce.payment.post", entity_type="commerce_payment", entity_id=payment.id,
+                           user_id=user_id, company_id=payload.company_id,
+                           metadata={"document_id": document.id, "kind": kind, "amount": str(payment.amount), "method": payload.method})
         return document, payment
 
     def reverse_payment(self, db, company_id: int, payment_id: int, reversal_date, notes=None, user_id: int | None = None):
@@ -511,8 +569,13 @@ class CommerceService:
             )).all():
                 offsets[note.partner_id] = offsets.get(note.partner_id, Decimal("0")) + Decimal(note.total or 0)
 
+            from app.modules.commerce.ar_models import ARWriteOff
+            writeoffs = {}
+            if document_ids:
+                for row in db.scalars(select(ARWriteOff).where(ARWriteOff.company_id == company_id, ARWriteOff.document_id.in_(document_ids), ARWriteOff.status == "approved", ARWriteOff.created_at <= as_of)).all():
+                    writeoffs[row.document_id] = writeoffs.get(row.document_id, Decimal("0")) + Decimal(row.amount or 0)
             for document in documents:
-                paid_as_of = payments_by_document.get(document.id, Decimal("0"))
+                paid_as_of = payments_by_document.get(document.id, Decimal("0")) + writeoffs.get(document.id, Decimal("0"))
                 outstanding = Decimal(document.total or 0) - paid_as_of
                 partner_offset = offsets.get(document.partner_id, Decimal("0"))
                 if partner_offset > 0:
@@ -602,6 +665,10 @@ class CommerceService:
         allocation_by_payment = {}
         for allocation in allocations:
             allocation_by_payment.setdefault(allocation.payment_id, []).append(allocation)
+
+        from app.modules.commerce.ar_models import ARWriteOff
+        for row in db.scalars(select(ARWriteOff).where(ARWriteOff.company_id == company_id, ARWriteOff.partner_id == partner_id, ARWriteOff.status == "approved", ARWriteOff.created_at <= cutoff).order_by(ARWriteOff.created_at, ARWriteOff.id)).all():
+            events.append((row.created_at.date(), 20_000_000 + row.id, "writeoff", f"WO-{row.id}", Decimal("0"), Decimal(row.amount)))
 
         for payment in payments:
             targets = allocation_by_payment.get(payment.id)

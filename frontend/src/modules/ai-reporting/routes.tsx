@@ -1,0 +1,1 @@
+export { default as AIReportingPage } from "./pages/AIReportingPage";

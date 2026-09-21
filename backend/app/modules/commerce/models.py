@@ -58,6 +58,7 @@ class SalesLine(Base):
     discount_percent = Column(Numeric(8, 4), nullable=False, default=0)
     tax_percent = Column(Numeric(8, 4), nullable=False, default=0)
     line_total = Column(Numeric(18, 4), nullable=False, default=0)
+    fulfilled_quantity = Column(Numeric(18, 4), nullable=False, default=0)
     document = relationship("SalesDocument", back_populates="lines")
 
 
@@ -100,6 +101,7 @@ class PurchaseLine(Base):
     discount_percent = Column(Numeric(8, 4), nullable=False, default=0)
     tax_percent = Column(Numeric(8, 4), nullable=False, default=0)
     line_total = Column(Numeric(18, 4), nullable=False, default=0)
+    fulfilled_quantity = Column(Numeric(18, 4), nullable=False, default=0)
     document = relationship("PurchaseDocument", back_populates="lines")
 
 
@@ -152,7 +154,8 @@ class CommercePayment(Base):
     id = Column(Integer, primary_key=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     document_kind = Column(String(10), nullable=False)
-    document_id = Column(Integer, nullable=False, index=True)
+    partner_id = Column(Integer, ForeignKey("commerce_partners.id", ondelete="RESTRICT"), nullable=True, index=True)
+    document_id = Column(Integer, nullable=True, index=True)
     payment_date = Column(Date, nullable=False)
     amount = Column(Numeric(18, 4), nullable=False)
     wht_amount = Column(Numeric(18, 4), nullable=False, default=0)

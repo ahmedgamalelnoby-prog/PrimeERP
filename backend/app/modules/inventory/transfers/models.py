@@ -31,6 +31,7 @@ class InventoryTransferLine(Base):
     id = Column(Integer, primary_key=True, index=True)
     transfer_id = Column(Integer, ForeignKey("inventory_transfers.id", ondelete="CASCADE"), nullable=False, index=True)
     item_id = Column(Integer, ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False, index=True)
+    variant_id = Column(Integer, ForeignKey("product_variants.id", ondelete="RESTRICT"), nullable=True, index=True)
     source_location_id = Column(Integer, ForeignKey("inventory_locations.id", ondelete="RESTRICT"), nullable=False)
     destination_location_id = Column(Integer, ForeignKey("inventory_locations.id", ondelete="RESTRICT"), nullable=False)
     quantity = Column(Numeric(18, 4), nullable=False)
@@ -40,6 +41,7 @@ class InventoryTransferLine(Base):
 
     transfer = relationship("InventoryTransfer", back_populates="lines")
     item = relationship("InventoryItem")
+    variant = relationship("ProductVariant")
     source_location = relationship("InventoryLocation", foreign_keys=[source_location_id])
     destination_location = relationship("InventoryLocation", foreign_keys=[destination_location_id])
 

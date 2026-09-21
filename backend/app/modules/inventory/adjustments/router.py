@@ -95,7 +95,7 @@ def post_adjustment(
 ):
     _company_for_user(db, company_id, current_user)
     try:
-        adjustment = inventory_adjustment_service.post(db, company_id=company_id, adjustment_id=adjustment_id)
+        adjustment = inventory_adjustment_service.post(db, tenant_id=current_user.tenant_id, company_id=company_id, adjustment_id=adjustment_id, user_id=current_user.id)
         db.commit()
         db.refresh(adjustment)
         return adjustment

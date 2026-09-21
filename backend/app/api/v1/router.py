@@ -12,6 +12,10 @@ from app.modules.inventory.reservations.router import router as inventory_reserv
 from app.modules.inventory.stock_moves.router import router as inventory_stock_moves_router
 from app.modules.inventory.transfers.router import router as inventory_transfers_router
 from app.modules.inventory.warehouses.router import router as inventory_warehouses_router
+from app.modules.inventory.waste.router import router as inventory_waste_router
+from app.modules.inventory.wms.router import router as inventory_wms_router
+from app.modules.inventory.costing.revaluation_router import router as inventory_revaluation_router
+from app.modules.commerce.backorder_router import router as commerce_backorder_router
 from app.modules.legal.router import router as legal_router
 from app.modules.platform.api.router import router as platform_modules_router
 from app.modules.platform.entitlements.router import router as entitlements_router
@@ -22,6 +26,7 @@ from app.modules.platform.tenants.router import router as tenants_router
 from app.modules.saas.router import router as saas_router
 from app.modules.transactions.api.router import router as transactions_router
 from app.modules.commerce.router import router as commerce_router
+from app.modules.commerce.ar_router import router as ar_router
 from app.modules.enterprise.router import router as enterprise_router
 from app.modules.shipping.router import router as shipping_router
 from app.modules.shipping.settlement_router import router as shipping_settlement_router
@@ -38,6 +43,8 @@ from app.modules.uom.router import router as uom_router
 from app.modules.companies.router import router as companies_router
 from app.modules.branches.router import router as branches_router
 from app.modules.treasury.router import router as treasury_router
+from app.modules.treasury.completion_router import router as treasury_completion_router
+from app.modules.core_integration.router import router as core_integration_router
 from app.modules.treasury.bank_reconciliation.router import router as bank_reconciliation_router
 from app.modules.egyptian_einvoice.router import router as egyptian_einvoice_router
 from app.modules.audit.router import router as audit_router
@@ -53,13 +60,24 @@ from app.modules.jurisdiction.router import router as jurisdiction_router
 from app.modules.reports.router import router as reports_router
 from app.modules.helpdesk_ai.router import router as helpdesk_router
 from app.modules.ai_reporting.router import router as ai_reporting_router
-from app.modules.crm.api import router as crm_router
+from app.modules.crm.router import router as crm_router
 from app.modules.hr.router import router as hr_router
 from app.modules.pos.router import router as pos_router
+from app.modules.pos.sessions.router import router as pos_sessions_router
+from app.modules.manufacturing.production_orders.router import router as manufacturing_work_orders_router
+from app.modules.manufacturing.mrp_router import router as manufacturing_mrp_router
 from app.modules.manufacturing.bom.router import router as manufacturing_router
 from app.modules.mobile.router import router as mobile_router
 from app.modules.platform.developer.router import router as developer_router
 from app.modules.enterprise.finance_router import router as enterprise_finance_router
+from app.modules.completion.router import router as completion_router
+from app.modules.accounting.automation_router import router as accounting_automation_router
+from app.modules.accounting.advanced_router import router as accounting_advanced_router
+from app.modules.accounting.recognition_router import router as accounting_recognition_router
+from app.modules.accounting.fiscal_years.api.close_router import router as fiscal_close_router
+from app.modules.completion.enterprise_router import router as enterprise_completion_router
+from app.modules.completion.finance_router import router as finance_completion_router
+from app.modules.completion.domain_router import router as domain_completion_router
 
 def build_router() -> APIRouter:
     api_router = APIRouter()
@@ -70,10 +88,21 @@ def build_router() -> APIRouter:
     api_router.include_router(crm_router)
     api_router.include_router(hr_router)
     api_router.include_router(pos_router)
+    api_router.include_router(pos_sessions_router)
+    api_router.include_router(manufacturing_work_orders_router)
+    api_router.include_router(manufacturing_mrp_router)
     api_router.include_router(manufacturing_router)
     api_router.include_router(mobile_router)
     api_router.include_router(developer_router)
     api_router.include_router(enterprise_finance_router)
+    api_router.include_router(completion_router)
+    api_router.include_router(accounting_automation_router)
+    api_router.include_router(accounting_advanced_router, dependencies=[Depends(require_module("accounting"))])
+    api_router.include_router(accounting_recognition_router, dependencies=[Depends(require_module("accounting"))])
+    api_router.include_router(fiscal_close_router, dependencies=[Depends(require_module("accounting"))])
+    api_router.include_router(enterprise_completion_router)
+    api_router.include_router(finance_completion_router)
+    api_router.include_router(domain_completion_router)
     api_router.include_router(platform_modules_router)
     api_router.include_router(saas_router, prefix="/saas", tags=["saas"])
     api_router.include_router(transactions_router, prefix="/transactions", tags=["transactions"])
@@ -83,13 +112,15 @@ def build_router() -> APIRouter:
     api_router.include_router(accounting_router, dependencies=[Depends(require_module("accounting"))])
     api_router.include_router(taxes_router)
     api_router.include_router(jurisdiction_router)
-    for r in (inventory_items_router, inventory_warehouses_router, inventory_locations_router, inventory_stock_moves_router, inventory_transfers_router, inventory_adjustments_router, inventory_reservations_router, inventory_costing_router):
+    for r in (inventory_items_router, inventory_warehouses_router, inventory_locations_router, inventory_stock_moves_router, inventory_transfers_router, inventory_adjustments_router, inventory_reservations_router, inventory_costing_router, inventory_waste_router, inventory_wms_router, inventory_revaluation_router):
         api_router.include_router(r, dependencies=[Depends(require_module("inventory"))])
+    api_router.include_router(commerce_backorder_router, dependencies=[Depends(require_module("sales"))])
     api_router.include_router(catalog_router, dependencies=[Depends(require_module("inventory"))])
     api_router.include_router(catalog_variant_router, dependencies=[Depends(require_module("inventory"))])
     api_router.include_router(catalog_bundle_router, dependencies=[Depends(require_module("inventory"))])
     api_router.include_router(pricing_engine_router, dependencies=[Depends(require_module("inventory"))])
     api_router.include_router(commerce_router, dependencies=[Depends(require_module("sales"))])
+    api_router.include_router(ar_router, dependencies=[Depends(require_module("sales"))])
     api_router.include_router(enterprise_router, dependencies=[Depends(require_module("enterprise"))])
     api_router.include_router(commissions_router, dependencies=[Depends(require_module("enterprise"))])
     api_router.include_router(shipping_router)
@@ -105,6 +136,8 @@ def build_router() -> APIRouter:
     api_router.include_router(companies_router)
     api_router.include_router(branches_router)
     api_router.include_router(treasury_router)
+    api_router.include_router(treasury_completion_router)
+    api_router.include_router(core_integration_router)
     api_router.include_router(bank_reconciliation_router)
     api_router.include_router(egyptian_einvoice_router, dependencies=[Depends(require_module("einvoice"))])
     api_router.include_router(reports_router)
@@ -118,3 +151,7 @@ def build_router() -> APIRouter:
     api_router.include_router(roles_router)
     api_router.include_router(legal_router)
     return api_router
+
+from app.modules.commerce.ap_router import router as ap_router
+api_router.include_router(ap_router, dependencies=[Depends(require_module("sales"))])
+

@@ -1,0 +1,2 @@
+import IntegrationTransactionsPage from "./pages/IntegrationTransactionsPage";
+export const coreIntegrationRoutes = [{ path: "/core/integration/transactions", element: <IntegrationTransactionsPage /> }];

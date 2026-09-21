@@ -176,6 +176,21 @@ def list_salla_shipments(company_id: int = Query(..., gt=0), limit: int = Query(
 @router.get("/salla/invoices", status_code=200)
 def list_salla_invoices(company_id: int = Query(..., gt=0), limit: int = Query(100, ge=1, le=500), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user); return _json_rows(_rows(db, SallaInvoice, company_id, limit))
+@router.post("/events/{event_id}/replay", status_code=202, dependencies=[Depends(require_permission("integrations.write"))])
+def replay_event(event_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    event = db.scalar(select(IntegrationEvent).join(Company, Company.id == IntegrationEvent.company_id).where(
+        IntegrationEvent.id == event_id, Company.tenant_id == current_user.tenant_id
+    ).with_for_update())
+    if event is None:
+        raise HTTPException(404, "Integration event not found")
+    if event.status not in {"failed", "received"}:
+        raise HTTPException(409, f"Only failed/received events can be replayed; current status is {event.status}")
+    event.status = "received"
+    event.next_attempt_at = None
+    db.commit()
+    result = _process_event(db, event)
+    return {"event_id": event.id, "status": "processed" if "error" not in result else "failed", "result": result}
+
 @router.get("/events", status_code=200)
 def list_events(company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user); return db.scalars(select(IntegrationEvent).where(IntegrationEvent.company_id == company_id).order_by(IntegrationEvent.id.desc()).limit(200)).all()

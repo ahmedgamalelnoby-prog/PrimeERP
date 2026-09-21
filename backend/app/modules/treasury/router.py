@@ -10,8 +10,8 @@ from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.saas.entitlements import require_module
 from app.modules.treasury.models import Cheque
-from app.modules.treasury.schemas import ChequeAction, ChequeCreate, ChequeEventResponse, ChequeResponse
-from app.modules.treasury.service import create_cheque, events, list_cheques, resubmit_returned_cheque, transition_cheque, withdraw_cheque
+from app.modules.treasury.schemas import ChequeAction, ChequeCreate, ChequeEventResponse, ChequeResponse, ChequeReplacement
+from app.modules.treasury.service import create_cheque, events, list_cheques, resubmit_returned_cheque, transition_cheque, withdraw_cheque, endorse_cheque, replace_cheque, reconciliation_summary
 
 router = APIRouter(prefix="/treasury", tags=["Treasury"], dependencies=[Depends(require_permission("treasury.access")), Depends(require_module("treasury"))])
 
@@ -115,3 +115,20 @@ def reverse(cheque_id: int, payload: ChequeAction, current_user: User = Depends(
         db.commit(); db.refresh(obj); return obj
     except ValueError as exc:
         db.rollback(); raise HTTPException(400, str(exc)) from exc
+
+
+@router.post("/cheques/{cheque_id}/endorse", response_model=ChequeResponse, dependencies=[Depends(require_permission("treasury.write"))])
+def endorse(cheque_id: int, payload: ChequeAction, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company(db, payload.company_id, current_user); cheque = _get_cheque(db, payload.company_id, cheque_id)
+    try: obj=endorse_cheque(db,cheque,payload.event_date or date.today(),current_user.id,payload.reference,payload.notes); db.commit(); db.refresh(obj); return obj
+    except ValueError as exc: db.rollback(); raise HTTPException(400,str(exc)) from exc
+
+@router.post("/cheques/{cheque_id}/replace", response_model=ChequeResponse, dependencies=[Depends(require_permission("treasury.write"))])
+def replace(cheque_id:int,payload:ChequeReplacement,company_id:int=Query(...,gt=0),current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+    _company(db,company_id,current_user); cheque=_get_cheque(db,company_id,cheque_id)
+    try: obj=replace_cheque(db,cheque,payload,date.today(),current_user.id); db.commit(); db.refresh(obj); return obj
+    except ValueError as exc: db.rollback(); raise HTTPException(400,str(exc)) from exc
+
+@router.get("/cheques/reconciliation")
+def reconciliation(company_id:int=Query(...,gt=0),current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+    _company(db,company_id,current_user); return reconciliation_summary(db,company_id)

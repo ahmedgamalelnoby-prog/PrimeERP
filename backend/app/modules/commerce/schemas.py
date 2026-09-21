@@ -126,10 +126,8 @@ class PaymentCreate(BaseModel):
             if len(ids) != len(set(ids)):
                 raise ValueError("Duplicate payment allocation documents are not allowed")
             total = sum((a.amount for a in self.allocations), Decimal("0"))
-            if total != self.amount:
-                raise ValueError("Payment allocations must equal the payment amount")
-            if self.document_id not in ids:
-                raise ValueError("The primary document must be included in payment allocations")
+            if total > self.amount:
+                raise ValueError("Payment allocations cannot exceed the payment amount")
         return self
 
 
@@ -138,7 +136,7 @@ class PaymentResponse(BaseModel):
     id: int
     company_id: int
     document_kind: str
-    document_id: int
+    document_id: int | None
     payment_date: date
     amount: Decimal
     wht_amount: Decimal

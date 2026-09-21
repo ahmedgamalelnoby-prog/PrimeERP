@@ -1,0 +1,7 @@
+from sqlalchemy import Column,Integer,ForeignKey,String,Numeric,DateTime,Text,CheckConstraint
+from sqlalchemy.sql import func
+from app.database.base import Base
+class POSSession(Base):
+ __tablename__="pos_sessions"
+ id=Column(Integer,primary_key=True);tenant_id=Column(Integer,ForeignKey("tenants.id",ondelete="CASCADE"),nullable=False,index=True);company_id=Column(Integer,ForeignKey("companies.id",ondelete="CASCADE"),nullable=False,index=True);terminal_id=Column(Integer,ForeignKey("pos_terminals.id",ondelete="RESTRICT"),nullable=False,index=True);cashier_id=Column(Integer,ForeignKey("users.id",ondelete="RESTRICT"),nullable=False,index=True);status=Column(String(20),nullable=False,server_default="open");opened_at=Column(DateTime(timezone=True),server_default=func.now(),nullable=False);closed_at=Column(DateTime(timezone=True));opening_cash=Column(Numeric(18,4),nullable=False,server_default="0");expected_cash=Column(Numeric(18,4),nullable=False,server_default="0");actual_cash=Column(Numeric(18,4));difference=Column(Numeric(18,4));notes=Column(Text)
+ __table_args__=(CheckConstraint("status IN ('open','closing','closed','cancelled')",name="ck_pos_session_status"),CheckConstraint("opening_cash >= 0",name="ck_pos_session_opening_cash"))

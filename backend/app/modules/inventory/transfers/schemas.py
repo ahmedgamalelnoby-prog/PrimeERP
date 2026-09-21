@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 class TransferLineCreate(BaseModel):
     item_id: int = Field(gt=0)
+    variant_id: int | None = Field(default=None, gt=0)
     source_location_id: int = Field(gt=0)
     destination_location_id: int = Field(gt=0)
     quantity: Decimal = Field(gt=0)

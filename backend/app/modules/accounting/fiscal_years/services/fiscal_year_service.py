@@ -612,6 +612,18 @@ class FiscalYearService:
             current_user=current_user,
         )
 
+    def assert_open_for_date(self, db: Session, *, company_id: int, posting_date: date) -> AccountingPeriod:
+        """Universal posting guard for services that do not carry a User object."""
+        company = db.query(Company).filter(Company.id == company_id).first()
+        if company is None or company.tenant_id is None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Company tenant context is missing")
+        period = fiscal_year_repository.get_period_for_date(
+            db=db, tenant_id=company.tenant_id, company_id=company_id, posting_date=posting_date
+        )
+        if period is None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No open accounting period exists for the posting date")
+        return period
+
     def get_open_period_for_date(
         self,
         db: Session,

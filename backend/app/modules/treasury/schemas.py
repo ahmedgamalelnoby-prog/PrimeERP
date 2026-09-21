@@ -54,3 +54,14 @@ class ChequeEventResponse(BaseModel):
     reference: str | None
     notes: str | None
     created_by: int | None
+
+
+class ChequeReplacement(BaseModel):
+    cheque_number: str = Field(min_length=1, max_length=100)
+    bank_name: str | None = Field(default=None, max_length=150)
+    account_number: str | None = Field(default=None, max_length=100)
+    cheque_date: date | None = None
+    due_date: date | None = None
+    amount: Decimal = Field(gt=0)
+    currency: str | None = None
+    notes: str | None = None

@@ -1,0 +1,16 @@
+from sqlalchemy import Column, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, CheckConstraint, UniqueConstraint, func
+from app.database.base import Base
+
+class APWriteOff(Base):
+ __tablename__="ap_write_offs"
+ id=Column(Integer,primary_key=True); company_id=Column(Integer,ForeignKey("companies.id",ondelete="CASCADE"),nullable=False,index=True); partner_id=Column(Integer,ForeignKey("commerce_partners.id",ondelete="RESTRICT"),nullable=False,index=True); document_id=Column(Integer,ForeignKey("purchase_documents.id",ondelete="RESTRICT"),nullable=False,index=True); amount=Column(Numeric(18,4),nullable=False); reason=Column(Text,nullable=False); writeoff_account_id=Column(Integer,ForeignKey("account_combinations.id",ondelete="RESTRICT"),nullable=False); journal_id=Column(Integer,ForeignKey("accounting_journals.id",ondelete="RESTRICT"),nullable=False); status=Column(String(20),nullable=False,default="pending"); requested_by=Column(Integer,ForeignKey("users.id",ondelete="SET NULL")); approved_by=Column(Integer,ForeignKey("users.id",ondelete="SET NULL")); rejected_by=Column(Integer,ForeignKey("users.id",ondelete="SET NULL")); approved_at=Column(DateTime(timezone=True)); rejected_at=Column(DateTime(timezone=True)); accounting_entry_id=Column(Integer,ForeignKey("journal_entries.id",ondelete="SET NULL")); created_at=Column(DateTime(timezone=True),nullable=False,server_default=func.now())
+ __table_args__=(CheckConstraint("amount > 0",name="ck_ap_writeoff_amount"),CheckConstraint("status IN ('pending','approved','rejected')",name="ck_ap_writeoff_status"))
+
+class APReconciliation(Base):
+ __tablename__="ap_reconciliations"
+ id=Column(Integer,primary_key=True); company_id=Column(Integer,ForeignKey("companies.id",ondelete="CASCADE"),nullable=False,index=True); partner_id=Column(Integer,ForeignKey("commerce_partners.id",ondelete="RESTRICT"),nullable=True,index=True); as_of=Column(Date,nullable=False); status=Column(String(20),nullable=False); discrepancy_amount=Column(Numeric(18,4),nullable=False,default=0); details_json=Column(Text,nullable=False,default="{}"); reconciled_by=Column(Integer,ForeignKey("users.id",ondelete="SET NULL")); created_at=Column(DateTime(timezone=True),nullable=False,server_default=func.now())
+
+class APVarianceWorkflow(Base):
+ __tablename__="ap_variance_workflows"
+ id=Column(Integer,primary_key=True); company_id=Column(Integer,ForeignKey("companies.id",ondelete="CASCADE"),nullable=False,index=True); bill_id=Column(Integer,ForeignKey("purchase_documents.id",ondelete="RESTRICT"),nullable=False,index=True); variance_type=Column(String(30),nullable=False); expected_amount=Column(Numeric(18,4),nullable=False); actual_amount=Column(Numeric(18,4),nullable=False); variance_amount=Column(Numeric(18,4),nullable=False); tolerance=Column(Numeric(18,4),nullable=False,default=0); status=Column(String(20),nullable=False,default="pending"); reason=Column(Text); requested_by=Column(Integer,ForeignKey("users.id",ondelete="SET NULL")); decided_by=Column(Integer,ForeignKey("users.id",ondelete="SET NULL")); decided_at=Column(DateTime(timezone=True)); created_at=Column(DateTime(timezone=True),nullable=False,server_default=func.now())
+ __table_args__=(CheckConstraint("status IN ('pending','approved','rejected','waived')",name="ck_ap_variance_status"),)

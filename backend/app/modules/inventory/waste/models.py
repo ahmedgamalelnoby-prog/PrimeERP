@@ -1,0 +1,7 @@
+from sqlalchemy import Column,Integer,ForeignKey,Numeric,String,DateTime,Text,CheckConstraint
+from sqlalchemy.sql import func
+from app.database.base import Base
+class InventoryWaste(Base):
+ __tablename__="inventory_wastes"
+ id=Column(Integer,primary_key=True);company_id=Column(Integer,ForeignKey("companies.id",ondelete="CASCADE"),nullable=False,index=True);item_id=Column(Integer,ForeignKey("inventory_items.id",ondelete="RESTRICT"),nullable=False,index=True);variant_id=Column(Integer,ForeignKey("product_variants.id",ondelete="RESTRICT"),nullable=True,index=True);location_id=Column(Integer,ForeignKey("inventory_locations.id",ondelete="RESTRICT"),nullable=False,index=True);quantity=Column(Numeric(18,4),nullable=False);unit_cost=Column(Numeric(18,4),nullable=False,default=0);waste_type=Column(String(30),nullable=False);reason=Column(Text,nullable=False);reference=Column(String(100));status=Column(String(20),nullable=False,default="draft",index=True);created_by=Column(Integer,ForeignKey("users.id",ondelete="RESTRICT"),nullable=False);posted_at=Column(DateTime(timezone=True),server_default=func.now(),nullable=True)
+ __table_args__=(CheckConstraint("quantity>0",name="ck_inventory_waste_qty"),CheckConstraint("unit_cost>=0",name="ck_inventory_waste_cost"),CheckConstraint("waste_type IN ('scrap','damaged','expired','spoilage','production_waste')",name="ck_inventory_waste_type"),CheckConstraint("status IN ('draft','approved','posted','cancelled')",name="ck_inventory_waste_status"))

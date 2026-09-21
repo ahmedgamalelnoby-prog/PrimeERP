@@ -9,10 +9,13 @@ from app.modules.shipping.cost_models import ShippingShipmentCost
 from app.modules.shipping.settlement_models import ShippingSettlementBatch, ShippingShipmentSettlement
 from app.modules.shipping.settlement_schemas import SettlementBatchCreate
 from app.modules.shipping.status_models import ShippingFinancialEvent
+from app.modules.accounting.fiscal_years.services.fiscal_year_service import fiscal_year_service
 
 
 class ShippingSettlementService:
     def create_batch(self, db: Session, payload: SettlementBatchCreate, user_id: int | None = None) -> ShippingSettlementBatch:
+        if hasattr(fiscal_year_service, "assert_open_for_date"):
+            fiscal_year_service.assert_open_for_date(db, company_id=payload.company_id, posting_date=payload.settlement_date)
         existing = db.scalar(select(ShippingSettlementBatch).where(
             ShippingSettlementBatch.company_id == payload.company_id,
             ShippingSettlementBatch.reference == payload.reference.strip(),

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.modules.commerce.models import CommercePayment
 from app.modules.treasury.models import Cheque
 from .models import BankAccount, BankStatement, BankStatementLine, ReconciliationSession, ReconciliationMatch
+from app.modules.accounting.fiscal_years.services.fiscal_year_service import fiscal_year_service
 
 def fingerprint_line(payload) -> str:
     raw = "|".join(str(getattr(payload, k, "") or "") for k in ("external_id","transaction_date","value_date","reference","cheque_number","debit","credit","currency","description"))
@@ -98,6 +99,23 @@ def match(db, session, payload, user):
     total=(line.debit if line.debit else line.credit)
     line.status="matched" if line.matched_amount==total else "partial"
     db.flush(); return obj
+
+def _candidate_score(line, source):
+    score=0
+    amount = source.amount
+    target = line.debit if line.debit else line.credit
+    if amount == target: score += 50
+    elif target and abs(amount-target) <= max(target*Decimal("0.01"), Decimal("0.01")): score += 30
+    source_date = getattr(source, "payment_date", None) or getattr(source, "cheque_date", None)
+    if source_date and line.transaction_date:
+        days=abs((source_date-line.transaction_date).days)
+        score += 30 if days==0 else 20 if days<=2 else 10 if days<=7 else 0
+    ref=(getattr(source,"reference",None) or getattr(source,"cheque_number",None) or "").strip().lower()
+    line_ref=(line.reference or line.cheque_number or "").strip().lower()
+    if ref and line_ref:
+        if ref==line_ref: score += 20
+        elif ref in line_ref or line_ref in ref: score += 10
+    return min(score,100)
 
 def candidates(db, session, line_id):
     line=_line(db,session,line_id)

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.modules.commerce.models import CommercePayment, CommercePaymentAllocation, PurchaseDocument, SalesDocument
 from app.modules.jurisdiction.models import TaxSnapshot
 from app.modules.jurisdiction.tax_posting_guard import validate_payment_wht
+from app.modules.accounting.fiscal_years.services.fiscal_year_service import fiscal_year_service
 
 
 PAYMENT_METHODS = {"cash", "bank_transfer", "card", "cheque", "wallet", "cod", "other"}
@@ -85,6 +86,9 @@ def post_payment(
         raise ValueError("Invalid withholding amount")
 
     model = SalesDocument if document_kind == "sale" else PurchaseDocument
+    # Payment posting must respect the universal accounting period lock.
+    if hasattr(fiscal_year_service, "assert_open_for_date"):
+        fiscal_year_service.assert_open_for_date(db, company_id=company_id, posting_date=payment_date)
     document = db.scalar(
         select(model)
         .where(model.id == document_id, model.company_id == company_id)
@@ -134,7 +138,7 @@ def post_payment(
 
     balance = Decimal(document.total or 0) - Decimal(document.paid_total or 0)
     if update_document_paid_total and amount > balance:
-        raise ValueError("Payment exceeds outstanding balance")
+        raise ValueError("Payment exceeds outstanding balance; use AR allocation for partial/overpayment")
 
     candidate = CommercePayment(
         company_id=company_id,
@@ -223,16 +227,18 @@ def reverse_payment(
         raise ValueError("Only an original posted payment can be reversed")
 
     model = SalesDocument if payment.document_kind == "sale" else PurchaseDocument
-    document = db.scalar(
-        select(model)
-        .where(
-            model.id == payment.document_id,
-            model.company_id == company_id,
+    document = None
+    if payment.document_id is not None:
+        document = db.scalar(
+            select(model)
+            .where(
+                model.id == payment.document_id,
+                model.company_id == company_id,
+            )
+            .with_for_update()
         )
-        .with_for_update()
-    )
-    if document is None:
-        raise ValueError("Document not found")
+        if document is None:
+            raise ValueError("Document not found")
 
     allocations = list(
         db.scalars(
@@ -251,7 +257,7 @@ def reverse_payment(
         allocation_total = sum((Decimal(a.amount) for a in allocations), Decimal("0"))
         if allocation_total != payment_amount:
             raise ValueError("Payment allocations do not reconcile to payment amount")
-    elif Decimal(document.paid_total or 0) < payment_amount:
+    elif document is not None and Decimal(document.paid_total or 0) < payment_amount:
         raise ValueError("Document paid total is inconsistent")
 
     payment.status = "reversed"
@@ -291,7 +297,8 @@ def reverse_payment(
     else:
         # Legacy payments may predate automatic allocation creation. Keep
         # reversal accounting-correct for those records as well.
-        document.paid_total = Decimal(document.paid_total or 0) - payment_amount
+        if document is not None:
+            document.paid_total = Decimal(document.paid_total or 0) - payment_amount
 
     db.flush()
     return document, payment, reversal
