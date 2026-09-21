@@ -62,7 +62,7 @@ class RentalService:
         if c.pricing_type=="revenue_share": base=share
         elif c.pricing_type=="fixed_plus_revenue_share": base=fixed+share
         maintenance=Decimal(c.maintenance_amount or 0);vat=(base+maintenance)*Decimal(c.vat_percent or 0)/Decimal("100");wht=base*Decimal(c.wht_percent or 0)/Decimal("100");total=base+maintenance+vat-wht
-        obj=RentalCharge(tenant_id=tenant_id,company_id=company_id,contract_id=c.id,charge_date=payload.charge_date,period_start=payload.period_start,period_end=payload.period_end,base_amount=base,revenue_amount=revenue,maintenance_amount=maintenance,vat_amount=vat,wht_amount=wht,total_amount=total)
+        obj=RentalCharge(tenant_id=tenant_id,company_id=company_id,contract_id=c.id,charge_date=payload.charge_date,period_start=payload.period_start,period_end=payload.period_end,base_amount=base,revenue_amount=revenue,maintenance_amount=maintenance,vat_amount=vat,wht_amount=wht,total_amount=total,due_date=c.end_date)
         db.add(obj);db.flush();rental_accounting_service.post_charge(db,obj,user_id);return obj
     def list_contracts(self,db,tenant_id,company_id): return list(db.scalars(self._scope(RentalContract,company_id,tenant_id).order_by(RentalContract.start_date.desc())).all())
     def list_charges(self,db,tenant_id,company_id): return list(db.scalars(self._scope(RentalCharge,company_id,tenant_id).order_by(RentalCharge.charge_date.desc()).limit(500)).all())
@@ -93,3 +93,17 @@ rental_service=RentalService()
         if overlap: raise HTTPException(409,"Renewal period overlaps another contract")
         new=RentalContract(tenant_id=tenant_id,company_id=company_id,branch_id=old.branch_id,unit_id=old.unit_id,rental_tenant_id=old.rental_tenant_id,number=payload.number,start_date=payload.start_date,end_date=payload.end_date,status="renewed",pricing_type=payload.pricing_type or old.pricing_type,fixed_rent=payload.fixed_rent if payload.fixed_rent is not None else old.fixed_rent,minimum_guarantee=payload.minimum_guarantee if payload.minimum_guarantee is not None else old.minimum_guarantee,revenue_share_percent=payload.revenue_share_percent if payload.revenue_share_percent is not None else old.revenue_share_percent,maintenance_amount=payload.maintenance_amount if payload.maintenance_amount is not None else old.maintenance_amount,security_deposit=payload.security_deposit if payload.security_deposit is not None else old.security_deposit,vat_percent=payload.vat_percent if payload.vat_percent is not None else old.vat_percent,wht_percent=payload.wht_percent if payload.wht_percent is not None else old.wht_percent,notes=payload.notes)
         db.add(new);old.status="terminated";db.flush();return new
+
+
+    def aging(self,db,tenant_id,company_id,as_of):
+        charges=list(db.scalars(select(RentalCharge).where(RentalCharge.company_id==company_id,RentalCharge.tenant_id==tenant_id,RentalCharge.status.in_({"posted","approved","pending"}))).all())
+        rows=[]
+        for charge in charges:
+            paid=sum((Decimal(r.amount or 0) for r in db.scalars(select(RentalReceipt).where(RentalReceipt.charge_id==charge.id,RentalReceipt.status=="posted")).all()),Decimal("0"))
+            outstanding=max(Decimal(charge.total_amount or 0)-paid,Decimal("0"))
+            if outstanding<=0: continue
+            due=charge.due_date or charge.period_end
+            days=max((as_of-due).days,0)
+            bucket="current" if as_of<=due else ("1_30" if days<=30 else ("31_60" if days<=60 else ("61_90" if days<=90 else "90_plus")))
+            rows.append({"charge_id":charge.id,"contract_id":charge.contract_id,"due_date":due,"amount":outstanding,"days_overdue":days,"bucket":bucket})
+        return rows
