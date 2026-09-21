@@ -106,14 +106,32 @@ class InventoryService:
             raise
 
     def issue(self,db,tenant_id,payload):
-        warehouse=self._warehouse(db,tenant_id,payload.warehouse_id); issue=StockIssue(tenant_id=tenant_id,warehouse_id=warehouse.id,issue_type=payload.issue_type,reference_type=payload.reference_type,reference_id=payload.reference_id,notes=payload.notes); db.add(issue); db.flush()
+        warehouse=self._warehouse(db,tenant_id,payload.warehouse_id)
+        reservation=None
+        reservation_lines={}
+        if payload.reservation_id is not None:
+            reservation=db.scalar(select(StockReservation).where(StockReservation.id==payload.reservation_id,StockReservation.tenant_id==tenant_id))
+            if not reservation: raise HTTPException(404,"Reservation not found")
+            if reservation.status!="reserved": raise HTTPException(409,"Reservation is not active")
+            for rl in db.scalars(select(StockReservationLine).where(StockReservationLine.reservation_id==reservation.id)).all():
+                reservation_lines[(rl.product_id,rl.location_id)]=rl
+        issue=StockIssue(tenant_id=tenant_id,warehouse_id=warehouse.id,issue_type=payload.issue_type,reference_type=payload.reference_type or ("reservation" if reservation else None),reference_id=payload.reference_id or (reservation.id if reservation else None),notes=payload.notes)
+        db.add(issue); db.flush()
         try:
             for line in payload.lines:
                 loc=self._location(db,tenant_id,line.location_id)
                 if loc.warehouse_id!=warehouse.id: raise HTTPException(400,"Issue location does not belong to warehouse")
                 self._product(db,tenant_id,line.product_id); b=self._balance(db,tenant_id,warehouse.id,loc.id,line.product_id,True); qty=Decimal(line.quantity)
-                if b.quantity-b.reserved_quantity<qty: raise HTTPException(409,f"Insufficient available stock for product {line.product_id}")
-                b.quantity-=qty; db.add(StockIssueLine(issue_id=issue.id,product_id=line.product_id,location_id=loc.id,quantity=qty)); db.add(StockMovement(tenant_id=tenant_id,product_id=line.product_id,warehouse_id=warehouse.id,location_id=loc.id,movement_type=payload.issue_type,quantity=qty,reference_type="stock_issue",reference_id=issue.id))
+                if reservation:
+                    rl=reservation_lines.get((line.product_id,line.location_id))
+                    if not rl or qty>rl.quantity: raise HTTPException(409,"Issue quantity exceeds reservation")
+                    if b.quantity<qty or b.reserved_quantity<qty: raise HTTPException(409,"Reserved stock is unavailable")
+                    b.quantity-=qty; b.reserved_quantity-=qty; rl.quantity-=qty
+                else:
+                    if b.quantity-b.reserved_quantity<qty: raise HTTPException(409,f"Insufficient available stock for product {line.product_id}")
+                    b.quantity-=qty
+                db.add(StockIssueLine(issue_id=issue.id,product_id=line.product_id,location_id=loc.id,quantity=qty)); db.add(StockMovement(tenant_id=tenant_id,product_id=line.product_id,warehouse_id=warehouse.id,location_id=loc.id,movement_type=payload.issue_type,quantity=qty,reference_type="stock_issue",reference_id=issue.id))
+            if reservation and all(rl.quantity==0 for rl in reservation_lines.values()): reservation.status="consumed"
             db.commit(); db.refresh(issue); return issue
         except Exception: db.rollback(); raise
 inventory_service=InventoryService()
