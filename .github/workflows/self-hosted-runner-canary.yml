@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Runner identity
-        shell: pwsh
+        shell: powershell
         run: |
           Write-Host "Runner: $env:RUNNER_NAME"
           Write-Host "OS: $env:RUNNER_OS"
@@ -25,7 +25,7 @@ jobs:
           Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, BuildNumber
 
       - name: Toolchain
-        shell: pwsh
+        shell: powershell
         run: |
           python --version
           node --version
@@ -37,7 +37,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Docker smoke test
-        shell: pwsh
+        shell: powershell
         run: |
           docker info
 
