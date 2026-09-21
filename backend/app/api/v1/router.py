@@ -14,6 +14,7 @@ from app.modules.branches.router import router as branches_router
 from app.modules.customers.router import router as customers_router
 from app.modules.products.router import router as products_router
 from app.modules.inventory.router import router as inventory_router
+from app.modules.sales.sales_orders.router import router as sales_orders_router
 def build_router()->APIRouter:
     api_router=APIRouter()
     api_router.include_router(identity_router,prefix="/identity",tags=["identity"])
@@ -30,5 +31,6 @@ def build_router()->APIRouter:
     api_router.include_router(customers_router)
     api_router.include_router(products_router)
     api_router.include_router(inventory_router)
+    api_router.include_router(sales_orders_router,prefix="/sales",tags=["sales-orders"])
     api_router.include_router(legal_router)
     return api_router
