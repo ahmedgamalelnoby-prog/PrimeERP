@@ -45,7 +45,7 @@ def post_transaction(transaction_id:int,p:TreasuryPosting,db:Session=Depends(get
     offset=db.scalar(select(AccountCombination).where(AccountCombination.id==p.offset_account_combination_id,AccountCombination.company_id==a.company_id,AccountCombination.is_active.is_(True)))
     if not offset: raise HTTPException(404,"Offset account not found for company")
     lines=[JournalLineCreate(account_combination_id=a.accounting_account_combination_id,debit=tx.amount if tx.direction=="in" else 0,credit=tx.amount if tx.direction=="out" else 0),JournalLineCreate(account_combination_id=offset.id,debit=tx.amount if tx.direction=="out" else 0,credit=tx.amount if tx.direction=="in" else 0)]
-    je=journal_service.create_entry(db,JournalEntryCreate(company_id=a.company_id,branch_id=a.branch_id,journal_id=p.journal_id,fiscal_year_id=p.fiscal_year_id,period_id=p.period_id,entry_date=tx.transaction_date,description=tx.description or f"Treasury transaction {tx.transaction_number}",lines=lines,source_module="treasury",source_entity="treasury_transaction",source_id=tx.id),current_user)
+    je=journal_service.create_entry(db,JournalEntryCreate(company_id=a.company_id,branch_id=a.branch_id,journal_id=p.journal_id,fiscal_year_id=p.fiscal_year_id,period_id=p.period_id,entry_date=tx.transaction_date,description=tx.description or f"Treasury transaction {tx.transaction_number}",lines=lines,source_module="treasury",source_entity="treasury_transaction",source_id=tx.id),current_user,auto_post=True)
     tx.journal_entry_id=je.id; tx.status="posted"; db.commit(); db.refresh(tx); return tx
 
 @router.post("/cheques/{cheque_id}/status")
@@ -70,7 +70,7 @@ def post_transfer(transfer_id:int,p:TreasuryPosting,db:Session=Depends(get_db),c
     a=account(db,t,x.from_account_id); b=account(db,t,x.to_account_id)
     if not a.accounting_account_combination_id or not b.accounting_account_combination_id: raise HTTPException(422,"Both treasury accounts must be linked to accounting accounts")
     lines=[JournalLineCreate(account_combination_id=b.accounting_account_combination_id,debit=x.amount),JournalLineCreate(account_combination_id=a.accounting_account_combination_id,credit=x.amount)]
-    je=journal_service.create_entry(db,JournalEntryCreate(company_id=a.company_id,branch_id=a.branch_id,journal_id=p.journal_id,fiscal_year_id=p.fiscal_year_id,period_id=p.period_id,entry_date=x.transfer_date,description=f"Treasury transfer {x.transfer_number}",lines=lines,source_module="treasury",source_entity="treasury_transfer",source_id=x.id),current_user)
+    je=journal_service.create_entry(db,JournalEntryCreate(company_id=a.company_id,branch_id=a.branch_id,journal_id=p.journal_id,fiscal_year_id=p.fiscal_year_id,period_id=p.period_id,entry_date=x.transfer_date,description=f"Treasury transfer {x.transfer_number}",lines=lines,source_module="treasury",source_entity="treasury_transfer",source_id=x.id),current_user,auto_post=True)
     x.status="posted"; db.commit(); db.refresh(x); return x
 
 @router.post("/cheques",status_code=201)
