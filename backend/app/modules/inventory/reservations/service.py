@@ -27,7 +27,7 @@ class InventoryReservationService:
             if active_variant_id is not None:
                 raise ValueError("This item has active variants; reservations must identify the variant")
             return None
-        variant = db.scalar(select(ProductVariant).where(ProductVariant.id == variant_id, ProductVariant.company_id == company_id, ProductVariant.product_id == item.id, ProductVariant.active.is_(True)))
+        variant = db.scalar(select(ProductVariant).where(ProductVariant.id == variant_id, ProductVariant.company_id == company_id, ProductVariant.product_id == item.id, ProductVariant.is_active.is_(True)))
         if variant is None:
             raise ValueError("Variant does not belong to the item/company or is inactive")
         return variant
