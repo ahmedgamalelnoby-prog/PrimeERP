@@ -23,8 +23,17 @@ class InventoryService:
         q=select(StockBalance).where(StockBalance.tenant_id==tenant_id,StockBalance.warehouse_id==wid,StockBalance.location_id==lid,StockBalance.product_id==pid)
         if lock: q=q.with_for_update()
         obj=db.scalar(q)
-        if not obj:
-            obj=StockBalance(tenant_id=tenant_id,warehouse_id=wid,location_id=lid,product_id=pid,quantity=0,reserved_quantity=0); db.add(obj); db.flush()
+        if obj: return obj
+        try:
+            with db.begin_nested():
+                db.add(StockBalance(tenant_id=tenant_id,warehouse_id=wid,location_id=lid,product_id=pid,quantity=0,reserved_quantity=0))
+                db.flush()
+        except IntegrityError:
+            pass
+        q=select(StockBalance).where(StockBalance.tenant_id==tenant_id,StockBalance.warehouse_id==wid,StockBalance.location_id==lid,StockBalance.product_id==pid)
+        if lock: q=q.with_for_update()
+        obj=db.scalar(q)
+        if not obj: raise HTTPException(500,"Unable to initialize stock balance")
         return obj
     def list_warehouses(self,db,tenant_id):
         return list(db.scalars(select(Warehouse).where(Warehouse.tenant_id==tenant_id).order_by(Warehouse.name,Warehouse.id)).all())
