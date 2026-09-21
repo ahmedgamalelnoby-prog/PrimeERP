@@ -116,3 +116,5 @@ jobs:
             docker rm -f $container 2>$null
             $global:LASTEXITCODE = 0
           }
+
+# Trigger self-hosted validation after hosted Actions quota exhaustion.
