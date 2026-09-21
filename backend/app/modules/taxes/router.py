@@ -15,7 +15,8 @@ from app.modules.accounting.models import TaxRate
 from app.modules.accounting.tax_engine import calculate_taxes
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
-from app.modules.identity.models import User\nfrom app.modules.commerce.models import SalesDocument, SalesLine, PurchaseDocument, PurchaseLine
+from app.modules.identity.models import User
+from app.modules.commerce.models import SalesDocument, SalesLine, PurchaseDocument, PurchaseLine
 from app.modules.saas.entitlements import require_module
 from .models import TaxReturnDraft
 
