@@ -88,7 +88,7 @@ jobs:
               }
             }
 
-            $crossRefs = git grep -n -I -E 'CommercialERP|ContentAI|commercialERP|contentai|D:\\(commercialERP|ContentAI)' -- ':!docs/SYSTEM_BOUNDARIES.md' ':!.github/workflows/ci.yml'
+            $crossRefs = git grep -n -I -E 'CommercialERP|ContentAI|commercialERP|contentai|D:\\(commercialERP|ContentAI)' -- ':!docs/SYSTEM_BOUNDARIES.md' ':!.github/workflows/ci.yml' ':!.github/workflows/self-hosted-validation.yml'
             if ($LASTEXITCODE -eq 0 -and $crossRefs) {
               $crossRefs
               throw "Cross-system reference detected in PrimeERP."
