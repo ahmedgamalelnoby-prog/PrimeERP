@@ -35,12 +35,14 @@ def calculate_shipping_fee(
     return fee.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
+# Delivered is a terminal business state. A return after delivery must be
+# represented by a separate return workflow, not by reopening the shipment.
 SHIPMENT_TRANSITIONS = {
     "pending": {"picked_up", "cancelled"},
     "picked_up": {"in_transit", "cancelled"},
     "in_transit": {"out_for_delivery", "returned"},
     "out_for_delivery": {"delivered", "returned"},
-    "delivered": {"returned"},
+    "delivered": set(),
     "returned": set(),
     "cancelled": set(),
 }
