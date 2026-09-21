@@ -59,5 +59,7 @@ def shipment_return(shipment_id:int,p:ReturnCreate,db:Session=Depends(get_db),cu
 @router.post("/carrier-settlements",status_code=201)
 def settlement(p:SettlementCreate,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):
  t=tenant(current_user);carrier(db,t,p.carrier_id)
- seq=numbering_service.generate_next_number(db,t,p.carrier_id,p.carrier_id,"CARRIER_SETTLEMENT",commit=False)
+ if not db.scalar(select(Company).where(Company.id==p.company_id,Company.tenant_id==t)): raise HTTPException(404,"Company not found")
+ if not db.scalar(select(Branch).where(Branch.id==p.branch_id,Branch.company_id==p.company_id,Branch.tenant_id==t)): raise HTTPException(404,"Branch not found for company")
+ seq=numbering_service.generate_next_number(db,t,p.company_id,p.branch_id,"CARRIER_SETTLEMENT",commit=False)
  x=CarrierSettlement(tenant_id=t,settlement_number=seq["generated_number"],net_amount=p.orders_amount+p.cod_collected-p.carrier_charges,**p.model_dump());db.add(x);db.commit();db.refresh(x);return x
