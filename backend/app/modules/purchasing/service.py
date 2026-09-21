@@ -59,7 +59,7 @@ class PurchasingService:
             if not loc: raise HTTPException(404,"Receipt location not found for warehouse")
             db.add(PurchaseReceiptLine(receipt_id=r.id,**l.model_dump()))
             from app.modules.inventory.schemas import MovementCreate
-            inventory_service.post_movement(db,t,MovementCreate(warehouse_id=w.id,location_id=loc.id,product_id=l.product_id,movement_type="receipt",quantity=l.quantity,notes=f"Purchase receipt {r.receipt_number}"))
+            inventory_service.post_movement(db,t,MovementCreate(warehouse_id=w.id,location_id=loc.id,product_id=l.product_id,movement_type="receipt",quantity=l.quantity,notes=f"Purchase receipt {r.receipt_number}"),commit=False)
         x.status="received"; db.commit(); db.refresh(r); return r
     def create_invoice(self,db,p,u):
         t=self.tenant(u); x=db.scalar(select(PurchaseOrder).where(PurchaseOrder.id==p.purchase_order_id,PurchaseOrder.tenant_id==t))
