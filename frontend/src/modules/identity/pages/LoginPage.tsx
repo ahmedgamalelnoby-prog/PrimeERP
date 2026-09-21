@@ -481,14 +481,7 @@ export default function LoginPage() {
                       )}
                     </Label>
 
-                    <Link
-                      to="/forgot-password"
-                      className="text-sm font-semibold text-blue-600 hover:text-blue-700 hover:underline"
-                    >
-                      {t(
-                        "login.forgotPassword",
-                      )}
-                    </Link>
+
                   </div>
 
                   <div className="relative">
