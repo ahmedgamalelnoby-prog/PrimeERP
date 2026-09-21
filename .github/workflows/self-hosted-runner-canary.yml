@@ -40,3 +40,5 @@ jobs:
         shell: pwsh
         run: |
           docker info
+
+# diagnostic trigger
