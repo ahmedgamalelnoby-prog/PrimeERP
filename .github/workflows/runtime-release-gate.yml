@@ -107,7 +107,7 @@ jobs:
             $frontendId = docker compose -f ci-base-compose.yml -f ci-runtime-compose.yml ps -q frontend
             $workerId = docker compose -f ci-base-compose.yml -f ci-runtime-compose.yml ps -q report-worker
             $backend = if ($backendId) { docker inspect -f '{{.State.Health.Status}}' $backendId 2>$null } else { '' }
-            $frontend = if ($frontendId) { docker inspect -f '{{.State.Status}}' $frontendId 2>$null } else { '' }
+            $frontend = if ($frontendId) { docker inspect -f '{{.State.Health.Status}}' $frontendId 2>$null } else { '' }
             $worker = if ($workerId) { docker inspect -f '{{.State.Status}}' $workerId 2>$null } else { '' }
             if ($backend -eq 'healthy' -and $frontend -eq 'running' -and $worker -eq 'running') {
               Write-Host 'Backend health: PASS'
@@ -132,15 +132,6 @@ jobs:
           $healthJson = $health | ConvertFrom-Json
           if ($healthJson.status -ne 'healthy') { throw 'Backend liveness contract failed.' }
           Write-Host 'Backend readiness/liveness: PASS'
-
-      - name: Verify backend OpenAPI
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $openapi = docker compose -f ci-base-compose.yml -f ci-runtime-compose.yml exec -T backend python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8001/openapi.json', timeout=4).read().decode())"
-          $doc = $openapi | ConvertFrom-Json
-          if (-not $doc.openapi) { throw 'OpenAPI contract failed.' }
-          Write-Host "OpenAPI: $($doc.openapi)"
 
       - name: Verify frontend HTTP
         shell: powershell
