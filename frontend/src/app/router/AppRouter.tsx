@@ -14,6 +14,9 @@ import UsersPage from "@/modules/users/pages/UsersPage";
 import RolesPage from "@/modules/roles/pages/RolesPage";
 import LegalDocumentPage from "@/modules/legal/pages/LegalDocumentPage";
 import LegalManagementPage from "@/modules/legal/pages/LegalManagementPage";
+import CustomersPage from "@/modules/customers/pages/CustomersPage";
+import ProductsPage from "@/modules/products/pages/ProductsPage";
+import InventoryPage from "@/modules/inventory/pages/InventoryPage";
 
 function ComingSoonPage({ title }: { title: string }) {
   return (
@@ -66,19 +69,19 @@ export default function AppRouter() {
           <Route path="/companies/settings" element={<ComingSoonPage title="إعدادات الشركات" />} />
           <Route path="/branches" element={<ComingSoonPage title="الفروع" />} />
 
-          <Route path="/customers" element={<ComingSoonPage title="قائمة العملاء" />} />
-          <Route path="/customers/new" element={<ComingSoonPage title="إضافة عميل" />} />
+          <Route path="/customers" element={<CustomersPage />} />
+          <Route path="/customers/new" element={<CustomersPage createOnly />} />
           <Route path="/customers/reports" element={<ComingSoonPage title="تقارير العملاء" />} />
 
-          <Route path="/products" element={<ComingSoonPage title="قائمة المنتجات" />} />
-          <Route path="/products/new" element={<ComingSoonPage title="إضافة منتج" />} />
-          <Route path="/products/categories" element={<ComingSoonPage title="تصنيفات المنتجات" />} />
-          <Route path="/products/units" element={<ComingSoonPage title="وحدات القياس" />} />
+          <Route path="/products" element={<ProductsPage />} />
+          <Route path="/products/new" element={<ProductsPage mode="new" />} />
+          <Route path="/products/categories" element={<ProductsPage mode="categories" />} />
+          <Route path="/products/units" element={<ProductsPage mode="units" />} />
 
-          <Route path="/inventory" element={<ComingSoonPage title="نظرة عامة على المخزون" />} />
-          <Route path="/inventory/warehouses" element={<ComingSoonPage title="المخازن" />} />
-          <Route path="/inventory/movements" element={<ComingSoonPage title="حركات المخزون" />} />
-          <Route path="/inventory/reports" element={<ComingSoonPage title="تقارير المخزون" />} />
+          <Route path="/inventory" element={<InventoryPage />} />
+          <Route path="/inventory/warehouses" element={<InventoryPage mode="warehouses" />} />
+          <Route path="/inventory/movements" element={<InventoryPage mode="movements" />} />
+          <Route path="/inventory/reports" element={<InventoryPage mode="reports" />} />
 
           <Route path="/accounting" element={<ComingSoonPage title="نظرة عامة على الحسابات" />} />
           <Route path="/accounting/chart-of-accounts" element={<ComingSoonPage title="دليل الحسابات" />} />
