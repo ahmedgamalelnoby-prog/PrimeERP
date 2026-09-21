@@ -1,0 +1,1 @@
+export {default as RentalsPage} from "./pages/RentalsPage";

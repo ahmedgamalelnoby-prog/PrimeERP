@@ -29,7 +29,7 @@ from app.modules.saas.schemas import TenantRegistrationRequest
 
 
 BUSINESS_MODULES: dict[str, set[str]] = {
-    "restaurant": {"dashboard", "users", "companies", "branches", "accounting", "sales", "inventory", "purchasing", "restaurant", "pos", "reports"},
+    "restaurant": {"dashboard", "users", "companies", "branches", "accounting", "sales", "inventory", "purchasing", "restaurant", "pos", "reports", "rentals"},
     "cafe": {"dashboard", "users", "companies", "branches", "accounting", "sales", "inventory", "purchasing", "restaurant", "pos", "reports"},
     "retail": {"dashboard", "users", "companies", "branches", "accounting", "sales", "inventory", "purchasing", "crm", "pos", "shipping", "reports"},
     "fashion": {"dashboard", "users", "companies", "branches", "accounting", "sales", "inventory", "purchasing", "crm", "pos", "shipping", "reports"},

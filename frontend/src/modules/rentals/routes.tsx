@@ -1,0 +1,1 @@
+export const rentalRoutes=[{path:"/commercial-leasing",label:"التأجير التجاري"}];
