@@ -1,45 +1,446 @@
-import { useEffect, useState, type ElementType } from "react";
-import { NavLink, useLocation } from "react-router-dom";
-import { ChevronDown, FileText, ShieldCheck, X } from "lucide-react";
-import { navigationItems, type NavigationItem } from "@/app/navigation";
-import { useAuth } from "@/modules/identity/context/AuthContext";
+import { useEffect, useState } from "react";
+import type { ElementType } from "react";
 
-interface AppSidebarProps { open: boolean; onClose: () => void; }
+import {
+  BarChart3,
+  Building2,
+  Calculator,
+  ChevronDown,
+  PlusCircle,
+  ClipboardList,
+  FileText,
+  GitBranch,
+  LayoutDashboard,
+  List,
+  Package,
+  Settings,
+  ShieldCheck,
+  ShoppingCart,
+  UserRound,
+  Users,
+  Warehouse,
+  X,
+} from "lucide-react";
 
-export default function AppSidebar({ open, onClose }: AppSidebarProps) {
+
+
+import { useAuth } from "@/modules/identity/context/AuthContext";import {
+  NavLink,
+  useLocation,
+} from "react-router-dom";
+
+interface AppSidebarProps {
+  open: boolean;
+  onClose: () => void;
+}
+
+interface SubMenuItem {
+  title: string;
+  path: string;
+  icon: ElementType;
+}
+
+interface MenuItem {
+  title: string;
+  icon: ElementType;
+  path?: string;
+  children?: SubMenuItem[];
+}
+
+const menuItems: MenuItem[] = [
+  {
+    title: "لوحة التحكم",
+    icon: LayoutDashboard,
+    children: [
+      {
+        title: "الرئيسية",
+        path: "/dashboard",
+        icon: LayoutDashboard,
+      },
+      {
+        title: "التقارير المختصرة",
+        path: "/dashboard/reports",
+        icon: BarChart3,
+      },
+    ],
+  },
+  {
+    title: "المستخدمون",
+    icon: Users,
+    children: [
+      {
+        title: "قائمة المستخدمين",
+        path: "/users",
+        icon: List,
+      },
+      {
+        title: "إضافة مستخدم",
+        path: "/users/new",
+        icon: PlusCircle,
+      },
+      {
+        title: "الأدوار والصلاحيات",
+        path: "/roles",
+        icon: ShieldCheck,
+      },
+    ],
+  },
+  {
+    title: "الشركات",
+    icon: Building2,
+    children: [
+      {
+        title: "قائمة الشركات",
+        path: "/companies",
+        icon: List,
+      },
+      {
+        title: "إضافة شركة",
+        path: "/companies/new",
+        icon: PlusCircle,
+      },
+      {
+        title: "الفروع",
+        path: "/branches",
+        icon: GitBranch,
+      },
+      {
+        title: "إعدادات الشركات",
+        path: "/companies/settings",
+        icon: Settings,
+      },
+    ],
+  },
+  {
+    title: "العملاء",
+    icon: UserRound,
+    children: [
+      {
+        title: "قائمة العملاء",
+        path: "/customers",
+        icon: List,
+      },
+      {
+        title: "إضافة عميل",
+        path: "/customers/new",
+        icon: PlusCircle,
+      },
+      {
+        title: "تقارير العملاء",
+        path: "/customers/reports",
+        icon: FileText,
+      },
+    ],
+  },
+  {
+    title: "المنتجات",
+    icon: Package,
+    children: [
+      {
+        title: "قائمة المنتجات",
+        path: "/products",
+        icon: List,
+      },
+      {
+        title: "إضافة منتج",
+        path: "/products/new",
+        icon: PlusCircle,
+      },
+      {
+        title: "التصنيفات",
+        path: "/products/categories",
+        icon: ClipboardList,
+      },
+      {
+        title: "وحدات القياس",
+        path: "/products/units",
+        icon: Settings,
+      },
+    ],
+  },
+  {
+    title: "المخزون",
+    icon: Warehouse,
+    children: [
+      {
+        title: "نظرة عامة",
+        path: "/inventory",
+        icon: Warehouse,
+      },
+      {
+        title: "المخازن",
+        path: "/inventory/warehouses",
+        icon: Building2,
+      },
+      {
+        title: "حركات المخزون",
+        path: "/inventory/movements",
+        icon: ClipboardList,
+      },
+      {
+        title: "تقارير المخزون",
+        path: "/inventory/reports",
+        icon: BarChart3,
+      },
+    ],
+  },
+  {
+    title: "الحسابات",
+    icon: Calculator,
+    children: [
+      {
+        title: "نظرة عامة",
+        path: "/accounting",
+        icon: Calculator,
+      },
+      {
+        title: "دليل الحسابات",
+        path: "/accounting/chart-of-accounts",
+        icon: List,
+      },
+      {
+        title: "القيود اليومية",
+        path: "/accounting/journal-entries",
+        icon: FileText,
+      },
+      {
+        title: "التقارير المالية",
+        path: "/accounting/reports",
+        icon: BarChart3,
+      },
+    ],
+  },
+  {
+    title: "المبيعات",
+    icon: ShoppingCart,
+    children: [
+      {
+        title: "الطلبات",
+        path: "/sales/orders",
+        icon: ClipboardList,
+      },
+      {
+        title: "إضافة طلب",
+        path: "/sales/orders/new",
+        icon: PlusCircle,
+      },
+      {
+        title: "تقارير المبيعات",
+        path: "/sales/reports",
+        icon: BarChart3,
+      },
+    ],
+  },
+];
+
+export default function AppSidebar({
+  open,
+  onClose,
+}: AppSidebarProps) {
   const location = useLocation();
   const { user } = useAuth();
-  const [expanded, setExpanded] = useState<string[]>(["identity","organization","accounting"]);
   const canManageLegal = Boolean(user?.is_platform_admin || user?.is_superuser);
-  const items = navigationItems.filter((item) => item.visible !== false);
-  const isActive = (path?: string) => Boolean(path && (location.pathname === path || location.pathname.startsWith(path + "/")));
+
+
+  const [expandedMenus, setExpandedMenus] =
+    useState<string[]>([]);
 
   useEffect(() => {
-    const activeParents = items.filter((item) => item.children?.some((child) => isActive(child.path))).map((item) => item.id);
-    if (activeParents.length) setExpanded((current) => Array.from(new Set([...current, ...activeParents])));
+    const activeParents = menuItems
+      .filter((item) =>
+        item.children?.some((child) =>
+          location.pathname.startsWith(child.path),
+        ),
+      )
+      .map((item) => item.title);
+
+    setExpandedMenus((current) =>
+      Array.from(
+        new Set([
+          ...current,
+          ...activeParents,
+        ]),
+      ),
+    );
   }, [location.pathname]);
 
-  const renderItem = (item: NavigationItem) => {
-    const Icon = item.icon as ElementType | undefined;
-    if (item.type === "item" && item.path) {
-      return <NavLink key={item.id} to={item.path} onClick={onClose} className={({isActive: active}) => "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all " + (active ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20" : "text-slate-600 hover:bg-slate-100 hover:text-slate-950")}><span className="flex size-8 items-center justify-center rounded-lg bg-current/5"><Icon className="size-4.5"/></span><span className="truncate">{item.labelAr}</span></NavLink>;
-    }
-    if (item.type !== "group") return null;
-    const opened = expanded.includes(item.id);
-    const active = item.children?.some((child) => isActive(child.path));
-    return <div key={item.id} className="space-y-1">
-      <button type="button" onClick={() => setExpanded((current) => current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current,item.id])} className={"flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-sm font-semibold transition " + (active ? "bg-blue-50 text-blue-700" : "text-slate-600 hover:bg-slate-100")}><span className="flex items-center gap-3"><span className="flex size-8 items-center justify-center rounded-lg bg-slate-100"><Icon className="size-4.5"/></span>{item.labelAr}</span><ChevronDown className={"size-4 transition-transform " + (opened ? "rotate-180" : "")}/></button>
-      <div className={(opened ? "max-h-[600px] opacity-100" : "max-h-0 opacity-0") + " overflow-hidden transition-all duration-300"}><div className="mr-5 space-y-1 border-r border-slate-200 pr-3">{item.children?.map(renderItem)}</div></div>
-    </div>;
+  const toggleMenu = (title: string) => {
+    setExpandedMenus((current) =>
+      current.includes(title)
+        ? current.filter(
+            (menuTitle) =>
+              menuTitle !== title,
+          )
+        : [...current, title],
+    );
   };
 
-  return <>
-    {open && <button type="button" aria-label="إغلاق القائمة" className="fixed inset-0 z-40 bg-slate-950/35 backdrop-blur-sm lg:hidden" onClick={onClose}/>}
-    <aside className={"fixed right-0 top-0 z-50 flex h-screen w-[280px] flex-col border-l border-slate-200 bg-white shadow-2xl shadow-slate-900/5 transition-transform duration-300 " + (open ? "translate-x-0" : "translate-x-full") + " lg:translate-x-0"}>
-      <div className="border-b border-slate-100 px-5 py-5"><div className="flex items-center gap-3"><div className="flex size-11 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-600/20"><span className="text-lg font-black">P</span></div><div className="min-w-0"><p className="text-lg font-black tracking-tight text-slate-950">PrimeERP</p><p className="truncate text-[11px] font-medium text-slate-400">Enterprise Resource Planning</p></div><button type="button" className="mr-auto rounded-lg p-2 hover:bg-slate-100 lg:hidden" onClick={onClose}><X className="size-4"/></button></div></div>
-      <div className="px-4 pt-4"><div className="rounded-2xl bg-slate-950 px-4 py-3 text-white"><p className="text-[10px] font-black uppercase tracking-[0.18em] text-blue-300">Workspace</p><p className="mt-1 truncate text-sm font-bold">{user?.tenant_name || "Platform Administration"}</p><p className="mt-0.5 text-xs text-slate-400">{user?.tenant_slug ? "/" + user.tenant_slug : "Central workspace"}</p></div></div>
-      <nav className="flex-1 overflow-y-auto px-3 py-4"><p className="mb-2 px-3 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Modules</p><div className="space-y-1">{items.map(renderItem)}{canManageLegal && <NavLink to="/settings/legal" onClick={onClose} className={({isActive:active}) => "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold " + (active ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100")}><span className="flex size-8 items-center justify-center rounded-lg bg-current/5"><FileText className="size-4.5"/></span>المستندات القانونية</NavLink>}</div></nav>
-      <div className="border-t border-slate-100 p-4"><div className="flex items-center gap-2 rounded-2xl bg-slate-50 px-4 py-3"><ShieldCheck className="size-4 text-blue-600"/><div><p className="text-xs font-bold text-slate-700">{canManageLegal ? "Super Admin" : "Workspace User"}</p><p className="mt-1 text-[11px] text-slate-400">Secure enterprise workspace</p></div></div></div>
-    </aside>
-  </>;
+  const isChildActive = (
+    children?: SubMenuItem[],
+  ) =>
+    children?.some((child) =>
+      location.pathname.startsWith(child.path),
+    ) ?? false;
+
+  return (
+    <>
+      {open && (
+        <button
+          type="button"
+          aria-label="إغلاق القائمة"
+          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden"
+          onClick={onClose}
+        />
+      )}
+
+      <aside
+        className={[
+          "fixed right-0 top-0 z-50 h-screen w-72",
+          "border-l border-slate-200 bg-white shadow-2xl shadow-slate-900/5",
+          "transition-transform duration-300",
+          open
+            ? "translate-x-0"
+            : "translate-x-full",
+          "lg:translate-x-0",
+        ].join(" ")}
+      >
+        <div className="flex h-20 items-center justify-between border-b border-slate-100 px-5">
+          <div>
+            <h1 className="text-xl font-bold">
+              PrimeERP
+            </h1>
+
+            <p className="text-xs text-muted-foreground">
+              Enterprise Resource Planning
+            </p>
+          </div>
+
+          <button
+            type="button"
+            className="rounded-lg p-2 transition-colors hover:bg-muted lg:hidden"
+            onClick={onClose}
+            aria-label="إغلاق القائمة"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <nav className="h-[calc(100vh-5rem)] overflow-y-auto p-3">
+          <p className="mb-3 px-3 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+            القائمة الرئيسية
+          </p>
+
+          <div className="space-y-1">
+            {menuItems.map((item) => {
+              const Icon = item.icon;
+              const expanded =
+                expandedMenus.includes(
+                  item.title,
+                );
+              const childActive =
+                isChildActive(item.children);
+
+              return (
+                <div
+                  key={item.title}
+                  className="space-y-1"
+                >
+                  <button
+                    type="button"
+                    onClick={() =>
+                      toggleMenu(item.title)
+                    }
+                    className={[
+                      "flex w-full items-center justify-between rounded-xl px-3 py-2.5",
+                      "text-sm font-semibold transition-all duration-200",
+                      childActive
+                        ? "bg-blue-50 text-blue-700"
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-950",
+                    ].join(" ")}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Icon className="h-5 w-5" />
+                      <span>{item.title}</span>
+                    </div>
+
+                    <ChevronDown
+                      className={[
+                        "h-4 w-4 transition-transform duration-300",
+                        expanded
+                          ? "rotate-180"
+                          : "",
+                      ].join(" ")}
+                    />
+                  </button>
+
+                  <div
+                    className={[
+                      "grid overflow-hidden transition-all duration-300",
+                      expanded
+                        ? "grid-rows-[1fr] opacity-100"
+                        : "grid-rows-[0fr] opacity-0",
+                    ].join(" ")}
+                  >
+                    <div className="min-h-0">
+                      <div className="mr-5 mt-1 space-y-1 border-r pr-3">
+                        {item.children?.map(
+                          (child) => {
+                            const ChildIcon =
+                              child.icon;
+
+                            return (
+                              <NavLink
+                                key={child.path}
+                                to={child.path}
+                                onClick={onClose}
+                                className={({
+                                  isActive,
+                                }) =>
+                                  [
+                                    "flex items-center gap-3 rounded-lg px-3 py-2",
+                                    "text-sm transition-all duration-200",
+                                    isActive
+                                      ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20"
+                                      : "text-slate-500 hover:bg-slate-100 hover:text-slate-950",
+                                  ].join(" ")
+                                }
+                              >
+                                <ChildIcon className="h-4 w-4" />
+                                <span>
+                                  {child.title}
+                                </span>
+                              </NavLink>
+                            );
+                          },
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {canManageLegal && (
+            <NavLink
+              to="/settings/legal"
+              onClick={onClose}
+              className={({ isActive }) =>
+                [
+                  "mt-2 flex items-center gap-3 rounded-xl px-3 py-2.5",
+                  "text-sm font-semibold transition-all duration-200",
+                  isActive
+                    ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20"
+                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-950",
+                ].join(" ")
+              }
+            >
+              <FileText className="h-5 w-5" />
+              <span>المستندات القانونية</span>
+            </NavLink>
+          )}
+
+        </nav>
+      </aside>
+    </>
+  );
 }
