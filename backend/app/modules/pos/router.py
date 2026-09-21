@@ -56,4 +56,4 @@ def payment(p:PaymentCreate,user:User=Depends(get_current_user),db=Depends(get_d
     x=run(lambda:pos_service.pay(db,p,user));db.commit();db.refresh(x);return x
 @router.post("/sessions/{session_id}/close")
 def close(session_id:int,p:SessionClose,user:User=Depends(get_current_user),db=Depends(get_db)):
-    s=run(lambda:pos_service.close_session(db,p.company_id,session_id,p.closing_total,user));db.commit();db.refresh(s);return s
+    s=run(lambda:pos_service.close_session(db,p.company_id,session_id,p.closing_total,user,p.closing_cash,p.closing_card,p.closing_bank,p.closing_other));db.commit();db.refresh(s);return s
