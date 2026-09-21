@@ -48,31 +48,31 @@ jobs:
             'POSTGRES_USER=primeerp'
             "POSTGRES_PASSWORD=$pgPassword"
             "SECRET_KEY=$secretKey"
-            'CORS_ORIGINS=http://127.0.0.1:3000'
+            'CORS_ORIGINS=http://127.0.0.1:3001'
             'APP_ENV=production'
             'DEBUG=false'
             'ETA_ENABLED=false'
             'WHATSAPP_ENABLED=false'
           ) | Set-Content -Encoding utf8 .env
-          @'
-services:
-  db:
-    container_name: null
-  migrate:
-    container_name: null
-  backend:
-    container_name: null
-    ports:
-      - "8002:8001"
-  backend-test:
-    container_name: null
-  report-worker:
-    container_name: null
-  frontend:
-    container_name: null
-    ports:
-      - "3001:80"
-'@ | Set-Content -Encoding utf8 ci-runtime-compose.yml
+          @(
+            'services:'
+            '  db:'
+            '    container_name: null'
+            '  migrate:'
+            '    container_name: null'
+            '  backend:'
+            '    container_name: null'
+            '    ports:'
+            '      - "8002:8001"'
+            '  backend-test:'
+            '    container_name: null'
+            '  report-worker:'
+            '    container_name: null'
+            '  frontend:'
+            '    container_name: null'
+            '    ports:'
+            '      - "3001:80"'
+          ) | Set-Content -Encoding utf8 ci-runtime-compose.yml
 
       - name: Validate Compose
         shell: powershell
@@ -97,16 +97,18 @@ services:
           $deadline = (Get-Date).AddMinutes(10)
           while ((Get-Date) -lt $deadline) {
             $migrateId = docker compose -f docker-compose.yml -f ci-runtime-compose.yml ps -aq migrate
-            $status = if ($migrateId) { docker inspect -f '{{.State.Status}}' $migrateId 2>$null } else { '' }
-            if ($status -eq 'exited') {
-              $code = docker inspect -f '{{.State.ExitCode}}' $migrateId
-              if ($code -eq '0') { exit 0 }
-              docker compose -f docker-compose.yml -f ci-runtime-compose.yml logs migrate
-              throw "Migration failed with exit code $code"
+            if ($migrateId) {
+              $status = docker inspect -f '{{.State.Status}}' $migrateId 2>$null
+              if ($status -eq 'exited') {
+                $code = docker inspect -f '{{.State.ExitCode}}' $migrateId
+                if ($code -eq '0') { Write-Host 'Migrations: PASS'; exit 0 }
+                docker compose -f docker-compose.yml -f ci-runtime-compose.yml logs migrate
+                throw "Migration failed with exit code $code"
+              }
             }
             Start-Sleep -Seconds 4
           }
-          docker compose logs migrate
+          docker compose -f docker-compose.yml -f ci-runtime-compose.yml logs migrate
           throw 'Migration did not finish.'
 
       - name: Start production runtime
@@ -116,29 +118,32 @@ services:
           $env:COMPOSE_PROJECT_NAME = 'primeerp-runtime-ci'
           docker compose -f docker-compose.yml -f ci-runtime-compose.yml up -d backend frontend report-worker
 
-      - name: Wait for backend and frontend
+      - name: Wait for runtime containers
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
+          $env:COMPOSE_PROJECT_NAME = 'primeerp-runtime-ci'
           $deadline = (Get-Date).AddMinutes(10)
           while ((Get-Date) -lt $deadline) {
             $backendId = docker compose -f docker-compose.yml -f ci-runtime-compose.yml ps -q backend
             $frontendId = docker compose -f docker-compose.yml -f ci-runtime-compose.yml ps -q frontend
             $workerId = docker compose -f docker-compose.yml -f ci-runtime-compose.yml ps -q report-worker
-            $backend = if ($backendId) { docker inspect -f '{{.State.Health.Status}}' $backendId 2>$null } else { '' }
-            $frontend = if ($frontendId) { docker inspect -f '{{.State.Status}}' $frontendId 2>$null } else { '' }
-            $worker = if ($workerId) { docker inspect -f '{{.State.Status}}' $workerId 2>$null } else { '' }
-            if ($backend -eq 'healthy' -and $frontend -eq 'running' -and $worker -eq 'running') {
-              Write-Host 'Container runtime state: PASS'
-              exit 0
+            if ($backendId -and $frontendId -and $workerId) {
+              $backend = docker inspect -f '{{.State.Health.Status}}' $backendId 2>$null
+              $frontend = docker inspect -f '{{.State.Status}}' $frontendId 2>$null
+              $worker = docker inspect -f '{{.State.Status}}' $workerId 2>$null
+              if ($backend -eq 'healthy' -and $frontend -eq 'running' -and $worker -eq 'running') {
+                Write-Host 'Runtime containers: PASS'
+                exit 0
+              }
             }
             Start-Sleep -Seconds 5
           }
           docker compose -f docker-compose.yml -f ci-runtime-compose.yml ps
           docker compose -f docker-compose.yml -f ci-runtime-compose.yml logs --tail=200 db migrate backend frontend report-worker
-          throw 'Runtime containers did not reach the expected state.'
+          throw 'Runtime containers did not reach expected state.'
 
-      - name: Validate backend readiness endpoint
+      - name: Validate backend readiness
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
@@ -152,20 +157,20 @@ services:
           $ErrorActionPreference = 'Stop'
           $response = Invoke-WebRequest -UseBasicParsing http://127.0.0.1:3001/ -TimeoutSec 10
           if ($response.StatusCode -ne 200) { throw "Frontend returned $($response.StatusCode)" }
-          if ($response.Content -notmatch '<html') { throw 'Frontend response does not contain HTML.' }
+          if ($response.Content -notmatch '<html') { throw 'Frontend response is not HTML.' }
           Write-Host 'Frontend HTTP: PASS'
 
-      - name: Validate backend API routing
+      - name: Validate backend OpenAPI
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
           $response = Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8002/openapi.json -TimeoutSec 10
           if ($response.StatusCode -ne 200) { throw "OpenAPI returned $($response.StatusCode)" }
           $body = $response.Content | ConvertFrom-Json
-          if (-not $body.openapi) { throw 'OpenAPI document is missing the openapi field.' }
+          if (-not $body.openapi) { throw 'OpenAPI document is invalid.' }
           Write-Host "OpenAPI: $($body.openapi)"
 
-      - name: Validate frontend to backend proxy
+      - name: Validate frontend API proxy
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
@@ -177,6 +182,7 @@ services:
         if: always()
         shell: powershell
         run: |
+          $env:COMPOSE_PROJECT_NAME = 'primeerp-runtime-ci'
           docker compose -f docker-compose.yml -f ci-runtime-compose.yml ps
           docker compose -f docker-compose.yml -f ci-runtime-compose.yml logs --tail=200 backend frontend report-worker
 
