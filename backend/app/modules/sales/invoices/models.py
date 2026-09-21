@@ -1,0 +1,12 @@
+from sqlalchemy import Column,Integer,ForeignKey,String,Date,Numeric,TIMESTAMP,UniqueConstraint
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+from app.database.base import Base
+class SalesInvoice(Base):
+ __tablename__="sales_invoices"
+ id=Column(Integer,primary_key=True,index=True);tenant_id=Column(Integer,ForeignKey("tenants.id",ondelete="CASCADE"),nullable=False,index=True);company_id=Column(Integer,ForeignKey("companies.id",ondelete="CASCADE"),nullable=False);branch_id=Column(Integer,ForeignKey("branches.id",ondelete="CASCADE"),nullable=False);customer_id=Column(Integer,ForeignKey("customers.id",ondelete="RESTRICT"),nullable=False,index=True);sales_order_id=Column(Integer,ForeignKey("sales_orders.id",ondelete="SET NULL"),nullable=True);invoice_number=Column(String(80),nullable=False);invoice_date=Column(Date,nullable=False);status=Column(String(20),nullable=False,default="draft",index=True);currency_code=Column(String(3),nullable=False,default="EGP");subtotal=Column(Numeric(18,2),nullable=False,default=0);tax_total=Column(Numeric(18,2),nullable=False,default=0);discount_total=Column(Numeric(18,2),nullable=False,default=0);grand_total=Column(Numeric(18,2),nullable=False,default=0);journal_entry_id=Column(Integer,ForeignKey("journal_entries.id",ondelete="SET NULL"),nullable=True,index=True);created_by=Column(Integer,ForeignKey("users.id",ondelete="SET NULL"));created_at=Column(TIMESTAMP(timezone=True),server_default=func.now(),nullable=False);updated_at=Column(TIMESTAMP(timezone=True),server_default=func.now(),onupdate=func.now(),nullable=False)
+ lines=relationship("SalesInvoiceLine",cascade="all, delete-orphan",back_populates="invoice",order_by="SalesInvoiceLine.id")
+ __table_args__=(UniqueConstraint("tenant_id","invoice_number",name="uq_sales_invoices_tenant_number"),)
+class SalesInvoiceLine(Base):
+ __tablename__="sales_invoice_lines"
+ id=Column(Integer,primary_key=True,index=True);invoice_id=Column(Integer,ForeignKey("sales_invoices.id",ondelete="CASCADE"),nullable=False,index=True);product_id=Column(Integer,ForeignKey("products.id",ondelete="RESTRICT"),nullable=False);quantity=Column(Numeric(18,6),nullable=False);unit_price=Column(Numeric(18,2),nullable=False);discount=Column(Numeric(18,2),nullable=False,default=0);tax_rate=Column(Numeric(9,4),nullable=False,default=0);line_total=Column(Numeric(18,2),nullable=False);invoice=relationship("SalesInvoice",back_populates="lines")
