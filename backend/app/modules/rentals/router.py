@@ -4,7 +4,7 @@ from app.database.session import get_db
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.saas.entitlements import require_module
-from .schemas import PropertyCreate,UnitCreate,TenantCreate,ContractCreate,ChargeCreate,ChargeRead,ReceiptCreate,RenewalCreate
+from .schemas import PropertyCreate,UnitCreate,TenantCreate,ContractCreate,ChargeCreate,ChargeRead,ReceiptCreate,ReceiptRead,RenewalCreate
 from .service import rental_service
 router=APIRouter(prefix="/rentals",tags=["Rentals"],dependencies=[Depends(require_module("rentals"))])
 @router.post("/properties")
@@ -37,6 +37,7 @@ def generate_charge(payload:ChargeCreate,db:Session=Depends(get_db),current_user
     obj=rental_service.generate_charge(db,current_user.tenant_id,current_user.company_id,payload,current_user.id);db.commit();db.refresh(obj);return obj
 
 
-@router.post("/receipts",response_model=ChargeRead)
+
+@router.post("/receipts",response_model=ReceiptRead)
 def collect_receipt(payload:ReceiptCreate,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):
-    receipt=rental_service.collect(db,current_user.tenant_id,current_user.company_id,payload,current_user.id);db.commit();db.refresh(receipt);return {"id":receipt.charge_id,"contract_id":receipt.charge_id,"base_amount":receipt.amount,"revenue_amount":0,"maintenance_amount":0,"vat_amount":0,"wht_amount":0,"total_amount":receipt.amount,"status":receipt.status}
+    obj=rental_service.collect(db,current_user.tenant_id,current_user.company_id,payload,current_user.id);db.commit();db.refresh(obj);return obj
