@@ -10,7 +10,7 @@ from app.modules.companies.models import Company
 from app.modules.branches.models import Branch
 from app.modules.transactions.services.numbering_service import numbering_service
 from .models import ShippingCarrier,ShippingCarrierRule,Shipment,ShipmentItem,ShippingReturn,CarrierSettlement
-from .schemas import CarrierCreate,CarrierRuleCreate,ShipmentCreate,StatusChange,ReturnCreate,SettlementCreate
+from .schemas import CarrierCreate,CarrierRuleCreate,ShipmentCreate,StatusChange,ReturnCreate,SettlementCreate,ShippingQuoteRequest
 router=APIRouter()
 def tenant(u):
  if u.is_platform_admin or u.tenant_id is None: raise HTTPException(403,"An active tenant context is required")
@@ -28,6 +28,18 @@ def create_carrier(p:CarrierCreate,db:Session=Depends(get_db),current_user:User=
 @router.post("/carrier-rules",status_code=201)
 def create_rule(p:CarrierRuleCreate,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):
  t=tenant(current_user);carrier(db,t,p.carrier_id);x=ShippingCarrierRule(tenant_id=t,**p.model_dump());db.add(x);db.commit();db.refresh(x);return x
+@router.post("/carriers/{carrier_id}/quote")
+def carrier_quote(carrier_id:int,p:ShippingQuoteRequest,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):
+ t=tenant(current_user); c=carrier(db,t,carrier_id)
+ rules=list(db.scalars(select(ShippingCarrierRule).where(ShippingCarrierRule.tenant_id==t,ShippingCarrierRule.carrier_id==c.id,ShippingCarrierRule.is_active.is_(True)).order_by(ShippingCarrierRule.priority,ShippingCarrierRule.id)).all())
+ for r in rules:
+  if r.zone and r.zone!=p.zone: continue
+  base=(r.fixed_amount or 0)+(r.rate_percent or 0)*p.amount/100+(r.amount_per_kg or 0)*p.weight_kg+(r.amount_per_item or 0)*p.items
+  cod=(r.cod_fee or 0) if (p.payment_method or "").lower()=="cod" else 0
+  visa=(r.visa_withdrawal_fee or 0) if (p.payment_method or "").lower() in {"visa","card"} else 0
+  return {"carrier_id":c.id,"rule_id":r.id,"carrier_charge":base+cod+visa,"base_charge":base,"cod_fee":cod,"visa_withdrawal_fee":visa}
+ raise HTTPException(404,"No applicable active carrier rule found")
+
 @router.post("/shipments",status_code=201)
 def create_shipment(p:ShipmentCreate,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):
  t=tenant(current_user)
