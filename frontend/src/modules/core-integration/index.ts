@@ -1,0 +1,1 @@
+export { default as IntegrationTransactionsPage } from "./pages/IntegrationTransactionsPage";
