@@ -91,3 +91,39 @@ class RenewalCreate(BaseModel):
     vat_percent:Decimal|None=None
     wht_percent:Decimal|None=None
     notes:str|None=None
+
+
+class DepositCreate(BaseModel):
+    contract_id:int
+    amount:Decimal=Field(gt=0)
+    due_date:date|None=None
+    notes:str|None=None
+class MaintenanceCreate(BaseModel):
+    contract_id:int
+    unit_id:int
+    request_date:date
+    category:str="general"
+    description:str
+    estimated_cost:Decimal=Field(default=Decimal("0"),ge=0)
+    actual_cost:Decimal=Field(default=Decimal("0"),ge=0)
+    charge_to_tenant:bool=False
+    status:str="open"
+class InsuranceCreate(BaseModel):
+    contract_id:int
+    policy_number:str
+    insurer:str
+    start_date:date
+    end_date:date
+    coverage_amount:Decimal=Field(default=Decimal("0"),ge=0)
+    premium_amount:Decimal=Field(default=Decimal("0"),ge=0)
+    status:str="active"
+    notes:str|None=None
+class DocumentCreate(BaseModel):
+    contract_id:int
+    document_type:str
+    document_number:str|None=None
+    file_name:str
+    storage_key:str
+    issue_date:date|None=None
+    expiry_date:date|None=None
+    notes:str|None=None

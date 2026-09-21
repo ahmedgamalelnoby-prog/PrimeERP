@@ -5,7 +5,7 @@ from app.database.session import get_db
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.saas.entitlements import require_module
-from .schemas import PropertyCreate,UnitCreate,TenantCreate,ContractCreate,ChargeCreate,ChargeRead,ReceiptCreate,ReceiptRead,RenewalCreate
+from .schemas import PropertyCreate,UnitCreate,TenantCreate,ContractCreate,ChargeCreate,ChargeRead,ReceiptCreate,ReceiptRead,RenewalCreate,DepositCreate,MaintenanceCreate,InsuranceCreate,DocumentCreate
 from .service import rental_service
 router=APIRouter(prefix="/rentals",tags=["Rentals"],dependencies=[Depends(require_module("rentals"))])
 @router.post("/properties")
@@ -46,3 +46,22 @@ def collect_receipt(payload:ReceiptCreate,db:Session=Depends(get_db),current_use
 @router.get("/aging")
 def aging(as_of:date|None=None,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):
     return rental_service.aging(db,current_user.tenant_id,current_user.company_id,as_of or date.today())
+
+@router.post("/deposits")
+def create_deposit(payload:DepositCreate,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):
+    obj=rental_service.create_deposit(db,current_user.tenant_id,current_user.company_id,payload);db.commit();db.refresh(obj);return obj
+@router.post("/maintenance")
+def create_maintenance(payload:MaintenanceCreate,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):
+    obj=rental_service.create_maintenance(db,current_user.tenant_id,current_user.company_id,payload);db.commit();db.refresh(obj);return obj
+@router.post("/maintenance/{maintenance_id}/complete")
+def complete_maintenance(maintenance_id:int,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):
+    obj=rental_service.complete_maintenance(db,current_user.tenant_id,current_user.company_id,maintenance_id);db.commit();db.refresh(obj);return obj
+@router.post("/insurance")
+def create_insurance(payload:InsuranceCreate,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):
+    obj=rental_service.create_insurance(db,current_user.tenant_id,current_user.company_id,payload);db.commit();db.refresh(obj);return obj
+@router.post("/documents")
+def add_document(payload:DocumentCreate,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):
+    obj=rental_service.add_document(db,current_user.tenant_id,current_user.company_id,payload);db.commit();db.refresh(obj);return obj
+@router.get("/reports/summary")
+def rental_report(db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):
+    return rental_service.report(db,current_user.tenant_id,current_user.company_id)

@@ -2,6 +2,26 @@ from sqlalchemy import Boolean, CheckConstraint, Column, Date, DateTime, Foreign
 from sqlalchemy.sql import func
 from app.database.base import Base
 
+class RentalSecurityDeposit(Base):
+    __tablename__="rental_security_deposits"
+    id=Column(Integer,primary_key=True); tenant_id=Column(Integer,ForeignKey("tenants.id",ondelete="CASCADE"),nullable=False,index=True); company_id=Column(Integer,ForeignKey("companies.id",ondelete="CASCADE"),nullable=False,index=True); contract_id=Column(Integer,ForeignKey("rental_contracts.id",ondelete="CASCADE"),nullable=False,index=True); amount=Column(Numeric(18,4),nullable=False); received_amount=Column(Numeric(18,4),nullable=False,default=0); refunded_amount=Column(Numeric(18,4),nullable=False,default=0); status=Column(String(20),nullable=False,default="open"); due_date=Column(Date); notes=Column(Text); created_at=Column(DateTime(timezone=True),server_default=func.now(),nullable=False)
+    __table_args__=(CheckConstraint("amount > 0",name="ck_rental_deposit_amount"),CheckConstraint("received_amount >= 0 AND refunded_amount >= 0 AND received_amount >= refunded_amount",name="ck_rental_deposit_balances"),CheckConstraint("status IN ('open','received','partially_refunded','refunded','forfeited')",name="ck_rental_deposit_status"),)
+
+class RentalMaintenance(Base):
+    __tablename__="rental_maintenance"
+    id=Column(Integer,primary_key=True); tenant_id=Column(Integer,ForeignKey("tenants.id",ondelete="CASCADE"),nullable=False,index=True); company_id=Column(Integer,ForeignKey("companies.id",ondelete="CASCADE"),nullable=False,index=True); contract_id=Column(Integer,ForeignKey("rental_contracts.id",ondelete="CASCADE"),nullable=False,index=True); unit_id=Column(Integer,ForeignKey("rental_units.id",ondelete="RESTRICT"),nullable=False,index=True); request_date=Column(Date,nullable=False); completed_date=Column(Date); category=Column(String(60),nullable=False,default="general"); description=Column(Text,nullable=False); estimated_cost=Column(Numeric(18,4),nullable=False,default=0); actual_cost=Column(Numeric(18,4),nullable=False,default=0); charge_to_tenant=Column(Boolean,nullable=False,default=False); status=Column(String(20),nullable=False,default="open")
+    __table_args__=(CheckConstraint("estimated_cost >= 0 AND actual_cost >= 0",name="ck_rental_maintenance_costs"),CheckConstraint("status IN ('open','in_progress','completed','cancelled')",name="ck_rental_maintenance_status"),)
+
+class RentalInsurance(Base):
+    __tablename__="rental_insurance"
+    id=Column(Integer,primary_key=True); tenant_id=Column(Integer,ForeignKey("tenants.id",ondelete="CASCADE"),nullable=False,index=True); company_id=Column(Integer,ForeignKey("companies.id",ondelete="CASCADE"),nullable=False,index=True); contract_id=Column(Integer,ForeignKey("rental_contracts.id",ondelete="CASCADE"),nullable=False,index=True); policy_number=Column(String(100),nullable=False); insurer=Column(String(200),nullable=False); start_date=Column(Date,nullable=False); end_date=Column(Date,nullable=False); coverage_amount=Column(Numeric(18,4),nullable=False,default=0); premium_amount=Column(Numeric(18,4),nullable=False,default=0); status=Column(String(20),nullable=False,default="active"); notes=Column(Text)
+    __table_args__=(UniqueConstraint("company_id","policy_number",name="uq_rental_insurance_policy"),CheckConstraint("end_date >= start_date",name="ck_rental_insurance_dates"),CheckConstraint("coverage_amount >= 0 AND premium_amount >= 0",name="ck_rental_insurance_amounts"),CheckConstraint("status IN ('active','expired','cancelled')",name="ck_rental_insurance_status"),)
+
+class RentalDocument(Base):
+    __tablename__="rental_documents"
+    id=Column(Integer,primary_key=True); tenant_id=Column(Integer,ForeignKey("tenants.id",ondelete="CASCADE"),nullable=False,index=True); company_id=Column(Integer,ForeignKey("companies.id",ondelete="CASCADE"),nullable=False,index=True); contract_id=Column(Integer,ForeignKey("rental_contracts.id",ondelete="CASCADE"),nullable=False,index=True); document_type=Column(String(60),nullable=False); document_number=Column(String(120)); file_name=Column(String(255),nullable=False); storage_key=Column(String(500),nullable=False); issue_date=Column(Date); expiry_date=Column(Date); notes=Column(Text); created_at=Column(DateTime(timezone=True),server_default=func.now(),nullable=False)
+
+
 class RentalProperty(Base):
     __tablename__="rental_properties"
     id=Column(Integer,primary_key=True)

@@ -1,3 +1,0 @@
-export type PricingType="fixed"|"minimum_guarantee"|"revenue_share"|"fixed_plus_revenue_share";
-export type RentalContract={id:number;number:string;unit_id:number;rental_tenant_id:number;start_date:string;end_date:string;status:string;pricing_type:PricingType;fixed_rent:number;minimum_guarantee:number;revenue_share_percent:number;maintenance_amount:number;security_deposit:number;vat_percent:number;wht_percent:number};
-export type RentalCharge={id:number;contract_id:number;base_amount:number;revenue_amount:number;maintenance_amount:number;vat_amount:number;wht_amount:number;total_amount:number;status:string};

@@ -1,1 +1,0 @@
-"""Treasury bank reconciliation domain."""

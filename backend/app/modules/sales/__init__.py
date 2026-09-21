@@ -1,1 +1,0 @@
-"""Sales domain add-ons."""

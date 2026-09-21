@@ -2,7 +2,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
-from .models import RentalProperty,RentalUnit,RentalTenant,RentalContract,RentalCharge,RentalReceipt
+from .models import RentalProperty,RentalUnit,RentalTenant,RentalContract,RentalCharge,RentalReceipt,RentalSecurityDeposit,RentalMaintenance,RentalInsurance,RentalDocument
 from .accounting_service import rental_accounting_service
 
 class RentalService:
@@ -104,6 +104,30 @@ class RentalService:
             bucket="current" if as_of<=due else ("1_30" if days<=30 else ("31_60" if days<=60 else ("61_90" if days<=90 else "90_plus")))
             rows.append({"charge_id":charge.id,"contract_id":charge.contract_id,"due_date":due,"amount":outstanding,"days_overdue":days,"bucket":bucket})
         return rows
+    def create_deposit(self,db,tenant_id,company_id,payload):
+        c=db.scalar(self._scope(RentalContract,company_id,tenant_id).where(RentalContract.id==payload.contract_id))
+        if c is None: raise HTTPException(404,"Contract not found")
+        obj=RentalSecurityDeposit(tenant_id=tenant_id,company_id=company_id,contract_id=c.id,amount=payload.amount,due_date=payload.due_date,notes=payload.notes); db.add(obj); db.flush(); return obj
+    def create_maintenance(self,db,tenant_id,company_id,payload):
+        c=db.scalar(self._scope(RentalContract,company_id,tenant_id).where(RentalContract.id==payload.contract_id))
+        if c is None or c.unit_id!=payload.unit_id: raise HTTPException(404,"Contract/unit not found")
+        obj=RentalMaintenance(tenant_id=tenant_id,company_id=company_id,**payload.model_dump()); db.add(obj); db.flush(); return obj
+    def complete_maintenance(self,db,tenant_id,company_id,maintenance_id):
+        obj=db.scalar(self._scope(RentalMaintenance,company_id,tenant_id).where(RentalMaintenance.id==maintenance_id).with_for_update())
+        if obj is None: raise HTTPException(404,"Maintenance request not found")
+        if obj.status in {"completed","cancelled"}: raise HTTPException(409,"Maintenance request is closed")
+        obj.status="completed"; obj.completed_date=__import__("datetime").date.today(); db.flush(); return obj
+    def create_insurance(self,db,tenant_id,company_id,payload):
+        if db.scalar(self._scope(RentalContract,company_id,tenant_id).where(RentalContract.id==payload.contract_id)) is None: raise HTTPException(404,"Contract not found")
+        if db.scalar(self._scope(RentalInsurance,company_id,tenant_id).where(RentalInsurance.policy_number==payload.policy_number)): raise HTTPException(409,"Insurance policy already exists")
+        obj=RentalInsurance(tenant_id=tenant_id,company_id=company_id,**payload.model_dump()); db.add(obj); db.flush(); return obj
+    def add_document(self,db,tenant_id,company_id,payload):
+        if db.scalar(self._scope(RentalContract,company_id,tenant_id).where(RentalContract.id==payload.contract_id)) is None: raise HTTPException(404,"Contract not found")
+        obj=RentalDocument(tenant_id=tenant_id,company_id=company_id,**payload.model_dump()); db.add(obj); db.flush(); return obj
+    def report(self,db,tenant_id,company_id):
+        charges=list(db.scalars(self._scope(RentalCharge,company_id,tenant_id)).all()); receipts=list(db.scalars(self._scope(RentalReceipt,company_id,tenant_id).where(RentalReceipt.status=="posted")).all()); deposits=list(db.scalars(self._scope(RentalSecurityDeposit,company_id,tenant_id)).all()); maintenance=list(db.scalars(self._scope(RentalMaintenance,company_id,tenant_id)).all())
+        total_charges=sum((Decimal(x.total_amount or 0) for x in charges),Decimal("0")); total_receipts=sum((Decimal(x.amount or 0) for x in receipts),Decimal("0")); total_deposits=sum((Decimal(x.amount or 0) for x in deposits),Decimal("0")); deposit_received=sum((Decimal(x.received_amount or 0) for x in deposits),Decimal("0")); maintenance_cost=sum((Decimal(x.actual_cost or 0) for x in maintenance),Decimal("0"))
+        return {"charges_total":total_charges,"receipts_total":total_receipts,"outstanding":max(total_charges-total_receipts,Decimal("0")),"security_deposits":total_deposits,"security_deposits_received":deposit_received,"maintenance_actual_cost":maintenance_cost,"open_maintenance":sum(1 for x in maintenance if x.status in {"open","in_progress"}),"active_insurance":sum(1 for x in db.scalars(self._scope(RentalInsurance,company_id,tenant_id).where(RentalInsurance.status=="active")).all())}
 
 
 rental_service=RentalService()
