@@ -31,6 +31,11 @@ def test_shipping_lifecycle_accepts_normal_delivery_path():
     validate_shipment_transition("out_for_delivery", "delivered")
 
 
+def test_delivered_is_terminal():
+    with pytest.raises(ShippingValidationError):
+        validate_shipment_transition("delivered", "returned")
+
+
 def test_salla_event_identity_uses_header_values():
     event_id, event_type = _event_identity(
         {"id": "payload-id", "event": "payload.event"},
