@@ -1,1 +1,1 @@
-export { default } from "../ai-reporting/routes";
+export { AIReportingPage as default, AIReportingPage } from "../ai-reporting/routes";
