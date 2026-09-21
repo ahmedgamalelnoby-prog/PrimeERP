@@ -2,7 +2,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision="20260921_rentals_core"
-down_revision="20260920_release_gate_merge"
+down_revision="20260920_pos_session_concurrency_guard"
 branch_labels=None
 depends_on=None
 

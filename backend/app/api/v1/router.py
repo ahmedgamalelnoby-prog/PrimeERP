@@ -83,6 +83,7 @@ from app.modules.completion.enterprise_router import router as enterprise_comple
 from app.modules.completion.finance_router import router as finance_completion_router
 from app.modules.completion.domain_router import router as domain_completion_router
 from app.modules.commerce.ap_router import router as ap_router
+from app.modules.rentals.router import router as rentals_router
 
 def build_router() -> APIRouter:
     api_router = APIRouter()
@@ -160,5 +161,6 @@ def build_router() -> APIRouter:
     api_router.include_router(roles_router)
     api_router.include_router(legal_router)
     api_router.include_router(ap_router, dependencies=[Depends(require_module("sales"))])
+    api_router.include_router(rentals_router)
     return api_router
 
