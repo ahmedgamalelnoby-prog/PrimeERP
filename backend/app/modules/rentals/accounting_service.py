@@ -54,3 +54,46 @@ class RentalAccountingService:
             charge.status="approved"
         db.flush(); return entry
 rental_accounting_service=RentalAccountingService()
+
+
+    def post_receipt(self, db: Session, receipt, user_id: int):
+        charge = db.scalar(select(RentalCharge).where(RentalCharge.id == receipt.charge_id, RentalCharge.company_id == receipt.company_id, RentalCharge.tenant_id == receipt.tenant_id).with_for_update())
+        if charge is None:
+            raise HTTPException(404, "Rental charge not found")
+        existing = db.scalar(select(JournalEntry).where(JournalEntry.tenant_id == receipt.tenant_id, JournalEntry.company_id == receipt.company_id, JournalEntry.source_module == "rentals", JournalEntry.source_entity == "rental_receipt", JournalEntry.source_id == receipt.id).with_for_update())
+        if existing:
+            receipt.journal_entry_id = existing.id
+            return existing
+        already = sum((Decimal(r.amount or 0) for r in db.scalars(select(RentalReceipt).where(RentalReceipt.charge_id == charge.id, RentalReceipt.status == "posted", RentalReceipt.id != receipt.id)).all()), Decimal("0"))
+        if already + Decimal(receipt.amount) > Decimal(charge.total_amount):
+            raise HTTPException(409, "Receipt exceeds rental charge outstanding balance")
+        settings = db.scalar(select(CommerceAccountingSettings).where(CommerceAccountingSettings.company_id == receipt.company_id))
+        if settings is None:
+            raise HTTPException(409, "Commerce accounting configuration is required for rental receipt posting")
+        fiscal_year_service.assert_open_for_date(db, company_id=receipt.company_id, posting_date=receipt.payment_date)
+        journal = db.scalar(select(AccountingJournal).where(AccountingJournal.id == settings.cash_journal_id, AccountingJournal.company_id == receipt.company_id, AccountingJournal.tenant_id == receipt.tenant_id, AccountingJournal.is_active.is_(True)))
+        if journal is None:
+            raise HTTPException(409, "Configured cash journal was not found")
+        period = db.scalar(select(AccountingPeriod).where(AccountingPeriod.company_id == receipt.company_id, AccountingPeriod.tenant_id == receipt.tenant_id, AccountingPeriod.start_date <= receipt.payment_date, AccountingPeriod.end_date >= receipt.payment_date, AccountingPeriod.status == "open", AccountingPeriod.allow_posting.is_(True)))
+        if period is None:
+            raise HTTPException(409, "No open posting period exists for the receipt date")
+        fy = db.scalar(select(FiscalYear).where(FiscalYear.id == period.fiscal_year_id, FiscalYear.company_id == receipt.company_id, FiscalYear.tenant_id == receipt.tenant_id))
+        if fy is None:
+            raise HTTPException(409, "Fiscal year for rental receipt was not found")
+        payment_account = settings.bank_account_id if receipt.method in {"bank","card","transfer"} and settings.bank_account_id else settings.default_payment_account_id
+        amount = Decimal(receipt.amount)
+        lines=[{"account_combination_id":payment_account,"debit":amount,"credit":0,"description":f"Rental receipt {receipt.id}"},
+               {"account_combination_id":settings.ar_account_id,"debit":0,"credit":amount,"description":f"Rental AR settlement {receipt.id}"}]
+        validate_double_entry(lines); validate_source(source_module="rentals",source_entity="rental_receipt",source_id=receipt.id)
+        entry=journal_service.create_draft(db,tenant_id=receipt.tenant_id,company_id=receipt.company_id,branch_id=settings.default_branch_id,journal_id=journal.id,fiscal_year_id=fy.id,period_id=period.id,entry_number=f"RENT-RCPT-{receipt.id}",entry_date=receipt.payment_date,description=f"Rental receipt {receipt.id}",lines=lines,user_id=user_id,source_module="rentals",source_entity="rental_receipt",source_id=receipt.id,commit=False)
+        journal_service.submit(db,tenant_id=receipt.tenant_id,entry_id=entry.id,user_id=user_id,commit=False)
+        if journal.requires_approval:
+            receipt.status="posted"
+        elif settings.auto_post and journal.auto_post:
+            journal_service.post(db,tenant_id=receipt.tenant_id,entry_id=entry.id,user_id=user_id,commit=False)
+            receipt.status="posted"
+        else:
+            receipt.status="posted"
+        receipt.journal_entry_id=entry.id
+        db.flush()
+        return entry
