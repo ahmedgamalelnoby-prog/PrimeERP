@@ -17,6 +17,8 @@ import LegalManagementPage from "@/modules/legal/pages/LegalManagementPage";
 import CustomersPage from "@/modules/customers/pages/CustomersPage";
 import ProductsPage from "@/modules/products/pages/ProductsPage";
 import InventoryPage from "@/modules/inventory/pages/InventoryPage";
+import CompaniesPage from "@/modules/companies/pages/CompaniesPage";
+import BranchesPage from "@/modules/branches/pages/BranchesPage";
 
 function ComingSoonPage({ title }: { title: string }) {
   return (
@@ -64,10 +66,10 @@ export default function AppRouter() {
           {/* إدارة المستندات القانونية — صلاحية التعديل يتم فرضها من الـ API */}
           <Route path="/settings/legal" element={<SuperAdminRoute />} />
 
-          <Route path="/companies" element={<ComingSoonPage title="قائمة الشركات" />} />
-          <Route path="/companies/new" element={<ComingSoonPage title="إضافة شركة" />} />
-          <Route path="/companies/settings" element={<ComingSoonPage title="إعدادات الشركات" />} />
-          <Route path="/branches" element={<ComingSoonPage title="الفروع" />} />
+          <Route path="/companies" element={<CompaniesPage />} />
+          <Route path="/companies/new" element={<CompaniesPage createOnly />} />
+          <Route path="/companies/settings" element={<CompaniesPage />} />
+          <Route path="/branches" element={<BranchesPage />} />
 
           <Route path="/customers" element={<CustomersPage />} />
           <Route path="/customers/new" element={<CustomersPage createOnly />} />
