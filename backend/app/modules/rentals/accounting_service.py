@@ -9,7 +9,7 @@ from app.modules.accounting.journals.services.journal_service import journal_ser
 from app.modules.accounting.fiscal_years.models import AccountingPeriod, FiscalYear
 from app.modules.commerce.accounting_models import CommerceAccountingSettings
 from app.modules.companies.models import Company
-from app.modules.rentals.models import RentalCharge
+from app.modules.rentals.models import RentalCharge, RentalReceipt
 
 class RentalAccountingService:
     def post_charge(self, db: Session, charge: RentalCharge, user_id: int):
@@ -88,7 +88,7 @@ rental_accounting_service=RentalAccountingService()
         entry=journal_service.create_draft(db,tenant_id=receipt.tenant_id,company_id=receipt.company_id,branch_id=settings.default_branch_id,journal_id=journal.id,fiscal_year_id=fy.id,period_id=period.id,entry_number=f"RENT-RCPT-{receipt.id}",entry_date=receipt.payment_date,description=f"Rental receipt {receipt.id}",lines=lines,user_id=user_id,source_module="rentals",source_entity="rental_receipt",source_id=receipt.id,commit=False)
         journal_service.submit(db,tenant_id=receipt.tenant_id,entry_id=entry.id,user_id=user_id,commit=False)
         if journal.requires_approval:
-            receipt.status="posted"
+            receipt.status="pending"
         elif settings.auto_post and journal.auto_post:
             journal_service.post(db,tenant_id=receipt.tenant_id,entry_id=entry.id,user_id=user_id,commit=False)
             receipt.status="posted"
