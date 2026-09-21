@@ -16,7 +16,7 @@ class POSDevice(Base):
 class POSSession(Base):
     __tablename__="pos_sessions"
     id=Column(Integer,primary_key=True,index=True); company_id=Column(Integer,ForeignKey("companies.id",ondelete="CASCADE"),nullable=False,index=True); outlet_id=Column(Integer,ForeignKey("pos_outlets.id",ondelete="RESTRICT"),nullable=False,index=True); device_id=Column(Integer,ForeignKey("pos_devices.id",ondelete="RESTRICT"),nullable=False,index=True); cashier_user_id=Column(Integer,ForeignKey("users.id",ondelete="RESTRICT"),nullable=False,index=True)
-    status=Column(String(20),nullable=False,default="open",index=True); opened_at=Column(DateTime(timezone=True),nullable=False,server_default=func.now()); closed_at=Column(DateTime(timezone=True)); closing_total=Column(Numeric(18,4))
+    status=Column(String(20),nullable=False,default="open",index=True); opened_at=Column(DateTime(timezone=True),nullable=False,server_default=func.now()); closed_at=Column(DateTime(timezone=True)); closing_total=Column(Numeric(18,4)); closing_cash=Column(Numeric(18,4)); closing_card=Column(Numeric(18,4)); closing_bank=Column(Numeric(18,4)); closing_other=Column(Numeric(18,4))
     __table_args__=(CheckConstraint("status IN ('open','closed','cancelled')",name="ck_pos_session_status"),)
 class POSOrder(Base):
     __tablename__="pos_orders"

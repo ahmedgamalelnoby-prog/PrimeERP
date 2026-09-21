@@ -22,12 +22,12 @@ class InventoryReservationService:
 
     @staticmethod
     def _validate_variant(db: Session, *, company_id: int, item: InventoryItem, variant_id: int | None):
-        active_variant_id = db.scalar(select(ProductVariant.id).where(ProductVariant.company_id == company_id, ProductVariant.product_id == item.id, ProductVariant.active.is_(True)).limit(1))
+        active_variant_id = db.scalar(select(ProductVariant.id).where(ProductVariant.company_id == company_id, ProductVariant.product_id == item.id, ProductVariant.is_active.is_(True)).limit(1))
         if variant_id is None:
             if active_variant_id is not None:
                 raise ValueError("This item has active variants; reservations must identify the variant")
             return None
-        variant = db.scalar(select(ProductVariant).where(ProductVariant.id == variant_id, ProductVariant.company_id == company_id, ProductVariant.product_id == item.id, ProductVariant.active.is_(True)))
+        variant = db.scalar(select(ProductVariant).where(ProductVariant.id == variant_id, ProductVariant.company_id == company_id, ProductVariant.product_id == item.id, ProductVariant.is_active.is_(True)))
         if variant is None:
             raise ValueError("Variant does not belong to the item/company or is inactive")
         return variant

@@ -12,6 +12,10 @@ branch_labels = None
 depends_on = None
 
 def upgrade():
+    op.add_column("pos_sessions", sa.Column("closing_cash", sa.Numeric(18, 4), nullable=True))
+    op.add_column("pos_sessions", sa.Column("closing_card", sa.Numeric(18, 4), nullable=True))
+    op.add_column("pos_sessions", sa.Column("closing_bank", sa.Numeric(18, 4), nullable=True))
+    op.add_column("pos_sessions", sa.Column("closing_other", sa.Numeric(18, 4), nullable=True))
     op.add_column("inventory_reservations", sa.Column("consumed_quantity", sa.Numeric(18, 4), nullable=False, server_default="0"))
     op.create_check_constraint("ck_inventory_reservation_consumed_quantity", "inventory_reservations", "consumed_quantity >= 0 AND consumed_quantity <= quantity")
     op.create_table(
@@ -41,6 +45,10 @@ def upgrade():
     op.create_index("ix_pos_payment_account_mappings_company_id","pos_payment_account_mappings",["company_id"])
 
 def downgrade():
+    op.drop_column("pos_sessions", "closing_other")
+    op.drop_column("pos_sessions", "closing_bank")
+    op.drop_column("pos_sessions", "closing_card")
+    op.drop_column("pos_sessions", "closing_cash")
     op.drop_index("ix_pos_payment_account_mappings_company_id", table_name="pos_payment_account_mappings")
     op.drop_table("pos_payment_account_mappings")
     op.drop_index("ix_inventory_reservation_consumptions_reservation_id", table_name="inventory_reservation_consumptions")

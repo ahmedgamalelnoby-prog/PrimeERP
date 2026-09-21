@@ -13,4 +13,9 @@ class OrderCreate(BaseModel):
 class PaymentCreate(BaseModel):
     company_id:int=Field(gt=0); order_id:int=Field(gt=0); method:str; amount:Decimal=Field(gt=0); idempotency_key:str=Field(min_length=1,max_length=120)
 class SessionClose(BaseModel):
-    company_id:int=Field(gt=0); closing_total:Decimal=Field(ge=0)
+    company_id:int=Field(gt=0)
+    closing_total:Decimal=Field(ge=0)
+    closing_cash:Decimal|None=Field(default=None,ge=0)
+    closing_card:Decimal|None=Field(default=None,ge=0)
+    closing_bank:Decimal|None=Field(default=None,ge=0)
+    closing_other:Decimal|None=Field(default=None,ge=0)

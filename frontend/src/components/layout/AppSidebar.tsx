@@ -14,6 +14,7 @@ import {
   Package,
   ShieldCheck,
   ShoppingCart,
+  Store,
   UserRound,
   Users,
   Warehouse,
@@ -114,6 +115,15 @@ const menuItems: MenuItem[] = [
       { title: "دليل الحسابات", path: "/accounting/chart-of-accounts", icon: List, permission: "accounting.access" },
       { title: "القيود اليومية", path: "/accounting/journal-entries", icon: FileText, permission: "accounting.access" },
       { title: "التقارير المالية", path: "/accounting/reports", icon: BarChart3, permission: "accounting.access" },
+    ],
+  },
+  {
+    title: "نقطة البيع",
+    module: "sales",
+    permission: "commerce.access",
+    icon: Store,
+    children: [
+      { title: "تشغيل POS", path: "/pos", icon: Store, permission: "commerce.access" },
     ],
   },
   {
