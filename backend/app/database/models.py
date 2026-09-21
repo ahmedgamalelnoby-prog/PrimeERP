@@ -26,7 +26,7 @@ from app.modules.transactions.models import BusinessTransaction, NumberSequence,
 from app.modules.accounting.fiscal_years.models import AccountingPeriod, FiscalYear
 from app.modules.accounting.journals.models import AccountingJournal, JournalEntry, JournalEntryLine
 from app.modules.sales.sales_orders.models import SalesOrder, SalesOrderLine
-from app.modules.sales.invoices.models import SalesInvoice, SalesInvoiceLine
+from app.modules.sales.invoices.models import SalesInvoice, SalesInvoiceLine\nfrom app.modules.shipping.models import ShippingCarrier, ShippingCarrierRule, Shipment, ShipmentItem, ShippingReturn, CarrierSettlement
 
 __all__ = [
     "Tenant", "SubscriptionPlan", "Subscription", "SystemModule", "PlanModule", "TenantModule",
@@ -36,5 +36,5 @@ __all__ = [
     "Warehouse", "WarehouseLocation", "StockBalance", "StockMovement", "StockTransfer", "StockTransferLine", "StockReservation", "StockReservationLine", "StockIssue", "StockIssueLine",
     "AccountingDepartment", "AccountingCostCenter", "NaturalAccount", "AccountCombination", "AccountingSettings",
     "NumberSequence", "BusinessTransaction", "TransactionEvent", "FiscalYear", "AccountingPeriod",
-    "AccountingJournal", "JournalEntry", "JournalEntryLine", "SalesOrder", "SalesOrderLine", "SalesInvoice", "SalesInvoiceLine",
+    "AccountingJournal", "JournalEntry", "JournalEntryLine", "SalesOrder", "SalesOrderLine", "SalesInvoice", "SalesInvoiceLine", "ShippingCarrier", "ShippingCarrierRule", "Shipment", "ShipmentItem", "ShippingReturn", "CarrierSettlement",
 ]
