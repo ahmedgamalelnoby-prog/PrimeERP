@@ -73,7 +73,7 @@ def build_router() -> APIRouter:
     api_router.include_router(shipping_settlement_router, dependencies=[Depends(require_module("shipping"))])
     api_router.include_router(shipping_accounting_router, dependencies=[Depends(require_module("shipping"))])
     api_router.include_router(integrations_router, dependencies=[Depends(require_module("integrations"))])
-    api_router.include_router(integration_product_mapping_router, dependencies=[Depends(require_module("integrations"))])
+    api_router.include_router(integration_product_mapping_router)
     api_router.include_router(integration_providers_router, dependencies=[Depends(require_module("integrations"))])
     api_router.include_router(uom_router)
     api_router.include_router(companies_router)
