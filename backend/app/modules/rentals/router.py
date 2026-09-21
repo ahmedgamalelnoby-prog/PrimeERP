@@ -41,3 +41,8 @@ def generate_charge(payload:ChargeCreate,db:Session=Depends(get_db),current_user
 @router.post("/receipts",response_model=ReceiptRead)
 def collect_receipt(payload:ReceiptCreate,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):
     obj=rental_service.collect(db,current_user.tenant_id,current_user.company_id,payload,current_user.id);db.commit();db.refresh(obj);return obj
+
+from datetime import date
+@router.get("/aging")
+def aging(as_of:date|None=None,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):
+    return rental_service.aging(db,current_user.tenant_id,current_user.company_id,as_of or date.today())
