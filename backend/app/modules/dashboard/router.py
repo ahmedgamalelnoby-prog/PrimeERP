@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
@@ -51,7 +51,7 @@ def get_dashboard_summary(
             month_expr.label("month"),
             func.coalesce(
                 func.sum(
-                    func.case(
+                    case(
                         (NaturalAccount.account_category.ilike("%revenue%"), JournalEntryLine.base_credit - JournalEntryLine.base_debit),
                         else_=0,
                     )
