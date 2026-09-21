@@ -42,3 +42,10 @@ class SettlementCreate(BaseModel):
  orders_amount:Decimal=Field(default=0,ge=0)
  carrier_charges:Decimal=Field(default=0,ge=0)
  cod_collected:Decimal=Field(default=0,ge=0)
+
+class ShippingQuoteRequest(BaseModel):
+ amount:Decimal=Field(default=0,ge=0)
+ weight_kg:Decimal=Field(default=0,ge=0)
+ items:int=Field(default=1,ge=1)
+ zone:str|None=None
+ payment_method:str|None=None
