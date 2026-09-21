@@ -183,10 +183,21 @@ def accept_legal_document(payload:LegalAcceptRequest,db:Session=Depends(get_db),
         db.add(LegalAcceptance(user_id=current_user.id,document_type=payload.document_type,document_version=payload.version)); db.commit()
     return {"success":True,"data":{"document_type":payload.document_type,"version":payload.version,"accepted":True}}
 
+@router.get("/admin/{document_type}")
+def get_admin_legal_document(document_type: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if document_type not in DEFAULTS:
+        raise HTTPException(status_code=404, detail="Legal document not found")
+    _require_platform_admin(current_user)
+    return {"success": True, "data": _serialize(_get_or_create(db, document_type))}
+
 @router.get("/{document_type}")
-def get_legal_document(document_type:str,db:Session=Depends(get_db)):
-    if document_type not in DEFAULTS: raise HTTPException(status_code=404,detail="Legal document not found")
-    return {"success":True,"data":_serialize(_get_or_create(db,document_type))}
+def get_legal_document(document_type: str, db: Session = Depends(get_db)):
+    if document_type not in DEFAULTS:
+        raise HTTPException(status_code=404, detail="Legal document not found")
+    document = _get_or_create(db, document_type)
+    if not document.is_published:
+        raise HTTPException(status_code=404, detail="Legal document is not published")
+    return {"success": True, "data": _serialize(document)}
 
 @router.put("/{document_type}")
 def update_legal_document(document_type:str,payload:LegalUpdateRequest,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):
