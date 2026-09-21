@@ -10,7 +10,11 @@ from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.saas.entitlements import require_module
 from app.modules.treasury.models import Cheque
-from app.modules.treasury.schemas import ChequeAction, ChequeCreate, ChequeEventResponse, ChequeResponse
+from app.modules.treasury.accounting_models import TreasuryAccountingSettings
+from app.modules.accounting.journals.models import AccountingJournal
+from app.modules.accounting.chart_of_accounts.models import AccountCombination
+from app.modules.branches.models import Branch
+from app.modules.treasury.schemas import ChequeAction, ChequeCreate, ChequeEventResponse, ChequeResponse, TreasuryAccountingSettingsPayload, TreasuryAccountingSettingsResponse
 from app.modules.treasury.service import create_cheque, events, list_cheques, resubmit_returned_cheque, transition_cheque, withdraw_cheque
 
 router = APIRouter(prefix="/treasury", tags=["Treasury"], dependencies=[Depends(require_permission("treasury.access")), Depends(require_module("treasury"))])
@@ -27,6 +31,35 @@ def _get_cheque(db: Session, company_id: int, cheque_id: int):
     cheque = db.scalar(select(Cheque).where(Cheque.id == cheque_id, Cheque.company_id == company_id))
     if cheque is None: raise HTTPException(404, "Cheque not found")
     return cheque
+
+
+@router.put("/accounting-settings", response_model=TreasuryAccountingSettingsResponse, dependencies=[Depends(require_permission("treasury.write"))])
+def upsert_accounting_settings(payload: TreasuryAccountingSettingsPayload, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    company = _company(db, payload.company_id, current_user)
+    journal = db.scalar(select(AccountingJournal).where(AccountingJournal.id == payload.journal_id, AccountingJournal.company_id == company.id, AccountingJournal.tenant_id == company.tenant_id, AccountingJournal.is_active.is_(True)))
+    branch = db.scalar(select(Branch).where(Branch.id == payload.default_branch_id, Branch.company_id == company.id, Branch.tenant_id == company.tenant_id, Branch.is_active.is_(True)))
+    if journal is None or branch is None:
+        raise HTTPException(409, "Accounting journal and branch must belong to the selected company and tenant")
+    account_ids = {payload.received_cheques_account_id, payload.under_collection_account_id, payload.returned_cheques_account_id, payload.issued_cheques_account_id, payload.bank_account_id}
+    accounts = db.scalars(select(AccountCombination).where(AccountCombination.id.in_(account_ids), AccountCombination.company_id == company.id, AccountCombination.is_active.is_(True))).all()
+    if len(accounts) != len(account_ids):
+        raise HTTPException(409, "All treasury accounting accounts must belong to the selected company and be active")
+    obj = db.scalar(select(TreasuryAccountingSettings).where(TreasuryAccountingSettings.company_id == company.id))
+    values = payload.model_dump(exclude={"company_id"})
+    if obj is None:
+        obj = TreasuryAccountingSettings(company_id=company.id, **values)
+        db.add(obj)
+    else:
+        for key, value in values.items(): setattr(obj, key, value)
+    db.commit(); db.refresh(obj); return obj
+
+
+@router.get("/accounting-settings", response_model=TreasuryAccountingSettingsResponse)
+def get_accounting_settings(company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company(db, company_id, current_user)
+    obj = db.scalar(select(TreasuryAccountingSettings).where(TreasuryAccountingSettings.company_id == company_id))
+    if obj is None: raise HTTPException(404, "Treasury accounting configuration not found")
+    return obj
 
 
 @router.post("/cheques", response_model=ChequeResponse, status_code=201, dependencies=[Depends(require_permission("treasury.write"))])
