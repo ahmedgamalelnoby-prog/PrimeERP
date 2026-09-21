@@ -113,6 +113,9 @@ class POSService:
         s=db.scalar(select(POSSession).where(POSSession.id==o.session_id,POSSession.company_id==cid).with_for_update())
         outlet=db.scalar(select(POSOutlet).where(POSOutlet.id==s.outlet_id,POSOutlet.company_id==cid)) if s else None
         if not s or s.status!="open" or not outlet: raise ValueError("Session or outlet is invalid")
+        inventory_config=db.scalar(select(InventoryAccountingConfig).where(InventoryAccountingConfig.tenant_id==c.tenant_id,InventoryAccountingConfig.company_id==cid,InventoryAccountingConfig.is_active=="Y"))
+        if inventory_config is None: raise ValueError("Active inventory accounting configuration is required for POS stock consumption")
+        if inventory_config.branch_id != outlet.branch_id: raise ValueError("POS outlet branch must match the inventory accounting branch")
         for line in db.scalars(select(POSOrderLine).where(POSOrderLine.order_id==o.id)).all():
             recipe=db.scalar(select(Recipe).where(Recipe.id==line.recipe_id,Recipe.company_id==cid)) if line.recipe_id else None
             if recipe:
@@ -120,7 +123,7 @@ class POSService:
                 for rl in ingredients:
                     qty=(Decimal(line.quantity)*Decimal(rl.quantity)/Decimal(recipe.yield_quantity)).quantize(Decimal("0.000001"),ROUND_HALF_UP)
                     source_id=f"{line.id}:{rl.line_no}"
-                    existing_move=db.scalar(select(InventoryStockMove).where(InventoryStockMove.company_id==cid,__import__("app.modules.inventory.stock_moves.models",fromlist=["InventoryStockMove"]).InventoryStockMove.source_module=="pos",__import__("app.modules.inventory.stock_moves.models",fromlist=["InventoryStockMove"]).InventoryStockMove.source_entity=="pos_order_line",__import__("app.modules.inventory.stock_moves.models",fromlist=["InventoryStockMove"]).InventoryStockMove.source_id==source_id))
+                    existing_move=db.scalar(select(InventoryStockMove).where(InventoryStockMove.company_id==cid,InventoryStockMove.source_module=="pos",__import__("app.modules.inventory.stock_moves.models",fromlist=["InventoryStockMove"]).InventoryStockMove.source_entity=="pos_order_line",__import__("app.modules.inventory.stock_moves.models",fromlist=["InventoryStockMove"]).InventoryStockMove.source_id==source_id))
                     if not existing_move:
                         move=StockMoveCreate(company_id=cid,item_id=rl.ingredient_product_id,variant_id=None,source_location_id=outlet.inventory_location_id,quantity=qty,unit_cost=0,movement_type="issue",source_module="pos",source_entity="pos_order_line",source_id=source_id,notes=f"POS recipe consumption {o.number}")
                         draft=inventory_stock_move_service.create_draft(db,move)
