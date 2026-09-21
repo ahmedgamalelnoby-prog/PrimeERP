@@ -29,6 +29,7 @@ from app.modules.roles.models import Permission, Role, role_permissions
 
 # Legal models.
 from app.modules.legal.models import LegalAcceptance, LegalDocument
+from app.modules.integrations.models import IntegrationEvent
 
 # Restaurant models.
 from app.modules.restaurant.models import (
@@ -53,7 +54,7 @@ from app.modules.accounting.journals.models import AccountingJournal, JournalEnt
 __all__ = [
     "Tenant", "SubscriptionPlan", "Subscription", "SystemModule", "PlanModule", "TenantModule",
     "Plan", "Company", "Branch", "User", "Role", "Permission", "role_permissions",
-    "LegalDocument", "LegalAcceptance",
+    "LegalDocument", "LegalAcceptance", "IntegrationEvent",
     "Floor", "RestaurantTable", "PreparationStation", "OrderType",
     "AccountingDepartment", "AccountingCostCenter", "NaturalAccount", "AccountCombination", "AccountingSettings",
     "NumberSequence", "BusinessTransaction", "TransactionEvent", "FiscalYear", "AccountingPeriod",
