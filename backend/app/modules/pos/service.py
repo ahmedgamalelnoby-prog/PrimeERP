@@ -12,6 +12,8 @@ from app.modules.inventory.items.models import InventoryItem
 from app.modules.inventory.locations.models import InventoryLocation
 from app.modules.inventory.stock_moves.schemas import StockMoveCreate
 from app.modules.inventory.stock_moves.service import inventory_stock_move_service
+from app.modules.inventory.stock_moves.models import InventoryAccountingConfig, InventoryStockMove
+from app.modules.inventory.warehouses.models import InventoryWarehouse
 from app.modules.commerce.accounting_models import CommerceAccountingSettings, POSPaymentAccountMapping
 from app.modules.pos.models import POSOutlet, POSDevice, POSSession, POSOrder, POSOrderLine, POSPayment
 from app.modules.identity.models.user import User
@@ -34,8 +36,8 @@ class POSService:
         c=self._company(db,p.company_id,user)
         if not c: raise ValueError("Company is outside the current tenant")
         b=db.scalar(select(Branch).where(Branch.id==p.branch_id,Branch.company_id==c.id,Branch.tenant_id==c.tenant_id,Branch.is_active.is_(True)))
-        loc=db.scalar(select(InventoryLocation).where(InventoryLocation.id==p.inventory_location_id,InventoryLocation.company_id==c.id,InventoryLocation.is_active.is_(True),InventoryLocation.is_virtual.is_(False)))
-        if not b or not loc: raise ValueError("Branch or inventory location is invalid")
+        loc=db.scalar(select(InventoryLocation).join(InventoryWarehouse, InventoryWarehouse.id==InventoryLocation.warehouse_id).where(InventoryLocation.id==p.inventory_location_id,InventoryLocation.company_id==c.id,InventoryLocation.is_active.is_(True),InventoryLocation.is_virtual.is_(False),InventoryWarehouse.company_id==c.id,InventoryWarehouse.branch_id==b.id,InventoryWarehouse.is_active.is_(True)))
+        if not b or not loc: raise ValueError("Branch or inventory location is invalid or belongs to another branch")
         o=POSOutlet(**p.model_dump());db.add(o);db.flush();return o
 
     def create_device(self, db, p, user):
@@ -77,20 +79,21 @@ class POSService:
             db.add(POSOrderLine(order_id=o.id,item_id=item.id,variant_id=x.variant_id,quantity=x.quantity,unit_price=x.unit_price,tax_percent=x.tax_percent,line_subtotal=ls,line_tax=lt,line_total=ls+lt,recipe_id=recipe.id if recipe else None));sub+=ls;tax+=lt
         o.subtotal=sub;o.tax_total=tax;o.total=sub+tax;db.flush();return o
 
-    def _accounting_context(self,db,cid,user,entry_date):
+    def _accounting_context(self,db,cid,user,entry_date,branch_id=None):
         c=self._company(db,cid,user)
         if not c: raise ValueError("Company is outside the current tenant")
         settings=db.scalar(select(CommerceAccountingSettings).where(CommerceAccountingSettings.company_id==cid))
         if not settings: raise ValueError("Commerce accounting configuration is required for POS")
-        b=db.scalar(select(Branch).where(Branch.id==settings.default_branch_id,Branch.company_id==cid,Branch.tenant_id==c.tenant_id,Branch.is_active.is_(True)))
+        target_branch_id = branch_id if branch_id is not None else settings.default_branch_id
+        b=db.scalar(select(Branch).where(Branch.id==target_branch_id,Branch.company_id==cid,Branch.tenant_id==c.tenant_id,Branch.is_active.is_(True)))
         period=db.scalar(select(AccountingPeriod).where(AccountingPeriod.company_id==cid,AccountingPeriod.tenant_id==c.tenant_id,AccountingPeriod.start_date<=entry_date,AccountingPeriod.end_date>=entry_date,AccountingPeriod.status=="open",AccountingPeriod.allow_posting.is_(True)))
         fy=db.scalar(select(FiscalYear).where(FiscalYear.id==period.fiscal_year_id,FiscalYear.company_id==cid,FiscalYear.tenant_id==c.tenant_id)) if period else None
         journal=db.scalar(select(AccountingJournal).where(AccountingJournal.id==settings.sales_journal_id,AccountingJournal.company_id==cid,AccountingJournal.tenant_id==c.tenant_id,AccountingJournal.is_active.is_(True)))
         if not b or not period or not fy or not journal: raise ValueError("Configured accounting journal or fiscal year is unavailable")
         return c,settings,b,period,fy,journal
 
-    def _post(self,db,*,cid,user,entry_number,description,lines,source_entity,source_id,journal=None):
-        c,settings,b,p,fy,j=self._accounting_context(db,cid,user,datetime.now(timezone.utc).date())
+    def _post(self,db,*,cid,user,entry_number,description,lines,source_entity,source_id,journal=None,branch_id=None):
+        c,settings,b,p,fy,j=self._accounting_context(db,cid,user,datetime.now(timezone.utc).date(),branch_id=branch_id)
         j=journal or j
         if not j.auto_post: raise ValueError("POS accounting journal must have auto-post enabled for atomic order finalization and payment settlement")
         existing=db.scalar(select(JournalEntry).where(JournalEntry.tenant_id==c.tenant_id,JournalEntry.company_id==cid,JournalEntry.source_module=="pos",JournalEntry.source_entity==source_entity,JournalEntry.source_id==source_id).with_for_update())
