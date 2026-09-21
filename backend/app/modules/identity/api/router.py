@@ -64,6 +64,8 @@ def get_me(
             tenant_id=tenant.id,
         )
 
+    permissions = authentication_service._get_permission_codes(db, current_user)
+
     return {
         "id": current_user.id,
         "tenant_id": effective_tenant_id,
