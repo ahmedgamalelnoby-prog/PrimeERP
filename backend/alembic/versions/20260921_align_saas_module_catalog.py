@@ -43,24 +43,34 @@ def upgrade():
             {"code": code, "name_ar": name_ar, "name_en": name_en, "display_order": display_order},
         )
 
-    # Keep existing active plans compatible with the canonical module catalog.
-    bind.execute(
-        sa.text(
-            """
-            INSERT INTO plan_modules (plan_id, module_id, is_enabled)
-            SELECT p.id, m.id, true
-            FROM subscription_plans p
-            JOIN system_modules m ON m.code IN (
-                'purchasing','crm','restaurant','pos','hr','manufacturing','reports'
-            )
-            WHERE p.is_active = true
-              AND NOT EXISTS (
-                  SELECT 1 FROM plan_modules pm
-                  WHERE pm.plan_id = p.id AND pm.module_id = m.id
-              )
-            """
+    # Align the built-in plans with the canonical seed without changing
+    # custom/customer-created plans.
+    plan_modules = {
+        "trial": ("restaurant", "pos", "reports"),
+        "starter": ("purchasing", "crm", "reports"),
+        "professional": (
+            "purchasing", "crm", "restaurant", "pos",
+            "hr", "manufacturing", "reports",
+        ),
+    }
+    for plan_code, module_codes in plan_modules.items():
+        bind.execute(
+            sa.text(
+                """
+                INSERT INTO plan_modules (plan_id, module_id, is_enabled)
+                SELECT p.id, m.id, true
+                FROM subscription_plans p
+                JOIN system_modules m ON m.code = ANY(:module_codes)
+                WHERE p.code = :plan_code
+                  AND p.is_active = true
+                  AND NOT EXISTS (
+                      SELECT 1 FROM plan_modules pm
+                      WHERE pm.plan_id = p.id AND pm.module_id = m.id
+                  )
+                """
+            ),
+            {"plan_code": plan_code, "module_codes": list(module_codes)},
         )
-    )
 
 
 def downgrade():
