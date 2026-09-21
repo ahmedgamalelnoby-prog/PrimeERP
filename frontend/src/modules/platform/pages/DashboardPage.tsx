@@ -7,6 +7,17 @@ import { StatisticCard } from "../components/dashboard/StatisticCard";
 import BusinessUnitsSummary from "../components/dashboard/BusinessUnitsSummary";
 import QuickActions from "../components/dashboard/QuickActions";
 
+
+function LiveRevenue({ points }: { points: { month: string; revenue: number; expenses: number }[] }) {
+  const max = Math.max(1, ...points.flatMap((p) => [p.revenue, p.expenses]));
+  return <section className="rounded-2xl border bg-card p-5 shadow-sm"><h2 className="text-lg font-semibold">الإيرادات والمصروفات</h2><p className="mt-1 text-sm text-muted-foreground">من القيود المحاسبية المرحّلة للـtenant الحالي</p><div className="mt-8 flex h-64 items-end gap-3 border-b border-dashed px-2">{points.map((p) => <div key={p.month} className="flex h-full min-w-0 flex-1 items-end justify-center gap-1"><div className="w-2/5 rounded-t-md bg-primary" style={{height: `${Math.max(2, p.revenue / max * 100)}%`}} title={`الإيرادات: ${p.revenue.toLocaleString("ar-EG")}`} /><div className="w-2/5 rounded-t-md bg-muted-foreground/40" style={{height: `${Math.max(2, p.expenses / max * 100)}%`}} title={`المصروفات: ${p.expenses.toLocaleString("ar-EG")}`} /></div>)}</div><div className="mt-3 flex justify-between gap-2 text-xs text-muted-foreground">{points.map((p) => <span key={p.month} className="truncate">{p.month}</span>)}</div></section>;
+}
+
+function LiveActivities({ items }: { items: DashboardSummary["recent_activities"] }) {
+  const dots: Record<string, string> = { success: "bg-emerald-500", warning: "bg-amber-500", info: "bg-blue-500", danger: "bg-red-500" };
+  return <section className="rounded-2xl border bg-card p-5 shadow-sm"><h2 className="text-lg font-semibold">آخر الأنشطة</h2><p className="mt-1 text-sm text-muted-foreground">أحدث العمليات المسجلة فعليًا</p><div className="mt-5 space-y-1">{items.length ? items.map((a) => <div key={a.id} className="flex gap-3 rounded-xl p-3 hover:bg-muted/50"><span className={`mt-2 block h-2.5 w-2.5 shrink-0 rounded-full ${dots[a.status] ?? dots.info}`} /><div className="min-w-0 flex-1"><p className="text-sm font-medium">{a.title}</p><p className="mt-1 text-xs text-muted-foreground">{a.description}</p></div><time className="shrink-0 text-xs text-muted-foreground">{a.time ? new Date(a.time).toLocaleString("ar-EG") : ""}</time></div>) : <p className="py-8 text-center text-sm text-muted-foreground">لا توجد أنشطة مسجلة حتى الآن.</p>}</div></section>;
+}
+
 const numberFormatter = new Intl.NumberFormat("ar-EG");
 
 export default function DashboardPage() {
@@ -38,6 +49,7 @@ export default function DashboardPage() {
     </header>
     <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{stats.map((stat) => <StatisticCard key={stat.id} statistic={stat} />)}</section>
     <section className="grid gap-6 xl:grid-cols-2"><BusinessUnitsSummary units={units} /><QuickActions /></section>
+    <section className="grid gap-6 xl:grid-cols-2"><LiveRevenue points={summary?.revenue_overview ?? []} /><LiveActivities items={summary?.recent_activities ?? []} /></section>
     <section className="rounded-2xl border bg-card p-6 shadow-sm"><h2 className="text-lg font-semibold">حالة لوحة التحكم</h2><p className="mt-1 text-sm text-muted-foreground">المؤشرات الأساسية هنا تأتي من قاعدة البيانات ضمن الـtenant الحالي.</p></section>
   </div>;
 }
