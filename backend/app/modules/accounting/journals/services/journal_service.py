@@ -66,7 +66,7 @@ class JournalService:
         if not (fy.start_date<=p.entry_date<=fy.end_date and period.start_date<=p.entry_date<=period.end_date): raise HTTPException(status_code=422,detail="Entry date is outside fiscal period")
         return j,period
 
-    def create_entry(self,db,p,user):
+    def create_entry(self,db,p,user,auto_post=False):
         tenant=self._tenant(user); journal,period=self._validate_scope(db,tenant,p)
         combinations=[]
         for line in p.lines:
@@ -81,7 +81,14 @@ class JournalService:
         for i,(line,ac) in enumerate(zip(p.lines,combinations),1):
             base_debit=line.debit*line.exchange_rate; base_credit=line.credit*line.exchange_rate
             db.add(JournalEntryLine(tenant_id=tenant,entry_id=entry.id,line_number=i,account_combination_id=ac.id,department_id=ac.department_id,cost_center_id=ac.cost_center_id,description=line.description,reference=line.reference,debit=line.debit,credit=line.credit,currency_code=line.currency_code,exchange_rate=line.exchange_rate,base_debit=base_debit,base_credit=base_credit))
-        try: db.commit(); db.refresh(entry); return entry
+        try:
+            db.commit()
+            if auto_post:
+                entry=self.approve(db,entry.id,user)
+                entry=self.post(db,entry.id,user)
+            else:
+                db.refresh(entry)
+            return entry
         except IntegrityError as e: db.rollback(); raise HTTPException(status_code=409,detail="Journal entry number or scope conflict") from e
 
     def get_entry(self,db,entry_id,user):
