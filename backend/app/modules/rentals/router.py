@@ -4,7 +4,7 @@ from app.database.session import get_db
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.saas.entitlements import require_module
-from .schemas import PropertyCreate,UnitCreate,TenantCreate,ContractCreate,ChargeCreate,ChargeRead
+from .schemas import PropertyCreate,UnitCreate,TenantCreate,ContractCreate,ChargeCreate,ChargeRead,ReceiptCreate,RenewalCreate
 from .service import rental_service
 router=APIRouter(prefix="/rentals",tags=["Rentals"],dependencies=[Depends(require_module("rentals"))])
 @router.post("/properties")
@@ -19,6 +19,9 @@ def create_tenant(payload:TenantCreate,db:Session=Depends(get_db),current_user:U
 @router.post("/contracts")
 def create_contract(payload:ContractCreate,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):
     obj=rental_service.create_contract(db,current_user.tenant_id,current_user.company_id,payload);db.commit();db.refresh(obj);return obj
+@router.post("/contracts/{contract_id}/renew")
+def renew_contract(contract_id:int,payload:RenewalCreate,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):
+    obj=rental_service.renew_contract(db,current_user.tenant_id,current_user.company_id,contract_id,payload);db.commit();db.refresh(obj);return obj
 @router.post("/contracts/{contract_id}/activate")
 def activate_contract(contract_id:int,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):
     obj=rental_service.activate_contract(db,current_user.tenant_id,current_user.company_id,contract_id);db.commit();db.refresh(obj);return obj
@@ -32,3 +35,8 @@ def list_charges(db:Session=Depends(get_db),current_user:User=Depends(get_curren
 @router.post("/charges",response_model=ChargeRead)
 def generate_charge(payload:ChargeCreate,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):
     obj=rental_service.generate_charge(db,current_user.tenant_id,current_user.company_id,payload,current_user.id);db.commit();db.refresh(obj);return obj
+
+
+@router.post("/receipts",response_model=ChargeRead)
+def collect_receipt(payload:ReceiptCreate,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):
+    receipt=rental_service.collect(db,current_user.tenant_id,current_user.company_id,payload,current_user.id);db.commit();db.refresh(receipt);return {"id":receipt.charge_id,"contract_id":receipt.charge_id,"base_amount":receipt.amount,"revenue_amount":0,"maintenance_amount":0,"vat_amount":0,"wht_amount":0,"total_amount":receipt.amount,"status":receipt.status}
