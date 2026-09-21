@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import client from "@/shared/api/client";
+import { cachePosData, enqueueCheckout, getDeviceId, installOfflineSync, listCheckoutQueue, readPosCache, type PosCheckoutPayload } from "../services/offlinePos";
 
 type AnyRow = Record<string, any>;
 const companyId = () => Number(localStorage.getItem("company_id")) || 0;
@@ -13,6 +14,8 @@ export default function PosPage() {
   const [sales, setSales] = useState<AnyRow[]>([]);
   const [warehouses, setWarehouses] = useState<AnyRow[]>([]);
   const [queue, setQueue] = useState<AnyRow[]>([]);
+  const [offlineQueue, setOfflineQueue] = useState<any[]>([]);
+  const [online, setOnline] = useState(navigator.onLine);
   const [error, setError] = useState("");
   const [branchId, setBranchId] = useState("");
   const [selectedOutlet, setSelectedOutlet] = useState("");
@@ -37,6 +40,20 @@ export default function PosPage() {
   const activeTerminal = useMemo(() => terminals.find(x => String(x.id) === selectedTerminal), [terminals, selectedTerminal]);
   const activeOutlet = useMemo(() => outlets.find(x => String(x.id) === String(activeTerminal?.outlet_id)), [outlets, activeTerminal]);
 
+  async function refreshOfflineQueue() {
+    setOfflineQueue(await listCheckoutQueue());
+  }
+
+  useEffect(() => {
+    const onOnline = () => setOnline(true);
+    const onOffline = () => setOnline(false);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    const cleanup = installOfflineSync(() => { void refreshOfflineQueue(); });
+    void refreshOfflineQueue();
+    return () => { window.removeEventListener("online", onOnline); window.removeEventListener("offline", onOffline); cleanup(); };
+  }, []);
+
   async function load() {
     if (!cid) return;
     try {
@@ -49,7 +66,20 @@ export default function PosPage() {
         client.get("/pos/warehouses", { params: { company_id: cid } }),
       ]);
       setOutlets(o.data); setStations(s.data); setTerminals(t.data); setMenus(m.data); setSales(v.data); setWarehouses(w.data);
-    } catch (e: any) { setError(e?.response?.data?.detail || "تعذر تحميل بيانات POS"); }
+      await Promise.all([
+        cachePosData(`company:${cid}:outlets`, o.data), cachePosData(`company:${cid}:stations`, s.data),
+        cachePosData(`company:${cid}:terminals`, t.data), cachePosData(`company:${cid}:menus`, m.data),
+        cachePosData(`company:${cid}:sales`, v.data), cachePosData(`company:${cid}:warehouses`, w.data),
+      ]);
+    } catch (e: any) {
+      const [o,s,t,m,v,w] = await Promise.all([
+        readPosCache<AnyRow[]>(`company:${cid}:outlets`), readPosCache<AnyRow[]>(`company:${cid}:stations`),
+        readPosCache<AnyRow[]>(`company:${cid}:terminals`), readPosCache<AnyRow[]>(`company:${cid}:menus`),
+        readPosCache<AnyRow[]>(`company:${cid}:sales`), readPosCache<AnyRow[]>(`company:${cid}:warehouses`),
+      ]);
+      if (o) setOutlets(o); if (s) setStations(s); if (t) setTerminals(t); if (m) setMenus(m); if (v) setSales(v); if (w) setWarehouses(w);
+      setError("أنت تعمل الآن بدون اتصال — تم استخدام آخر بيانات POS محفوظة محليًا");
+    }
   }
   useEffect(() => { void load(); }, [cid]);
 
@@ -87,13 +117,24 @@ export default function PosPage() {
     e.preventDefault();
     if (!activeMenuItem) return setError("اختر صنفًا من المنيو");
     try {
-      await client.post("/pos/checkout", {
+      const payload: PosCheckoutPayload = {
         company_id: cid, partner_id: Number(partnerId), warehouse_id: Number(warehouseId),
-        number: "POS-" + Date.now(), payment_date: new Date().toISOString().slice(0, 10),
-        method, terminal_id: Number(selectedTerminal),
+        number: `POS-${getDeviceId().slice(0, 8)}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        payment_date: new Date().toISOString().slice(0, 10), method, terminal_id: Number(selectedTerminal),
         lines: [{ menu_item_id: Number(selectedMenuItem), quantity: Number(qty) }],
-      });
-      setError(""); await load();
+      };
+      if (!navigator.onLine) {
+        await enqueueCheckout(payload); await refreshOfflineQueue();
+        setError("تم حفظ الطلب محليًا. سيتم ترحيله تلقائيًا عند عودة الإنترنت.");
+      } else {
+        try { await client.post("/pos/checkout", payload); setError(""); await load(); }
+        catch (error: any) {
+          if (!error?.response) {
+            await enqueueCheckout(payload); await refreshOfflineQueue();
+            setError("تعذر الاتصال بالخادم — تم حفظ الطلب محليًا وسيتم ترحيله تلقائيًا.");
+          } else throw error;
+        }
+      }
     } catch (e: any) { setError(e?.response?.data?.detail || "فشل إتمام الطلب"); }
   }
   async function loadQueue() {
@@ -108,6 +149,7 @@ export default function PosPage() {
 
   return <section className="space-y-6 p-6" dir="rtl">
     <header>
+      <div className="mb-3 flex flex-wrap items-center gap-2"><span className={online ? "rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700" : "rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800"}>{online ? "● Online" : "● Offline — الطلبات تُحفظ محليًا"}</span>{offlineQueue.length > 0 && <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-800">{offlineQueue.length} طلب في انتظار المزامنة</span>}</div>
       <h1 className="text-2xl font-bold">Restaurant & Hotel POS</h1>
       <p className="text-sm text-muted-foreground">مكان الخدمة ← جهاز POS ← المنيو ← صنف المنيو ← محطة التحضير (مطبخ/بار) ← شاشة التنفيذ.</p>
     </header>
@@ -185,7 +227,7 @@ export default function PosPage() {
         <button className="rounded-lg bg-primary px-4 py-2 text-primary-foreground">إرسال الطلب وتنفيذ البيع</button>
       </form>
       <div className="rounded-2xl border bg-card p-5"><h2 className="font-bold mb-3">الأجهزة</h2>{terminals.map(x => <div key={x.id} className="border-b py-2">{x.name}<div className="text-xs text-muted-foreground">{x.code} · Outlet {x.outlet_id}</div></div>)}</div>
-      <div className="rounded-2xl border bg-card p-5 lg:col-span-3"><h2 className="font-bold mb-3">آخر مبيعات POS</h2>{sales.slice(0,20).map(x => <div key={x.id} className="flex justify-between border-b py-2"><span>{x.number}</span><span>{x.total} · {x.status}</span></div>)}</div>
+      <div className="rounded-2xl border bg-card p-5 lg:col-span-3"><h2 className="font-bold mb-3">آخر مبيعات POS</h2>{offlineQueue.map(x => <div key={x.id} className="flex justify-between border-b py-2"><span>{x.payload.number}</span><span>محفوظ محليًا · في انتظار المزامنة</span></div>)}{sales.slice(0,20).map(x => <div key={x.id} className="flex justify-between border-b py-2"><span>{x.number}</span><span>{x.total} · {x.status}</span></div>)}</div>
     </div>}
 
     {tab === "kds" && <div className="space-y-4">
