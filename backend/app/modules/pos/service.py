@@ -120,7 +120,7 @@ class POSService:
                 for rl in ingredients:
                     qty=(Decimal(line.quantity)*Decimal(rl.quantity)/Decimal(recipe.yield_quantity)).quantize(Decimal("0.000001"),ROUND_HALF_UP)
                     source_id=f"{line.id}:{rl.line_no}"
-                    existing_move=db.scalar(select(__import__("app.modules.inventory.stock_moves.models",fromlist=["InventoryStockMove"]).InventoryStockMove).where(__import__("app.modules.inventory.stock_moves.models",fromlist=["InventoryStockMove"]).InventoryStockMove.company_id==cid,__import__("app.modules.inventory.stock_moves.models",fromlist=["InventoryStockMove"]).InventoryStockMove.source_module=="pos",__import__("app.modules.inventory.stock_moves.models",fromlist=["InventoryStockMove"]).InventoryStockMove.source_entity=="pos_order_line",__import__("app.modules.inventory.stock_moves.models",fromlist=["InventoryStockMove"]).InventoryStockMove.source_id==source_id))
+                    existing_move=db.scalar(select(InventoryStockMove).where(InventoryStockMove.company_id==cid,__import__("app.modules.inventory.stock_moves.models",fromlist=["InventoryStockMove"]).InventoryStockMove.source_module=="pos",__import__("app.modules.inventory.stock_moves.models",fromlist=["InventoryStockMove"]).InventoryStockMove.source_entity=="pos_order_line",__import__("app.modules.inventory.stock_moves.models",fromlist=["InventoryStockMove"]).InventoryStockMove.source_id==source_id))
                     if not existing_move:
                         move=StockMoveCreate(company_id=cid,item_id=rl.ingredient_product_id,variant_id=None,source_location_id=outlet.inventory_location_id,quantity=qty,unit_cost=0,movement_type="issue",source_module="pos",source_entity="pos_order_line",source_id=source_id,notes=f"POS recipe consumption {o.number}")
                         draft=inventory_stock_move_service.create_draft(db,move)
@@ -132,12 +132,12 @@ class POSService:
                     move=StockMoveCreate(company_id=cid,item_id=line.item_id,variant_id=line.variant_id,source_location_id=outlet.inventory_location_id,quantity=line.quantity,unit_cost=0,movement_type="issue",source_module="pos",source_entity="pos_order_line",source_id=source_id,notes=f"POS stock consumption {o.number}")
                     draft=inventory_stock_move_service.create_draft(db,move)
                     inventory_stock_move_service.post(db,tenant_id=c.tenant_id,company_id=cid,move_id=draft.id,user_id=user.id)
-        _,settings,_,_,_,_=self._accounting_context(db,cid,user,datetime.now(timezone.utc).date())
+        _,settings,_,_,_,_=self._accounting_context(db,cid,user,datetime.now(timezone.utc).date(),branch_id=outlet.branch_id)
         self._post(db, cid=cid, user=user, entry_number=f"POS-{o.id}", description=f"POS order {o.number}", source_entity="pos_order", source_id=o.id, lines=[
             {"account_combination_id": settings.ar_account_id, "debit": Decimal(o.total), "credit": 0, "description": f"POS AR {o.number}"},
             {"account_combination_id": settings.sales_account_id, "debit": 0, "credit": Decimal(o.subtotal), "description": f"POS sales {o.number}"},
             {"account_combination_id": settings.output_vat_account_id, "debit": 0, "credit": Decimal(o.tax_total), "description": f"POS VAT {o.number}"},
-        ])
+        ], branch_id=outlet.branch_id)
         o.status="finalized";o.finalized_at=datetime.now(timezone.utc);db.flush();return o
 
     def pay(self,db,p,user):
@@ -149,10 +149,13 @@ class POSService:
         if existing:return existing
         if p.method not in {"cash","card","bank","other"}:raise ValueError("Unsupported payment method")
         if Decimal(o.paid_total)+p.amount>Decimal(o.total):raise ValueError("Payment exceeds outstanding balance")
+        session=db.scalar(select(POSSession).where(POSSession.id==o.session_id,POSSession.company_id==c.id))
+        outlet=db.scalar(select(POSOutlet).where(POSOutlet.id==session.outlet_id,POSOutlet.company_id==c.id)) if session else None
+        if not session or not outlet or session.status!="open": raise ValueError("Order session or outlet is invalid")
         settings=db.scalar(select(CommerceAccountingSettings).where(CommerceAccountingSettings.company_id==c.id))
         if not settings: raise ValueError("Commerce accounting configuration is required for POS")
         account=self._payment_account(db,company_id=c.id,method=p.method)
-        entry=self._post(db,cid=c.id,user=user,entry_number=f"POS-PAY-{p.idempotency_key}",description=f"POS payment {o.number}",source_entity="pos_payment",source_id=p.idempotency_key,lines=[{"account_combination_id":account,"debit":p.amount,"credit":0,"description":f"{p.method} payment"},{"account_combination_id":settings.ar_account_id,"debit":0,"credit":p.amount,"description":f"POS AR settlement {o.number}"}])
+        entry=self._post(db,cid=c.id,user=user,entry_number=f"POS-PAY-{p.idempotency_key}",description=f"POS payment {o.number}",source_entity="pos_payment",source_id=p.idempotency_key,branch_id=outlet.branch_id,lines=[{"account_combination_id":account,"debit":p.amount,"credit":0,"description":f"{p.method} payment"},{"account_combination_id":settings.ar_account_id,"debit":0,"credit":p.amount,"description":f"POS AR settlement {o.number}"}])
         payment=POSPayment(company_id=c.id,order_id=o.id,method=p.method,amount=p.amount,idempotency_key=p.idempotency_key,accounting_entry_id=entry.id);db.add(payment);o.paid_total=Decimal(o.paid_total)+p.amount;db.flush();return payment
 
     def close_session(self,db,cid,sid,closing_total,user,closing_cash=None,closing_card=None,closing_bank=None,closing_other=None):
