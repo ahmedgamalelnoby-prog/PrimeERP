@@ -1,1 +1,1 @@
-export { default } from "../core-integration/routes";
+export { coreIntegrationRoutes as default, coreIntegrationRoutes } from "../core-integration/routes";
