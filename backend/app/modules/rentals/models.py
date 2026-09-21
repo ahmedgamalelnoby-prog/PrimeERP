@@ -83,3 +83,19 @@ class RentalCharge(Base):
     total_amount=Column(Numeric(18,4),nullable=False)
     status=Column(String(30),nullable=False,default="draft")
     __table_args__=(CheckConstraint("base_amount >= 0",name="ck_rental_charge_base"),CheckConstraint("total_amount >= 0",name="ck_rental_charge_total"),UniqueConstraint("contract_id","period_start","period_end",name="uq_rental_charge_contract_period"),)
+
+
+class RentalReceipt(Base):
+    __tablename__="rental_receipts"
+    id=Column(Integer,primary_key=True)
+    tenant_id=Column(Integer,ForeignKey("tenants.id",ondelete="CASCADE"),nullable=False,index=True)
+    company_id=Column(Integer,ForeignKey("companies.id",ondelete="CASCADE"),nullable=False,index=True)
+    charge_id=Column(Integer,ForeignKey("rental_charges.id",ondelete="RESTRICT"),nullable=False,index=True)
+    payment_date=Column(Date,nullable=False)
+    amount=Column(Numeric(18,4),nullable=False)
+    method=Column(String(30),nullable=False)
+    reference=Column(String(120))
+    status=Column(String(20),nullable=False,default="posted")
+    journal_entry_id=Column(Integer,ForeignKey("journal_entries.id",ondelete="SET NULL"),nullable=True,index=True)
+    created_at=Column(DateTime(timezone=True),server_default=func.now(),nullable=False)
+    __table_args__=(CheckConstraint("amount > 0",name="ck_rental_receipt_amount"),CheckConstraint("status IN ('posted','reversed')",name="ck_rental_receipt_status"),)
