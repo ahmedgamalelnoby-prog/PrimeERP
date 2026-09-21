@@ -60,7 +60,7 @@ class InventoryService:
         if warehouse_id is not None:q=q.where(StockBalance.warehouse_id==warehouse_id)
         if product_id is not None:q=q.where(StockBalance.product_id==product_id)
         return list(db.scalars(q.order_by(StockBalance.warehouse_id,StockBalance.location_id,StockBalance.product_id)).all())
-    def post_movement(self,db,tenant_id,payload):
+    def post_movement(self,db,tenant_id,payload,commit=True):
         warehouse=self._warehouse(db,tenant_id,payload.warehouse_id); location=self._location(db,tenant_id,payload.location_id); self._product(db,tenant_id,payload.product_id)
         if location.warehouse_id!=warehouse.id: raise HTTPException(400,"Location does not belong to warehouse")
         b=self._balance(db,tenant_id,warehouse.id,location.id,payload.product_id,True); qty=Decimal(payload.quantity)
@@ -68,7 +68,9 @@ class InventoryService:
             if b.quantity-b.reserved_quantity<qty: raise HTTPException(409,"Insufficient available stock")
             b.quantity-=qty
         else:b.quantity+=qty
-        m=StockMovement(tenant_id=tenant_id,product_id=payload.product_id,warehouse_id=warehouse.id,location_id=location.id,movement_type=payload.movement_type,quantity=qty,notes=payload.notes); db.add(m); db.commit(); db.refresh(m); return m
+        m=StockMovement(tenant_id=tenant_id,product_id=payload.product_id,warehouse_id=warehouse.id,location_id=location.id,movement_type=payload.movement_type,quantity=qty,notes=payload.notes); db.add(m); db.flush();
+        if commit: db.commit(); db.refresh(m)
+        return m
     def post_transfer(self,db,tenant_id,payload):
         source=self._warehouse(db,tenant_id,payload.source_warehouse_id); dest=self._warehouse(db,tenant_id,payload.destination_warehouse_id)
         if source.id==dest.id: raise HTTPException(400,"Source and destination warehouses must differ")
