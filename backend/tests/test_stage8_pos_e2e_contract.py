@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_stage8_pos_e2e_contract_is_explicit():
-    service = (ROOT / "app/modules/pos/service.py").read_text()
+    service = (ROOT / "app/modules/pos/service.py").read_text(encoding="utf-8")
     router = (ROOT / "app/modules/pos/router.py").read_text()
     schemas = (ROOT / "app/modules/pos/schemas.py").read_text()
     models = (ROOT / "app/modules/pos/models.py").read_text()
