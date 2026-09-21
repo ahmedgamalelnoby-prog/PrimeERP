@@ -66,9 +66,6 @@ class RentalService:
         db.add(obj);db.flush();rental_accounting_service.post_charge(db,obj,user_id);return obj
     def list_contracts(self,db,tenant_id,company_id): return list(db.scalars(self._scope(RentalContract,company_id,tenant_id).order_by(RentalContract.start_date.desc())).all())
     def list_charges(self,db,tenant_id,company_id): return list(db.scalars(self._scope(RentalCharge,company_id,tenant_id).order_by(RentalCharge.charge_date.desc()).limit(500)).all())
-rental_service=RentalService()
-
-
     def collect(self,db,tenant_id,company_id,payload,user_id):
         charge=db.scalar(self._scope(RentalCharge,company_id,tenant_id).where(RentalCharge.id==payload.charge_id).with_for_update())
         if charge is None: raise HTTPException(404,"Charge not found")
@@ -107,3 +104,6 @@ rental_service=RentalService()
             bucket="current" if as_of<=due else ("1_30" if days<=30 else ("31_60" if days<=60 else ("61_90" if days<=90 else "90_plus")))
             rows.append({"charge_id":charge.id,"contract_id":charge.contract_id,"due_date":due,"amount":outstanding,"days_overdue":days,"bucket":bucket})
         return rows
+
+
+rental_service=RentalService()
