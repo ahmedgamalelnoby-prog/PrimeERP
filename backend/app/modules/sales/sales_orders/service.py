@@ -6,11 +6,13 @@ from app.modules.companies.models import Company
 from app.modules.branches.models import Branch
 from app.modules.customers.models import Customer
 from app.modules.products.models import Product
+from app.modules.inventory.schemas import ReservationCreate,ReservationLineCreate,IssueCreate,IssueLineCreate
+from app.modules.inventory.service import inventory_service
 from app.modules.transactions.services.numbering_service import numbering_service
 from .models import SalesOrder,SalesOrderLine
 class SalesOrderService:
  def tenant(self,u):
-  if u.is_platform_admin or u.tenant_id is None: raise HTTPException(403,"Active tenant context is required")
+  if u.is_platform_admin or u.tenant_id is None:raise HTTPException(403,"Active tenant context is required")
   return u.tenant_id
  def scope(self,db,t,p):
   if not db.scalar(select(Company).where(Company.id==p.company_id,Company.tenant_id==t)):raise HTTPException(404,"Company not found")
@@ -42,4 +44,18 @@ class SalesOrderService:
   o=self.get(db,u,i)
   if o.status!=expected:raise HTTPException(409,f"Invalid transition from {o.status}")
   o.status=new;db.commit();db.refresh(o);return o
+ def reserve(self,db,u,i,p):
+  o=self.get(db,u,i)
+  if o.status!="confirmed":raise HTTPException(409,"Only confirmed orders can be reserved")
+  if o.reservation_id:raise HTTPException(409,"Order already has a reservation")
+  lines=[ReservationLineCreate(product_id=x.product_id,location_id=x.location_id,quantity=x.quantity) for x in p.lines]
+  if sum((x.quantity for x in p.lines),Decimal("0"))<=0:raise HTTPException(422,"Invalid reservation")
+  r=inventory_service.reserve(db,self.tenant(u),ReservationCreate(reference_type="sales_order",reference_id=o.id,lines=lines,notes=p.notes))
+  o.reservation_id=r.id;o.status="reserved";db.commit();db.refresh(o);return o
+ def issue(self,db,u,i,p):
+  o=self.get(db,u,i)
+  if o.status!="reserved" or not o.reservation_id:raise HTTPException(409,"Order must have an active reservation")
+  lines=[IssueLineCreate(product_id=x.product_id,location_id=x.location_id,quantity=x.quantity) for x in p.lines]
+  issue=inventory_service.issue(db,self.tenant(u),IssueCreate(warehouse_id=p.warehouse_id,reservation_id=o.reservation_id,issue_type="sales_issue",reference_type="sales_order",reference_id=o.id,lines=lines,notes=p.notes))
+  o.issue_id=issue.id;o.status="fulfilled";db.commit();db.refresh(o);return o
 sales_order_service=SalesOrderService()
