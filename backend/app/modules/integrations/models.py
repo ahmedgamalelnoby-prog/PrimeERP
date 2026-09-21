@@ -12,11 +12,15 @@ class IntegrationEvent(Base):
 
     id = Column(Integer, primary_key=True)
     company_id = Column(Integer, nullable=True, index=True)
-    event_type = Column(String(120), nullable=False, default="generic")
+    event_type = Column(
+        String(120), nullable=False, default="generic", server_default="generic"
+    )
     external_id = Column(String(255), nullable=True, index=True)
     payload = Column(JSON, nullable=False, default=dict)
-    status = Column(String(30), nullable=False, default="received", index=True)
-    attempts = Column(Integer, nullable=False, default=0)
+    status = Column(
+        String(30), nullable=False, default="received", server_default="received", index=True
+    )
+    attempts = Column(Integer, nullable=False, default=0, server_default="0")
     next_attempt_at = Column(DateTime(timezone=True), nullable=True, index=True)
     processed_at = Column(DateTime(timezone=True), nullable=True)
     last_error = Column(Text, nullable=True)
