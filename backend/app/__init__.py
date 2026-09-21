@@ -1,1 +1,0 @@
-"""PrimeERP application package."""
