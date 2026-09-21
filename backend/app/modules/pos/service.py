@@ -7,13 +7,14 @@ from app.modules.accounting.journals.services.journal_service import journal_ser
 from app.modules.accounting.fiscal_years.models import AccountingPeriod, FiscalYear
 from app.modules.companies.models import Company
 from app.modules.branches.models import Branch
-from app.modules.catalog.models import Recipe, RecipeLine
+from app.modules.catalog.models import Recipe, RecipeLine, ProductVariant
 from app.modules.inventory.items.models import InventoryItem
 from app.modules.inventory.locations.models import InventoryLocation
 from app.modules.inventory.stock_moves.schemas import StockMoveCreate
 from app.modules.inventory.stock_moves.service import inventory_stock_move_service
 from app.modules.commerce.accounting_models import CommerceAccountingSettings, POSPaymentAccountMapping
 from app.modules.pos.models import POSOutlet, POSDevice, POSSession, POSOrder, POSOrderLine, POSPayment
+from app.modules.identity.models.user import User
 
 
 class POSService:
@@ -50,6 +51,8 @@ class POSService:
         o=db.scalar(select(POSOutlet).where(POSOutlet.id==p.outlet_id,POSOutlet.company_id==c.id,POSOutlet.is_active.is_(True)))
         d=db.scalar(select(POSDevice).where(POSDevice.id==p.device_id,POSDevice.outlet_id==p.outlet_id,POSDevice.company_id==c.id,POSDevice.is_active.is_(True)))
         if not o or not d: raise ValueError("Outlet or device is invalid")
+        cashier=db.scalar(select(User).where(User.id==p.cashier_user_id,User.tenant_id==c.tenant_id,User.is_active.is_(True),User.is_deleted.is_(False)))
+        if not cashier: raise ValueError("Cashier is inactive, deleted, or outside the current tenant")
         existing=db.scalar(select(POSSession).where(POSSession.company_id==c.id,POSSession.device_id==d.id,POSSession.status=="open").with_for_update())
         if existing: raise ValueError("Device already has an open session")
         s=POSSession(**p.model_dump(),status="open");db.add(s);db.flush();return s
@@ -64,6 +67,11 @@ class POSService:
         for x in p.lines:
             item=db.scalar(select(InventoryItem).where(InventoryItem.id==x.item_id,InventoryItem.company_id==c.id,InventoryItem.is_active.is_(True)))
             if not item: raise ValueError("Item is unavailable")
+            if x.variant_id is not None:
+                variant=db.scalar(select(ProductVariant).where(ProductVariant.id==x.variant_id,ProductVariant.company_id==c.id,ProductVariant.product_id==item.id,ProductVariant.is_active.is_(True)))
+                if not variant: raise ValueError("Variant does not belong to the item/company or is inactive")
+            elif db.scalar(select(ProductVariant.id).where(ProductVariant.company_id==c.id,ProductVariant.product_id==item.id,ProductVariant.is_active.is_(True)).limit(1)) is not None:
+                raise ValueError("This item has active variants; POS order lines must identify the variant")
             recipe=db.scalar(select(Recipe).where(Recipe.company_id==c.id,Recipe.product_id==item.id,Recipe.is_active.is_(True)).order_by(Recipe.version.desc()).limit(1))
             ls=(x.quantity*x.unit_price).quantize(Decimal("0.0001"),ROUND_HALF_UP); lt=(ls*x.tax_percent/100).quantize(Decimal("0.0001"),ROUND_HALF_UP)
             db.add(POSOrderLine(order_id=o.id,item_id=item.id,variant_id=x.variant_id,quantity=x.quantity,unit_price=x.unit_price,tax_percent=x.tax_percent,line_subtotal=ls,line_tax=lt,line_total=ls+lt,recipe_id=recipe.id if recipe else None));sub+=ls;tax+=lt
@@ -84,6 +92,7 @@ class POSService:
     def _post(self,db,*,cid,user,entry_number,description,lines,source_entity,source_id,journal=None):
         c,settings,b,p,fy,j=self._accounting_context(db,cid,user,datetime.now(timezone.utc).date())
         j=journal or j
+        if not j.auto_post: raise ValueError("POS accounting journal must have auto-post enabled for atomic order finalization and payment settlement")
         existing=db.scalar(select(JournalEntry).where(JournalEntry.tenant_id==c.tenant_id,JournalEntry.company_id==cid,JournalEntry.source_module=="pos",JournalEntry.source_entity==source_entity,JournalEntry.source_id==source_id).with_for_update())
         if existing:return existing
         e=journal_service.create_draft(db,tenant_id=c.tenant_id,company_id=cid,branch_id=b.id,journal_id=j.id,fiscal_year_id=fy.id,period_id=p.id,entry_number=entry_number,entry_date=datetime.now(timezone.utc).date(),description=description,lines=lines,user_id=user.id,source_module="pos",source_entity=source_entity,source_id=source_id,commit=False)
@@ -143,10 +152,21 @@ class POSService:
         entry=self._post(db,cid=c.id,user=user,entry_number=f"POS-PAY-{p.idempotency_key}",description=f"POS payment {o.number}",source_entity="pos_payment",source_id=p.idempotency_key,lines=[{"account_combination_id":account,"debit":p.amount,"credit":0,"description":f"{p.method} payment"},{"account_combination_id":settings.ar_account_id,"debit":0,"credit":p.amount,"description":f"POS AR settlement {o.number}"}])
         payment=POSPayment(company_id=c.id,order_id=o.id,method=p.method,amount=p.amount,idempotency_key=p.idempotency_key,accounting_entry_id=entry.id);db.add(payment);o.paid_total=Decimal(o.paid_total)+p.amount;db.flush();return payment
 
-    def close_session(self,db,cid,sid,closing_total,user):
+    def close_session(self,db,cid,sid,closing_total,user,closing_cash=None,closing_card=None,closing_bank=None,closing_other=None):
         s=db.scalar(select(POSSession).where(POSSession.id==sid,POSSession.company_id==cid).with_for_update())
         if not s or s.status!="open" or not self._company(db,cid,user):raise ValueError("Session is invalid or outside the tenant")
         unpaid=db.scalar(select(func.count()).select_from(POSOrder).where(POSOrder.session_id==sid,POSOrder.status=="finalized",POSOrder.paid_total<POSOrder.total))
         if unpaid:raise ValueError("Cannot close a session with unpaid finalized orders")
-        s.status="closed";s.closing_total=closing_total;s.closed_at=datetime.now(timezone.utc);db.flush();return s
+        payments=db.scalars(select(POSPayment).where(POSPayment.company_id==cid,POSPayment.order_id.in_(select(POSOrder.id).where(POSOrder.session_id==sid)),POSPayment.status=="posted")).all()
+        expected={m:sum((Decimal(x.amount) for x in payments if x.method==m),Decimal("0")) for m in ("cash","card","bank","other")}
+        expected_total=sum(expected.values(),Decimal("0"))
+        if Decimal(closing_total)!=expected_total:raise ValueError(f"Session closing total {closing_total} does not reconcile to posted payments {expected_total}")
+        breakdown=(closing_cash,closing_card,closing_bank,closing_other)
+        if any(x is not None for x in breakdown):
+            if any(x is None for x in breakdown):raise ValueError("All payment-method closing amounts are required when method reconciliation is supplied")
+            actual=dict(zip(("cash","card","bank","other"),map(Decimal,breakdown)))
+            if actual!=expected:raise ValueError(f"Session payment-method reconciliation mismatch: expected {expected}, got {actual}")
+            s.closing_cash=actual["cash"];s.closing_card=actual["card"];s.closing_bank=actual["bank"];s.closing_other=actual["other"]
+        s.status="closed";s.closing_total=Decimal(closing_total);s.closed_at=datetime.now(timezone.utc);db.flush();return s
+
 pos_service=POSService()
