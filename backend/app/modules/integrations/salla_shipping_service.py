@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.modules.integrations.models import IntegrationMapping
 from app.modules.integrations.salla_models import SallaCustomer, SallaOrder, SallaShipment
 from app.modules.shipping.models import ShippingCarrier, ShippingMethod, Shipment
+from app.modules.shipping.service import SHIPMENT_TRANSITIONS
 
 
 _STATUS_MAP = {
@@ -90,24 +91,27 @@ def _method(db: Session, carrier: ShippingCarrier, shipment: SallaShipment) -> S
 
 
 def _advance_status(current: str, target: str) -> str:
-    if target == current:
+    if target == current or target == "pending":
         return current
-    if target == "pending":
+
+    # A delivered shipment is terminal in ERP. Salla may emit a later return
+    # event, but that event belongs to the dedicated return workflow and must
+    # never reopen the shipping state machine.
+    if current == "delivered" and target in {"returned", "cancelled"}:
         return current
-    # Salla terminal events are authoritative and may arrive without intermediate events.
-    if target == "returned":
-        return "returned" if current not in {"returned", "cancelled"} else current
-    if target == "cancelled":
-        return "cancelled" if current not in {"returned", "cancelled", "delivered"} else current
+
+    # Keep terminal Salla events authoritative where the ERP state machine
+    # explicitly permits them, while rejecting impossible transitions.
+    if target in {"returned", "cancelled"}:
+        return target if target in SHIPMENT_TRANSITIONS.get(current, set()) else current
+
     path = {
         "pending": ["picked_up", "in_transit", "out_for_delivery", "delivered"],
         "picked_up": ["in_transit", "out_for_delivery", "delivered"],
         "in_transit": ["out_for_delivery", "delivered"],
         "out_for_delivery": ["delivered"],
     }.get(current, [])
-    if target in path:
-        return target
-    return current
+    return target if target in path else current
 
 
 def _customer_name(db: Session, order: SallaOrder | None, fallback: str = "Salla Customer") -> str:
