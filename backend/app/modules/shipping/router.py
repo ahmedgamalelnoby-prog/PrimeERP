@@ -13,6 +13,7 @@ from app.modules.identity.models import User
 from app.modules.saas.entitlements import require_module
 from app.modules.commerce.models import SalesDocument
 from app.modules.shipping.models import ShippingCarrier, ShippingMethod, Shipment
+from app.modules.shipping.service import calculate_shipping_fee, validate_shipment_transition
 from app.modules.shipping.schemas import CarrierCreate, CarrierResponse, MethodCreate, MethodResponse, ShipmentCreate, ShipmentResponse
 
 router = APIRouter(prefix="/shipping", tags=["Shipping"], dependencies=[Depends(require_permission("shipping.access")), Depends(require_module("shipping"))])
@@ -119,9 +120,15 @@ def shipment(payload: ShipmentCreate, current_user: User = Depends(get_current_u
             raise HTTPException(409, "Cannot create a shipment for a cancelled sales document")
     if payload.cod_amount and method_obj.payment_method == "prepaid":
         raise HTTPException(422, "COD amount is not allowed for prepaid shipping")
-    fee = payload.shipping_fee if payload.shipping_fee > 0 else method_obj.base_fee
-    if method_obj.payment_method in {"cod", "mixed"} and payload.cod_amount:
-        fee += payload.cod_amount * method_obj.cod_fee_percent / 100
+    configured_fee = calculate_shipping_fee(
+        method_obj.base_fee,
+        payload.cod_amount,
+        method_obj.cod_fee_percent,
+        method_obj.payment_method,
+    )
+    fee = payload.shipping_fee if payload.shipping_fee > 0 else configured_fee
+    if fee < 0:
+        raise HTTPException(422, "Shipping fee cannot be negative")
     obj = Shipment(**payload.model_dump(), shipping_fee=fee)
     db.add(obj); db.commit(); db.refresh(obj)
     return obj
@@ -136,7 +143,6 @@ def shipments(company_id: int = Query(..., gt=0), status: str | None = None, cur
     return list(db.scalars(stmt.order_by(Shipment.id.desc())).all())
 
 
-_TRANSITIONS = {"pending": {"picked_up", "cancelled"}, "picked_up": {"in_transit", "cancelled"}, "in_transit": {"out_for_delivery", "returned"}, "out_for_delivery": {"delivered", "returned"}, "delivered": {"returned"}, "returned": set(), "cancelled": set()}
 
 
 @router.post("/shipments/{shipment_id}/status", response_model=ShipmentResponse, dependencies=[Depends(require_permission("shipping.post"))])
@@ -145,11 +151,11 @@ def status(shipment_id: int, value: str = Query(...), company_id: int = Query(..
     obj = db.scalar(select(Shipment).where(Shipment.id == shipment_id, Shipment.company_id == company_id).with_for_update())
     if obj is None:
         raise HTTPException(404, "Shipment not found")
-    if value not in _TRANSITIONS:
-        raise HTTPException(400, "Invalid shipment status")
+    try:
+        validate_shipment_transition(obj.status, value)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
     if value == obj.status:
         return obj
-    if value not in _TRANSITIONS[obj.status]:
-        raise HTTPException(409, f"Invalid shipment transition: {obj.status} -> {value}")
     obj.status = value; db.commit(); db.refresh(obj)
     return obj
