@@ -61,7 +61,7 @@ def consume_reservation(reservation_id: int, payload: ReservationConsume | None 
 
 @router.post("/{reservation_id}/cancel", response_model=ReservationResponse, dependencies=[Depends(require_permission("inventory.write"))])
 def cancel_reservation(reservation_id: int, company_id: int = Query(..., gt=0), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    _company_for_user(db, company_id, reservation_id)
+    _company_for_user(db, company_id, current_user)
     try:
         reservation = inventory_reservation_service.cancel(db, company_id=company_id, reservation_id=reservation_id)
         db.commit(); db.refresh(reservation); return reservation
