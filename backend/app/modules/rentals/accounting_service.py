@@ -53,8 +53,6 @@ class RentalAccountingService:
         else:
             charge.status="approved"
         db.flush(); return entry
-rental_accounting_service=RentalAccountingService()
-
 
     def post_receipt(self, db: Session, receipt, user_id: int):
         charge = db.scalar(select(RentalCharge).where(RentalCharge.id == receipt.charge_id, RentalCharge.company_id == receipt.company_id, RentalCharge.tenant_id == receipt.tenant_id).with_for_update())
@@ -97,3 +95,6 @@ rental_accounting_service=RentalAccountingService()
         receipt.journal_entry_id=entry.id
         db.flush()
         return entry
+
+
+rental_accounting_service=RentalAccountingService()
