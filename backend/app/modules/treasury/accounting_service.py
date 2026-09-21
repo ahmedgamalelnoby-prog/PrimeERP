@@ -71,12 +71,14 @@ class TreasuryAccountingService:
         if event.event_type == "collected":
             return [{"account_combination_id": settings.bank_account_id, "debit": amount, "credit": 0}, {"account_combination_id": settings.under_collection_account_id, "debit": 0, "credit": amount}]
         if event.event_type == "returned":
-            source = settings.under_collection_account_id if before in {"deposited", "under_collection", "resubmitted"} else settings.received_cheques_account_id
+            source = settings.bank_account_id if before == "deposited" else settings.under_collection_account_id
             return [{"account_combination_id": settings.returned_cheques_account_id, "debit": amount, "credit": 0}, {"account_combination_id": source, "debit": 0, "credit": amount}]
         if event.event_type == "resubmitted":
             return [{"account_combination_id": settings.under_collection_account_id, "debit": amount, "credit": 0}, {"account_combination_id": settings.returned_cheques_account_id, "debit": 0, "credit": amount}]
         if event.event_type == "withdrawn":
-            source = settings.received_cheques_account_id if before in {"received", "deposited"} else self._account_state(settings, cheque)
+            source = {"received": settings.received_cheques_account_id, "deposited": settings.bank_account_id, "under_collection": settings.under_collection_account_id, "returned": settings.returned_cheques_account_id, "resubmitted": settings.under_collection_account_id}.get(before)
+            if source is None:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Cheque cannot be withdrawn from status {before}")
             return [{"account_combination_id": commerce.ar_account_id, "debit": amount, "credit": 0}, {"account_combination_id": source, "debit": 0, "credit": amount}]
         if event.event_type == "cleared":
             return [{"account_combination_id": settings.issued_cheques_account_id, "debit": amount, "credit": 0}, {"account_combination_id": settings.bank_account_id, "debit": 0, "credit": amount}]
