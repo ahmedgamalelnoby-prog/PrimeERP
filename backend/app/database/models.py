@@ -24,10 +24,10 @@ from app.modules.inventory.stock_moves.models import InventoryStockMove
 from app.modules.inventory.stock_moves.location_stock import InventoryLocationStock
 from app.modules.inventory.transfers.models import InventoryTransfer, InventoryTransferLine
 from app.modules.inventory.adjustments.models import InventoryAdjustment
-from app.modules.inventory.reservations.models import InventoryReservation, InventoryReservationConsumption
+from app.modules.inventory.reservations.models import InventoryReservation, InventoryReservationConsumption, InventoryReservationConsumption
 from app.modules.commerce.models import BusinessPartner, SalesDocument, SalesLine, PurchaseDocument, PurchaseLine, CommercePayment, PurchaseBillReceiptLink, PurchaseBillReceiptAllocation
 from app.modules.commerce.sales_return_models import SalesReturnAllocation
-from app.modules.commerce.accounting_models import CommerceAccountingSettings, POSPaymentAccountMapping
+from app.modules.commerce.accounting_models import CommerceAccountingSettings, POSPaymentAccountMapping, POSPaymentAccountMapping
 from app.modules.enterprise.models import FixedAsset, Budget, BudgetLine, Employee, PayrollRun, PayrollLine, Project, ProjectContract
 from app.modules.shipping.models import ShippingCarrier, ShippingMethod, Shipment
 from app.modules.integrations.models import IntegrationConnection, IntegrationEvent, IntegrationMapping
