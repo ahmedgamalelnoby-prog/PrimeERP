@@ -12,6 +12,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: primeerp-self-hosted-validation-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validation:
     name: Self-hosted full validation
@@ -41,6 +45,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { $global:LASTEXITCODE = 0 }
 
             docker run -d --name $container -e POSTGRES_USER=primeerp -e POSTGRES_PASSWORD=primeerp -e POSTGRES_DB=primeerp_ci -p 55432:5432 postgres:17
+            if ($LASTEXITCODE -ne 0) { throw "PostgreSQL container start failed with exit code $LASTEXITCODE." }
 
             $ready = $false
             for ($i = 0; $i -lt 30; $i++) {
@@ -57,9 +62,13 @@ jobs:
 
             Push-Location backend
             python -m pip install --upgrade pip
+            if ($LASTEXITCODE -ne 0) { throw "pip upgrade failed with exit code $LASTEXITCODE." }
             python -m pip install -r requirements.txt
+            if ($LASTEXITCODE -ne 0) { throw "Backend dependency installation failed with exit code $LASTEXITCODE." }
             python -m pip install pytest
+            if ($LASTEXITCODE -ne 0) { throw "pytest installation failed with exit code $LASTEXITCODE." }
             python -m compileall -q app
+            if ($LASTEXITCODE -ne 0) { throw "Backend compileall failed with exit code $LASTEXITCODE." }
             $env:DATABASE_URL = "postgresql+psycopg://primeerp:primeerp@127.0.0.1:55432/primeerp_ci"
             python -m alembic upgrade head
             if ($LASTEXITCODE -ne 0) { throw "Alembic upgrade failed with exit code $LASTEXITCODE." }
@@ -69,7 +78,7 @@ jobs:
               $tests = Get-ChildItem tests -Recurse -Filter "test_*.py" -File
               if ($tests.Count -gt 0) {
                 python -m pytest -q
-            if ($LASTEXITCODE -ne 0) { throw "Backend pytest failed with exit code $LASTEXITCODE." }
+                if ($LASTEXITCODE -ne 0) { throw "Backend pytest failed with exit code $LASTEXITCODE." }
               } else {
                 Write-Host "No backend tests found; compile and migration checks passed."
               }
@@ -80,6 +89,7 @@ jobs:
 
             Push-Location frontend
             npm ci
+            if ($LASTEXITCODE -ne 0) { throw "Frontend npm ci failed with exit code $LASTEXITCODE." }
             npm run lint
             if ($LASTEXITCODE -ne 0) { throw "Frontend lint failed with exit code $LASTEXITCODE." }
             npm run build
