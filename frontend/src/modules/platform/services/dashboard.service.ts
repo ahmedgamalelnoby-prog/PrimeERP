@@ -5,6 +5,8 @@ export interface DashboardSummary {
   users: { total: number; active: number };
   companies: { total: number; active: number };
   branches: { total: number; active: number };
+  revenue_overview: { month: string; revenue: number; expenses: number }[];
+  recent_activities: { id: number; title: string; description: string; time: string; status: "success" | "warning" | "info" | "danger" }[];
 }
 
 export async function getDashboardSummary(): Promise<DashboardSummary> {
