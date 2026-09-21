@@ -1,0 +1,163 @@
+name: PrimeERP Database Migration Release Gate
+
+on:
+  push:
+    branches:
+      - main
+      - 'feature/**'
+  pull_request:
+    paths:
+      - 'backend/alembic/**'
+      - 'backend/tests/jurisdiction/**'
+      - 'backend/scripts/check_alembic_graph.py'
+      - 'docker-compose.yml'
+      - 'backend/Dockerfile'
+      - '.github/workflows/database-release-gate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: primeerp-database-release-gate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  database-release-gate:
+    name: PostgreSQL migrations and database guards
+    runs-on: [self-hosted, Windows, X64, PrimeERP]
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Verify Docker
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          docker version
+          docker compose version
+          docker info
+
+      - name: Prepare isolated database environment
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pgPassword = [guid]::NewGuid().ToString('N')
+          $secretKey = ([guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToString('N'))
+          @(
+            'POSTGRES_DB=primeerp_database_ci'
+            'POSTGRES_USER=primeerp'
+            "POSTGRES_PASSWORD=$pgPassword"
+            "SECRET_KEY=$secretKey"
+            'CORS_ORIGINS=https://erp.example.com'
+            'APP_ENV=production'
+            'DEBUG=false'
+            'ETA_ENABLED=false'
+            'WHATSAPP_ENABLED=false'
+          ) | Set-Content -Encoding utf8 .env
+
+      - name: Backend migration graph and import audit
+        shell: powershell
+        working-directory: backend
+        env:
+          DATABASE_URL: sqlite:///./primeerp_database_ci_smoke.db
+          APP_ENV: test
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m compileall -q app
+          python scripts/smoke_import.py
+          python scripts/check_alembic_graph.py
+          python -m alembic heads | Tee-Object alembic-heads.txt
+          $heads = (Select-String -Path alembic-heads.txt -Pattern '\(head\)' -AllMatches).Matches.Count
+          if ($heads -ne 1) { throw "Expected exactly one Alembic head; found $heads" }
+
+      - name: Install backend dependencies
+        shell: powershell
+        working-directory: backend
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install -r requirements.txt --disable-pip-version-check --no-input
+          python -m pip install pytest --disable-pip-version-check --no-input
+          python -m pip check
+
+      - name: Build migration test image
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          docker compose build --pull migrate backend-test
+
+      - name: Start isolated PostgreSQL
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          docker compose up -d db
+          $deadline = (Get-Date).AddMinutes(5)
+          while ((Get-Date) -lt $deadline) {
+            $status = docker inspect -f '{{.State.Health.Status}}' primeerp-db 2>$null
+            if ($status -eq 'healthy') {
+              Write-Host 'PostgreSQL health: PASS'
+              exit 0
+            }
+            Start-Sleep -Seconds 3
+          }
+          docker compose logs db
+          throw 'PostgreSQL did not become healthy.'
+
+      - name: Apply migrations to empty PostgreSQL
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          docker compose run --rm migrate
+
+      - name: Verify migration state
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          docker compose run --rm migrate alembic current
+          docker compose run --rm migrate alembic heads
+          docker compose run --rm migrate alembic check
+
+      - name: Re-run migrations for idempotence
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          docker compose run --rm migrate alembic upgrade head
+
+      - name: Execute database guard and jurisdiction contract suite
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          docker compose run --rm backend-test python -m pytest -q tests/jurisdiction
+
+      - name: Execute migration-focused tests
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $migrationTests = Get-ChildItem -Path backend/tests -Recurse -File -Filter '*migration*.py' -ErrorAction SilentlyContinue
+          if ($migrationTests.Count -gt 0) {
+            $paths = $migrationTests.FullName | ForEach-Object { $_.Substring((Resolve-Path backend).Path.Length + 1).Replace('\','/') }
+            Write-Host 'Migration-focused tests found:'
+            $paths | ForEach-Object { Write-Host $_ }
+            docker compose run --rm backend-test python -m pytest -q $paths
+          } else {
+            Write-Host 'No dedicated migration-named test files found; migration validation is covered by Alembic checks and the database guard suite.'
+          }
+
+      - name: PostgreSQL schema smoke checks
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tables = docker compose exec -T db psql -U primeerp -d primeerp_database_ci -Atc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';"
+          if ([int]$tables -le 0) { throw 'PostgreSQL schema is empty after migrations.' }
+          $versionRows = docker compose exec -T db psql -U primeerp -d primeerp_database_ci -Atc "SELECT count(*) FROM alembic_version;"
+          if ([int]$versionRows -ne 1) { throw "Expected exactly one alembic_version row; found $versionRows" }
+          Write-Host "PostgreSQL schema tables: $tables"
+          Write-Host "Alembic version rows: $versionRows"
+
+      - name: Cleanup
+        if: always()
+        shell: powershell
+        run: |
+          docker compose down -v --remove-orphans 2>$null
+          Remove-Item .env -Force -ErrorAction SilentlyContinue
