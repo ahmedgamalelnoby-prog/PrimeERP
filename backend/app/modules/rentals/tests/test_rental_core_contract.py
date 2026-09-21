@@ -14,3 +14,10 @@ def test_rental_pricing_math_contract():
     fixed=Decimal("10000");mg=Decimal("12000");revenue=Decimal("200000");share=revenue*Decimal("10")/Decimal("100")
     assert max(fixed,mg)==Decimal("12000")
     assert fixed+share==Decimal("30000")
+
+
+def test_rental_accounting_respects_approval_workflow():
+    accounting=read("app/modules/rentals/accounting_service.py")
+    assert "if journal.requires_approval:" in accounting
+    assert "charge.status="pending"" in accounting
+    assert "journal_service.approve" not in accounting
