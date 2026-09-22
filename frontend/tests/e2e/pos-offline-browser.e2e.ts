@@ -72,7 +72,7 @@ async function installApiFixtures(context: BrowserContext, state: FixtureState) 
   });
 }
 
-async function openPos(context: BrowserContext): Promise<Page> {
+async function openPos(context: BrowserContext, options: { offlineAfterNavigation?: boolean } = {}): Promise<Page> {
   const page = await context.newPage();
 
   // /pos is protected. AuthProvider only calls /identity/me when an access
