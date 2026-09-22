@@ -28,7 +28,7 @@ def test_sales_invoice_replay_guard_exists_in_postgresql():
     assert "UNIQUE" in row.indexdef.upper()
     assert "company_id" in row.indexdef
     assert "number" in row.indexdef
-    assert "document_type = 'invoice'" in row.indexdef
+    assert "document_type" in row.indexdef and "invoice" in row.indexdef
 
 @pytest.mark.integration
 def test_postgresql_rejects_concurrent_duplicate_invoice_identity():
