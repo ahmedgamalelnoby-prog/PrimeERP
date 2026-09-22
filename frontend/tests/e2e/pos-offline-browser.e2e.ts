@@ -111,7 +111,7 @@ test("restaurant POS survives offline orders, browser restart, retry, and respon
   fs.mkdirSync(path.dirname(profile), { recursive: true });
 
   const state: FixtureState = { checkoutBodies: [], failNextCheckout: false };
-  const context = await chromium.launchPersistentContext(profile, {
+  let context = await chromium.launchPersistentContext(profile, {
     headless: true,
     serviceWorkers: "allow",
   });
@@ -157,10 +157,18 @@ test("restaurant POS survives offline orders, browser restart, retry, and respon
     );
     expect(queuedBeforeRestart).toBe(3);
 
-    // Close while still offline so the durable queue cannot be flushed before
-    // the restart. Reopen the same persistent profile offline and verify both
-    // IndexedDB queue state and the device identity survive the browser restart.
+    // Close the browser context while offline, then launch a NEW persistent
+    // browser context against the same profile. The new context starts online,
+    // which is required to load the Vite application shell before simulating
+    // the offline network state.
     await page.close();
+    await context.close();
+    context = await chromium.launchPersistentContext(profile, {
+      headless: true,
+      serviceWorkers: "allow",
+    });
+    await installApiFixtures(context, state);
+
     const reopened = await openPos(context);
     await context.setOffline(true);
     await expect.poll(() => reopened.evaluate(() => navigator.onLine), { timeout: 5000 }).toBe(false);
