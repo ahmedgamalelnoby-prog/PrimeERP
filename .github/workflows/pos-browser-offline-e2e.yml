@@ -7,7 +7,7 @@ on:
       - "frontend/public/pos-sw.js"
       - "frontend/package.json"
       - "frontend/package-lock.json"
-      - "tests/e2e/pos-offline-browser.e2e.ts"
+      - "frontend/tests/e2e/pos-offline-browser.e2e.ts"
       - ".github/workflows/pos-browser-offline-e2e.yml"
   workflow_dispatch:
 
@@ -73,7 +73,7 @@ jobs:
           POS_E2E_API_ORIGIN: http://127.0.0.1:8000
         run: |
           $ErrorActionPreference = "Stop"
-          npx playwright test ../tests/e2e/pos-offline-browser.e2e.ts --reporter=line
+          npx playwright test tests/e2e/pos-offline-browser.e2e.ts --reporter=line
 
       - name: Stop Vite
         if: always()
