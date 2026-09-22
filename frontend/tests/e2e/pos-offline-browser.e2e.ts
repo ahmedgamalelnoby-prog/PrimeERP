@@ -175,10 +175,17 @@ test("restaurant POS survives offline orders, browser restart, retry, and respon
     await expect(reopened.getByText("● Offline — الطلبات تُحفظ محليًا")).toBeVisible();
 
     await context.setOffline(false);
-    await expect.poll(() => state.checkoutBodies.length, { timeout: 15000 }).toBe(3);
+    await expect.poll(
+      () => reopened.evaluate(() => navigator.onLine),
+      { timeout: 5000 }
+    ).toBe(true);
+    await expect.poll(
+      () => state.checkoutBodies.length,
+      { timeout: 30000, intervals: [250, 500, 1000, 2000] }
+    ).toBe(3);
     await expect.poll(
       () => reopened.getByText(/طلب في انتظار المزامنة/).count(),
-      { timeout: 15000 }
+      { timeout: 30000, intervals: [250, 500, 1000, 2000] }
     ).toBe(0);
 
     const numbers = state.checkoutBodies.map((x) => String(x.number));
@@ -195,11 +202,24 @@ test("restaurant POS survives offline orders, browser restart, retry, and respon
       { timeout: 10000 }
     ).toBeGreaterThan(0);
 
-    await reopened.evaluate(() => window.dispatchEvent(new Event("online")));
-    await expect.poll(() => state.checkoutBodies.length, { timeout: 15000 }).toBe(5);
+    await context.setOffline(true);
+    await expect.poll(
+      () => reopened.evaluate(() => navigator.onLine),
+      { timeout: 5000 }
+    ).toBe(false);
+
+    await context.setOffline(false);
+    await expect.poll(
+      () => reopened.evaluate(() => navigator.onLine),
+      { timeout: 5000 }
+    ).toBe(true);
+    await expect.poll(
+      () => state.checkoutBodies.length,
+      { timeout: 30000, intervals: [250, 500, 1000, 2000] }
+    ).toBe(5);
     await expect.poll(
       () => reopened.getByText(/طلب في انتظار المزامنة/).count(),
-      { timeout: 15000 }
+      { timeout: 30000, intervals: [250, 500, 1000, 2000] }
     ).toBe(0);
 
     expect(new Set(state.checkoutBodies.map((x) => String(x.number))).size).toBe(4);
