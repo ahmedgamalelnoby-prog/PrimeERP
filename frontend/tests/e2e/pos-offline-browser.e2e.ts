@@ -122,8 +122,7 @@ test("restaurant POS survives offline orders, browser restart, retry, and respon
     // Reloading while a service worker is being installed can make a dev-server
     // E2E hang even though the POS application itself is healthy.
     await page.evaluate(async () => {
-      const registration = await navigator.serviceWorker.register("/pos-sw.js", { scope: "/" });
-      await registration.update().catch(() => {});
+      await navigator.serviceWorker.register("/pos-sw.js", { scope: "/" });
       await navigator.serviceWorker.ready;
     });
     await expect(page.getByText("● Online")).toBeVisible();
