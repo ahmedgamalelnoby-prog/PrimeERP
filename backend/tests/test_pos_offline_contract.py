@@ -10,7 +10,9 @@ def test_offline_checkout_replay_is_serialized_per_terminal():
     assert "def _terminal(db: Session, company_id: int, terminal_id: int, *, lock: bool = False)" in router
     assert "_terminal(db, payload.company_id, payload.terminal_id, lock=True)" in router
     assert ".with_for_update()" in router
-    assert "Offline replay must be serialized per terminal" in router
+    assert "Offline replay can happen after the original request committed" in router
+    assert router.count('SalesDocument.number == payload.number') >= 2
+    assert 'idempotency_key=f"pos/checkout/{payload.company_id}/{payload.number}"' in router
 
 
 def test_offline_queue_has_durable_retry_and_service_worker():
@@ -19,6 +21,8 @@ def test_offline_queue_has_durable_retry_and_service_worker():
     assert 'const DB_NAME = "primeerp-pos"' in offline
     assert 'const QUEUE_STORE = "checkout_queue"' in offline
     assert "setInterval(trigger, 15000)" in offline
+    assert "activeFlush" in offline
+    assert "flushCheckoutQueueOnce" in offline
     assert 'navigator.serviceWorker.register("/pos-sw.js"' in offline
     assert 'const CACHE = "primeerp-pos-shell-v1"' in sw
     assert 'caches.match("/index.html")' in sw
