@@ -6,7 +6,7 @@ on:
       - "frontend/src/modules/pos/**"
       - "frontend/public/pos-sw.js"
       - "frontend/package.json"
-      - "frontend/package-lock.json"
+      - "frontend/package-lock.json"\n      - "frontend/playwright.config.ts"
       - "frontend/tests/e2e/pos-offline-browser.e2e.ts"
       - ".github/workflows/pos-browser-offline-e2e.yml"
   workflow_dispatch:
