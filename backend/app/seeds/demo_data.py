@@ -697,10 +697,10 @@ def seed_company_data(db: Session, idx: int, spec, tenant, companies, branches, 
         db, EgyptianEInvoiceDocument,
         {"company_id": company.id, "source_type": "sales_invoice", "source_id": sale.id},
         {"tenant_id": tenant.id, "document_type": "I", "internal_number": sale.number,
-         "submission_uuid": f"{stamp}-ETA-SUB-001", "status": "validated",
+         "submission_uuid": f"{stamp}-ETA-SUB-001", "status": "valid",
          "payload_format": "json",
          "signed_payload": json.dumps({"demo": True, "invoice": sale.number}),
-         "eta_response": json.dumps({"demo": True, "status": "validated"}),
+         "eta_response": json.dumps({"demo": True, "status": "valid"}),
          "retry_count": 0, "validated_at": datetime.now(timezone.utc)},
     )
 
