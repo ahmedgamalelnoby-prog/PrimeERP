@@ -87,6 +87,10 @@ async function openPos(context: BrowserContext): Promise<Page> {
 
   await page.goto(`${BASE_URL}/pos`, { waitUntil: "commit", timeout: 15000 });
   await expect(page.getByRole("heading", { name: "Restaurant & Hotel POS" })).toBeVisible();
+  if (options.offlineAfterNavigation) {
+    await context.setOffline(true);
+    await expect.poll(() => page.evaluate(() => navigator.onLine), { timeout: 5000 }).toBe(false);
+  }
   return page;
 }
 
@@ -158,6 +162,7 @@ test("restaurant POS survives offline orders, browser restart, retry, and respon
     // IndexedDB queue state and the device identity survive the browser restart.
     await page.close();
     const reopened = await openPos(context);
+    await context.setOffline(true);
     await expect.poll(() => reopened.evaluate(() => navigator.onLine), { timeout: 5000 }).toBe(false);
     await expect(reopened.getByText("● Offline — الطلبات تُحفظ محليًا")).toBeVisible();
     await expect(reopened.getByText("3 طلب في انتظار المزامنة")).toBeVisible();
