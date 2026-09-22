@@ -7,7 +7,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "20260922_inventory_transfer_quantities"
-down_revision = "20260919_stock_move_reservation"
+down_revision = "20260922_pos_invoice_replay_guard"
 branch_labels = None
 depends_on = None
 
