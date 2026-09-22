@@ -80,6 +80,98 @@ MODULE_META = {
 }
 
 CLIENTS = [
+    ("nile-hospitality", "Nile Hospitality Group — Demo", "hospitality", "Omar Hassan", "01010000001", "Cairo"),
+    ("delta-trading", "Delta Trading & Distribution — Demo", "trading", "Karim Mostafa", "01010000002", "Alexandria"),
+    ("cairo-food-retail", "Cairo Food & Retail — Demo", "food_retail", "Ahmed Farouk", "01010000003", "Giza"),
+    ("sphinx-manufacturing", "Sphinx Manufacturing Industries — Demo", "manufacturing", "Mina Adel", "01010000004", "10th of Ramadan"),
+    ("red-sea-construction", "Red Sea Construction & Projects — Demo", "construction", "Hossam Tarek", "01010000005", "Hurghada"),
+    ("capital-real-estate", "Capital Real Estate & Rentals — Demo", "real_estate", "Salma Nabil", "01010000006", "New Cairo"),
+    ("medcare-health", "MedCare Clinics & Pharmacy — Demo", "healthcare", "Dina Samir", "01010000007", "Cairo"),
+    ("falcon-logistics", "Falcon Logistics & Shipping — Demo", "logistics", "Youssef Adel", "01010000008", "Alexandria"),
+    ("smart-tech", "SmartTech Electronics & E-Commerce — Demo", "ecommerce", "Rania Emad", "01010000009", "Cairo"),
+    ("nile-agri", "Nile Agro & Food Processing — Demo", "agriculture", "Mahmoud Said", "01010000010", "Dakahlia"),
+]"""Deterministic multi-tenant demo dataset for PrimeERP evaluation.
+
+This seed is intentionally synthetic and idempotent. It creates three independent
+client tenants, companies, branches, users, roles, subscriptions, and enables every
+registered PrimeERP module for each demo tenant.
+
+Run from backend:
+    python -m app.seeds.demo_data
+
+The script never touches the existing PrimeERP demo tenant.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+
+from sqlalchemy.orm import Session
+
+from app.core.security import get_password_hash
+from app.database.models import (
+    Branch,
+    Company,
+    PlanModule,
+    Role,
+    Subscription,
+    SubscriptionPlan,
+    SystemModule,
+    Tenant,
+    TenantModule,
+    User,
+)
+from app.database.session import SessionLocal
+
+
+DEMO_PASSWORD = "Demo@2026!"
+
+# Keep this list aligned with the actual module packages in backend/app/modules.
+# Core platform modules are included as well so the demo tenants exercise
+# entitlement and navigation across the complete product surface.
+ALL_MODULES = [
+    "dashboard", "users", "companies", "branches", "accounting", "audit",
+    "catalog", "commerce", "commissions", "crm", "dashboard", "developer",
+    "egyptian_einvoice", "enterprise", "helpdesk_ai", "hr", "installments",
+    "integrations", "inventory", "jurisdiction", "legal", "loyalty",
+    "manufacturing", "mobile", "notifications", "operations", "organization",
+    "platform", "pos", "promotions", "purchasing", "reports", "rentals",
+    "restaurant", "roles", "saas", "sales", "settings", "shipping",
+    "subscriptions", "taxes", "transactions", "treasury", "uom",
+]
+
+# Human-facing metadata for modules that may not already exist in SystemModule.
+MODULE_META = {
+    "audit": ("المراجعة", "Audit"),
+    "catalog": ("دليل المنتجات", "Catalog"),
+    "commerce": ("التجارة الإلكترونية", "Commerce"),
+    "commissions": ("العمولات", "Commissions"),
+    "developer": ("المطور", "Developer"),
+    "egyptian_einvoice": ("الفاتورة الإلكترونية المصرية", "Egyptian E-Invoice"),
+    "enterprise": ("المؤسسات", "Enterprise"),
+    "helpdesk_ai": ("مساعد الدعم بالذكاء الاصطناعي", "AI Helpdesk"),
+    "installments": ("التقسيط", "Installments"),
+    "jurisdiction": ("الاختصاص الضريبي", "Jurisdiction"),
+    "legal": ("الشؤون القانونية", "Legal"),
+    "loyalty": ("الولاء", "Loyalty"),
+    "mobile": ("تطبيق الهاتف", "Mobile"),
+    "notifications": ("الإشعارات", "Notifications"),
+    "operations": ("العمليات", "Operations"),
+    "organization": ("الهيكل التنظيمي", "Organization"),
+    "platform": ("المنصة", "Platform"),
+    "promotions": ("العروض", "Promotions"),
+    "rentals": ("الإيجارات", "Rentals"),
+    "roles": ("الأدوار والصلاحيات", "Roles"),
+    "saas": ("إدارة الاشتراكات", "SaaS"),
+    "settings": ("الإعدادات", "Settings"),
+    "subscriptions": ("الاشتراكات", "Subscriptions"),
+    "taxes": ("الضرائب", "Taxes"),
+    "transactions": ("المعاملات", "Transactions"),
+    "treasury": ("الخزينة", "Treasury"),
+    "uom": ("وحدات القياس", "Units of Measure"),
+}
+
+CLIENTS = [
     {
         "slug": "demo-nile-hospitality",
         "name": "Nile Hospitality Group — Demo",
