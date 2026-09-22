@@ -183,8 +183,11 @@ def seed_tenant(db: Session, idx: int, spec, modules, roles, plan):
 
 def seed_company_data(db: Session, idx: int, spec, tenant, companies, branches, users):
     company = companies[0]
-    branch = branches[1]
-    wh_branch = branches[4]
+    company_branches = [b for b in branches if b.company_id == company.id]
+    if not company_branches:
+        raise RuntimeError(f"No branch belongs to company {company.id} for demo tenant {tenant.id}")
+    branch = company_branches[0]
+    wh_branch = company_branches[-1]
     stamp = f"D{idx:02d}"
     admin = users[0]
     email_domain = spec[0].removeprefix("demo-")
