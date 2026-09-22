@@ -152,10 +152,14 @@ async function flushCheckoutQueueOnce(): Promise<{ synced: number; failed: numbe
       await removeQueueItem(item.id);
       synced += 1;
     } catch (error: any) {
-      item.status = "failed";
+      item.status = "pending";
       item.lastError = error?.response?.data?.detail || error?.message || "Sync failed";
       await updateQueueItem(item);
       failed += 1;
+
+      // Network failures stop this pass, but the item remains retryable on the
+      // next online event or interval. HTTP responses remain pending as well:
+      // the queue is durable and the server is the source of truth for retry.
       if (!error?.response) break;
     }
   }
@@ -170,12 +174,31 @@ export function flushCheckoutQueue(): Promise<{ synced: number; failed: number }
 }
 
 export function installOfflineSync(onChange?: () => void): () => void {
-  const trigger = () => { void flushCheckoutQueue().finally(() => onChange?.()); };
-  window.addEventListener("online", trigger);
-  const timer = window.setInterval(trigger, 15000);
-  trigger();
+  let disposed = false;
+
+  const trigger = async () => {
+    if (disposed || !navigator.onLine) return;
+
+    try {
+      await flushCheckoutQueue();
+    } finally {
+      if (!disposed) onChange?.();
+    }
+  };
+
+  const onOnline = () => { void trigger(); };
+
+  window.addEventListener("online", onOnline);
+
+  const timer = window.setInterval(() => { void trigger(); }, 15000);
+
+  // Flush queues restored after a browser restart as soon as connectivity is
+  // available, without waiting for the first interval tick.
+  void trigger();
+
   return () => {
-    window.removeEventListener("online", trigger);
+    disposed = true;
+    window.removeEventListener("online", onOnline);
     window.clearInterval(timer);
   };
 }
