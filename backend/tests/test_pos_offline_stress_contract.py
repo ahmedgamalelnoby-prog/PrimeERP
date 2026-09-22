@@ -78,11 +78,13 @@ def test_retry_after_response_loss_keeps_queue_item_until_ack():
     assert state["queue"] == set()
 
 
-def test_sync_failure_is_retryable_and_does_not_drop_the_order():
-    queue = {"OFF-0001": {"status": "failed", "attempts": 3}}
+def test_network_sync_failure_stays_pending_for_later_retry():
+    queue = {"OFF-0001": {"status": "pending", "attempts": 3}}
 
-    assert queue["OFF-0001"]["status"] == "failed"
+    assert queue["OFF-0001"]["status"] == "pending"
     assert queue["OFF-0001"]["attempts"] == 3
-    # A later sync pass can move the item back to syncing and retry it.
+    # Transport failures remain pending and are eligible for the next online
+    # event or retry interval. Server-declared business failures remain failed
+    # by design and are not replayed forever.
     queue["OFF-0001"]["status"] = "syncing"
     assert queue["OFF-0001"]["status"] == "syncing"
