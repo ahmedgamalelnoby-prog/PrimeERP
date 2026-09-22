@@ -79,9 +79,9 @@ async function openPos(context: BrowserContext): Promise<Page> {
   // token already exists, so seed a deterministic E2E token BEFORE navigation.
   // This prevents the real application from redirecting to /login.
   await page.addInitScript(() => {
-    localStorage.setItem("primeerp_access_token", "pos-e2e-access-token");
-    localStorage.setItem("primeerp_refresh_token", "pos-e2e-refresh-token");
-    localStorage.setItem("primeerp_tenant_id", "1");
+    localStorage.setItem("access_token", "pos-e2e-access-token");
+    localStorage.setItem("refresh_token", "pos-e2e-refresh-token");
+    localStorage.setItem("tenant_id", "1");
   });
 
   await page.goto(`${BASE_URL}/pos`, { waitUntil: "domcontentloaded" });
