@@ -109,6 +109,8 @@ jobs:
           npx playwright install chromium
 
       - name: Start Vite
+        env:
+          VITE_API_URL: http://127.0.0.1:8000/api/v1
         run: |
           $ErrorActionPreference = "Stop"
           $p = Start-Process -FilePath "cmd.exe" -ArgumentList "/c","npm run dev -- --host 127.0.0.1 --port 4173" -WorkingDirectory "$env:GITHUB_WORKSPACE\\frontend" -PassThru
