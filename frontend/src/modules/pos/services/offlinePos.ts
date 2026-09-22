@@ -207,5 +207,14 @@ export function installOfflineSync(onChange?: () => void): () => void {
 
 export function registerOfflineServiceWorker(): void {
   if (!("serviceWorker" in navigator)) return;
-  window.addEventListener("load", () => { void navigator.serviceWorker.register("/pos-sw.js", { scope: "/" }); });
+
+  const register = () => {
+    void navigator.serviceWorker.register("/pos-sw.js", { scope: "/" }).catch(() => {
+      // Offline queueing remains independent of the shell cache. A service-worker
+      // registration failure must never block POS rendering or checkout.
+    });
+  };
+
+  if (document.readyState === "complete") register();
+  else window.addEventListener("load", register, { once: true });
 }
