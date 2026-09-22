@@ -545,7 +545,7 @@ def seed_company_data(db: Session, idx: int, spec, tenant, companies, branches, 
         db, RecipeSkuMapping,
         {"company_id": company.id, "sku": f"{stamp}-SKU-RECIPE-001"},
         {"recipe_id": recipe.id, "product_id": item1.id,
-         "sku": f"{stamp}-SKU-RECIPE-001", "source": "demo",
+         "source": "demo",
          "external_id": f"{stamp}-EXT-RECIPE-001", "is_active": True},
     )
 
