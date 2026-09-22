@@ -718,7 +718,9 @@ def seed_company_data(db: Session, idx: int, spec, tenant, companies, branches, 
     # Full-domain demo workflow coverage. Every persisted domain receives a
     # deterministic lifecycle record scoped to this synthetic tenant/company.
     get_or_create(db, CompanyIndustryProfile, {"company_id": company.id},
-                   {"industry_code": spec[2], "profile_name": f"Demo {spec[2]} profile"})
+                   {"industry_code": spec[2], "business_model": "hybrid",
+                    "configuration_json": {"synthetic": True, "industry": spec[2]},
+                    "is_active": True})
     get_or_create(db, AccountingSettings, {"company_id": company.id},
                    {"base_currency": "EGP", "code_length": 8, "department_length": 2,
                     "cost_center_length": 3, "natural_account_length": 3,
@@ -866,8 +868,8 @@ def seed_company_data(db: Session, idx: int, spec, tenant, companies, branches, 
          "source_id": str(transfer.id), "notes": "Demo posted transfer"})
     get_or_create(
         db, InventoryValuationAllocation,
-        {"company_id": company.id, "stock_move_id": move.id, "allocation_role": "source_consumed"},
-        {"cost_layer_id": layer.id, "quantity": 5, "unit_cost": item1.standard_cost})
+        {"company_id": company.id, "stock_move_id": receipt_move.id, "allocation_role": "destination_added"},
+        {"cost_layer_id": layer.id, "quantity": 10, "unit_cost": item2.standard_cost})
     get_or_create(
         db, InventoryAdjustment,
         {"company_id": company.id, "item_id": item1.id, "location_id": storage.id,
@@ -959,6 +961,8 @@ def seed_company_data(db: Session, idx: int, spec, tenant, companies, branches, 
         db, LegalAcceptance,
         {"user_id": admin.id, "document_type": legal.document_type, "document_version": legal.version},
         {"accepted_at": now})
+
+    return sale.id, purchase.id
 
 
 def seed_demo_data() -> None:
