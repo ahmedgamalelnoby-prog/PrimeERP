@@ -812,9 +812,9 @@ def seed_company_data(db: Session, idx: int, spec, tenant, companies, branches, 
     get_or_create(
         db, TaxReturnDraft,
         {"company_id": company.id, "period_from": date(2026,9,1), "period_to": date(2026,9,30)},
-        {"jurisdiction_code": "EG", "output_vat": 33.6, "input_vat": 16.8, "net_vat": 16.8,
-         "is_reconciled": True, "status": "ready", "submission_status": "not_supported",
-         "notes": "Synthetic VAT return."})
+        {"tenant_id": tenant.id, "jurisdiction_code": "EG", "output_vat": 33.6, "input_vat": 16.8,
+         "net_vat": 16.8, "is_reconciled": True, "status": "ready",
+         "submission_status": "not_supported", "notes": "Synthetic VAT return."})
     eg, _ = get_or_create(
         db, Jurisdiction, {"code": "EG"},
         {"country_code": "EG", "name": "Egypt", "default_currency": "EGP",
