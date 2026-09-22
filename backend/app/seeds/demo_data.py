@@ -34,6 +34,16 @@ from app.database.models import (
     Shipment, Subscription, SubscriptionPlan, SystemModule, Tenant,
     TenantModule, UnitOfMeasure, User, CommercePayment, CommercePaymentAllocation,
     PlanModule,
+    CompanyIndustryProfile, LegalDocument, LegalAcceptance, TaxRate, TaxReturnDraft,
+    FiscalYear, AccountingPeriod, AccountingJournal, JournalEntry, JournalEntryLine,
+    AccountingSettings, NumberSequence, BusinessTransaction, TransactionEvent,
+    CommerceAccountingSettings, ShippingSettlementBatch, ShippingShipmentSettlement,
+    ShippingPricingProfile, ShippingPricingRule, ShippingShipmentCost, ShippingOrderStatus,
+    ShippingStatusHistory, ShippingFinancialEvent, IntegrationMapping, SallaAppInstallation,
+    SallaSSOTicket, OrderType, PosOrderLineRoute, InventoryStockMove, InventoryAdjustment,
+    InventoryAccountingConfig, InventoryCostLayer, InventoryValuationAllocation,
+    Jurisdiction, CompanyJurisdiction, PartnerJurisdiction, TaxRule,
+    JurisdictionDecision, TaxSnapshot,
 )
 from app.database.session import SessionLocal
 
@@ -704,7 +714,252 @@ def seed_company_data(db: Session, idx: int, spec, tenant, companies, branches, 
          "retry_count": 0, "validated_at": datetime.now(timezone.utc)},
     )
 
-    return sale.id, purchase.id
+
+    # Full-domain demo workflow coverage. Every persisted domain receives a
+    # deterministic lifecycle record scoped to this synthetic tenant/company.
+    get_or_create(db, CompanyIndustryProfile, {"company_id": company.id},
+                   {"industry_code": spec[2], "profile_name": f"Demo {spec[2]} profile"})
+    get_or_create(db, AccountingSettings, {"company_id": company.id},
+                   {"base_currency": "EGP", "code_length": 8, "department_length": 2,
+                    "cost_center_length": 3, "natural_account_length": 3,
+                    "require_cost_center": True})
+
+    fy, _ = get_or_create(
+        db, FiscalYear, {"tenant_id": tenant.id, "company_id": company.id, "code": f"{stamp}-FY26"},
+        {"name_ar": f"السنة المالية {idx}", "name_en": f"Demo FY2026 {idx}",
+         "start_date": date(2026,1,1), "end_date": date(2026,12,31),
+         "status": "open", "is_current": True, "is_adjustment_period_enabled": True,
+         "opened_by": admin.id, "opened_at": now, "created_by": admin.id})
+    period, _ = get_or_create(
+        db, AccountingPeriod, {"fiscal_year_id": fy.id, "period_number": 9},
+        {"tenant_id": tenant.id, "company_id": company.id, "code": f"{stamp}-P09",
+         "name_ar": "سبتمبر 2026", "name_en": "September 2026",
+         "start_date": date(2026,9,1), "end_date": date(2026,9,30),
+         "status": "open", "allow_posting": True, "opened_by": admin.id,
+         "opened_at": now, "created_by": admin.id})
+    journal, _ = get_or_create(
+        db, AccountingJournal, {"tenant_id": tenant.id, "company_id": company.id, "code": f"{stamp}-GEN"},
+        {"name_ar": "اليومية العامة التجريبية", "name_en": "Demo General Journal",
+         "journal_type": "general", "sequence_key": f"{stamp}-JOURNAL_ENTRY",
+         "allow_manual_entries": True, "auto_post": False, "requires_approval": True,
+         "is_active": True, "created_by": admin.id})
+    get_or_create(
+        db, NumberSequence,
+        {"tenant_id": tenant.id, "company_id": company.id, "branch_id": branch.id,
+         "sequence_key": f"{stamp}-JOURNAL_ENTRY"},
+        {"prefix": stamp, "format_pattern": "{PREFIX}-{YEAR}-{BRANCH}-{SEQ}",
+         "current_value": 1, "padding": 8, "reset_period": "yearly",
+         "last_reset_year": 2026, "is_active": True})
+
+    tx, _ = get_or_create(
+        db, BusinessTransaction,
+        {"tenant_id": tenant.id, "transaction_number": f"{stamp}-TX-0001"},
+        {"company_id": company.id, "branch_id": branch.id, "transaction_type": "sales_invoice",
+         "document_number": sale.number, "status": "posted", "source_module": "sales",
+         "source_entity": "SalesDocument", "source_id": sale.id, "reference_number": sale.number,
+         "transaction_date": TODAY, "posting_date": TODAY, "metadata_json": {"synthetic": True},
+         "created_by": admin.id, "approved_by": admin.id, "posted_by": admin.id,
+         "approved_at": now, "posted_at": now})
+    get_or_create(
+        db, TransactionEvent,
+        {"tenant_id": tenant.id, "transaction_id": tx.id, "event_type": "posted"},
+        {"previous_status": "approved", "new_status": "posted",
+         "description": "Synthetic transaction posted.", "event_data": {"module": "sales"},
+         "performed_by": admin.id})
+
+    entry, _ = get_or_create(
+        db, JournalEntry, {"tenant_id": tenant.id, "entry_number": f"{stamp}-JE-0001"},
+        {"company_id": company.id, "branch_id": branch.id, "journal_id": journal.id,
+         "fiscal_year_id": fy.id, "period_id": period.id, "business_transaction_id": tx.id,
+         "entry_date": TODAY, "posting_date": TODAY, "reference": sale.number,
+         "description": "Demo balanced sales posting", "currency_code": "EGP",
+         "exchange_rate": 1, "total_debit": 240, "total_credit": 240, "status": "posted",
+         "source_module": "sales", "source_entity": "SalesDocument", "source_id": sale.id,
+         "created_by": admin.id, "posted_by": admin.id, "posted_at": now})
+    get_or_create(
+        db, JournalEntryLine, {"entry_id": entry.id, "line_number": 1},
+        {"tenant_id": tenant.id, "company_id": company.id, "account_combination_id": budget_account.id,
+         "department_id": department.id, "cost_center_id": cost_center.id,
+         "description": "Demo receivable", "debit": 240, "credit": 0,
+         "currency_code": "EGP", "exchange_rate": 1, "base_debit": 240, "base_credit": 0})
+    get_or_create(
+        db, JournalEntryLine, {"entry_id": entry.id, "line_number": 2},
+        {"tenant_id": tenant.id, "company_id": company.id, "account_combination_id": budget_account.id,
+         "department_id": department.id, "cost_center_id": cost_center.id,
+         "description": "Demo revenue", "debit": 0, "credit": 240,
+         "currency_code": "EGP", "exchange_rate": 1, "base_debit": 0, "base_credit": 240})
+    get_or_create(
+        db, CommerceAccountingSettings, {"company_id": company.id},
+        {"sales_journal_id": journal.id, "purchase_journal_id": journal.id,
+         "cash_journal_id": journal.id, "ar_account_id": budget_account.id,
+         "ap_account_id": budget_account.id, "sales_account_id": budget_account.id,
+         "purchase_account_id": budget_account.id, "inventory_account_id": budget_account.id,
+         "grni_account_id": budget_account.id, "cogs_account_id": budget_account.id,
+         "output_vat_account_id": budget_account.id, "input_vat_account_id": budget_account.id,
+         "default_payment_account_id": budget_account.id, "default_branch_id": branch.id,
+         "auto_post": True})
+
+    get_or_create(
+        db, TaxRate, {"company_id": company.id, "code": f"{stamp}-VAT14"},
+        {"name": "VAT 14%", "rate": 14, "tax_type": "vat", "is_withholding": False, "is_active": True})
+    get_or_create(
+        db, TaxReturnDraft,
+        {"company_id": company.id, "period_from": date(2026,9,1), "period_to": date(2026,9,30)},
+        {"jurisdiction_code": "EG", "output_vat": 33.6, "input_vat": 16.8, "net_vat": 16.8,
+         "is_reconciled": True, "status": "ready", "submission_status": "not_supported",
+         "notes": "Synthetic VAT return."})
+    eg, _ = get_or_create(
+        db, Jurisdiction, {"code": "EG"},
+        {"country_code": "EG", "name": "Egypt", "default_currency": "EGP",
+         "timezone": "Africa/Cairo", "is_active": True})
+    get_or_create(
+        db, CompanyJurisdiction,
+        {"company_id": company.id, "jurisdiction_id": eg.id, "role": "primary",
+         "effective_from": date(2026,1,1)},
+        {"tax_resident": True, "vat_registered": True,
+         "tax_ids": {"vat": f"EG-VAT-{idx:08d}"}, "is_active": True})
+    get_or_create(
+        db, PartnerJurisdiction,
+        {"partner_id": customer.id, "jurisdiction_id": eg.id, "role": "residence",
+         "effective_from": date(2026,1,1)},
+        {"tax_resident": True, "vat_registered": False, "tax_ids": {}, "is_active": True})
+    rule, _ = get_or_create(
+        db, TaxRule,
+        {"jurisdiction_id": eg.id, "code": f"{stamp}-VAT-LOCAL", "effective_from": date(2026,1,1)},
+        {"name": "Egypt local VAT", "tax_type": "vat", "transaction_type": "sale",
+         "taxpayer_type": "both", "place_of_supply": "local", "rate": 14, "priority": 10,
+         "conditions": {"demo": True}, "version": "1", "is_active": True})
+    decision, _ = get_or_create(
+        db, JurisdictionDecision,
+        {"company_id": company.id, "jurisdiction_id": eg.id, "transaction_type": "sale",
+         "transaction_date": TODAY, "place_of_supply": "local"},
+        {"partner_id": customer.id, "b2b": True, "rationale": {"reason": "Demo local sale"},
+         "rule_ids": [rule.id]})
+    get_or_create(
+        db, TaxSnapshot,
+        {"company_id": company.id, "document_kind": "sale", "document_id": sale.id},
+        {"decision_id": decision.id, "jurisdiction_code": "EG", "country_code": "EG",
+         "transaction_date": TODAY, "transaction_type": "sale", "place_of_supply": "local",
+         "b2b": True, "facts": {"rate": 14}, "rules": [rule.id]})
+
+    get_or_create(
+        db, InventoryAccountingConfig, {"tenant_id": tenant.id, "company_id": company.id},
+        {"journal_id": journal.id, "branch_id": branch.id,
+         "inventory_account_id": budget_account.id, "cogs_account_id": budget_account.id,
+         "adjustment_account_id": budget_account.id, "clearing_account_id": budget_account.id,
+         "is_active": "Y"})
+    receipt_move, _ = get_or_create(
+        db, InventoryStockMove, {"company_id": company.id, "reference": f"{stamp}-RCV-0001"},
+        {"item_id": item2.id, "source_location_id": receiving.id, "destination_location_id": storage.id,
+         "quantity": 10, "unit_cost": item2.standard_cost, "movement_type": "receipt",
+         "status": "draft", "source_module": "purchasing", "source_entity": "PurchaseDocument",
+         "source_id": str(purchase.id), "notes": "Demo purchase receipt"})
+    layer, _ = get_or_create(
+        db, InventoryCostLayer,
+        {"company_id": company.id, "item_id": item2.id, "warehouse_id": wh.id, "receipt_move_id": receipt_move.id},
+        {"quantity_remaining": 10, "unit_cost": item2.standard_cost})
+    move, _ = get_or_create(
+        db, InventoryStockMove, {"company_id": company.id, "reference": f"{stamp}-TRN-0001"},
+        {"item_id": item1.id, "source_location_id": storage.id, "destination_location_id": transit.id,
+         "quantity": 5, "unit_cost": item1.standard_cost, "movement_type": "transfer",
+         "status": "posted", "source_module": "inventory", "source_entity": "InventoryTransfer",
+         "source_id": str(transfer.id), "notes": "Demo posted transfer"})
+    get_or_create(
+        db, InventoryValuationAllocation,
+        {"company_id": company.id, "stock_move_id": move.id, "allocation_role": "source_consumed"},
+        {"cost_layer_id": layer.id, "quantity": 5, "unit_cost": item1.standard_cost})
+    get_or_create(
+        db, InventoryAdjustment,
+        {"company_id": company.id, "item_id": item1.id, "location_id": storage.id,
+         "reference": f"{stamp}-ADJ-0001"},
+        {"quantity": 2, "direction": "increase", "unit_cost": item1.standard_cost,
+         "reason": "Cycle count", "status": "posted", "notes": "Demo adjustment"})
+
+    profile, _ = get_or_create(
+        db, ShippingPricingProfile,
+        {"company_id": company.id, "carrier_id": carrier.id, "name": f"{stamp}-STANDARD"},
+        {"effective_from": date(2026,1,1), "priority": 10, "is_active": True,
+         "notes": "Demo pricing profile"})
+    get_or_create(
+        db, ShippingPricingRule, {"profile_id": profile.id, "priority": 1},
+        {"rule_type": "fixed", "basis": "order", "zone_code": "CAIRO",
+         "fixed_amount": 60, "included_units": 1, "minimum_amount": 60,
+         "is_active": True, "description": "Demo fixed fee"})
+    shipment = db.query(Shipment).filter_by(
+        company_id=company.id, tracking_no=f"{stamp}-TRK-0001").first()
+    get_or_create(
+        db, ShippingShipmentCost, {"shipment_id": shipment.id},
+        {"profile_id": profile.id, "order_date": TODAY, "shipment_date": TODAY,
+         "calculated_at": now, "base_shipping": 60, "cod_fee": 2.4,
+         "total_cost": 62.4, "calculation_breakdown": json.dumps({"demo": True})})
+    get_or_create(
+        db, ShippingOrderStatus, {"company_id": company.id, "code": f"{stamp}-DELIVERED"},
+        {"name": "Delivered", "name_ar": "تم التسليم", "sort_order": 50,
+         "financial_actions": json.dumps(["collect_cod"]), "allowed_next_codes": "[]", "is_active": True})
+    get_or_create(
+        db, ShippingStatusHistory, {"shipment_id": shipment.id, "to_status": "delivered"},
+        {"from_status": "shipped", "changed_on": TODAY, "note": "Demo delivery"})
+    get_or_create(
+        db, ShippingFinancialEvent, {"shipment_id": shipment.id, "event_key": f"{stamp}-COD-COLLECTED"},
+        {"company_id": company.id, "carrier_id": carrier.id, "event_type": "cod_collected",
+         "event_date": TODAY, "amount": 120, "debit_role": "carrier_receivable",
+         "credit_role": "cash", "source_status": "delivered", "is_reversal": False,
+         "description": "Demo COD collection"})
+    batch, _ = get_or_create(
+        db, ShippingSettlementBatch,
+        {"company_id": company.id, "reference": f"{stamp}-SETTLE-0001"},
+        {"carrier_id": carrier.id, "settlement_date": TODAY, "gross_amount": 120,
+         "carrier_fees": 62.4, "net_amount": 57.6, "status": "reconciled",
+         "notes": "Demo carrier settlement"})
+    get_or_create(
+        db, ShippingShipmentSettlement, {"batch_id": batch.id, "shipment_id": shipment.id},
+        {"expected_amount": 120, "collected_amount": 120, "carrier_fee": 62.4,
+         "cod_commission": 2.4, "withdrawal_fee": 0, "other_fee": 0,
+         "net_amount": 57.6, "variance": 0, "reconciled": True})
+
+    for code, category, requires_table in (
+        ("DINE_IN", "dine_in", True), ("TAKEAWAY", "takeaway", False), ("DELIVERY", "delivery", False)):
+        get_or_create(
+            db, OrderType, {"branch_id": branch.id, "code": f"{stamp}-{code}"},
+            {"name": code.replace("_"," ").title(), "order_category": category,
+             "service_charge_percentage": 12 if requires_table else 0,
+             "requires_table": requires_table, "requires_customer": category == "delivery",
+             "requires_delivery_address": category == "delivery", "display_order": 1, "is_active": True})
+    get_or_create(
+        db, PosOrderLineRoute, {"sales_line_id": sale_line.id},
+        {"terminal_id": terminal.id, "station_id": station.id,
+         "status": "completed", "notes": "Demo kitchen route completed"})
+
+    get_or_create(
+        db, IntegrationMapping,
+        {"company_id": company.id, "connection_id": conn.id, "entity_type": "order",
+         "external_id": salla_order.external_id},
+        {"local_id": sale.id})
+    install, _ = get_or_create(
+        db, SallaAppInstallation, {"merchant_id": f"{stamp}-MERCHANT"},
+        {"salla_user_id": f"{stamp}-SALLA-USER", "tenant_id": tenant.id, "company_id": company.id,
+         "connection_id": conn.id, "user_id": admin.id, "access_token_ciphertext": "demo-access-token",
+         "refresh_token_ciphertext": "demo-refresh-token", "scope": "orders products shipments",
+         "store_name": f"{spec[1]} Store", "store_domain": f"{email_domain}.salla.demo",
+         "merchant_email": f"owner@{email_domain}.demo", "status": "active",
+         "subscription_status": "active", "subscription_id": f"{stamp}-SUB",
+         "trial_ends_at": now + timedelta(days=30), "last_authorized_at": now,
+         "last_webhook_at": now, "metadata_json": {"synthetic": True}})
+    get_or_create(
+        db, SallaSSOTicket, {"id": f"{stamp}-SSO-TICKET-0001"},
+        {"installation_id": install.id, "tenant_id": tenant.id, "user_id": admin.id,
+         "expires_at": now + timedelta(minutes=10)})
+
+    legal, _ = get_or_create(
+        db, LegalDocument, {"document_type": f"demo-terms-{idx}"},
+        {"title_ar": "شروط الاستخدام التجريبية", "title_en": "Demo Terms of Use",
+         "content_ar": "وثيقة تجريبية.", "content_en": "Synthetic terms.",
+         "version": 1, "is_published": True, "published_at": now, "updated_by": admin.id})
+    get_or_create(
+        db, LegalAcceptance,
+        {"user_id": admin.id, "document_type": legal.document_type, "document_version": legal.version},
+        {"accepted_at": now})
+
 
 def seed_demo_data() -> None:
     db = SessionLocal()
