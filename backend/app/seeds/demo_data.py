@@ -585,6 +585,125 @@ def seed_company_data(db: Session, idx: int, spec, tenant, companies, branches, 
          "amount": 120, "created_by": admin.id},
     )
 
+
+    salla_customer, _ = get_or_create(
+        db, SallaCustomer,
+        {"connection_id": conn.id, "external_id": f"{stamp}-SCUST-001"},
+        {"company_id": company.id, "first_name": "Demo", "last_name": "Customer",
+         "mobile": customer.phone, "email": customer.email, "city": spec[5],
+         "country": "Egypt", "country_code": "EG", "location": {},
+         "urls": {}, "groups": [], "raw_payload": {"demo": True}},
+    )
+    salla_product, _ = get_or_create(
+        db, SallaProduct,
+        {"connection_id": conn.id, "external_id": f"{stamp}-SPROD-001"},
+        {"company_id": company.id, "sku": item1.sku, "name": item1.name_en,
+         "status": "active", "price": item1.sales_price, "taxed_price": item1.sales_price,
+         "pre_tax_price": item1.sales_price, "tax": 0, "sale_price": item1.sales_price,
+         "cost_price": item1.standard_cost, "quantity": 100, "weight": 1,
+         "weight_unit": "kg", "currency": "EGP", "require_shipping": True,
+         "is_available": True, "unlimited_quantity": False, "sold_quantity": 0,
+         "regular_price": item1.sales_price, "category_ids": [], "brand": {},
+         "channels": [], "options": [], "metadata_json": {}, "urls": {}, "images": [],
+         "raw_payload": {"demo": True}},
+    )
+    salla_variant, _ = get_or_create(
+        db, SallaProductVariant,
+        {"connection_id": conn.id, "external_id": f"{stamp}-SVAR-001"},
+        {"company_id": company.id, "product_id": salla_product.id, "sku": item1.sku,
+         "barcode": item1.barcode, "price": item1.sales_price,
+         "regular_price": item1.sales_price, "cost_price": item1.standard_cost,
+         "sale_price": item1.sales_price, "stock": 100, "option_values": [],
+         "raw_payload": {"demo": True}},
+    )
+    salla_order, _ = get_or_create(
+        db, SallaOrder,
+        {"connection_id": conn.id, "external_id": f"{stamp}-SORDER-001"},
+        {"company_id": company.id, "reference_id": f"{stamp}-ONLINE-001",
+         "status": "completed", "payment_status": "paid",
+         "fulfillment_status": "delivered", "order_type": "online", "currency": "EGP",
+         "exchange_rate": 1, "subtotal": sale_total, "discount": 0, "shipping": 60,
+         "tax": 0, "total": sale_total + 60, "cod_amount": 0,
+         "customer_id": str(salla_customer.external_id), "store_id": f"{stamp}-STORE",
+         "urls": {}, "payment_methods": ["card"], "metadata_json": {"demo": True},
+         "raw_payload": {"demo": True}, "erp_status": "synced",
+         "erp_entity_id": sale.id, "erp_synced_at": now},
+    )
+    get_or_create(
+        db, SallaOrderItem,
+        {"connection_id": conn.id, "external_id": f"{stamp}-SOITEM-001"},
+        {"company_id": company.id, "order_id": salla_order.id,
+         "product_external_id": salla_product.external_id,
+         "variant_external_id": salla_variant.external_id, "sku": item1.sku,
+         "name": item1.name_en, "quantity": 2, "price": 120, "subtotal": 240,
+         "discount": 0, "tax": 0, "total": 240, "cost_price": item1.standard_cost,
+         "currency": "EGP", "options": [], "taxes": [], "codes": {}, "urls": {},
+         "raw_payload": {"demo": True}},
+    )
+    get_or_create(
+        db, SallaShipment,
+        {"connection_id": conn.id, "external_id": f"{stamp}-SSH-001"},
+        {"company_id": company.id, "order_id": salla_order.id,
+         "order_external_id": salla_order.external_id,
+         "order_reference_id": salla_order.reference_id, "shipment_type": "delivery",
+         "courier_name": carrier.name, "external_company_name": carrier.name,
+         "shipping_number": f"{stamp}-SHIP", "tracking_number": f"{stamp}-TRACK",
+         "payment_method": "card", "source": "demo", "status": "delivered",
+         "total": 60, "cash_on_delivery": 0, "total_weight": 2.5,
+         "international": False, "trackable": True, "packages": [],
+         "ship_from": {"city": spec[5]}, "ship_to": {"city": spec[5]},
+         "meta": {"demo": True}, "billing_account": {}, "raw_payload": {"demo": True}},
+    )
+    get_or_create(
+        db, SallaInvoice,
+        {"connection_id": conn.id, "external_id": f"{stamp}-SINVOICE-001"},
+        {"company_id": company.id, "order_id": salla_order.id,
+         "invoice_number": f"{stamp}-SINV-0001", "status": "paid",
+         "subtotal": 240, "discount": 0, "tax": 0, "shipping": 60, "total": 300,
+         "currency": "EGP", "issue_date": TODAY, "due_date": TODAY,
+         "urls": {}, "raw_payload": {"demo": True}},
+    )
+
+    get_or_create(
+        db, AuditEvent,
+        {"tenant_id": tenant.id, "company_id": company.id,
+         "entity_type": "SalesDocument", "entity_id": str(sale.id), "action": "demo.seed"},
+        {"user_id": admin.id, "branch_id": branch.id,
+         "request_id": f"{stamp}-REQ-001", "ip_address": "192.0.2.10",
+         "user_agent": "PrimeERP-Demo-Seed",
+         "metadata_json": json.dumps({"synthetic": True, "module": "sales"})},
+    )
+    report, _ = get_or_create(
+        db, ReportDefinition,
+        {"company_id": company.id, "code": f"{stamp}-SALES-DASHBOARD"},
+        {"name": "Demo Sales Dashboard", "report_type": "sales",
+         "parameters_json": json.dumps({"demo": True}), "is_active": True},
+    )
+    delivery, _ = get_or_create(
+        db, ReportDelivery,
+        {"company_id": company.id, "delivery_key": f"{stamp}-REPORT-DELIVERY"},
+        {"report_definition_id": report.id, "channel": "email",
+         "destination": f"reports@{email_domain}.demo", "schedule": "0 18 * * 0",
+         "format": "json", "filters_json": json.dumps({"period": "monthly"}),
+         "is_active": True},
+    )
+    get_or_create(
+        db, ReportDeliveryAttempt,
+        {"delivery_id": delivery.id, "attempt_no": 1},
+        {"status": "success", "response_code": 200,
+         "response_reference": f"{stamp}-REPORT-001"},
+    )
+    get_or_create(
+        db, EgyptianEInvoiceDocument,
+        {"company_id": company.id, "source_type": "sales_invoice", "source_id": sale.id},
+        {"tenant_id": tenant.id, "document_type": "I", "internal_number": sale.number,
+         "submission_uuid": f"{stamp}-ETA-SUB-001", "status": "validated",
+         "payload_format": "json",
+         "signed_payload": json.dumps({"demo": True, "invoice": sale.number}),
+         "eta_response": json.dumps({"demo": True, "status": "validated"}),
+         "retry_count": 0, "validated_at": datetime.now(timezone.utc)},
+    )
+
     return sale.id, purchase.id
 
 def seed_demo_data() -> None:
