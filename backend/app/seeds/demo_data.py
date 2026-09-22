@@ -41,9 +41,13 @@ from app.database.models import (
     ShippingPricingProfile, ShippingPricingRule, ShippingShipmentCost, ShippingOrderStatus,
     ShippingStatusHistory, ShippingFinancialEvent, IntegrationMapping, SallaAppInstallation,
     SallaSSOTicket, OrderType, PosOrderLineRoute, InventoryStockMove, InventoryAdjustment,
-    InventoryAccountingConfig, InventoryCostLayer, InventoryValuationAllocation,
     Jurisdiction, CompanyJurisdiction, PartnerJurisdiction, TaxRule,
     JurisdictionDecision, TaxSnapshot,
+)
+from app.modules.inventory.stock_moves.models import (
+    InventoryAccountingConfig,
+    InventoryCostLayer,
+    InventoryValuationAllocation,
 )
 from app.database.session import SessionLocal
 
