@@ -42,6 +42,10 @@ jobs:
           $ErrorActionPreference = "Stop"
           docker version
           docker compose version
+      - name: Build backend test image from checked-out commit
+        run: |
+          $ErrorActionPreference = "Stop"
+          docker compose -p primeerp-pos-ci build --no-cache backend-test
       - name: Start PostgreSQL and migrations
         run: |
           $ErrorActionPreference = "Stop"
