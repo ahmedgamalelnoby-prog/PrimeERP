@@ -126,7 +126,7 @@ def _branch(db: Session, company_id: int, branch_id: int):
     return branch
 
 
-def _terminal(db: Session, company_id: int, terminal_id: int) -> PosTerminal:
+def _terminal(db: Session, company_id: int, terminal_id: int, *, lock: bool = False) -> PosTerminal:
     terminal = db.scalar(select(PosTerminal).where(
         PosTerminal.id == terminal_id,
         PosTerminal.company_id == company_id,
@@ -134,6 +134,8 @@ def _terminal(db: Session, company_id: int, terminal_id: int) -> PosTerminal:
     ))
     if terminal is None:
         raise HTTPException(422, "POS terminal does not belong to the company or is inactive")
+    if lock:
+        terminal = db.scalar(select(PosTerminal).where(PosTerminal.id == terminal.id).with_for_update())
     return terminal
 
 
@@ -379,7 +381,13 @@ def checkout(payload: Checkout, current_user: User = Depends(get_current_user), 
     if existing is not None:
         return existing
 
-    terminal = _terminal(db, payload.company_id, payload.terminal_id) if payload.terminal_id else None
+    # Offline replay must be serialized per terminal. This closes the race where
+    # the original checkout committed but its response was lost and a retry arrives
+    # concurrently before the duplicate check can observe the committed invoice.
+    # Different terminals remain concurrent; only the same POS terminal is locked.
+    terminal = _terminal(db, payload.company_id, payload.terminal_id, lock=True) if payload.terminal_id else None
+    if terminal is None:
+        db.scalar(select(Company).where(Company.id == payload.company_id).with_for_update())
     if terminal is not None:
         outlet = db.get(PosOutlet, terminal.outlet_id)
         if outlet is None or outlet.warehouse_id is None:
