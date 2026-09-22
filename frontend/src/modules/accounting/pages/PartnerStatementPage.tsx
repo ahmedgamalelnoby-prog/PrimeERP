@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { partnerStatementApi, PartnerStatement, StatementRow } from "../api/partnerStatement.api";
+import { partnerStatementApi } from "../api/partnerStatement.api";
+import type { PartnerStatement, StatementRow } from "../api/partnerStatement.api";
 import client from "@/shared/api/client";
 
 type Partner={id:number;name:string;code?:string;partner_type:string};
