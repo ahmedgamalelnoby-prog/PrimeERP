@@ -82,6 +82,7 @@ async function openPos(context: BrowserContext): Promise<Page> {
     localStorage.setItem("access_token", "pos-e2e-access-token");
     localStorage.setItem("refresh_token", "pos-e2e-refresh-token");
     localStorage.setItem("tenant_id", "1");
+    localStorage.setItem("company_id", "1");
   });
 
   await page.goto(`${BASE_URL}/pos`, { waitUntil: "domcontentloaded" });
