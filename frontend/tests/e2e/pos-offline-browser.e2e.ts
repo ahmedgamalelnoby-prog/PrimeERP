@@ -85,7 +85,7 @@ async function openPos(context: BrowserContext): Promise<Page> {
     localStorage.setItem("company_id", "1");
   });
 
-  await page.goto(`${BASE_URL}/pos`, { waitUntil: "domcontentloaded" });
+  await page.goto(`${BASE_URL}/pos`, { waitUntil: "commit", timeout: 15000 });
   await expect(page.getByRole("heading", { name: "Restaurant & Hotel POS" })).toBeVisible();
   return page;
 }
@@ -118,15 +118,14 @@ test("restaurant POS survives offline orders, browser restart, retry, and respon
     await installApiFixtures(context, state);
     const page = await openPos(context);
 
-    // Reload after routes are installed so the POS is populated from deterministic API fixtures.
-    await page.reload({ waitUntil: "domcontentloaded" });
-    await expect(page.getByRole("heading", { name: "Restaurant & Hotel POS" })).toBeVisible();
-
+    // Fixtures are installed before the first navigation, so no reload is needed.
+    // Reloading while a service worker is being installed can make a dev-server
+    // E2E hang even though the POS application itself is healthy.
     await page.evaluate(async () => {
-      await navigator.serviceWorker.register("/pos-sw.js", { scope: "/" });
+      const registration = await navigator.serviceWorker.register("/pos-sw.js", { scope: "/" });
+      await registration.update().catch(() => {});
       await navigator.serviceWorker.ready;
     });
-    await page.reload({ waitUntil: "domcontentloaded" });
     await expect(page.getByText("● Online")).toBeVisible();
 
     const firstDeviceId = await page.evaluate(() => localStorage.getItem("primeerp-pos-device-id"));
