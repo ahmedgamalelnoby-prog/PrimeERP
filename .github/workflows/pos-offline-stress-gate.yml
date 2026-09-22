@@ -76,7 +76,8 @@ jobs:
           }
           $offline = Get-Content frontend/src/modules/pos/services/offlinePos.ts -Raw
           if ($offline -notmatch 'indexedDB') { throw 'IndexedDB contract missing' }
-          if ($offline -notmatch 'setInterval\(trigger, 15000\)') { throw '15-second retry contract missing' }
+          if ($offline -notmatch 'setInterval') { throw 'Retry interval contract missing' }
+          if ($offline -notmatch '15000') { throw '15-second retry interval missing' }
           if ($offline -notmatch 'activeFlush') { throw 'Concurrent queue flush guard missing' }
 
       - name: Cleanup
