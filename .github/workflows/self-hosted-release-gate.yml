@@ -247,6 +247,14 @@ jobs:
           $ErrorActionPreference = 'Stop'
           docker compose run --rm backend-test python -m pytest -q tests/jurisdiction/test_effective_date_db_guard.py
 
+      - name: Seed and verify synthetic multi-tenant evaluation dataset
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+        run: |
+          $ErrorActionPreference = 'Stop'
+          docker compose run --rm backend python -m app.seeds.demo_data
+          docker compose run --rm backend python -m app.seeds.demo_data
+          docker compose run --rm backend python -c "from app.database.session import SessionLocal; from app.database.models import Tenant, Company, Branch, User; db=SessionLocal(); slugs=['demo-nile-hospitality','demo-delta-trading','demo-cairo-food-retail','demo-sphinx-manufacturing','demo-red-sea-construction','demo-capital-real-estate','demo-medcare-health','demo-falcon-logistics','demo-smart-tech','demo-nile-agri']; tenants=db.query(Tenant).filter(Tenant.slug.in_(slugs)).all(); assert len(tenants)==10, f'expected 10 demo tenants, got {len(tenants)}'; ids=[t.id for t in tenants]; assert db.query(Company).filter(Company.tenant_id.in_(ids)).count()==30, 'expected 30 demo companies'; assert db.query(Branch).filter(Branch.tenant_id.in_(ids)).count()==50, 'expected 50 demo branches'; assert db.query(User).filter(User.tenant_id.in_(ids)).count()==90, 'expected 90 demo users'; assert db.query(Tenant).filter(Tenant.slug=='primeerp-demo').count()==1, 'built-in demo tenant missing'; print('Synthetic demo dataset verification: PASS'); db.close()"
+
       - name: Start backend frontend and report worker
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
