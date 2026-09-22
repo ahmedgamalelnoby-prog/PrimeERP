@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_password_hash
 from app.database.models import (
+    AccountCombination, AccountingCostCenter, AccountingDepartment, NaturalAccount,
     Branch, BusinessPartner, Budget, BudgetLine, CatalogProduct, Cheque,
     ChequeEvent, Company, Employee, FixedAsset, Floor, IntegrationConnection,
     IntegrationEvent, InventoryItem, InventoryStock, InventoryWarehouse,
@@ -35,14 +36,9 @@ DEMO_PASSWORD = "Demo@2026!"
 TODAY = date(2026, 9, 22)
 
 MODULES = [
-    "dashboard", "users", "companies", "branches", "accounting", "audit",
-    "catalog", "commerce", "commissions", "crm", "developer",
-    "egyptian_einvoice", "enterprise", "helpdesk_ai", "hr", "installments",
-    "integrations", "inventory", "jurisdiction", "legal", "loyalty",
-    "manufacturing", "mobile", "notifications", "operations", "organization",
-    "platform", "pos", "promotions", "purchasing", "reports", "rentals",
-    "restaurant", "roles", "saas", "sales", "settings", "shipping",
-    "subscriptions", "taxes", "transactions", "treasury", "uom",
+    "dashboard", "users", "companies", "branches", "accounting", "sales",
+    "inventory", "purchasing", "crm", "restaurant", "pos", "hr",
+    "shipping", "manufacturing", "integrations", "reports",
 ]
 MODULE_META = {m: (m.replace("_", " ").title(), m.replace("_", " ").title()) for m in MODULES}
 MODULE_META.update({
@@ -167,7 +163,7 @@ def seed_tenant(db: Session, idx: int, spec, modules, roles, plan):
 
     users = []
     role_cycle = ["tenant_admin", "accountant", "sales", "inventory",
-                  "purchasing", "crm", "operations", "hr"]
+                  "purchasing", "crm", "pos", "operations", "hr"]
     for role_name in role_cycle:
         username = f"demo{idx:02d}_{role_name}"
         email = f"{username}@{email_domain}.demo"
@@ -358,11 +354,31 @@ def seed_company_data(db: Session, idx: int, spec, tenant, companies, branches, 
          "depreciation_method": "straight_line", "accumulated_depreciation": 6000,
          "status": "active"},
     )
+    department, _ = get_or_create(
+        db, AccountingDepartment,
+        {"company_id": company.id, "code": "01"},
+        {"name_ar": "الإدارة المالية", "name_en": "Finance", "description": "Synthetic finance department", "is_active": True},
+    )
+    cost_center, _ = get_or_create(
+        db, AccountingCostCenter,
+        {"company_id": company.id, "code": "001"},
+        {"department_id": department.id, "branch_id": branch.id, "name_ar": "المركز الرئيسي", "name_en": "Main Cost Center", "description": "Synthetic cost center", "is_active": True},
+    )
+    natural_account, _ = get_or_create(
+        db, NaturalAccount,
+        {"company_id": company.id, "code": "510"},
+        {"name_ar": "مصروفات تشغيلية", "name_en": "Operating Expenses", "financial_statement": "profit_and_loss", "account_category": "expense", "normal_balance": "debit", "level": 1, "is_posting": True, "is_control_account": False, "requires_cost_center": True, "currency_code": "EGP", "is_active": True},
+    )
+    budget_account, _ = get_or_create(
+        db, AccountCombination,
+        {"company_id": company.id, "department_id": department.id, "cost_center_id": cost_center.id, "natural_account_id": natural_account.id},
+        {"code": "01001510", "name_ar": "مصروفات تشغيلية - المركز الرئيسي", "name_en": "Operating Expenses - Main Cost Center", "opening_debit": 0, "opening_credit": 0, "is_active": True},
+    )
     budget, _ = get_or_create(
         db, Budget, {"company_id": company.id, "name": "FY2026 Demo Budget"},
         {"fiscal_year": 2026, "status": "approved", "notes": "Synthetic evaluation budget"},
     )
-    get_or_create(db, BudgetLine, {"budget_id": budget.id, "account_id": 1, "period": 9},
+    get_or_create(db, BudgetLine, {"budget_id": budget.id, "account_id": budget_account.id, "period": 9},
                   {"amount": 250000, "actual_amount": 180000})
     project, _ = get_or_create(
         db, Project, {"company_id": company.id, "code": f"{stamp}-PRJ-001"},
@@ -475,7 +491,7 @@ def seed_demo_data() -> None:
             results.append((tenant, sale_id, purchase_id))
         db.commit()
         print("PrimeERP synthetic evaluation dataset created/verified.")
-        print(f"Clients: {len(results)} | Companies: {len(results) * 3} | Branches: {len(results) * 5} | Users: {len(results) * 8}")
+        print(f"Clients: {len(results)} | Companies: {len(results) * 3} | Branches: {len(results) * 5} | Users: {len(results) * 9}")
         print(f"Enabled modules per client: {len(modules)}")
         print(f"Demo password: {DEMO_PASSWORD}")
         for tenant, sale_id, purchase_id in results:
