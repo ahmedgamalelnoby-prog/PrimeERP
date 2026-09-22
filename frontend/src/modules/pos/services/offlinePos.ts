@@ -152,15 +152,17 @@ async function flushCheckoutQueueOnce(): Promise<{ synced: number; failed: numbe
       await removeQueueItem(item.id);
       synced += 1;
     } catch (error: any) {
-      item.status = "pending";
+      const isNetworkFailure = !error?.response;
+      item.status = isNetworkFailure ? "pending" : "failed";
       item.lastError = error?.response?.data?.detail || error?.message || "Sync failed";
       await updateQueueItem(item);
       failed += 1;
 
-      // Network failures stop this pass, but the item remains retryable on the
-      // next online event or interval. HTTP responses remain pending as well:
-      // the queue is durable and the server is the source of truth for retry.
-      if (!error?.response) break;
+      // Only transport/network failures are automatically retryable. Keep
+      // server-declared failures visible as failed so validation/business-rule
+      // errors are not replayed forever. A network failure stays pending and
+      // is eligible for the next online event or interval.
+      if (isNetworkFailure) break;
     }
   }
   return { synced, failed };
