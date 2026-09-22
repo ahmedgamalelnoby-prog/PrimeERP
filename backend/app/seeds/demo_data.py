@@ -1,45 +1,42 @@
-"""Deterministic multi-tenant demo dataset for PrimeERP evaluation.
+"""Synthetic multi-tenant evaluation dataset for PrimeERP.
 
-This seed is intentionally synthetic and idempotent. It creates three independent
-client tenants, companies, branches, users, roles, subscriptions, and enables every
-registered PrimeERP module for each demo tenant.
+Creates ten isolated demo customers and deterministic master/transaction data.
+The seed is idempotent and never modifies the built-in primeerp-demo tenant.
 
-Run from backend:
+Run:
     python -m app.seeds.demo_data
-
-The script never touches the existing PrimeERP demo tenant.
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+import json
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
 from app.core.security import get_password_hash
 from app.database.models import (
-    Branch,
-    Company,
+    Branch, BusinessPartner, Budget, BudgetLine, CatalogProduct, Cheque,
+    ChequeEvent, Company, Employee, FixedAsset, Floor, IntegrationConnection,
+    IntegrationEvent, InventoryItem, InventoryStock, InventoryWarehouse,
+    Menu, MenuItem, PayrollLine, PayrollRun, PosMenuItemRoute, PosOutlet,
+    PosOutletStation, PosTerminal, PosTerminalMenu, PreparationStation,
+    ProductCategory, ProductCostHistory, ProductPrice, ProductPriceList,
+    Project, ProjectContract, PurchaseDocument, PurchaseLine, RestaurantTable,
+    Role, SalesDocument, SalesLine, ShippingCarrier, ShippingMethod,
+    Shipment, Subscription, SubscriptionPlan, SystemModule, Tenant,
+    TenantModule, UnitOfMeasure, User, CommercePayment, CommercePaymentAllocation,
     PlanModule,
-    Role,
-    Subscription,
-    SubscriptionPlan,
-    SystemModule,
-    Tenant,
-    TenantModule,
-    User,
 )
 from app.database.session import SessionLocal
 
-
 DEMO_PASSWORD = "Demo@2026!"
+TODAY = date(2026, 9, 22)
 
-# Keep this list aligned with the actual module packages in backend/app/modules.
-# Core platform modules are included as well so the demo tenants exercise
-# entitlement and navigation across the complete product surface.
-ALL_MODULES = [
+MODULES = [
     "dashboard", "users", "companies", "branches", "accounting", "audit",
-    "catalog", "commerce", "commissions", "crm", "dashboard", "developer",
+    "catalog", "commerce", "commissions", "crm", "developer",
     "egyptian_einvoice", "enterprise", "helpdesk_ai", "hr", "installments",
     "integrations", "inventory", "jurisdiction", "legal", "loyalty",
     "manufacturing", "mobile", "notifications", "operations", "organization",
@@ -47,470 +44,447 @@ ALL_MODULES = [
     "restaurant", "roles", "saas", "sales", "settings", "shipping",
     "subscriptions", "taxes", "transactions", "treasury", "uom",
 ]
-
-# Human-facing metadata for modules that may not already exist in SystemModule.
-MODULE_META = {
-    "audit": ("المراجعة", "Audit"),
-    "catalog": ("دليل المنتجات", "Catalog"),
-    "commerce": ("التجارة الإلكترونية", "Commerce"),
-    "commissions": ("العمولات", "Commissions"),
-    "developer": ("المطور", "Developer"),
+MODULE_META = {m: (m.replace("_", " ").title(), m.replace("_", " ").title()) for m in MODULES}
+MODULE_META.update({
     "egyptian_einvoice": ("الفاتورة الإلكترونية المصرية", "Egyptian E-Invoice"),
-    "enterprise": ("المؤسسات", "Enterprise"),
     "helpdesk_ai": ("مساعد الدعم بالذكاء الاصطناعي", "AI Helpdesk"),
-    "installments": ("التقسيط", "Installments"),
-    "jurisdiction": ("الاختصاص الضريبي", "Jurisdiction"),
-    "legal": ("الشؤون القانونية", "Legal"),
-    "loyalty": ("الولاء", "Loyalty"),
-    "mobile": ("تطبيق الهاتف", "Mobile"),
-    "notifications": ("الإشعارات", "Notifications"),
-    "operations": ("العمليات", "Operations"),
-    "organization": ("الهيكل التنظيمي", "Organization"),
-    "platform": ("المنصة", "Platform"),
-    "promotions": ("العروض", "Promotions"),
-    "rentals": ("الإيجارات", "Rentals"),
-    "roles": ("الأدوار والصلاحيات", "Roles"),
-    "saas": ("إدارة الاشتراكات", "SaaS"),
-    "settings": ("الإعدادات", "Settings"),
-    "subscriptions": ("الاشتراكات", "Subscriptions"),
-    "taxes": ("الضرائب", "Taxes"),
-    "transactions": ("المعاملات", "Transactions"),
-    "treasury": ("الخزينة", "Treasury"),
     "uom": ("وحدات القياس", "Units of Measure"),
-}
+})
 
 CLIENTS = [
-    ("nile-hospitality", "Nile Hospitality Group — Demo", "hospitality", "Omar Hassan", "01010000001", "Cairo"),
-    ("delta-trading", "Delta Trading & Distribution — Demo", "trading", "Karim Mostafa", "01010000002", "Alexandria"),
-    ("cairo-food-retail", "Cairo Food & Retail — Demo", "food_retail", "Ahmed Farouk", "01010000003", "Giza"),
-    ("sphinx-manufacturing", "Sphinx Manufacturing Industries — Demo", "manufacturing", "Mina Adel", "01010000004", "10th of Ramadan"),
-    ("red-sea-construction", "Red Sea Construction & Projects — Demo", "construction", "Hossam Tarek", "01010000005", "Hurghada"),
-    ("capital-real-estate", "Capital Real Estate & Rentals — Demo", "real_estate", "Salma Nabil", "01010000006", "New Cairo"),
-    ("medcare-health", "MedCare Clinics & Pharmacy — Demo", "healthcare", "Dina Samir", "01010000007", "Cairo"),
-    ("falcon-logistics", "Falcon Logistics & Shipping — Demo", "logistics", "Youssef Adel", "01010000008", "Alexandria"),
-    ("smart-tech", "SmartTech Electronics & E-Commerce — Demo", "ecommerce", "Rania Emad", "01010000009", "Cairo"),
-    ("nile-agri", "Nile Agro & Food Processing — Demo", "agriculture", "Mahmoud Said", "01010000010", "Dakahlia"),
-]"""Deterministic multi-tenant demo dataset for PrimeERP evaluation.
-
-This seed is intentionally synthetic and idempotent. It creates three independent
-client tenants, companies, branches, users, roles, subscriptions, and enables every
-registered PrimeERP module for each demo tenant.
-
-Run from backend:
-    python -m app.seeds.demo_data
-
-The script never touches the existing PrimeERP demo tenant.
-"""
-
-from __future__ import annotations
-
-from datetime import datetime, timedelta, timezone
-
-from sqlalchemy.orm import Session
-
-from app.core.security import get_password_hash
-from app.database.models import (
-    Branch,
-    Company,
-    PlanModule,
-    Role,
-    Subscription,
-    SubscriptionPlan,
-    SystemModule,
-    Tenant,
-    TenantModule,
-    User,
-)
-from app.database.session import SessionLocal
-
-
-DEMO_PASSWORD = "Demo@2026!"
-
-# Keep this list aligned with the actual module packages in backend/app/modules.
-# Core platform modules are included as well so the demo tenants exercise
-# entitlement and navigation across the complete product surface.
-ALL_MODULES = [
-    "dashboard", "users", "companies", "branches", "accounting", "audit",
-    "catalog", "commerce", "commissions", "crm", "dashboard", "developer",
-    "egyptian_einvoice", "enterprise", "helpdesk_ai", "hr", "installments",
-    "integrations", "inventory", "jurisdiction", "legal", "loyalty",
-    "manufacturing", "mobile", "notifications", "operations", "organization",
-    "platform", "pos", "promotions", "purchasing", "reports", "rentals",
-    "restaurant", "roles", "saas", "sales", "settings", "shipping",
-    "subscriptions", "taxes", "transactions", "treasury", "uom",
+    ("demo-nile-hospitality", "Nile Hospitality Group — Demo", "hospitality", "Omar Hassan", "01010000001", "Cairo"),
+    ("demo-delta-trading", "Delta Trading & Distribution — Demo", "trading", "Karim Mostafa", "01010000002", "Alexandria"),
+    ("demo-cairo-food-retail", "Cairo Food & Retail — Demo", "food_retail", "Ahmed Farouk", "01010000003", "Giza"),
+    ("demo-sphinx-manufacturing", "Sphinx Manufacturing Industries — Demo", "manufacturing", "Mina Adel", "01010000004", "10th of Ramadan"),
+    ("demo-red-sea-construction", "Red Sea Construction & Projects — Demo", "construction", "Hossam Tarek", "01010000005", "Hurghada"),
+    ("demo-capital-real-estate", "Capital Real Estate & Rentals — Demo", "real_estate", "Salma Nabil", "01010000006", "New Cairo"),
+    ("demo-medcare-health", "MedCare Clinics & Pharmacy — Demo", "healthcare", "Dina Samir", "01010000007", "Cairo"),
+    ("demo-falcon-logistics", "Falcon Logistics & Shipping — Demo", "logistics", "Youssef Adel", "01010000008", "Alexandria"),
+    ("demo-smart-tech", "SmartTech Electronics & E-Commerce — Demo", "ecommerce", "Rania Emad", "01010000009", "Cairo"),
+    ("demo-nile-agri", "Nile Agro & Food Processing — Demo", "agriculture", "Mahmoud Said", "01010000010", "Dakahlia"),
 ]
 
-# Human-facing metadata for modules that may not already exist in SystemModule.
-MODULE_META = {
-    "audit": ("المراجعة", "Audit"),
-    "catalog": ("دليل المنتجات", "Catalog"),
-    "commerce": ("التجارة الإلكترونية", "Commerce"),
-    "commissions": ("العمولات", "Commissions"),
-    "developer": ("المطور", "Developer"),
-    "egyptian_einvoice": ("الفاتورة الإلكترونية المصرية", "Egyptian E-Invoice"),
-    "enterprise": ("المؤسسات", "Enterprise"),
-    "helpdesk_ai": ("مساعد الدعم بالذكاء الاصطناعي", "AI Helpdesk"),
-    "installments": ("التقسيط", "Installments"),
-    "jurisdiction": ("الاختصاص الضريبي", "Jurisdiction"),
-    "legal": ("الشؤون القانونية", "Legal"),
-    "loyalty": ("الولاء", "Loyalty"),
-    "mobile": ("تطبيق الهاتف", "Mobile"),
-    "notifications": ("الإشعارات", "Notifications"),
-    "operations": ("العمليات", "Operations"),
-    "organization": ("الهيكل التنظيمي", "Organization"),
-    "platform": ("المنصة", "Platform"),
-    "promotions": ("العروض", "Promotions"),
-    "rentals": ("الإيجارات", "Rentals"),
-    "roles": ("الأدوار والصلاحيات", "Roles"),
-    "saas": ("إدارة الاشتراكات", "SaaS"),
-    "settings": ("الإعدادات", "Settings"),
-    "subscriptions": ("الاشتراكات", "Subscriptions"),
-    "taxes": ("الضرائب", "Taxes"),
-    "transactions": ("المعاملات", "Transactions"),
-    "treasury": ("الخزينة", "Treasury"),
-    "uom": ("وحدات القياس", "Units of Measure"),
+ROLES = {
+    "tenant_admin": "Demo tenant administrator",
+    "accountant": "Demo accounting user",
+    "sales": "Demo sales user",
+    "inventory": "Demo inventory user",
+    "purchasing": "Demo purchasing user",
+    "crm": "Demo CRM user",
+    "pos": "Demo POS user",
+    "hr": "Demo HR user",
+    "operations": "Demo operations user",
 }
 
-CLIENTS = [
-    {
-        "slug": "demo-nile-hospitality",
-        "name": "Nile Hospitality Group — Demo",
-        "business_type": "hospitality",
-        "owner": "Omar Hassan",
-        "email": "owner@nile-hospitality.demo",
-        "phone": "01010000001",
-        "companies": [
-            ("NHG", "Nile Hospitality Company"),
-            ("NHG-FNB", "Nile Hospitality Food & Beverage"),
-        ],
-        "branches": [
-            ("NHG-CEN", "Cairo Central Office"),
-            ("NHG-HOT", "Nile View Hotel"),
-            ("NHG-RES", "Nile View Restaurant"),
-            ("NHG-NC", "North Coast Resort"),
-        ],
-        "users": [
-            ("admin", "admin@nile-hospitality.demo", "Omar Hassan", "tenant_admin"),
-            ("finance", "finance@nile-hospitality.demo", "Mariam Adel", "accountant"),
-            ("sales", "sales@nile-hospitality.demo", "Youssef Ali", "sales"),
-            ("inventory", "inventory@nile-hospitality.demo", "Hany Samir", "inventory"),
-            ("pos", "pos@nile-hospitality.demo", "Salma Nabil", "pos"),
-            ("hr", "hr@nile-hospitality.demo", "Nada Fathy", "hr"),
-        ],
-    },
-    {
-        "slug": "demo-delta-trading",
-        "name": "Delta Trading & Distribution — Demo",
-        "business_type": "trading",
-        "owner": "Karim Mostafa",
-        "email": "owner@delta-trading.demo",
-        "phone": "01010000002",
-        "companies": [
-            ("DTG", "Delta Trading Company"),
-            ("DTG-DIST", "Delta Distribution Company"),
-        ],
-        "branches": [
-            ("DTG-HQ", "Alexandria Head Office"),
-            ("DTG-CAR", "Cairo Distribution Center"),
-            ("DTG-ALEX", "Alexandria Sales Branch"),
-            ("DTG-TAN", "Tanta Sales Branch"),
-        ],
-        "users": [
-            ("admin", "admin@delta-trading.demo", "Karim Mostafa", "tenant_admin"),
-            ("finance", "finance@delta-trading.demo", "Rania Emad", "accountant"),
-            ("sales", "sales@delta-trading.demo", "Mahmoud Ashraf", "sales"),
-            ("purchasing", "purchasing@delta-trading.demo", "Dina Wael", "purchasing"),
-            ("warehouse", "warehouse@delta-trading.demo", "Tarek Said", "inventory"),
-            ("crm", "crm@delta-trading.demo", "Aya Khaled", "crm"),
-        ],
-    },
-    {
-        "slug": "demo-cairo-food-retail",
-        "name": "Cairo Food & Retail — Demo",
-        "business_type": "food_retail",
-        "owner": "Ahmed Farouk",
-        "email": "owner@cairo-food.demo",
-        "phone": "01010000003",
-        "companies": [
-            ("CFR", "Cairo Food Retail Company"),
-            ("CFR-KIT", "Cairo Central Kitchen"),
-        ],
-        "branches": [
-            ("CFR-ZAM", "Zamalek Store"),
-            ("CFR-OCT", "6 October Store"),
-            ("CFR-MAD", "Maadi Store"),
-            ("CFR-KIT", "Central Kitchen"),
-        ],
-        "users": [
-            ("admin", "admin@cairo-food.demo", "Ahmed Farouk", "tenant_admin"),
-            ("finance", "finance@cairo-food.demo", "Heba Sameh", "accountant"),
-            ("store1", "store1@cairo-food.demo", "Mostafa Reda", "store_manager"),
-            ("store2", "store2@cairo-food.demo", "Mai Hassan", "store_manager"),
-            ("pos", "pos@cairo-food.demo", "Nour Tamer", "pos"),
-            ("operations", "operations@cairo-food.demo", "Sherif Wael", "operations"),
-        ],
-    },
-]
-
-
-def get_or_create_module(db: Session, code: str, order: int) -> SystemModule:
-    module = db.query(SystemModule).filter(SystemModule.code == code).first()
-    if module:
-        return module
-
-    name_ar, name_en = MODULE_META.get(
-        code,
-        (code.replace("_", " ").title(), code.replace("_", " ").title()),
-    )
-    module = SystemModule(
-        code=code,
-        name_ar=name_ar,
-        name_en=name_en,
-        is_core=code in {"dashboard", "users", "companies", "branches"},
-        is_active=True,
-        display_order=order,
-    )
-    db.add(module)
+def get_or_create(db: Session, model, filters: dict, values: dict | None = None):
+    obj = db.query(model).filter_by(**filters).first()
+    if obj:
+        return obj, False
+    obj = model(**filters, **(values or {}))
+    db.add(obj)
     db.flush()
-    return module
+    return obj, True
 
-
-def get_or_create_role(db: Session, name: str, description: str) -> Role:
-    role = db.query(Role).filter(Role.name == name).first()
-    if role:
-        return role
-    role = Role(name=name, description=description, is_active=True)
-    db.add(role)
-    db.flush()
-    return role
-
-
-def get_or_create_professional_plan(
-    db: Session,
-    modules: dict[str, SystemModule],
-) -> SubscriptionPlan:
-    plan = db.query(SubscriptionPlan).filter(
-        SubscriptionPlan.code == "demo-professional"
-    ).first()
-    if not plan:
-        plan = SubscriptionPlan(
-            code="demo-professional",
-            name_ar="باقة التقييم الشاملة",
-            name_en="Full Evaluation Demo",
-            description_ar="بيانات وهمية لاختبار جميع وحدات PrimeERP.",
-            description_en="Synthetic dataset for evaluating the complete PrimeERP surface.",
-            monthly_price=0,
-            yearly_price=0,
-            currency_code="EGP",
-            trial_days=90,
-            max_users=100,
-            max_companies=20,
-            max_branches=100,
-            max_products=100000,
-            max_integrations=100,
-            storage_limit_mb=102400,
-            is_public=False,
-            is_active=True,
-            display_order=99,
+def seed_platform(db: Session):
+    modules = {}
+    for order, code in enumerate(MODULES, 1):
+        ar, en = MODULE_META[code]
+        obj, _ = get_or_create(
+            db, SystemModule, {"code": code},
+            {"name_ar": ar, "name_en": en,
+             "is_core": code in {"dashboard", "users", "companies", "branches"},
+             "is_active": True, "display_order": order},
         )
-        db.add(plan)
-        db.flush()
+        modules[code] = obj
 
-    existing = {x.module_id for x in plan.plan_modules}
+    roles = {
+        name: get_or_create(db, Role, {"name": name},
+                            {"description": description, "is_active": True})[0]
+        for name, description in ROLES.items()
+    }
+    plan, _ = get_or_create(
+        db, SubscriptionPlan, {"code": "demo-full-evaluation"},
+        {"name_ar": "التقييم الشامل", "name_en": "Full Evaluation Demo",
+         "description_ar": "بيانات صناعية مترابطة لتقييم PrimeERP.",
+         "description_en": "Synthetic connected data for PrimeERP evaluation.",
+         "monthly_price": 0, "yearly_price": 0, "currency_code": "EGP",
+         "trial_days": 90, "max_users": 200, "max_companies": 30,
+         "max_branches": 150, "max_products": 100000, "max_integrations": 100,
+         "storage_limit_mb": 102400, "is_public": False, "is_active": True,
+         "display_order": 999},
+    )
     for module in modules.values():
-        if module.id not in existing:
-            db.add(PlanModule(plan_id=plan.id, module_id=module.id, is_enabled=True))
-    db.flush()
-    return plan
+        get_or_create(db, PlanModule,
+                      {"plan_id": plan.id, "module_id": module.id},
+                      {"is_enabled": True})
+    return modules, roles, plan
 
-
-def seed_client(
-    db: Session,
-    spec: dict,
-    plan: SubscriptionPlan,
-    modules: dict[str, SystemModule],
-    roles: dict[str, Role],
-) -> dict:
+def seed_tenant(db: Session, idx: int, spec, modules, roles, plan):
+    slug, name, business_type, owner, phone, city = spec
+    email_domain = slug.removeprefix("demo-")
+    tenant, _ = get_or_create(
+        db, Tenant, {"slug": slug},
+        {"name": name, "business_type": business_type, "owner_name": owner,
+         "email": f"owner@{email_domain}.demo", "phone": phone,
+         "country_code": "EG", "default_language": "ar", "default_locale": "ar-EG",
+         "timezone": "Africa/Cairo", "currency_code": "EGP", "status": "active",
+         "is_trial": False, "is_active": True},
+    )
     now = datetime.now(timezone.utc)
-    tenant = db.query(Tenant).filter(Tenant.slug == spec["slug"]).first()
-
-    if not tenant:
-        tenant = Tenant(
-            name=spec["name"],
-            slug=spec["slug"],
-            business_type=spec["business_type"],
-            owner_name=spec["owner"],
-            email=spec["email"],
-            phone=spec["phone"],
-            country_code="EG",
-            default_language="ar",
-            default_locale="ar-EG",
-            timezone="Africa/Cairo",
-            currency_code="EGP",
-            status="active",
-            is_trial=False,
-            is_active=True,
-        )
-        db.add(tenant)
-        db.flush()
-
-    subscription = db.query(Subscription).filter(
-        Subscription.tenant_id == tenant.id,
-        Subscription.plan_id == plan.id,
-    ).first()
-    if not subscription:
-        subscription = Subscription(
-            tenant_id=tenant.id,
-            plan_id=plan.id,
-            status="active",
-            billing_cycle="yearly",
-            starts_at=now,
-            ends_at=now + timedelta(days=365),
-            trial_ends_at=None,
-            is_auto_renew=False,
-            notes="Synthetic demo subscription for product evaluation.",
-        )
-        db.add(subscription)
-
-    enabled = {x.module_id for x in tenant.enabled_modules}
+    get_or_create(
+        db, Subscription, {"tenant_id": tenant.id, "plan_id": plan.id},
+        {"status": "active", "billing_cycle": "yearly", "starts_at": now,
+         "ends_at": now + timedelta(days=365), "is_auto_renew": False,
+         "notes": "Synthetic evaluation subscription."},
+    )
     for module in modules.values():
-        if module.id not in enabled:
-            db.add(
-                TenantModule(
-                    tenant_id=tenant.id,
-                    module_id=module.id,
-                    is_enabled=True,
-                    starts_at=now,
-                    ends_at=None,
-                )
-            )
+        get_or_create(db, TenantModule, {"tenant_id": tenant.id, "module_id": module.id},
+                      {"is_enabled": True, "starts_at": now})
 
     companies = []
-    for code, name in spec["companies"]:
-        company = db.query(Company).filter(
-            Company.tenant_id == tenant.id,
-            Company.code == code,
-        ).first()
-        if not company:
-            company = Company(
-                tenant_id=tenant.id,
-                name=name,
-                code=code,
-                description=f"Synthetic company for {spec['name']}",
-                address="Egypt",
-                phone=spec["phone"],
-                email=spec["email"],
-                is_active=True,
-            )
-            db.add(company)
-            db.flush()
+    for suffix in ("MAIN", "OPS", "SERV"):
+        company, _ = get_or_create(
+            db, Company, {"tenant_id": tenant.id, "code": f"D{idx:02d}-{suffix}"},
+            {"name": f"{name.split(' — ')[0]} {suffix}",
+             "description": f"Synthetic {business_type} company",
+             "address": f"{city}, Egypt", "phone": phone,
+             "email": f"owner@{email_domain}.demo", "is_active": True},
+        )
         companies.append(company)
 
     branches = []
-    for idx, (code, name) in enumerate(spec["branches"]):
-        company = companies[idx % len(companies)]
-        branch = db.query(Branch).filter(
-            Branch.tenant_id == tenant.id,
-            Branch.company_id == company.id,
-            Branch.code == code,
-        ).first()
-        if not branch:
-            branch = Branch(
-                tenant_id=tenant.id,
-                company_id=company.id,
-                name=name,
-                code=code,
-                address=f"{name}, Egypt",
-                phone=spec["phone"],
-                email=spec["email"],
-                is_active=True,
-            )
-            db.add(branch)
-            db.flush()
+    for bidx, bname in enumerate(
+        ["HQ / Administration", "Retail / Sales", "Operations", "Service", "Central Warehouse"], 1
+    ):
+        company = companies[(bidx - 1) % len(companies)]
+        branch, _ = get_or_create(
+            db, Branch, {"tenant_id": tenant.id, "company_id": company.id,
+                         "code": f"D{idx:02d}-B{bidx:02d}"},
+            {"name": f"{bname} — {city}", "address": f"{bname}, {city}, Egypt",
+             "phone": phone, "email": f"owner@{email_domain}.demo", "is_active": True},
+        )
         branches.append(branch)
 
     users = []
-    for username, email, full_name, role_name in spec["users"]:
-        role = roles[role_name]
-        user = db.query(User).filter(
-            User.tenant_id == tenant.id,
-            User.username == username,
-        ).first()
-        if not user:
-            user = User(
-                tenant_id=tenant.id,
-                username=username,
-                email=email,
-                full_name=full_name,
-                phone=spec["phone"],
-                hashed_password=get_password_hash(DEMO_PASSWORD),
-                preferred_language="ar",
-                is_active=True,
-                is_superuser=role_name == "tenant_admin",
-                is_platform_admin=False,
-                is_deleted=False,
-                must_change_password=False,
-                role_id=role.id,
-            )
-            db.add(user)
-        else:
-            user.role_id = role.id
-            user.is_active = True
-            user.is_deleted = False
+    role_cycle = ["tenant_admin", "accountant", "sales", "inventory",
+                  "purchasing", "crm", "operations", "hr"]
+    for role_name in role_cycle:
+        username = f"demo{idx:02d}_{role_name}"
+        email = f"{username}@{email_domain}.demo"
+        user, _ = get_or_create(
+            db, User, {"tenant_id": tenant.id, "username": username},
+            {"email": email, "full_name": f"{owner} — {role_name.replace('_', ' ').title()}",
+             "phone": phone, "hashed_password": get_password_hash(DEMO_PASSWORD),
+             "preferred_language": "ar", "is_active": True,
+             "is_superuser": role_name == "tenant_admin", "is_platform_admin": False,
+             "is_deleted": False, "must_change_password": False,
+             "role_id": roles[role_name].id},
+        )
+        user.role_id = roles[role_name].id
         users.append(user)
-
     db.flush()
-    return {
-        "tenant": tenant,
-        "companies": companies,
-        "branches": branches,
-        "users": users,
-    }
+    return tenant, companies, branches, users
 
+def seed_company_data(db: Session, idx: int, spec, tenant, companies, branches, users):
+    company = companies[0]
+    branch = branches[1]
+    wh_branch = branches[4]
+    stamp = f"D{idx:02d}"
+    admin = users[0]
+    email_domain = spec[0].removeprefix("demo-")
+
+    unit, _ = get_or_create(db, UnitOfMeasure, {"company_id": company.id, "code": "UNIT"},
+                            {"name": "Unit", "category": "count", "factor_to_base": 1,
+                             "is_base": True, "is_active": True})
+    cat, _ = get_or_create(db, ProductCategory, {"company_id": company.id, "code": f"{stamp}-GEN"},
+                           {"name_ar": f"منتجات {idx}", "name_en": f"Products {idx}", "is_active": True})
+    wh, _ = get_or_create(
+        db, InventoryWarehouse, {"company_id": company.id, "code": f"{stamp}-WH"},
+        {"tenant_id": tenant.id, "branch_id": wh_branch.id, "name": f"{spec[1]} Warehouse",
+         "description": "Synthetic central warehouse", "is_central": False, "is_active": True},
+    )
+    price_list, _ = get_or_create(
+        db, ProductPriceList, {"company_id": company.id, "code": f"{stamp}-RETAIL"},
+        {"name": "Retail EGP", "currency": "EGP", "channel": "retail",
+         "is_default": True, "is_active": True},
+    )
+
+    items = []
+    catalog = []
+    for pidx in range(1, 6):
+        sku = f"{stamp}-SKU-{pidx:02d}"
+        item, _ = get_or_create(
+            db, InventoryItem, {"company_id": company.id, "sku": sku},
+            {"category_id": cat.id, "barcode": f"628{idx:02d}000{pidx:03d}",
+             "name_ar": f"منتج تجريبي {idx}-{pidx}",
+             "name_en": f"Demo Product {idx}-{pidx}", "item_type": "stockable",
+             "uom": "unit", "uom_id": unit.id, "sales_uom_id": unit.id,
+             "purchase_uom_id": unit.id, "sales_tax_ids": [], "purchase_tax_ids": [],
+             "costing_method": "fifo", "standard_cost": Decimal(50 + pidx * 10),
+             "sales_price": Decimal(100 + pidx * 20),
+             "purchase_price": Decimal(50 + pidx * 10), "reorder_level": 10,
+             "is_active": True, "description": "Synthetic evaluation item"},
+        )
+        items.append(item)
+        get_or_create(db, InventoryStock,
+                      {"company_id": company.id, "item_id": item.id, "warehouse_id": wh.id},
+                      {"quantity_on_hand": 100 + pidx * 10, "quantity_reserved": 0,
+                       "average_cost": item.standard_cost})
+        cp, _ = get_or_create(
+            db, CatalogProduct, {"company_id": company.id, "code": f"{stamp}-CP-{pidx:02d}"},
+            {"item_id": item.id, "name_ar": item.name_ar, "name_en": item.name_en,
+             "product_kind": "traded", "is_sellable": True, "is_active": True},
+        )
+        catalog.append(cp)
+        get_or_create(db, ProductCostHistory,
+                      {"company_id": company.id, "product_id": item.id, "cost": item.standard_cost},
+                      {"cost_type": "standard", "source": "demo_seed",
+                       "note": "Synthetic baseline cost"})
+        get_or_create(
+            db, ProductPrice,
+            {"company_id": company.id, "price_list_id": price_list.id, "product_id": item.id},
+            {"catalog_product_id": cp.id, "sale_price": item.sales_price,
+             "min_quantity": 1, "source": "demo_seed", "is_active": True},
+        )
+
+    customer, _ = get_or_create(
+        db, BusinessPartner, {"company_id": company.id, "code": f"{stamp}-CUST-01"},
+        {"name": f"Demo Customer {idx}", "partner_type": "customer",
+         "tax_number": f"EGTAX{idx:08d}", "phone": f"011200000{idx:02d}",
+         "email": f"customer{idx}@{email_domain}.demo", "credit_limit": 50000,
+         "payment_terms_days": 30, "is_active": True},
+    )
+    vendor, _ = get_or_create(
+        db, BusinessPartner, {"company_id": company.id, "code": f"{stamp}-VEND-01"},
+        {"name": f"Demo Supplier {idx}", "partner_type": "vendor",
+         "tax_number": f"EGSUP{idx:08d}", "phone": f"012300000{idx:02d}",
+         "email": f"supplier{idx}@{email_domain}.demo", "credit_limit": 0,
+         "payment_terms_days": 45, "is_active": True},
+    )
+
+    item1, item2 = items[0], items[1]
+    sale_total = Decimal("240")
+    sale, _ = get_or_create(
+        db, SalesDocument, {"company_id": company.id, "number": f"{stamp}-INV-0001"},
+        {"partner_id": customer.id, "document_type": "invoice", "document_date": TODAY,
+         "due_date": TODAY + timedelta(days=30), "status": "posted", "warehouse_id": wh.id,
+         "notes": "Synthetic posted sales invoice", "subtotal": sale_total,
+         "tax_total": 0, "discount_total": 0, "total": sale_total, "paid_total": 120},
+    )
+    sale_line, _ = get_or_create(
+        db, SalesLine, {"document_id": sale.id, "item_id": item1.id},
+        {"catalog_product_id": catalog[0].id, "quantity": 2, "unit_price": 120,
+         "discount_percent": 0, "tax_percent": 0, "line_total": sale_total,
+         "tax_rate_ids": []},
+    )
+
+    purchase_total = Decimal("120")
+    purchase, _ = get_or_create(
+        db, PurchaseDocument, {"company_id": company.id, "number": f"{stamp}-BILL-0001"},
+        {"partner_id": vendor.id, "document_type": "bill", "document_date": TODAY,
+         "due_date": TODAY + timedelta(days=45), "status": "posted", "warehouse_id": wh.id,
+         "notes": "Synthetic supplier bill", "subtotal": purchase_total,
+         "tax_total": 0, "discount_total": 0, "total": purchase_total, "paid_total": 60},
+    )
+    get_or_create(
+        db, PurchaseLine, {"document_id": purchase.id, "item_id": item2.id},
+        {"catalog_product_id": catalog[1].id, "quantity": 2, "unit_price": 60,
+         "discount_percent": 0, "tax_percent": 0, "line_total": purchase_total,
+         "tax_rate_ids": []},
+    )
+
+    pay, _ = get_or_create(
+        db, CommercePayment, {"company_id": company.id, "idempotency_key": f"{stamp}-PAY-001"},
+        {"document_kind": "sale", "document_id": sale.id, "payment_date": TODAY,
+         "amount": 120, "wht_amount": 0, "method": "bank_transfer",
+         "reference": f"{stamp}-BANK-001", "status": "posted",
+         "notes": "Synthetic customer receipt"},
+    )
+    get_or_create(
+        db, CommercePaymentAllocation,
+        {"company_id": company.id, "payment_id": pay.id, "document_kind": "sale",
+         "document_id": sale.id},
+        {"amount": 120, "status": "active"},
+    )
+
+    now = datetime.now(timezone.utc)
+    cheque, _ = get_or_create(
+        db, Cheque, {"company_id": company.id, "cheque_number": f"{stamp}-CHQ-001"},
+        {"partner_id": customer.id, "direction": "received", "bank_name": "Demo Bank",
+         "account_number": f"DEMO-{idx:02d}", "cheque_date": TODAY,
+         "due_date": TODAY + timedelta(days=15), "amount": 5000, "currency": "EGP",
+         "status": "deposited", "notes": "Synthetic treasury cheque",
+         "created_at": now, "updated_at": now},
+    )
+    get_or_create(
+        db, ChequeEvent,
+        {"company_id": company.id, "cheque_id": cheque.id, "event_type": "deposit"},
+        {"from_status": "received", "to_status": "deposited", "event_date": TODAY,
+         "reference": f"{stamp}-DEP-001", "created_by": admin.id, "created_at": now},
+    )
+
+    employees = []
+    for eidx in range(1, 4):
+        emp, _ = get_or_create(
+            db, Employee, {"company_id": company.id, "employee_no": f"{stamp}-EMP-{eidx:03d}"},
+            {"name": f"Demo Employee {idx}-{eidx}",
+             "department": ["Finance", "Sales", "Operations"][eidx - 1],
+             "job_title": ["Accountant", "Sales Executive", "Operations Officer"][eidx - 1],
+             "hire_date": TODAY - timedelta(days=365 + eidx * 30),
+             "basic_salary": Decimal(12000 + eidx * 1500), "allowances": Decimal(1500),
+             "deductions": Decimal(500), "is_active": True},
+        )
+        employees.append(emp)
+    gross = sum(((e.basic_salary or 0) + (e.allowances or 0)) for e in employees)
+    deductions = sum((e.deductions or 0) for e in employees)
+    payroll, _ = get_or_create(
+        db, PayrollRun, {"company_id": company.id, "period": "2026-09"},
+        {"status": "posted", "total_gross": gross, "total_deductions": deductions,
+         "total_net": gross - deductions},
+    )
+    for emp in employees:
+        get_or_create(
+            db, PayrollLine, {"payroll_run_id": payroll.id, "employee_id": emp.id},
+            {"gross": (emp.basic_salary or 0) + (emp.allowances or 0),
+             "deductions": emp.deductions or 0,
+             "net": (emp.basic_salary or 0) + (emp.allowances or 0) - (emp.deductions or 0)},
+        )
+
+    get_or_create(
+        db, FixedAsset, {"company_id": company.id, "code": f"{stamp}-AST-001"},
+        {"name": "Demo Equipment", "category": "Equipment",
+         "acquisition_date": TODAY - timedelta(days=180), "cost": 120000,
+         "residual_value": 10000, "useful_life_months": 60,
+         "depreciation_method": "straight_line", "accumulated_depreciation": 6000,
+         "status": "active"},
+    )
+    budget, _ = get_or_create(
+        db, Budget, {"company_id": company.id, "name": "FY2026 Demo Budget"},
+        {"fiscal_year": 2026, "status": "approved", "notes": "Synthetic evaluation budget"},
+    )
+    get_or_create(db, BudgetLine, {"budget_id": budget.id, "account_id": 1, "period": 9},
+                  {"amount": 250000, "actual_amount": 180000})
+    project, _ = get_or_create(
+        db, Project, {"company_id": company.id, "code": f"{stamp}-PRJ-001"},
+        {"name": f"{spec[1]} Expansion Project",
+         "start_date": TODAY - timedelta(days=90), "end_date": TODAY + timedelta(days=180),
+         "budget": 500000, "actual_cost": 210000, "status": "active",
+         "description": "Synthetic project"},
+    )
+    get_or_create(
+        db, ProjectContract, {"company_id": company.id, "contract_no": f"{stamp}-CON-001"},
+        {"project_id": project.id, "customer_id": customer.id, "contract_value": 500000,
+         "start_date": project.start_date, "end_date": project.end_date,
+         "retention_percent": 5, "status": "active", "terms": "Synthetic contract"},
+    )
+
+    carrier, _ = get_or_create(
+        db, ShippingCarrier, {"company_id": company.id, "code": f"{stamp}-CARRIER"},
+        {"name": f"Demo Carrier {idx}", "api_base_url": "https://carrier.invalid/api",
+         "branch_id": branch.id, "is_active": True},
+    )
+    cod, _ = get_or_create(
+        db, ShippingMethod, {"carrier_id": carrier.id, "name": "Demo COD"},
+        {"payment_method": "cod", "base_fee": 60, "cod_fee_percent": 2, "estimated_days": 2},
+    )
+    get_or_create(
+        db, Shipment, {"company_id": company.id, "tracking_no": f"{stamp}-TRK-0001"},
+        {"carrier_id": carrier.id, "method_id": cod.id, "sales_document_id": sale.id,
+         "order_date": TODAY, "shipment_date": TODAY, "zone_code": "CAIRO",
+         "weight_kg": 2.5, "pieces": 1, "order_value": sale.total, "cod_amount": 120,
+         "cod_collected": 120, "status": "delivered", "shipping_fee": 60,
+         "customer_shipping_fee": 60, "customer_name": customer.name, "phone": customer.phone,
+         "address": branch.address, "notes": "Synthetic delivered shipment"},
+    )
+
+    conn, _ = get_or_create(
+        db, IntegrationConnection,
+        {"company_id": company.id, "provider": "salla", "name": "Demo Salla"},
+        {"base_url": "https://api.salla.dev", "credential_ref": f"demo-credential-{idx}",
+         "webhook_secret_env": "PRIMEERP_DEMO_WEBHOOK_SECRET", "is_active": True},
+    )
+    get_or_create(
+        db, IntegrationEvent,
+        {"company_id": company.id, "connection_id": conn.id,
+         "external_event_id": f"{stamp}-EV-001"},
+        {"event_type": "order.created",
+         "payload": json.dumps({"demo": True, "order": f"{stamp}-ONLINE-001"}),
+         "status": "received", "attempts": 0},
+    )
+
+    floor, _ = get_or_create(
+        db, Floor, {"branch_id": branch.id, "code": f"{stamp}-F1"},
+        {"name": "Main Floor", "description": "Synthetic POS floor",
+         "display_order": 1, "is_active": True},
+    )
+    get_or_create(
+        db, RestaurantTable, {"branch_id": branch.id, "code": f"{stamp}-T01"},
+        {"floor_id": floor.id, "name": "Table 01", "capacity": 4, "shape": "square",
+         "position_x": 10, "position_y": 10, "width": 100, "height": 100,
+         "status": "available", "is_active": True},
+    )
+    station, _ = get_or_create(
+        db, PreparationStation, {"branch_id": branch.id, "code": f"{stamp}-KITCHEN"},
+        {"name": "Main Kitchen", "station_type": "kitchen", "display_order": 1,
+         "is_kds_enabled": True, "is_printer_enabled": False, "is_active": True},
+    )
+    outlet, _ = get_or_create(
+        db, PosOutlet, {"company_id": company.id, "code": f"{stamp}-OUTLET"},
+        {"branch_id": branch.id, "warehouse_id": wh.id, "name": "Demo Restaurant Outlet",
+         "outlet_type": "restaurant", "is_active": True},
+    )
+    get_or_create(db, PosOutletStation, {"outlet_id": outlet.id, "station_id": station.id},
+                  {"is_active": True})
+    terminal, _ = get_or_create(
+        db, PosTerminal, {"company_id": company.id, "code": f"{stamp}-POS-01"},
+        {"branch_id": branch.id, "outlet_id": outlet.id, "name": "Demo POS 01",
+         "device_identifier": f"primeerp-demo-{idx:02d}", "is_active": True},
+    )
+    menu, _ = get_or_create(
+        db, Menu, {"company_id": company.id, "code": f"{stamp}-MENU"},
+        {"branch_id": branch.id, "name_ar": "القائمة التجريبية", "name_en": "Demo Menu",
+         "description": "Synthetic POS menu", "is_active": True,
+         "published_at": datetime.now()},
+    )
+    for pidx, item in enumerate(items[:3], 1):
+        menu_item, _ = get_or_create(
+            db, MenuItem, {"menu_id": menu.id, "product_id": item.id},
+            {"price_list_id": price_list.id, "sale_price_override": item.sales_price,
+             "display_order": pidx, "is_available": True, "is_featured": pidx == 1},
+        )
+        get_or_create(
+            db, PosMenuItemRoute,
+            {"terminal_id": terminal.id, "menu_item_id": menu_item.id},
+            {"station_id": station.id, "is_active": True},
+        )
+    get_or_create(db, PosTerminalMenu, {"terminal_id": terminal.id, "menu_id": menu.id},
+                  {"price_list_id": price_list.id, "is_active": True})
+
+    return sale.id, purchase.id
 
 def seed_demo_data() -> None:
     db = SessionLocal()
     try:
-        modules: dict[str, SystemModule] = {}
-        for order, code in enumerate(dict.fromkeys(ALL_MODULES), start=1):
-            modules[code] = get_or_create_module(db, code, order)
-
-        roles = {
-            name: get_or_create_role(db, name, description)
-            for name, description in {
-                "tenant_admin": "Demo tenant administrator",
-                "accountant": "Demo accounting user",
-                "sales": "Demo sales user",
-                "inventory": "Demo inventory user",
-                "purchasing": "Demo purchasing user",
-                "crm": "Demo CRM user",
-                "pos": "Demo POS user",
-                "hr": "Demo HR user",
-                "store_manager": "Demo store manager",
-                "operations": "Demo operations user",
-            }.items()
-        }
-
-        plan = get_or_create_professional_plan(db, modules)
-        results = [seed_client(db, spec, plan, modules, roles) for spec in CLIENTS]
-
+        modules, roles, plan = seed_platform(db)
+        results = []
+        for idx, spec in enumerate(CLIENTS, 1):
+            tenant, companies, branches, users = seed_tenant(db, idx, spec, modules, roles, plan)
+            sale_id, purchase_id = seed_company_data(
+                db, idx, spec, tenant, companies, branches, users
+            )
+            results.append((tenant, sale_id, purchase_id))
         db.commit()
-
         print("PrimeERP synthetic evaluation dataset created/verified.")
-        print(f"Clients: {len(results)}")
-        print("Each client: 2 companies, 4 branches, 6 users.")
+        print(f"Clients: {len(results)} | Companies: {len(results) * 3} | Branches: {len(results) * 5} | Users: {len(results) * 8}")
         print(f"Enabled modules per client: {len(modules)}")
-        print(f"Demo password for all generated users: {DEMO_PASSWORD}")
-        for item in results:
-            tenant = item["tenant"]
-            print(f"- {tenant.slug}: tenant_id={tenant.id}")
-
+        print(f"Demo password: {DEMO_PASSWORD}")
+        for tenant, sale_id, purchase_id in results:
+            print(f"- {tenant.slug}: tenant_id={tenant.id}, sale_id={sale_id}, purchase_id={purchase_id}")
     except Exception:
         db.rollback()
         raise
     finally:
         db.close()
-
 
 if __name__ == "__main__":
     seed_demo_data()
