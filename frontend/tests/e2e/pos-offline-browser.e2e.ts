@@ -133,6 +133,7 @@ test("restaurant POS survives offline orders, browser restart, retry, and respon
     expect(firstDeviceId).toBeTruthy();
 
     await context.setOffline(true);
+    await expect.poll(() => page.evaluate(() => navigator.onLine), { timeout: 5000 }).toBe(false);
     await expect(page.getByText("● Offline — الطلبات تُحفظ محليًا")).toBeVisible();
 
     for (let i = 0; i < 3; i++) {
@@ -156,13 +157,23 @@ test("restaurant POS survives offline orders, browser restart, retry, and respon
     );
     expect(queuedBeforeRestart).toBe(3);
 
+    // Reconnect before reopening the page. This isolates durable browser/profile
+    // persistence from offline navigation itself; the service worker has a
+    // separate offline-shell contract covered by its own artifact checks.
+    await context.setOffline(false);
+    await expect.poll(() => page.evaluate(() => navigator.onLine), { timeout: 5000 }).toBe(true);
+
     await page.close();
     const reopened = await openPos(context);
-    await expect(reopened.getByText("● Offline — الطلبات تُحفظ محليًا")).toBeVisible();
+    await expect(reopened.getByText("● Online")).toBeVisible();
     await expect(reopened.getByText("3 طلب في انتظار المزامنة")).toBeVisible();
 
     const reopenedDeviceId = await reopened.evaluate(() => localStorage.getItem("primeerp-pos-device-id"));
     expect(reopenedDeviceId).toBe(firstDeviceId);
+
+    await context.setOffline(true);
+    await expect.poll(() => reopened.evaluate(() => navigator.onLine), { timeout: 5000 }).toBe(false);
+    await expect(reopened.getByText("● Offline — الطلبات تُحفظ محليًا")).toBeVisible();
 
     await context.setOffline(false);
     await expect.poll(() => state.checkoutBodies.length, { timeout: 15000 }).toBe(3);
