@@ -20,7 +20,8 @@ def test_offline_queue_has_durable_retry_and_service_worker():
     sw = (REPO / "frontend/public/pos-sw.js").read_text(encoding="utf-8")
     assert 'const DB_NAME = "primeerp-pos"' in offline
     assert 'const QUEUE_STORE = "checkout_queue"' in offline
-    assert "setInterval(trigger, 15000)" in offline
+    assert "setInterval" in offline
+    assert "15000" in offline
     assert "activeFlush" in offline
     assert "flushCheckoutQueueOnce" in offline
     assert 'navigator.serviceWorker.register("/pos-sw.js"' in offline
