@@ -17,6 +17,11 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_password_hash
 from app.database.models import (
+    AuditEvent, EgyptianEInvoiceDocument, ReportDefinition, ReportDelivery, ReportDeliveryAttempt,
+    BankAccount, BankStatement, BankStatementLine, ReconciliationSession, ReconciliationMatch,
+    InventoryLocation, InventoryTransfer, InventoryTransferLine, InventoryReservation,
+    Recipe, RecipeLine, RecipeSkuMapping,
+    SallaOrder, SallaOrderItem, SallaCustomer, SallaProduct, SallaProductVariant, SallaShipment, SallaInvoice,
     AccountCombination, AccountingCostCenter, AccountingDepartment, NaturalAccount,
     Branch, BusinessPartner, Budget, BudgetLine, CatalogProduct, Cheque,
     ChequeEvent, Company, Employee, FixedAsset, Floor, IntegrationConnection,
