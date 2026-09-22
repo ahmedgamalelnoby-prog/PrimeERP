@@ -153,23 +153,31 @@ test("restaurant POS survives offline orders, browser restart, retry, and respon
     );
     expect(queuedBeforeRestart).toBe(3);
 
-    // Reconnect before reopening the page. This isolates durable browser/profile
-    // persistence from offline navigation itself; the service worker has a
-    // separate offline-shell contract covered by its own artifact checks.
-    await context.setOffline(false);
-    await expect.poll(() => page.evaluate(() => navigator.onLine), { timeout: 5000 }).toBe(true);
-
+    // Close while still offline so the durable queue cannot be flushed before
+    // the restart. Reopen the same persistent profile offline and verify both
+    // IndexedDB queue state and the device identity survive the browser restart.
     await page.close();
     const reopened = await openPos(context);
-    await expect(reopened.getByText("● Online")).toBeVisible();
+    await expect.poll(() => reopened.evaluate(() => navigator.onLine), { timeout: 5000 }).toBe(false);
+    await expect(reopened.getByText("● Offline — الطلبات تُحفظ محليًا")).toBeVisible();
     await expect(reopened.getByText("3 طلب في انتظار المزامنة")).toBeVisible();
 
     const reopenedDeviceId = await reopened.evaluate(() => localStorage.getItem("primeerp-pos-device-id"));
     expect(reopenedDeviceId).toBe(firstDeviceId);
 
-    await context.setOffline(true);
-    await expect.poll(() => reopened.evaluate(() => navigator.onLine), { timeout: 5000 }).toBe(false);
-    await expect(reopened.getByText("● Offline — الطلبات تُحفظ محليًا")).toBeVisible();
+    const queuedAfterRestart = await reopened.evaluate(() =>
+      new Promise<number>((resolve, reject) => {
+        const request = indexedDB.open("primeerp-pos", 1);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const tx = request.result.transaction("checkout_queue", "readonly");
+          const getAll = tx.objectStore("checkout_queue").getAll();
+          getAll.onsuccess = () => resolve(getAll.result.length);
+          getAll.onerror = () => reject(getAll.error);
+        };
+      })
+    );
+    expect(queuedAfterRestart).toBe(3);
 
     await context.setOffline(false);
     await expect.poll(
