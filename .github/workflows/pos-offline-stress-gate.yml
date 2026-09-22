@@ -1,0 +1,83 @@
+name: PrimeERP POS Offline Stress Gate
+
+on:
+  pull_request:
+    paths:
+      - "backend/app/modules/pos/**"
+      - "backend/app/modules/commerce/**"
+      - "backend/app/modules/inventory/**"
+      - "backend/tests/test_pos_offline_*.py"
+      - "frontend/src/**/pos/**"
+      - "frontend/src/**/offlinePos.ts"
+      - "frontend/public/pos-sw.js"
+      - ".github/workflows/pos-offline-stress-gate.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: primeerp-pos-offline-stress-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  offline-contract-stress:
+    name: Offline POS 100-order contract stress
+    runs-on: [self-hosted, Windows, X64, PrimeERP]
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: powershell
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Verify runtime
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python --version
+          node --version
+          npm --version
+
+      - name: Install backend dependencies
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install -r requirements.txt --disable-pip-version-check --no-input
+          python -m pip install pytest --disable-pip-version-check --no-input
+
+      - name: Run offline contract and stress tests
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pytest -q tests/test_pos_offline_contract.py tests/test_pos_offline_stress_contract.py
+
+      - name: Validate frontend production build
+        working-directory: frontend
+        run: |
+          $ErrorActionPreference = 'Stop'
+          npm ci
+          npm run typecheck
+          npm run build
+
+      - name: Verify offline artifacts
+        working-directory: .
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $required = @(
+            'frontend/src/modules/pos/services/offlinePos.ts',
+            'frontend/src/modules/pos/PosPage.tsx',
+            'frontend/public/pos-sw.js'
+          )
+          foreach ($file in $required) {
+            if (-not (Test-Path $file)) { throw "Missing offline POS artifact: $file" }
+          }
+          $offline = Get-Content frontend/src/modules/pos/services/offlinePos.ts -Raw
+          if ($offline -notmatch 'indexedDB') { throw 'IndexedDB contract missing' }
+          if ($offline -notmatch 'setInterval\(trigger, 15000\)') { throw '15-second retry contract missing' }
+          if ($offline -notmatch 'activeFlush') { throw 'Concurrent queue flush guard missing' }
+
+      - name: Cleanup
+        if: always()
+        working-directory: .
+        run: |
+          Write-Host 'Offline POS stress gate cleanup complete.'
