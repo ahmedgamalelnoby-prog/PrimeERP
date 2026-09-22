@@ -8,6 +8,7 @@ const API_ORIGIN = process.env.POS_E2E_API_ORIGIN ?? "http://127.0.0.1:8000";
 type FixtureState = {
   checkoutBodies: Array<Record<string, unknown>>;
   failNextCheckout: boolean;
+  blockCheckout: boolean;
 };
 
 function json(route: Route, body: unknown, status = 200) {
@@ -55,6 +56,7 @@ async function installApiFixtures(context: BrowserContext, state: FixtureState) 
     }
 
     if (url.pathname.endsWith("/pos/checkout")) {
+      if (state.blockCheckout) return route.abort("failed");
       const body = route.request().postDataJSON() as Record<string, unknown>;
       state.checkoutBodies.push(body);
       if (state.failNextCheckout) {
@@ -110,7 +112,7 @@ test("restaurant POS survives offline orders, browser restart, retry, and respon
   const profile = testInfo.outputPath("persistent-pos-profile");
   fs.mkdirSync(path.dirname(profile), { recursive: true });
 
-  const state: FixtureState = { checkoutBodies: [], failNextCheckout: false };
+  const state: FixtureState = { checkoutBodies: [], failNextCheckout: false, blockCheckout: false };
   let context = await chromium.launchPersistentContext(profile, {
     headless: true,
     serviceWorkers: "allow",
@@ -167,6 +169,11 @@ test("restaurant POS survives offline orders, browser restart, retry, and respon
       headless: true,
       serviceWorkers: "allow",
     });
+    // The application intentionally flushes a restored queue immediately when
+    // the browser starts online. Block only the checkout transport while the
+    // persistence contract is being inspected; this keeps the shell online but
+    // prevents the durable queue from being consumed before we assert it.
+    state.blockCheckout = true;
     await installApiFixtures(context, state);
 
     const reopened = await openPos(context);
@@ -192,6 +199,7 @@ test("restaurant POS survives offline orders, browser restart, retry, and respon
     );
     expect(queuedAfterRestart).toBe(3);
 
+    state.blockCheckout = false;
     await context.setOffline(false);
     await expect.poll(
       () => reopened.evaluate(() => navigator.onLine),
