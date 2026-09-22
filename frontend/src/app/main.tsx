@@ -7,6 +7,9 @@ import "@/shared/api/interceptors";
 
 import App from "./App";
 import "../index.css";
+import { registerOfflineServiceWorker } from "../modules/pos/services/offlinePos";
+
+registerOfflineServiceWorker();
 
 ReactDOM.createRoot(
   document.getElementById("root")!,

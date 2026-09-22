@@ -126,7 +126,7 @@ def _branch(db: Session, company_id: int, branch_id: int):
     return branch
 
 
-def _terminal(db: Session, company_id: int, terminal_id: int) -> PosTerminal:
+def _terminal(db: Session, company_id: int, terminal_id: int, *, lock: bool = False) -> PosTerminal:
     terminal = db.scalar(select(PosTerminal).where(
         PosTerminal.id == terminal_id,
         PosTerminal.company_id == company_id,
@@ -134,6 +134,8 @@ def _terminal(db: Session, company_id: int, terminal_id: int) -> PosTerminal:
     ))
     if terminal is None:
         raise HTTPException(422, "POS terminal does not belong to the company or is inactive")
+    if lock:
+        terminal = db.scalar(select(PosTerminal).where(PosTerminal.id == terminal.id).with_for_update())
     return terminal
 
 
@@ -369,7 +371,31 @@ def _menu_price(db: Session, company_id: int, menu_item: MenuItem, price_list_id
 @router.post("/checkout", dependencies=[Depends(require_permission("commerce.payment"))])
 def checkout(payload: Checkout, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company(db, payload.company_id, current_user)
-    terminal = _terminal(db, payload.company_id, payload.terminal_id) if payload.terminal_id else None
+    # Offline replay can happen after the original request committed but its
+    # response was lost. The replay identity is the company + POS order number.
+    existing = db.scalar(select(SalesDocument).where(
+        SalesDocument.company_id == payload.company_id,
+        SalesDocument.number == payload.number,
+        SalesDocument.document_type == "invoice",
+    ))
+    if existing is not None:
+        return existing
+
+    # Serialize retries for the same terminal. The first duplicate check happens
+    # before the lock for the fast path, but MUST be repeated after acquiring it:
+    # a concurrent retry may have passed the first check while the original request
+    # was still uncommitted.
+    terminal = _terminal(db, payload.company_id, payload.terminal_id, lock=True) if payload.terminal_id else None
+    if terminal is None:
+        db.scalar(select(Company).where(Company.id == payload.company_id).with_for_update())
+
+    existing = db.scalar(select(SalesDocument).where(
+        SalesDocument.company_id == payload.company_id,
+        SalesDocument.number == payload.number,
+        SalesDocument.document_type == "invoice",
+    ))
+    if existing is not None:
+        return existing
     if terminal is not None:
         outlet = db.get(PosOutlet, terminal.outlet_id)
         if outlet is None or outlet.warehouse_id is None:
@@ -453,12 +479,16 @@ def checkout(payload: Checkout, current_user: User = Depends(get_current_user), 
     validate_document_tax_snapshot(doc, snapshot)
     commerce_service.confirm(db, payload.company_id, doc.id, "sale", current_user.id)
     # Inventory is fulfilled exactly once by the paired delivery document above.
+    # The offline order number is the replay identity. Reusing it as the
+    # payment idempotency key makes the payment side effect independently
+    # idempotent even if checkout is retried after the server committed.
     commerce_service.pay(db, PaymentCreate(
         company_id=payload.company_id,
         document_id=doc.id,
         payment_date=payload.payment_date,
         amount=doc.total,
         method=payload.method,
+        idempotency_key=f"pos/checkout/{payload.company_id}/{payload.number}",
     ), "sale", current_user.id)
 
     for sales_line, station_id in zip(doc.lines, routes):

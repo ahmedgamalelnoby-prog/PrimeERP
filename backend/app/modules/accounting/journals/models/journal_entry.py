@@ -90,6 +90,7 @@ class JournalEntry(Base):
             JournalEntry.tenant_id,
             JournalEntry.company_id,
         ],
+        overlaps="fiscal_year",
     )
     business_transaction = relationship("BusinessTransaction")
     lines = relationship("JournalEntryLine", back_populates="entry", cascade="all, delete-orphan", passive_deletes=True, order_by="JournalEntryLine.line_number")

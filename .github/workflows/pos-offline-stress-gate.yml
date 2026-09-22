@@ -1,0 +1,140 @@
+name: PrimeERP POS Offline Stress Gate
+
+on:
+  pull_request:
+    paths:
+      - "backend/app/modules/pos/**"
+      - "backend/app/modules/commerce/**"
+      - "backend/app/modules/inventory/**"
+      - "backend/tests/test_pos_offline_*.py"
+      - "frontend/src/modules/pos/**"
+      - "frontend/public/pos-sw.js"
+      - "frontend/tests/e2e/**"
+      - "frontend/playwright.config.ts"
+      - "frontend/package.json"
+      - "frontend/package-lock.json"
+      - ".github/workflows/pos-offline-stress-gate.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: primeerp-pos-offline-stress-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  offline-contract-stress:
+    name: Offline POS 100-order contract stress
+    runs-on: [self-hosted, Windows, X64, PrimeERP]
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: powershell
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Verify runtime
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python --version
+          node --version
+          npm --version
+
+      - name: Install backend dependencies
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install -r requirements.txt --disable-pip-version-check --no-input
+          python -m pip install pytest --disable-pip-version-check --no-input
+
+      - name: Run offline contract and stress tests
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pytest -q tests/test_pos_offline_contract.py tests/test_pos_offline_stress_contract.py
+
+      - name: Validate frontend production build
+        working-directory: frontend
+        run: |
+          $ErrorActionPreference = 'Stop'
+          npm ci
+          npm run typecheck
+          npm run build
+
+      - name: Verify offline artifacts
+        working-directory: .
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $required = @(
+            'frontend/src/modules/pos/services/offlinePos.ts',
+            'frontend/src/modules/pos/pages/PosPage.tsx',
+            'frontend/public/pos-sw.js'
+          )
+          foreach ($file in $required) {
+            if (-not (Test-Path $file)) { throw "Missing offline POS artifact: $file" }
+          }
+          $offline = Get-Content frontend/src/modules/pos/services/offlinePos.ts -Raw
+          if ($offline -notmatch 'indexedDB') { throw 'IndexedDB contract missing' }
+          if ($offline -notmatch 'setInterval') { throw 'Retry interval contract missing' }
+          if ($offline -notmatch '15000') { throw '15-second retry interval missing' }
+          if ($offline -notmatch 'activeFlush') { throw 'Concurrent queue flush guard missing' }
+
+      - name: Cleanup
+        if: always()
+        working-directory: .
+        run: |
+          Write-Host 'Offline POS stress gate cleanup complete.'
+
+  browser-offline-e2e:
+    name: Real browser offline POS E2E
+    runs-on: [self-hosted, Windows, X64, PrimeERP]
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: powershell
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install frontend dependencies
+        run: |
+          $ErrorActionPreference = "Stop"
+          npm ci
+
+      - name: Install Playwright test runner
+        run: |
+          $ErrorActionPreference = "Stop"
+          npm install --no-save --package-lock=false "@playwright/test@1.63.0"
+          npx playwright install chromium
+
+      - name: Start Vite
+        env:
+          VITE_API_URL: http://127.0.0.1:8000/api/v1
+        run: |
+          $ErrorActionPreference = "Stop"
+          $p = Start-Process -FilePath "cmd.exe" -ArgumentList "/c","npm run dev -- --host 127.0.0.1 --port 4173" -WorkingDirectory "$env:GITHUB_WORKSPACE\\frontend" -PassThru
+          "VITE_PID=$($p.Id)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $ready = $false
+          for ($i = 0; $i -lt 30; $i++) {
+            Start-Sleep -Seconds 1
+            try {
+              $r = Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:4173/" -TimeoutSec 2
+              if ($r.StatusCode -eq 200) { $ready = $true; break }
+            } catch {}
+          }
+          if (-not $ready) { throw "Vite did not become ready" }
+
+      - name: Run browser offline E2E
+        env:
+          POS_E2E_BASE_URL: http://127.0.0.1:4173
+          POS_E2E_API_ORIGIN: http://127.0.0.1:8000
+        run: |
+          $ErrorActionPreference = "Stop"
+          npx playwright test tests/e2e/pos-offline-browser.e2e.ts --reporter=line
+
+      - name: Stop Vite
+        if: always()
+        run: |
+          if ($env:VITE_PID) { Stop-Process -Id ([int]$env:VITE_PID) -Force -ErrorAction SilentlyContinue }
