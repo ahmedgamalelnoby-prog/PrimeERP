@@ -484,6 +484,107 @@ def seed_company_data(db: Session, idx: int, spec, tenant, companies, branches, 
     get_or_create(db, PosTerminalMenu, {"terminal_id": terminal.id, "menu_id": menu.id},
                   {"price_list_id": price_list.id, "is_active": True})
 
+
+    # Cross-module evaluation coverage. All records are synthetic and offline.
+    receiving, _ = get_or_create(
+        db, InventoryLocation,
+        {"company_id": company.id, "warehouse_id": wh.id, "code": f"{stamp}-RECV"},
+        {"name": "Receiving", "location_type": "receiving", "is_virtual": False, "is_active": True},
+    )
+    storage, _ = get_or_create(
+        db, InventoryLocation,
+        {"company_id": company.id, "warehouse_id": wh.id, "code": f"{stamp}-STOR"},
+        {"name": "Storage", "location_type": "storage", "is_virtual": False, "is_active": True},
+    )
+    wh2, _ = get_or_create(
+        db, InventoryWarehouse,
+        {"company_id": company.id, "code": f"{stamp}-WH2"},
+        {"tenant_id": tenant.id, "branch_id": wh_branch.id, "name": f"{spec[1]} Transit Warehouse",
+         "description": "Synthetic second warehouse", "is_central": False, "is_active": True},
+    )
+    transit, _ = get_or_create(
+        db, InventoryLocation,
+        {"company_id": company.id, "warehouse_id": wh2.id, "code": f"{stamp}-TRANSIT"},
+        {"name": "Transit", "location_type": "transit", "is_virtual": False, "is_active": True},
+    )
+    transfer, _ = get_or_create(
+        db, InventoryTransfer,
+        {"company_id": company.id, "reference": f"{stamp}-TRF-0001"},
+        {"source_warehouse_id": wh.id, "destination_warehouse_id": wh2.id,
+         "status": "received", "notes": "Synthetic inventory transfer"},
+    )
+    get_or_create(
+        db, InventoryTransferLine,
+        {"transfer_id": transfer.id, "item_id": item1.id},
+        {"source_location_id": storage.id, "destination_location_id": transit.id,
+         "quantity": 5, "unit_cost": item1.standard_cost,
+         "shipped_quantity": 5, "received_quantity": 5},
+    )
+    get_or_create(
+        db, InventoryReservation,
+        {"company_id": company.id, "item_id": item1.id, "location_id": storage.id,
+         "source_module": "demo", "source_entity": "sales_document", "source_id": str(sale.id)},
+        {"quantity": 3, "status": "consumed", "reference": f"{stamp}-RES-0001",
+         "notes": "Synthetic reservation lifecycle"},
+    )
+
+    recipe, _ = get_or_create(
+        db, Recipe,
+        {"company_id": company.id, "code": f"{stamp}-REC-001", "version": 1},
+        {"product_id": item1.id, "catalog_product_id": catalog[0].id,
+         "name_ar": f"وصفة {idx}", "name_en": f"Demo Recipe {idx}",
+         "yield_quantity": 1, "waste_percentage": 2, "is_active": True},
+    )
+    get_or_create(
+        db, RecipeLine, {"recipe_id": recipe.id, "line_no": 1},
+        {"ingredient_product_id": item2.id, "ingredient_item_id": item2.id,
+         "quantity": 1.5, "waste_percentage": 1, "uom_id": unit.id,
+         "conversion_factor_to_product_uom": 1, "notes": "Synthetic ingredient"},
+    )
+    get_or_create(
+        db, RecipeSkuMapping,
+        {"company_id": company.id, "sku": f"{stamp}-SKU-RECIPE-001"},
+        {"recipe_id": recipe.id, "product_id": item1.id,
+         "sku": f"{stamp}-SKU-RECIPE-001", "source": "demo",
+         "external_id": f"{stamp}-EXT-RECIPE-001", "is_active": True},
+    )
+
+    bank, _ = get_or_create(
+        db, BankAccount,
+        {"company_id": company.id, "name": f"Demo Bank Account {idx}"},
+        {"account_combination_id": budget_account.id, "bank_name": "PrimeERP Demo Bank",
+         "account_number": f"EG-DEMO-{idx:04d}", "currency": "EGP",
+         "opening_balance": 100000, "is_active": True},
+    )
+    statement, _ = get_or_create(
+        db, BankStatement,
+        {"bank_account_id": bank.id, "statement_number": f"{stamp}-STMT-001"},
+        {"company_id": company.id, "period_start": TODAY.replace(day=1),
+         "period_end": TODAY, "opening_balance": 100000,
+         "closing_balance": 100120, "status": "closed"},
+    )
+    stmt_line, _ = get_or_create(
+        db, BankStatementLine,
+        {"statement_id": statement.id, "fingerprint": f"{stamp}-FP-001"},
+        {"company_id": company.id, "external_id": f"{stamp}-EXT-BANK-001",
+         "transaction_date": TODAY, "value_date": TODAY,
+         "description": "Synthetic customer receipt", "reference": f"{stamp}-BANK-001",
+         "debit": 0, "credit": 120, "currency": "EGP",
+         "matched_amount": 120, "status": "matched"},
+    )
+    recon, _ = get_or_create(
+        db, ReconciliationSession, {"statement_id": statement.id},
+        {"company_id": company.id, "bank_account_id": bank.id,
+         "book_balance": 100120, "bank_balance": 100120,
+         "difference": 0, "status": "balanced"},
+    )
+    get_or_create(
+        db, ReconciliationMatch,
+        {"session_id": recon.id, "source_type": "commerce_payment", "source_id": pay.id},
+        {"company_id": company.id, "statement_line_id": stmt_line.id,
+         "amount": 120, "created_by": admin.id},
+    )
+
     return sale.id, purchase.id
 
 def seed_demo_data() -> None:
