@@ -125,9 +125,6 @@ test("restaurant POS survives offline orders, browser restart, retry, and respon
     // mask the actual POS contract being tested.
     await expect(page.getByText("● Online")).toBeVisible();
 
-    const firstDeviceId = await page.evaluate(() => localStorage.getItem("primeerp-pos-device-id"));
-    expect(firstDeviceId).toBeTruthy();
-
     await context.setOffline(true);
     await expect.poll(() => page.evaluate(() => navigator.onLine), { timeout: 5000 }).toBe(false);
     await expect(page.getByText("● Offline — الطلبات تُحفظ محليًا")).toBeVisible();
@@ -138,6 +135,9 @@ test("restaurant POS survives offline orders, browser restart, retry, and respon
       await expect(page.getByText("تم حفظ الطلب محليًا. سيتم ترحيله تلقائيًا عند عودة الإنترنت.")).toBeVisible();
     }
     await expect(page.getByText("3 طلب في انتظار المزامنة")).toBeVisible();
+
+    const firstDeviceId = await page.evaluate(() => localStorage.getItem("primeerp-pos-device-id"));
+    expect(firstDeviceId).toBeTruthy();
 
     const queuedBeforeRestart = await page.evaluate(() =>
       new Promise<number>((resolve, reject) => {
