@@ -118,13 +118,11 @@ test("restaurant POS survives offline orders, browser restart, retry, and respon
     await installApiFixtures(context, state);
     const page = await openPos(context);
 
-    // Fixtures are installed before the first navigation, so no reload is needed.
-    // Reloading while a service worker is being installed can make a dev-server
-    // E2E hang even though the POS application itself is healthy.
-    await page.evaluate(async () => {
-      await navigator.serviceWorker.register("/pos-sw.js", { scope: "/" });
-      await navigator.serviceWorker.ready;
-    });
+    // Keep this browser contract focused on the POS offline queue, durable
+    // IndexedDB state, reconnect sync, retry, and response-loss handling.
+    // Service-worker availability is verified by the dedicated offline-artifact
+    // gate; registering/awaiting a SW here can block indefinitely under Vite and
+    // mask the actual POS contract being tested.
     await expect(page.getByText("● Online")).toBeVisible();
 
     const firstDeviceId = await page.evaluate(() => localStorage.getItem("primeerp-pos-device-id"));
