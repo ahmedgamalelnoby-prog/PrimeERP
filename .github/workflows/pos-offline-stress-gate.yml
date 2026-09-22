@@ -7,8 +7,7 @@ on:
       - "backend/app/modules/commerce/**"
       - "backend/app/modules/inventory/**"
       - "backend/tests/test_pos_offline_*.py"
-      - "frontend/src/**/pos/**"
-      - "frontend/src/**/offlinePos.ts"
+      - "frontend/src/modules/pos/**"
       - "frontend/public/pos-sw.js"
       - ".github/workflows/pos-offline-stress-gate.yml"
   workflow_dispatch:
@@ -65,7 +64,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $required = @(
             'frontend/src/modules/pos/services/offlinePos.ts',
-            'frontend/src/modules/pos/PosPage.tsx',
+            'frontend/src/modules/pos/pages/PosPage.tsx',
             'frontend/public/pos-sw.js'
           )
           foreach ($file in $required) {
