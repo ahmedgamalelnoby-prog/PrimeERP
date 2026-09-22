@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import client from "@/shared/api/client";
-import { cachePosData, enqueueCheckout, getDeviceId, installOfflineSync, listCheckoutQueue, readPosCache, type PosCheckoutPayload } from "../services/offlinePos";
+import { cachePosData, enqueueCheckout, getDeviceId, installOfflineSync, listCheckoutQueue, readPosCache, registerOfflineServiceWorker, type PosCheckoutPayload } from "../services/offlinePos";
 
 type AnyRow = Record<string, any>;
 const companyId = () => Number(localStorage.getItem("company_id")) || 0;
@@ -45,6 +45,7 @@ export default function PosPage() {
   }
 
   useEffect(() => {
+    registerOfflineServiceWorker();
     const onOnline = () => setOnline(true);
     const onOffline = () => setOnline(false);
     window.addEventListener("online", onOnline);
