@@ -1,0 +1,84 @@
+name: PrimeERP POS Browser Offline E2E
+
+on:
+  pull_request:
+    paths:
+      - "frontend/src/modules/pos/**"
+      - "frontend/public/pos-sw.js"
+      - "frontend/package.json"
+      - "frontend/package-lock.json"
+      - "tests/e2e/pos-offline-browser.e2e.ts"
+      - ".github/workflows/pos-browser-offline-e2e.yml"
+  workflow_dispatch:
+
+jobs:
+  browser-offline-e2e:
+    runs-on: [self-hosted, Windows, X64, PrimeERP]
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify Node and npm
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          node --version
+          npm --version
+
+      - name: Install frontend dependencies
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          npm ci
+
+      - name: Install Playwright test runner (CI-only)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          npm install --no-save --package-lock=false "@playwright/test@1.63.0"
+
+      - name: Install Chromium
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          npx playwright install chromium
+
+      - name: Start Vite
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $p = Start-Process -FilePath "cmd.exe" -ArgumentList "/c","npm run dev -- --host 127.0.0.1 --port 4173" -WorkingDirectory "$env:GITHUB_WORKSPACE\frontend" -PassThru
+          "VITE_PID=$($p.Id)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $ready = $false
+          for ($i = 0; $i -lt 30; $i++) {
+            Start-Sleep -Seconds 1
+            try {
+              $r = Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:4173/" -TimeoutSec 2
+              if ($r.StatusCode -eq 200) { $ready = $true; break }
+            } catch {}
+          }
+          if (-not $ready) {
+            Get-Process | Where-Object { $_.Id -eq $p.Id } | Format-List *
+            throw "Vite did not become ready"
+          }
+
+      - name: Run real browser offline E2E
+        shell: powershell
+        env:
+          POS_E2E_BASE_URL: http://127.0.0.1:4173
+          POS_E2E_API_ORIGIN: http://127.0.0.1:8000
+        run: |
+          $ErrorActionPreference = "Stop"
+          npx playwright test ../tests/e2e/pos-offline-browser.e2e.ts --reporter=line
+
+      - name: Stop Vite
+        if: always()
+        shell: powershell
+        run: |
+          if ($env:VITE_PID) {
+            Stop-Process -Id ([int]$env:VITE_PID) -Force -ErrorAction SilentlyContinue
+          }
