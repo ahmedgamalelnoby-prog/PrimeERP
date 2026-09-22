@@ -54,6 +54,7 @@ MODULES = [
     "dashboard", "users", "companies", "branches", "accounting", "sales",
     "inventory", "purchasing", "crm", "restaurant", "pos", "hr",
     "shipping", "manufacturing", "integrations", "reports",
+    "uom", "egyptian_einvoice", "helpdesk_ai",
 ]
 MODULE_META = {m: (m.replace("_", " ").title(), m.replace("_", " ").title()) for m in MODULES}
 MODULE_META.update({
