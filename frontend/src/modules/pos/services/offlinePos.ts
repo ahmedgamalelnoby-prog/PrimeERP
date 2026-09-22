@@ -32,6 +32,7 @@ const DB_VERSION = 1;
 const QUEUE_STORE = "checkout_queue";
 const CACHE_STORE = "pos_cache";
 const DEVICE_KEY = "primeerp-pos-device-id";
+let activeFlush: Promise<{ synced: number; failed: number }> | null = null;
 
 function uuid(): string {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
@@ -134,7 +135,7 @@ async function removeQueueItem(id: string): Promise<void> {
   });
 }
 
-export async function flushCheckoutQueue(): Promise<{ synced: number; failed: number }> {
+async function flushCheckoutQueueOnce(): Promise<{ synced: number; failed: number }> {
   if (!navigator.onLine) return { synced: 0, failed: 0 };
   let synced = 0;
   let failed = 0;
@@ -146,6 +147,8 @@ export async function flushCheckoutQueue(): Promise<{ synced: number; failed: nu
     await updateQueueItem(item);
     try {
       await client.post("/pos/checkout", item.payload);
+      // Delete only after the server acknowledges success. If the browser is
+      // closed before this point, the durable queue item remains and replay is safe.
       await removeQueueItem(item.id);
       synced += 1;
     } catch (error: any) {
@@ -157,6 +160,13 @@ export async function flushCheckoutQueue(): Promise<{ synced: number; failed: nu
     }
   }
   return { synced, failed };
+}
+
+export function flushCheckoutQueue(): Promise<{ synced: number; failed: number }> {
+  if (!activeFlush) {
+    activeFlush = flushCheckoutQueueOnce().finally(() => { activeFlush = null; });
+  }
+  return activeFlush;
 }
 
 export function installOfflineSync(onChange?: () => void): () => void {
