@@ -18,8 +18,8 @@ function json(route: Route, body: unknown, status = 200) {
   });
 }
 
-async function installApiFixtures(page: Page, state: FixtureState) {
-  await page.route("**/*", async (route) => {
+async function installApiFixtures(context: BrowserContext, state: FixtureState) {
+  await context.route("**/*", async (route) => {
     const url = new URL(route.request().url());
     if (!url.href.startsWith(API_ORIGIN)) return route.continue();
 
