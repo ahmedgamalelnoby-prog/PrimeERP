@@ -8,7 +8,7 @@ on:
       - "backend/app/modules/inventory/**"
       - "backend/tests/test_pos_offline_*.py"
       - "frontend/src/modules/pos/**"
-      - "frontend/public/pos-sw.js"
+      - "frontend/public/pos-sw.js"\n      - "frontend/tests/e2e/**"\n      - "frontend/playwright.config.ts"\n      - "frontend/package.json"\n      - "frontend/package-lock.json"
       - ".github/workflows/pos-offline-stress-gate.yml"
   workflow_dispatch:
 
@@ -80,3 +80,4 @@ jobs:
         working-directory: .
         run: |
           Write-Host 'Offline POS stress gate cleanup complete.'
+\n  browser-offline-e2e:\n    name: Real browser offline POS E2E\n    runs-on: [self-hosted, Windows, X64, PrimeERP]\n    timeout-minutes: 30\n    defaults:\n      run:\n        shell: powershell\n        working-directory: frontend\n    steps:\n      - name: Checkout\n        uses: actions/checkout@v5\n\n      - name: Install frontend dependencies\n        run: |\n          $ErrorActionPreference = "Stop"\n          npm ci\n\n      - name: Install Playwright test runner\n        run: |\n          $ErrorActionPreference = "Stop"\n          npm install --no-save --package-lock=false "@playwright/test@1.63.0"\n          npx playwright install chromium\n\n      - name: Start Vite\n        run: |\n          $ErrorActionPreference = "Stop"\n          $p = Start-Process -FilePath "cmd.exe" -ArgumentList "/c","npm run dev -- --host 127.0.0.1 --port 4173" -WorkingDirectory "$env:GITHUB_WORKSPACE\\frontend" -PassThru\n          "VITE_PID=$($p.Id)" | Out-File -FilePath $env:GITHUB_ENV -Append\n          $ready = $false\n          for ($i = 0; $i -lt 30; $i++) {\n            Start-Sleep -Seconds 1\n            try {\n              $r = Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:4173/" -TimeoutSec 2\n              if ($r.StatusCode -eq 200) { $ready = $true; break }\n            } catch {}\n          }\n          if (-not $ready) { throw "Vite did not become ready" }\n\n      - name: Run browser offline E2E\n        env:\n          POS_E2E_BASE_URL: http://127.0.0.1:4173\n          POS_E2E_API_ORIGIN: http://127.0.0.1:8000\n        run: |\n          $ErrorActionPreference = "Stop"\n          npx playwright test tests/e2e/pos-offline-browser.e2e.ts --reporter=line\n\n      - name: Stop Vite\n        if: always()\n        run: |\n          if ($env:VITE_PID) { Stop-Process -Id ([int]$env:VITE_PID) -Force -ErrorAction SilentlyContinue }\n
