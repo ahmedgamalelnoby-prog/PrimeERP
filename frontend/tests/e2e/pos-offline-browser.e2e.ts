@@ -102,8 +102,10 @@ test("restaurant POS survives offline orders, browser restart, retry, and respon
   });
 
   try {
+    // The protected /pos route loads AuthProvider first. Install the API fixtures
+    // before the first navigation so /identity/me is deterministic as well.
+    await installApiFixtures(context, state);
     const page = await openPos(context);
-    await installApiFixtures(page, state);
 
     // Reload after routes are installed so the POS is populated from deterministic API fixtures.
     await page.reload({ waitUntil: "domcontentloaded" });
@@ -119,7 +121,6 @@ test("restaurant POS survives offline orders, browser restart, retry, and respon
     const firstDeviceId = await page.evaluate(() => localStorage.getItem("primeerp-pos-device-id"));
     expect(firstDeviceId).toBeTruthy();
 
-    // Real browser offline mode: three independent restaurant orders must become durable IndexedDB entries.
     await context.setOffline(true);
     await expect(page.getByText("● Offline — الطلبات تُحفظ محليًا")).toBeVisible();
 
@@ -144,7 +145,6 @@ test("restaurant POS survives offline orders, browser restart, retry, and respon
     );
     expect(queuedBeforeRestart).toBe(3);
 
-    // Simulate browser close/reopen while still offline. IndexedDB must survive.
     await page.close();
     const reopened = await openPos(context);
     await expect(reopened.getByText("● Offline — الطلبات تُحفظ محليًا")).toBeVisible();
@@ -153,7 +153,6 @@ test("restaurant POS survives offline orders, browser restart, retry, and respon
     const reopenedDeviceId = await reopened.evaluate(() => localStorage.getItem("primeerp-pos-device-id"));
     expect(reopenedDeviceId).toBe(firstDeviceId);
 
-    // Restore connectivity. The online event must flush the durable queue exactly once per order.
     await context.setOffline(false);
     await expect.poll(() => state.checkoutBodies.length, { timeout: 15000 }).toBe(3);
     await expect.poll(
@@ -164,8 +163,6 @@ test("restaurant POS survives offline orders, browser restart, retry, and respon
     const numbers = state.checkoutBodies.map((x) => String(x.number));
     expect(new Set(numbers).size).toBe(3);
 
-    // Simulate "server received request but browser lost the response": client sees a network error,
-    // keeps the order locally, then a later sync retries it.
     state.failNextCheckout = true;
     await prepareSale(reopened);
     await submitSale(reopened);
