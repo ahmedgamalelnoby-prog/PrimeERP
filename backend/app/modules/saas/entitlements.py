@@ -12,21 +12,11 @@ from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.inventory.items.models import InventoryItem
-        allowed_codes = TRIAL_BUSINESS_MODULES.get(tenant.business_type, TRIAL_BUSINESS_MODULES["other"])
-    "restaurant": {"dashboard","users","companies","branches","accounting","sales","inventory","purchasing","restaurant","pos","reports"},
-    "cafe": {"dashboard","users","companies","branches","accounting","sales","inventory","purchasing","restaurant","pos","reports"},
-    "retail": {"dashboard","users","companies","branches","accounting","sales","inventory","purchasing","crm","pos","shipping","reports"},
-    "fashion": {"dashboard","users","companies","branches","accounting","sales","inventory","purchasing","crm","pos","shipping","reports"},
-    "perfume": {"dashboard","users","companies","branches","accounting","sales","inventory","purchasing","crm","pos","manufacturing","shipping","reports"},
-    "manufacturing": {"dashboard","users","companies","branches","accounting","sales","inventory","purchasing","manufacturing","reports"},
-    "supermarket": {"dashboard","users","companies","branches","accounting","sales","inventory","purchasing","pos","crm","shipping","reports"},
-    "pharmacy": {"dashboard","users","companies","branches","accounting","sales","inventory","purchasing","reports"},
-    "services": {"dashboard","users","companies","branches","accounting","sales","crm","reports"},
-    "other": {"dashboard","users","companies","branches","accounting","reports"},
-}
+from app.modules.saas.models import PlanModule, Subscription, SubscriptionPlan, SystemModule, Tenant, TenantModule
 
+from app.modules.saas.trial_modules import CORE_TRIAL_MODULES, trial_modules_for_business
 
-
+CORE_MODULES = CORE_TRIAL_MODULES
 def _active_subscription(db: Session, tenant_id: int) -> Subscription | None:
     now = datetime.now(timezone.utc)
     return db.scalar(
@@ -56,7 +46,7 @@ def tenant_has_module(db: Session, tenant_id: int, module_code: str) -> bool:
     if module_code in CORE_MODULES:
         return True
     if tenant.is_trial:
-        allowed_codes = TRIAL_BUSINESS_MODULES.get(tenant.business_type, TRIAL_BUSINESS_MODULES["other"])
+        allowed_codes = trial_modules_for_business(tenant.business_type)
         if module_code not in allowed_codes:
             return False
     module = db.scalar(select(SystemModule).where(SystemModule.code == module_code, SystemModule.is_active.is_(True)))
