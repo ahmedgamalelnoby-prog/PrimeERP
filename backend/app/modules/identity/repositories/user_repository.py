@@ -135,7 +135,10 @@ class UserRepository(BaseRepository[User]):
             )
         if tenant_name:
             query = query.where(
-                func.lower(Tenant.name) == tenant_name.strip().lower()
+                or_(
+                    User.is_platform_admin.is_(True),
+                    func.lower(Tenant.name) == tenant_name.strip().lower(),
+                )
             )
 
         query = query.limit(2)
