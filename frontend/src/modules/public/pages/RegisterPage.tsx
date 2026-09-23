@@ -114,7 +114,7 @@ export default function RegisterPage() {
   };
 
   const handleChange = (
-    event: ChangeEvent<HTMLInputElement>,
+    event: ChangeEvent<HTMLInputElement | HTMLSelectElement>,
   ) => {
     const {
       name,
