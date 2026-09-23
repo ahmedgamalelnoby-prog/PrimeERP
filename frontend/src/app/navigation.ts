@@ -65,8 +65,8 @@ function isNavigationAllowed(item: NavigationItem, enabledModules: Set<string>, 
   if (TENANT_CORE_NAVIGATION.has(item.id)) return true;
   if (item.id === "module-catalog" || item.id === "saas") return false;
   if (item.id === "reports") return enabledModules.has("reports");
-  if (item.id === "identity") return enabledModules.has("users");
-  if (item.id === "organization") return enabledModules.has("companies") || enabledModules.has("branches");
+  if (item.id === "identity" || item.id === "users" || item.id === "roles" || item.id === "permissions") return enabledModules.has("users");
+  if (item.id === "organization" || item.id === "companies" || item.id === "branches") return enabledModules.has("companies") || enabledModules.has("branches");
   if (item.module) return enabledModules.has(item.module);
   return true;
 }
