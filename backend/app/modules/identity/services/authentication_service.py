@@ -38,12 +38,22 @@ class AuthenticationService:
         login_key = self._login_key(payload)
         self._enforce_login_throttle(db, login_key)
 
-        users = user_repository.find_for_login(db=db, login=payload.login, tenant_slug=payload.tenant_slug, tenant_name=payload.tenant_name)
+        users = user_repository.find_for_login(
+            db=db,
+            login=payload.login,
+            tenant_slug=payload.tenant_slug,
+            tenant_name=payload.tenant_name,
+        )
         if not users:
             self._reject_login(db, login_key, "unknown_account")
         if len(users) > 1:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Multiple accounts match this login. Please provide tenant_slug.")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Multiple accounts match this login. Please provide the company name.",
+            )
         user = users[0]
+        if not user.is_platform_admin and not payload.tenant_name:
+            self._reject_login(db, login_key, "company_name_required")
         if not password_service.verify_password(payload.password, user.hashed_password):
             self._reject_login(db, login_key, "invalid_password")
         self._validate_user(user)
