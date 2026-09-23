@@ -1,4 +1,4 @@
-import { saasEntitlementsApi } from "../api/saas.api";
+import { saasEntitlementsApi } from "../api/entitlements.api";
 
 export const saasEntitlementsService = {
   listModules: saasEntitlementsApi.listModules,
