@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/modules/identity/hooks/useAuth";
-import { settingsApi, type TenantSettings } from "../api/settings.api";
+import { companyLegalTaxApi, settingsApi, type CompanyLegalTaxProfile, type TenantSettings } from "../api/settings.api";
 
 const moduleNames: Record<string, string> = { dashboard:"لوحة التحكم", accounting:"المحاسبة", sales:"المبيعات", purchasing:"المشتريات", inventory:"المخزون", crm:"CRM", pos:"POS", shipping:"الشحن", manufacturing:"التصنيع", reports:"التقارير", hospitality:"الفنادق والضيافة", commercial_leasing:"الإيجارات التجارية" };
 const businessLabels: Record<string, string> = { restaurant:"مطعم", cafe:"كافيه", retail:"تجزئة", fashion:"ملابس وأزياء", perfume:"عطور", supermarket:"سوبر ماركت", pharmacy:"صيدلية", manufacturing:"تصنيع", services:"خدمات", other:"أعمال عامة" };
@@ -14,6 +14,7 @@ const businessLabels: Record<string, string> = { restaurant:"مطعم", cafe:"ك
 export default function SettingsPage() {
   const { user, refreshUser } = useAuth();
   const [settings, setSettings] = useState<TenantSettings | null>(null);
+  const [company, setCompany] = useState<CompanyLegalTaxProfile | null>(null);
   const [form, setForm] = useState({ name:"", phone:"", business_type:"other", default_language:"ar" as "ar"|"en", default_locale:"ar-EG", timezone:"Africa/Cairo", currency_code:"EGP" });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -22,7 +23,8 @@ export default function SettingsPage() {
     settingsApi.get().then((data) => {
       setSettings(data);
       setForm({ name:data.name, phone:data.phone ?? "", business_type:data.business_type, default_language:data.default_language, default_locale:data.default_locale, timezone:data.timezone, currency_code:data.currency_code });
-    }).catch(() => toast.error("تعذر تحميل إعدادات مساحة العمل")).finally(() => setLoading(false));
+    }).catch(() => toast.error("تعذر تحميل إعدادات مساحة العمل"));
+    companyLegalTaxApi.list().then((rows) => setCompany(rows[0] ?? null)).catch(() => undefined).finally(() => setLoading(false));
   }, []);
 
   const enabledModules = useMemo(() => (user?.enabled_modules ?? []).filter((code) => !["dashboard","users","companies","branches"].includes(code)), [user?.enabled_modules]);
@@ -51,6 +53,20 @@ export default function SettingsPage() {
 
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.75fr)]">
       <main className="space-y-6">
+        <section className="rounded-[24px] border bg-card p-6 shadow-sm">
+          <div className="flex items-center gap-3 border-b pb-5"><span className="flex size-11 items-center justify-center rounded-xl bg-amber-50 text-amber-700"><ShieldCheck className="size-5" /></span><div><h2 className="text-xl font-black">البيانات القانونية والضريبية</h2><p className="text-sm text-muted-foreground">السجل التجاري والبطاقة الضريبية وبيانات الربط بالفاتورة الإلكترونية المصرية.</p></div></div>
+          <div className="mt-5 grid gap-5 md:grid-cols-2">
+            <div className="space-y-2"><Label>الاسم القانوني</Label><Input value={company?.legal_name ?? ""} onChange={(e)=>setCompany(v=>v?({...v,legal_name:e.target.value}):v)} className="h-11 rounded-xl" /></div>
+            <div className="space-y-2"><Label>رقم البطاقة / التسجيل الضريبي</Label><Input value={company?.tax_id ?? ""} onChange={(e)=>setCompany(v=>v?({...v,tax_id:e.target.value}):v)} className="h-11 rounded-xl" /></div>
+            <div className="space-y-2"><Label>رقم السجل التجاري</Label><Input value={company?.commercial_registration_number ?? ""} onChange={(e)=>setCompany(v=>v?({...v,commercial_registration_number:e.target.value}):v)} className="h-11 rounded-xl" /></div>
+            <div className="space-y-2"><Label>المأمورية / الجهة الضريبية</Label><Input value={company?.tax_authority ?? ""} onChange={(e)=>setCompany(v=>v?({...v,tax_authority:e.target.value}):v)} className="h-11 rounded-xl" /></div>
+          </div>
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-slate-50 p-4">
+            <div><div className="text-sm font-black">حالة منظومة الفاتورة الإلكترونية</div><div className="mt-1 text-xs text-muted-foreground">رقم الممول: ${company?.eta_taxpayer_id ?? company?.tax_id ?? "غير مضبوط"} · الحالة: ${company?.eta_registration_status ?? "not_configured"}</div></div>
+            <Button disabled={!company} onClick={async()=>{try{if(!company)return; const saved=await companyLegalTaxApi.update(company.id,{legal_name:company.legal_name,tax_id:company.tax_id,commercial_registration_number:company.commercial_registration_number,tax_authority:company.tax_authority});setCompany(saved);toast.success("تم حفظ البيانات القانونية والضريبية");}catch(e:any){toast.error(e?.response?.data?.detail ?? "تعذر حفظ البيانات");}}} className="rounded-xl"><Save className="me-2 size-4" />حفظ البيانات القانونية</Button>
+          </div>
+        </section>
+
         <section className="rounded-[24px] border bg-card p-6 shadow-sm">
           <div className="flex items-center gap-3 border-b pb-5"><span className="flex size-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600"><Building2 className="size-5" /></span><div><h2 className="text-xl font-black">بيانات الشركة</h2><p className="text-sm text-muted-foreground">البيانات التي تظهر في مساحة العمل ولوحة التحكم.</p></div></div>
           <div className="mt-5 grid gap-5 md:grid-cols-2">
