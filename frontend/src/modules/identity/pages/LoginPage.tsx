@@ -90,12 +90,12 @@ export default function LoginPage() {
   return (
     <main className="min-h-screen bg-[#f7f9fc] text-slate-950" dir={isArabic ? "rtl" : "ltr"}>
       <div className="grid min-h-screen lg:grid-cols-[1.15fr_0.85fr]">
-        <section className="relative hidden overflow-hidden bg-slate-950 px-10 py-10 text-white lg:flex lg:flex-col">
+        <section className="relative hidden overflow-hidden bg-gradient-to-br from-[#063f9f] via-[#0968d7] to-[#21a8ef] px-10 py-10 text-white lg:flex lg:flex-col">
           <div className="absolute -left-32 -top-32 size-96 rounded-full bg-blue-600/20 blur-3xl" />
           <div className="absolute -right-24 bottom-0 size-96 rounded-full bg-cyan-500/10 blur-3xl" />
           <div className="relative z-10 flex items-center justify-between">
             <Link to="/" className="flex items-center gap-3">
-              <div className="flex size-11 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-400 shadow-lg shadow-blue-950/50"><Building2 className="size-6" /></div>
+              <div className="flex size-11 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-400 shadow-lg shadow-blue-950/20"><Building2 className="size-6" /></div>
               <div><div className="text-xl font-extrabold">Prime<span className="text-cyan-400">ERP</span></div><div className="text-xs text-slate-400">{text("منصة إدارة أعمال متكاملة", "Complete business management platform")}</div></div>
             </Link>
             <button type="button" onClick={changeLanguage} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-200 hover:bg-white/10"><Globe2 className="size-4" />{isArabic ? "English" : "العربية"}</button>
@@ -107,7 +107,7 @@ export default function LoginPage() {
             <div className="mt-10 grid gap-4 sm:grid-cols-2">
               {valueProps.map(({ icon: Icon, ar, en, detailAr, detailEn }) => (
                 <div key={en} className="rounded-2xl border border-white/10 bg-white/[0.045] p-4 backdrop-blur transition hover:bg-white/[0.08]">
-                  <div className="flex items-start gap-3"><div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/15 text-cyan-300"><Icon className="size-5" /></div><div><div className="font-bold">{text(ar, en)}</div><p className="mt-1 text-xs leading-5 text-slate-400">{text(detailAr, detailEn)}</p></div></div>
+                  <div className="flex items-start gap-3"><div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-cyan-100"><Icon className="size-5" /></div><div><div className="font-bold">{text(ar, en)}</div><p className="mt-1 text-xs leading-5 text-slate-400">{text(detailAr, detailEn)}</p></div></div>
                 </div>
               ))}
             </div>
@@ -121,7 +121,7 @@ export default function LoginPage() {
         <section className="flex min-h-screen items-center justify-center px-5 py-8 sm:px-8 lg:px-12">
           <div className="w-full max-w-[520px]">
             <div className="mb-6 flex items-center justify-between lg:justify-end">
-              <Link to="/" className="flex items-center gap-2 lg:hidden"><div className="flex size-10 items-center justify-center rounded-xl bg-blue-600 text-white"><Building2 className="size-5" /></div><span className="text-xl font-black">Prime<span className="text-blue-600">ERP</span></span></Link>
+              <Link to="/" className="flex items-center gap-2 lg:hidden"><div className="flex size-10 items-center justify-center rounded-xl bg-blue-600 text-white"><Building2 className="size-5" /></div><span className="text-xl font-black">Prime<span className="text-[#0968d7]">ERP</span></span></Link>
               <button type="button" onClick={changeLanguage} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"><Globe2 className="size-4 text-blue-600" />{isArabic ? "English" : "العربية"}</button>
             </div>
             <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.10)] sm:p-9">
