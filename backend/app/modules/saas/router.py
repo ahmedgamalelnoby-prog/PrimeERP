@@ -99,7 +99,15 @@ def update_settings(
     if tenant is None:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    if "business_type" in changes and changes["business_type"] != tenant.business_type:
+        if tenant.is_trial and not current_user.is_platform_admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Business type cannot be changed during the free trial. Contact the platform administrator.",
+            )
+
+    for field, value in changes.items():
         setattr(tenant, field, value)
 
     if payload.default_language == "ar" and payload.default_locale is None:
