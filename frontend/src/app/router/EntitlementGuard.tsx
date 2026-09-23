@@ -1,4 +1,4 @@
-import { Navigate, useLocation } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "@/modules/identity/hooks/useAuth";
 
 const CORE_PATHS = ["/dashboard", "/users", "/roles", "/permissions", "/identity", "/companies", "/branches", "/settings", "/helpdesk"];
@@ -55,14 +55,14 @@ export default function EntitlementGuard() {
   }
 
   if (CORE_PATHS.some((path) => matchesPath(pathname, path)) || pathname === "/") {
-    return null;
+    return <Outlet />;
   }
 
   const rule = PREFIX_TO_MODULE.find(([prefix]) => matchesPath(pathname, prefix));
-  if (!rule || isPlatformAdmin) return null;
+  if (!rule || isPlatformAdmin) return <Outlet />;
 
   const [_, moduleCode] = rule;
-  if (user.enabled_modules?.includes(moduleCode)) return null;
+  if (user.enabled_modules?.includes(moduleCode)) return <Outlet />;
 
   return (
     <AccessDenied
