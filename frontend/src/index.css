@@ -116,7 +116,8 @@
     min-width: 320px;
     min-height: 100vh;
     margin: 0;
-    background-color: var(--background);\n    -webkit-font-smoothing: antialiased;
+    background-color: var(--background);
+    -webkit-font-smoothing: antialiased;
     color: var(--foreground);
   }
 }
