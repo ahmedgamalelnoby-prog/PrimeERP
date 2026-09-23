@@ -23,6 +23,7 @@ const PREFIX_TO_MODULE: Array<[string, string]> = [
   ["/enterprise", "enterprise"],
   ["/mobile", "mobile"],
   ["/commerce", "commerce"],
+  ["/treasury", "treasury"],
 ];
 
 function matchesPath(pathname: string, prefix: string): boolean {
