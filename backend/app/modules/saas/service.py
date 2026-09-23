@@ -28,9 +28,8 @@ from app.modules.saas.models import (
 from app.modules.saas.schemas import TenantRegistrationRequest
 
 
-CORE_TRIAL_MODULES = {"dashboard", "users", "companies", "branches", "accounting", "reports"}
-
-BUSINESS_MODULES: dict[str, set[str]] = {
+    allowed_codes = BUSINESS_MODULES.get(business_type, CORE_TRIAL_MODULES)
+    return [module for module in plan_modules if module.is_core or module.code in allowed_codes]
     "restaurant": {"dashboard", "users", "companies", "branches", "accounting", "sales", "inventory", "purchasing", "restaurant", "pos", "reports"},
     "cafe": {"dashboard", "users", "companies", "branches", "accounting", "sales", "inventory", "purchasing", "restaurant", "pos", "reports"},
     "retail": {"dashboard", "users", "companies", "branches", "accounting", "sales", "inventory", "purchasing", "crm", "pos", "shipping", "reports"},
