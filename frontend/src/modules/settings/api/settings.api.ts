@@ -33,3 +33,29 @@ export const settingsApi = {
     return response.data;
   },
 };
+
+
+export interface CompanyLegalTaxProfile {
+  id: number;
+  tenant_id: number;
+  name: string;
+  legal_name: string | null;
+  tax_id: string | null;
+  commercial_registration_number: string | null;
+  tax_authority: string | null;
+  eta_registration_status: string;
+  eta_taxpayer_id: string | null;
+  eta_last_verified_at: string | null;
+  address: string | null;
+}
+export type CompanyLegalTaxUpdate = Partial<Pick<CompanyLegalTaxProfile, "name" | "legal_name" | "tax_id" | "commercial_registration_number" | "tax_authority">>;
+export const companyLegalTaxApi = {
+  async list() {
+    const response = await client.get<CompanyLegalTaxProfile[]>("/companies?active_only=true");
+    return response.data;
+  },
+  async update(companyId: number, payload: CompanyLegalTaxUpdate) {
+    const response = await client.patch<CompanyLegalTaxProfile>(`/companies/${companyId}`, payload);
+    return response.data;
+  },
+};
