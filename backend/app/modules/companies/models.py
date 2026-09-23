@@ -70,6 +70,13 @@ class Company(Base):
         nullable=True,
     )
 
+    legal_name = Column(String(200), nullable=True)
+    commercial_registration_number = Column(String(100), nullable=True, index=True)
+    tax_authority = Column(String(150), nullable=True)
+    eta_registration_status = Column(String(30), nullable=False, default="not_configured")
+    eta_taxpayer_id = Column(String(100), nullable=True, index=True)
+    eta_last_verified_at = Column(TIMESTAMP(timezone=True), nullable=True)
+
     is_active = Column(
         Boolean,
         nullable=False,
