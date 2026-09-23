@@ -104,11 +104,18 @@ def sync_canonical_plans(db: Session) -> list[Plan]:
                 setattr(canonical, field, value)
                 changed = True
 
-    for code, canonical in canonical_by_code.items():
-        should_be_default = code == default_code
-        if canonical.is_default != should_be_default:
-            canonical.is_default = should_be_default
+    # Clear existing defaults first. PostgreSQL enforces a partial unique
+    # index, so changing the default in one pass can otherwise create a
+    # transient two-default conflict.
+    for canonical in canonical_by_code.values():
+        if canonical.is_default:
+            canonical.is_default = False
             changed = True
+
+    canonical_default = canonical_by_code.get(default_code)
+    if canonical_default is not None:
+        canonical_default.is_default = True
+        changed = True
 
     if changed:
         db.flush()
