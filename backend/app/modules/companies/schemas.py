@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from datetime import datetime\nfrom pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class CompanyCreate(BaseModel):
