@@ -1,4 +1,5 @@
 import { ChevronDown, X } from "lucide-react";
+import { useAuth } from "@/modules/identity/hooks/useAuth";
 import { useEffect, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 
@@ -113,7 +114,8 @@ function NavigationNode({
 
 export default function AppSidebar({ open, onClose }: AppSidebarProps) {
   const location = useLocation();
-  const navigation = getVisibleNavigationItems();
+  const { user } = useAuth();
+  const navigation = getVisibleNavigationItems(user?.enabled_modules ?? [], Boolean(user?.is_platform_admin || user?.is_superuser));
   return (
     <>
       {open && (

@@ -9,6 +9,7 @@ from app.modules.identity.models import User
 from app.modules.platform.plans.exceptions import PlanValidationError
 from app.modules.platform.plans.schemas import PlanCreate, PlanResponse, PlanUpdate
 from app.modules.platform.plans.service import PlanService
+from app.modules.platform.plans.catalog_sync import sync_canonical_plans
 
 
 router = APIRouter(
@@ -28,8 +29,10 @@ def require_platform_admin(current_user: User = Depends(get_current_user)) -> Us
     response_model=List[PlanResponse],
 )
 def get_plans(db: Session = Depends(get_db)):
-    service = PlanService(db)
-    return service.get_all_plans()
+    # Keep the canonical platform catalog populated from existing SaaS plans.
+    plans = sync_canonical_plans(db)
+    db.commit()
+    return plans
 
 
 @router.get(

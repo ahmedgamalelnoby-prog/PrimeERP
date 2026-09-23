@@ -6,8 +6,9 @@ from app.database.session import get_db
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models.user import User
+from app.modules.saas.entitlements import require_module
 
-router=APIRouter(prefix="/hr",tags=["HR"])
+router=APIRouter(prefix="/hr",tags=["HR"],dependencies=[Depends(require_module("hr"))])
 
 def _tenant(user:User):
     if user.tenant_id is None: raise HTTPException(403,"User is not assigned to a tenant")

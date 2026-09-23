@@ -5,11 +5,12 @@ from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
+from app.modules.saas.entitlements import require_module
 from app.modules.treasury.bank_reconciliation.models import BankAccount, BankStatement, BankStatementLine, ReconciliationSession, ReconciliationMatch
 from app.modules.treasury.bank_reconciliation.schemas import *
 from app.modules.treasury.bank_reconciliation.service import ensure_company, create_account, create_statement, add_line, create_session, match, auto_match, close_session, unmatch, candidates
 
-router=APIRouter(prefix="/treasury/reconciliation",tags=["Treasury Bank Reconciliation"],dependencies=[Depends(require_permission("treasury.access"))])
+router=APIRouter(prefix="/treasury/reconciliation",tags=["Treasury Bank Reconciliation"],dependencies=[Depends(require_permission("treasury.access")), Depends(require_module("treasury"))])
 
 def fail(e): raise HTTPException(400,str(e))
 

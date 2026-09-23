@@ -15,6 +15,8 @@ from app.modules.identity.services.refresh_token_service import RefreshTokenReus
 from app.modules.identity.services.token_service import token_service
 from app.modules.saas.models import Subscription, SystemModule, Tenant, TenantModule
 
+from app.modules.saas.trial_modules import trial_modules_for_business
+
 
 class AuthenticationService:
     LOGIN_WINDOW_MINUTES = 10
@@ -25,12 +27,22 @@ class AuthenticationService:
         login_key = self._login_key(payload)
         self._enforce_login_throttle(db, login_key)
 
-        users = user_repository.find_for_login(db=db, login=payload.login, tenant_slug=payload.tenant_slug)
+        users = user_repository.find_for_login(
+            db=db,
+            login=payload.login,
+            tenant_slug=payload.tenant_slug,
+            tenant_name=payload.tenant_name,
+        )
         if not users:
             self._reject_login(db, login_key, "unknown_account")
         if len(users) > 1:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Multiple accounts match this login. Please provide tenant_slug.")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Multiple accounts match this login. Please provide the company name.",
+            )
         user = users[0]
+        if not user.is_platform_admin and not payload.tenant_name:
+            self._reject_login(db, login_key, "company_name_required")
         if not password_service.verify_password(payload.password, user.hashed_password):
             self._reject_login(db, login_key, "invalid_password")
         self._validate_user(user)
@@ -78,8 +90,9 @@ class AuthenticationService:
 
     def _login_key(self, payload: LoginRequest) -> str:
         tenant = (payload.tenant_slug or "").strip().lower()
+        tenant_name = (payload.tenant_name or "").strip().lower()
         login = payload.login.strip().lower()
-        return f"{tenant}:{login}"
+        return f"{tenant}:{tenant_name}:{login}"
 
     def _request_ip(self) -> str | None:
         context = get_optional_request_context()
@@ -243,10 +256,15 @@ class AuthenticationService:
 
     @staticmethod
     def _get_enabled_modules(db: Session, tenant_id: int) -> list[str]:
+        tenant = db.get(Tenant, tenant_id)
         rows = db.query(SystemModule.code).join(TenantModule, TenantModule.module_id == SystemModule.id).filter(
             TenantModule.tenant_id == tenant_id, TenantModule.is_enabled.is_(True), SystemModule.is_active.is_(True)
         ).order_by(SystemModule.display_order.asc()).all()
-        return [row[0] for row in rows]
+        enabled = [row[0] for row in rows]
+        if tenant is not None and tenant.is_trial:
+            allowed = trial_modules_for_business(tenant.business_type)
+            enabled = [code for code in enabled if code in allowed]
+        return enabled
 
     @staticmethod
     def _raise_invalid_credentials() -> None:

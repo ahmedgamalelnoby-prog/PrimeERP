@@ -46,10 +46,10 @@ export default function AppHeader({
 
         <div>
           <h2 className="text-lg font-semibold">
-            نظام PrimeERP
+            {user?.tenant_name || "PrimeERP"}
           </h2>
           <p className="hidden text-xs text-muted-foreground sm:block">
-            إدارة موارد المؤسسة
+            مساحة عمل PrimeERP
           </p>
         </div>
       </div>

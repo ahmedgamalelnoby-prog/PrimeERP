@@ -193,6 +193,69 @@ class TenantRegistrationRequest(BaseModel):
         return value.strip().upper()
 
 
+class TenantSettingsUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: Optional[str] = Field(default=None, min_length=2, max_length=200)
+    phone: Optional[str] = Field(default=None, max_length=30)
+    default_language: LanguageCode | None = None
+    default_locale: str | None = Field(default=None, min_length=2, max_length=10)
+    timezone: str | None = Field(default=None, min_length=2, max_length=50)
+    currency_code: str | None = Field(default=None, min_length=3, max_length=3)
+    business_type: BusinessType | None = None
+
+    @field_validator("name")
+    @classmethod
+    def clean_name(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Company name cannot be empty")
+        return cleaned
+
+    @field_validator("phone")
+    @classmethod
+    def clean_settings_phone(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+    @field_validator("default_locale", "timezone")
+    @classmethod
+    def clean_settings_text(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+    @field_validator("currency_code")
+    @classmethod
+    def normalize_currency(cls, value: Optional[str]) -> Optional[str]:
+        return value.strip().upper() if value else value
+
+
+class TenantSettingsResponse(BaseModel):
+    id: int
+    name: str
+    slug: str
+    business_type: str
+    phone: Optional[str]
+    email: str
+    country_code: str
+    default_language: str
+    default_locale: str
+    timezone: str
+    currency_code: str
+    status: str
+    is_trial: bool
+    trial_started_at: Optional[datetime]
+    trial_ends_at: Optional[datetime]
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class RegisteredUserResponse(BaseModel):
     id: int
     tenant_id: int

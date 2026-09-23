@@ -159,7 +159,7 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "3000:80"
+      - "${FRONTEND_HOST_PORT:-3000}:80"
     networks:
       - primeerp
 

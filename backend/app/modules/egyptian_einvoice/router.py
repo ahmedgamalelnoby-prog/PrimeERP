@@ -37,6 +37,27 @@ def _require_eta_notification_secret(authorization: str | None = Header(default=
         raise HTTPException(401, "Invalid ETA notification authorization")
 
 
+@router.post("/partners/{partner_id}/verify", dependencies=[Depends(require_permission(EINVOICE_WRITE))])
+def verify_partner_tax_identity(partner_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company_for_user(db, company_id, current_user)
+    from app.modules.commerce.models import BusinessPartner
+    partner = db.scalar(select(BusinessPartner).where(BusinessPartner.id == partner_id, BusinessPartner.company_id == company_id))
+    if partner is None:
+        raise HTTPException(404, "Customer not found")
+    if partner.partner_type not in {"customer", "both"}:
+        raise HTTPException(422, "ETA customer verification is available for customers")
+    if not partner.tax_number:
+        raise HTTPException(422, "Customer tax registration number is required")
+    # ETA's taxpayer identity is represented by the registration number; the
+    # real-time validation call is performed by the configured ETA integration.
+    partner.eta_party_id = partner.tax_number
+    partner.eta_registration_status = "pending"
+    partner.eta_last_verified_at = datetime.now(timezone.utc)
+    record_audit_event(db, action="einvoice.partner_verify_requested", entity_type="commerce_partner", entity_id=partner.id, user_id=current_user.id, tenant_id=current_user.tenant_id, company_id=company_id, metadata={"tax_number": partner.tax_number, "commercial_registration_number": partner.commercial_registration_number})
+    db.commit()
+    db.refresh(partner)
+    return {"id": partner.id, "tax_number": partner.tax_number, "commercial_registration_number": partner.commercial_registration_number, "eta_party_id": partner.eta_party_id, "eta_registration_status": partner.eta_registration_status, "eta_last_verified_at": partner.eta_last_verified_at}
+
 @router.get("/documents", dependencies=[Depends(require_permission(EINVOICE_ACCESS))])
 def list_documents(company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)

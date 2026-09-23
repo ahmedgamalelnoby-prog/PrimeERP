@@ -39,6 +39,7 @@ export default function LoginPage() {
   const locationState = location.state as LoginLocationState | null;
   const currentLanguage = i18n.resolvedLanguage ?? i18n.language;
   const isArabic = currentLanguage.toLowerCase().startsWith("ar");
+  const [companyName, setCompanyName] = useState("");
   const [loginValue, setLoginValue] = useState(locationState?.username ?? "");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -65,13 +66,13 @@ export default function LoginPage() {
     event.preventDefault();
     setError("");
     const normalizedLogin = loginValue.trim();
-    if (!normalizedLogin || !password) {
-      setError(text("من فضلك أدخل اسم المستخدم وكلمة المرور.", "Please enter your username and password."));
+    if (!companyName.trim() || !normalizedLogin || !password) {
+      setError(text("من فضلك أدخل اسم الشركة واسم المستخدم وكلمة المرور.", "Please enter the company name, username and password."));
       return;
     }
     try {
       setIsLoading(true);
-      await login(normalizedLogin, password);
+      await login(normalizedLogin, password, null, companyName.trim() || null);
       if (rememberMe) localStorage.setItem("primeerp_remember_login", normalizedLogin);
       else localStorage.removeItem("primeerp_remember_login");
       toast.success(text("مرحبًا بك في PrimeERP", "Welcome back to PrimeERP"));
@@ -90,12 +91,12 @@ export default function LoginPage() {
   return (
     <main className="min-h-screen bg-[#f7f9fc] text-slate-950" dir={isArabic ? "rtl" : "ltr"}>
       <div className="grid min-h-screen lg:grid-cols-[1.15fr_0.85fr]">
-        <section className="relative hidden overflow-hidden bg-slate-950 px-10 py-10 text-white lg:flex lg:flex-col">
+        <section className="relative hidden overflow-hidden bg-gradient-to-br from-[#063f9f] via-[#0968d7] to-[#21a8ef] px-10 py-10 text-white lg:flex lg:flex-col">
           <div className="absolute -left-32 -top-32 size-96 rounded-full bg-blue-600/20 blur-3xl" />
           <div className="absolute -right-24 bottom-0 size-96 rounded-full bg-cyan-500/10 blur-3xl" />
           <div className="relative z-10 flex items-center justify-between">
             <Link to="/" className="flex items-center gap-3">
-              <div className="flex size-11 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-400 shadow-lg shadow-blue-950/50"><Building2 className="size-6" /></div>
+              <div className="flex size-11 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-400 shadow-lg shadow-blue-950/20"><Building2 className="size-6" /></div>
               <div><div className="text-xl font-extrabold">Prime<span className="text-cyan-400">ERP</span></div><div className="text-xs text-slate-400">{text("منصة إدارة أعمال متكاملة", "Complete business management platform")}</div></div>
             </Link>
             <button type="button" onClick={changeLanguage} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-200 hover:bg-white/10"><Globe2 className="size-4" />{isArabic ? "English" : "العربية"}</button>
@@ -107,7 +108,7 @@ export default function LoginPage() {
             <div className="mt-10 grid gap-4 sm:grid-cols-2">
               {valueProps.map(({ icon: Icon, ar, en, detailAr, detailEn }) => (
                 <div key={en} className="rounded-2xl border border-white/10 bg-white/[0.045] p-4 backdrop-blur transition hover:bg-white/[0.08]">
-                  <div className="flex items-start gap-3"><div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/15 text-cyan-300"><Icon className="size-5" /></div><div><div className="font-bold">{text(ar, en)}</div><p className="mt-1 text-xs leading-5 text-slate-400">{text(detailAr, detailEn)}</p></div></div>
+                  <div className="flex items-start gap-3"><div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-cyan-100"><Icon className="size-5" /></div><div><div className="font-bold">{text(ar, en)}</div><p className="mt-1 text-xs leading-5 text-slate-400">{text(detailAr, detailEn)}</p></div></div>
                 </div>
               ))}
             </div>
@@ -121,13 +122,14 @@ export default function LoginPage() {
         <section className="flex min-h-screen items-center justify-center px-5 py-8 sm:px-8 lg:px-12">
           <div className="w-full max-w-[520px]">
             <div className="mb-6 flex items-center justify-between lg:justify-end">
-              <Link to="/" className="flex items-center gap-2 lg:hidden"><div className="flex size-10 items-center justify-center rounded-xl bg-blue-600 text-white"><Building2 className="size-5" /></div><span className="text-xl font-black">Prime<span className="text-blue-600">ERP</span></span></Link>
+              <Link to="/" className="flex items-center gap-2 lg:hidden"><div className="flex size-10 items-center justify-center rounded-xl bg-blue-600 text-white"><Building2 className="size-5" /></div><span className="text-xl font-black">Prime<span className="text-[#0968d7]">ERP</span></span></Link>
               <button type="button" onClick={changeLanguage} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"><Globe2 className="size-4 text-blue-600" />{isArabic ? "English" : "العربية"}</button>
             </div>
             <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.10)] sm:p-9">
               <div className="mb-8"><div className="mb-4 flex size-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600"><LockKeyhole className="size-6" /></div><div className="text-sm font-bold text-blue-600">{text("مرحبًا بك مجددًا", "Welcome back")}</div><h2 className="mt-2 text-3xl font-black tracking-tight">{text("تسجيل الدخول إلى PrimeERP", "Sign in to PrimeERP")}</h2><p className="mt-3 text-sm leading-6 text-slate-500">{text("ادخل إلى مساحة عملك لإدارة شركتك ومتابعة أعمالك من مكان واحد.", "Access your workspace to manage your company and keep operations connected.")}</p></div>
               {error && <div role="alert" className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700">{error}</div>}
               <form onSubmit={handleSubmit} className="space-y-5">
+                <div className="space-y-2"><Label htmlFor="companyName">{text("اسم الشركة", "Company name")}</Label><Input id="companyName" name="companyName" value={companyName} onChange={e => { setCompanyName(e.target.value); setError(""); }} placeholder={text("اكتب اسم الشركة كما تم تسجيله", "Enter the company name used during registration")} autoComplete="organization" disabled={isLoading} required className="h-12 rounded-xl" /></div>
                 <div className="space-y-2"><Label htmlFor="login">{text("اسم المستخدم أو البريد الإلكتروني", "Username or email")}</Label><Input id="login" name="login" value={loginValue} onChange={e => { setLoginValue(e.target.value); setError(""); }} placeholder={text("أدخل اسم المستخدم أو البريد", "Enter username or email")} autoComplete="username" autoCapitalize="none" spellCheck={false} disabled={isLoading} required className="h-12 rounded-xl" dir="ltr" /></div>
                 <div className="space-y-2"><div className="flex items-center justify-between gap-4"><Label htmlFor="password">{text("كلمة المرور", "Password")}</Label><span className="text-sm text-slate-500">{text("نسيت كلمة المرور؟ تواصل مع مسؤول النظام.", "Forgot your password? Contact your system administrator.")}</span></div><div className="relative"><Input id="password" name="password" type={showPassword ? "text" : "password"} value={password} onChange={e => { setPassword(e.target.value); setError(""); }} placeholder={text("أدخل كلمة المرور", "Enter your password")} autoComplete="current-password" disabled={isLoading} required className="h-12 rounded-xl pe-11" /><button type="button" onClick={() => setShowPassword(v => !v)} disabled={isLoading} aria-label={showPassword ? text("إخفاء كلمة المرور", "Hide password") : text("إظهار كلمة المرور", "Show password")} className="absolute end-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700">{showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}</button></div></div>
                 <label className="flex cursor-pointer items-center gap-3 text-sm text-slate-600"><input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)} disabled={isLoading} className="size-4 rounded accent-blue-600" />{text("تذكر بيانات الدخول", "Remember me")}</label>

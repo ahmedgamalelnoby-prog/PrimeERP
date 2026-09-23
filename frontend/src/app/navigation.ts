@@ -50,22 +50,39 @@ export const navigationItems: NavigationItem[] = [
   {id:"hotel-revenue",label:"Hotel Revenue",labelAr:"إيرادات الفنادق",type:"item",path:"/hospitality/revenue",icon:BadgeDollarSign,permission:"hotel_revenue.view",module:"hospitality",visible:true,order:2},
   {id:"hotel-profit-share",label:"Profit Share",labelAr:"نسب الأرباح",type:"item",path:"/hospitality/profit-share",icon:BarChart3,permission:"hotel_profit_share.view",module:"hospitality",visible:true,order:3}]},
  {id:"shipping",label:"Shipping",labelAr:"الشحن",type:"group",icon:Truck,module:"shipping",visible:true,order:13,children:[{id:"shipping-status-settings",label:"Status Settings",labelAr:"إعدادات حالات الشحن",type:"item",path:"/shipping/settings",icon:Settings,permission:"shipping.access",module:"shipping",visible:true,order:1},{id:"shipping-pricing",label:"Carrier Pricing",labelAr:"تسعير شركات الشحن",type:"item",path:"/shipping/pricing",icon:Calculator,permission:"shipping.access",module:"shipping",visible:true,order:2},{id:"shipping-settlements",label:"Settlements",labelAr:"تسويات شركات الشحن",type:"item",path:"/shipping/settlements",icon:Wallet,permission:"shipping.access",module:"shipping",visible:true,order:3},{id:"shipping-reconciliation",label:"Carrier Reconciliation",labelAr:"تقرير مواقف شركات الشحن",type:"item",path:"/shipping/reconciliation",icon:BarChart3,permission:"shipping.access",module:"shipping",visible:true,order:4}]},
- {id:"saas",label:"SaaS Administration",labelAr:"إدارة SaaS",type:"group",icon:BadgeDollarSign,module:"saas",visible:true,order:14,children:[
-  {id:"plans",label:"Plans",labelAr:"الباقات",type:"item",path:"/platform/plans",icon:BadgeDollarSign,permission:"plans.view",module:"saas",visible:true,order:1}]},
+ {id:"saas",label:"SaaS Administration",labelAr:"منصة SaaS",type:"group",icon:BadgeDollarSign,module:"saas",visible:true,order:14,children:[
+  {id:"saas-dashboard",label:"SaaS Overview",labelAr:"نظرة عامة",type:"item",path:"/saas",icon:Gauge,module:"saas",visible:true,order:1,isNew:true},
+  {id:"plans",label:"Plans & Entitlements",labelAr:"الباقات والاستحقاقات",type:"item",path:"/platform/plans",icon:BadgeDollarSign,permission:"plans.view",module:"saas",visible:true,order:2},
+ ]},
  {id:"reports",label:"Reports",labelAr:"التقارير",type:"item",path:"/reports",icon:BarChart3,permission:"reports.view",module:"reports",visible:true,order:14},
  {id:"settings",label:"Settings",labelAr:"الإعدادات",type:"item",path:"/settings",icon:Settings,permission:"settings.view",module:"settings",visible:true,order:15},
 ];
 
-export function getVisibleNavigationItems(): NavigationItem[] {
+const TENANT_CORE_NAVIGATION = new Set(["dashboard", "users", "companies", "branches", "settings", "helpdesk"]);
+
+function isNavigationAllowed(item: NavigationItem, enabledModules: Set<string>, isPlatformAdmin: boolean): boolean {
+  if (isPlatformAdmin) return true;
+  if (TENANT_CORE_NAVIGATION.has(item.id)) return true;
+  if (item.id === "module-catalog" || item.id === "saas") return false;
+  if (item.id === "reports") return enabledModules.has("reports");
+  if (item.id === "identity" || item.id === "users" || item.id === "roles" || item.id === "permissions") return enabledModules.has("users");
+  if (item.id === "organization" || item.id === "companies" || item.id === "branches") return enabledModules.has("companies") || enabledModules.has("branches");
+  if (item.module) return enabledModules.has(item.module);
+  return true;
+}
+
+export function getVisibleNavigationItems(enabledModuleCodes: string[] = [], isPlatformAdmin = false): NavigationItem[] {
+  const enabledModules = new Set(enabledModuleCodes.map((code) => code.trim().toLowerCase()).filter(Boolean));
   return navigationItems
-    .filter((item) => item.visible !== false)
+    .filter((item) => item.visible !== false && isNavigationAllowed(item, enabledModules, isPlatformAdmin))
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
     .map((item) => ({
       ...item,
       children: item.children
-        ?.filter((child) => child.visible !== false)
+        ?.filter((child) => child.visible !== false && isNavigationAllowed(child, enabledModules, isPlatformAdmin))
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
-    }));
+    }))
+    .filter((item) => item.type !== "group" || Boolean(item.children?.length));
 }
 
 export function findNavigationItemByPath(

@@ -18,12 +18,13 @@ from app.database.session import get_db
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
+from app.modules.saas.entitlements import require_module
 from app.modules.reports.models import ReportDefinition, ReportDelivery
 from app.modules.accounting.reports.service import financial_report_service
 from app.modules.reports.worker import calculate_next_run
 from app.modules.platform.module_registry import REGISTRY_VERSION, knowledge_context
 
-router = APIRouter(prefix="/reports", tags=["reports"])
+router = APIRouter(prefix="/reports", tags=["reports"], dependencies=[Depends(require_module("reports"))])
 
 
 class ReportPayload(BaseModel):

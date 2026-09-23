@@ -40,6 +40,7 @@ import type {
 
 interface RegisterFormState {
   companyName: string;
+  businessType: string;
   fullName: string;
   username: string;
   email: string;
@@ -51,6 +52,7 @@ interface RegisterFormState {
 
 const initialFormState = {
     companyName: "",
+    businessType: "other",
     fullName: "",
     username: "",
     email: "",
@@ -112,7 +114,7 @@ export default function RegisterPage() {
   };
 
   const handleChange = (
-    event: ChangeEvent<HTMLInputElement>,
+    event: ChangeEvent<HTMLInputElement | HTMLSelectElement>,
   ) => {
     const {
       name,
@@ -143,6 +145,8 @@ export default function RegisterPage() {
 
     const companyName =
       formData.companyName.trim();
+
+    const businessType = formData.businessType.trim() || "other";
 
     const fullName =
       formData.fullName.trim();
@@ -263,7 +267,7 @@ export default function RegisterPage() {
 
     const payload: RegisterRequest = {
   business_name: companyName,
-  business_type: "other",
+  business_type: businessType,
   owner_name: fullName,
   username,
   email,
@@ -586,6 +590,32 @@ console.log("Registration payload:", payload);
                       required
                       className="h-11 ps-10"
                     />
+                  </FormField>
+
+                  <FormField
+                    id="businessType"
+                    label={isArabic ? "مجال النشاط" : "Business type"}
+                    icon={<Building2 className="size-4" />}
+                  >
+                    <select
+                      id="businessType"
+                      name="businessType"
+                      value={formData.businessType}
+                      onChange={handleChange}
+                      disabled={isLoading}
+                      className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    >
+                      <option value="restaurant">{isArabic ? "مطعم" : "Restaurant"}</option>
+                      <option value="cafe">{isArabic ? "كافيه" : "Cafe"}</option>
+                      <option value="retail">{isArabic ? "تجزئة" : "Retail"}</option>
+                      <option value="fashion">{isArabic ? "ملابس وأزياء" : "Fashion"}</option>
+                      <option value="perfume">{isArabic ? "عطور" : "Perfume"}</option>
+                      <option value="supermarket">{isArabic ? "سوبر ماركت" : "Supermarket"}</option>
+                      <option value="pharmacy">{isArabic ? "صيدلية" : "Pharmacy"}</option>
+                      <option value="manufacturing">{isArabic ? "تصنيع" : "Manufacturing"}</option>
+                      <option value="services">{isArabic ? "خدمات" : "Services"}</option>
+                      <option value="other">{isArabic ? "أعمال عامة" : "General business"}</option>
+                    </select>
                   </FormField>
 
                   <FormField

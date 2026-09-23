@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -14,6 +14,11 @@ class PartnerCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     partner_type: PartnerType = "customer"
     tax_number: str | None = None
+    commercial_registration_number: str | None = None
+    tax_authority: str | None = None
+    eta_registration_status: str = Field(default="not_configured", max_length=30)
+    eta_party_id: str | None = None
+    eta_last_verified_at: datetime | None = None
     phone: str | None = None
     email: str | None = None
     credit_limit: Decimal = Field(default=0, ge=0)

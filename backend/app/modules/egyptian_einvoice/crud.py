@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.modules.audit.service import record_audit_event
-from app.modules.commerce.models import SalesDocument
+from app.modules.commerce.models import BusinessPartner, SalesDocument
 from app.modules.companies.models import Company
 from .constants import ETA_DOCUMENT_SUBMISSION_PATH, ETA_DOCUMENT_PATH_TEMPLATE, ETA_SUBMISSION_PATH_TEMPLATE, SUPPORTED_STATUSES
 from .models import EgyptianEInvoiceDocument
@@ -93,14 +93,39 @@ def create_document(db: Session, *, tenant_id: int, company_id: int, source_type
         raise ValueError("ETA source sales document does not belong to the company")
     if source.document_type not in {"invoice", "credit_note"}:
         raise ValueError("Only sales invoices and credit notes can be submitted to ETA")
+
+    partner = db.scalar(select(BusinessPartner).where(
+        BusinessPartner.id == source.partner_id,
+        BusinessPartner.company_id == company_id,
+        BusinessPartner.partner_type.in_({"customer", "both"}),
+    ))
+    if partner is None:
+        raise ValueError("ETA source invoice customer does not belong to the company")
+
+    issuer_id = (company.eta_taxpayer_id or company.tax_id or "").strip()
+    receiver_id = (partner.eta_party_id or partner.tax_number or "").strip()
+    if not issuer_id:
+        raise ValueError("Company ETA taxpayer ID / tax registration number is required before ETA submission")
+    if not receiver_id:
+        raise ValueError("Customer ETA party ID / tax registration number is required before ETA submission")
+
+    try:
+        payload = json.loads(signed_payload)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise ValueError("Signed ETA payload must be valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("Signed ETA payload must be a JSON object")
+
+    issuer = payload.get("issuer")
+    receiver = payload.get("receiver")
+    if not isinstance(issuer, dict) or str(issuer.get("id") or "").strip() != issuer_id:
+        raise ValueError("Signed ETA payload issuer.id does not match the company's tax identity")
+    if not isinstance(receiver, dict) or str(receiver.get("id") or "").strip() != receiver_id:
+        raise ValueError("Signed ETA payload receiver.id does not match the customer's tax identity")
     if normalized_document_type not in {"invoice", "credit_note"} or normalized_document_type != source.document_type:
         raise ValueError("ETA document type does not match the source sales document")
     if not internal_number.strip():
         raise ValueError("ETA internal number is required")
-    try:
-        json.loads(signed_payload)
-    except (TypeError, json.JSONDecodeError) as exc:
-        raise ValueError("Signed ETA payload must be valid JSON") from exc
     obj = EgyptianEInvoiceDocument(
         tenant_id=tenant_id,
         company_id=company_id,

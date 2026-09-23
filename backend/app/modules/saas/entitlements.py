@@ -14,9 +14,9 @@ from app.modules.identity.models import User
 from app.modules.inventory.items.models import InventoryItem
 from app.modules.saas.models import PlanModule, Subscription, SubscriptionPlan, SystemModule, Tenant, TenantModule
 
-CORE_MODULES = {"dashboard", "users", "companies", "branches"}
+from app.modules.saas.trial_modules import CORE_TRIAL_MODULES, trial_modules_for_business
 
-
+CORE_MODULES = CORE_TRIAL_MODULES
 def _active_subscription(db: Session, tenant_id: int) -> Subscription | None:
     now = datetime.now(timezone.utc)
     return db.scalar(
@@ -40,8 +40,15 @@ def tenant_has_module(db: Session, tenant_id: int, module_code: str) -> bool:
     subscription = _active_subscription(db, tenant_id)
     if subscription is None:
         return False
+    tenant = db.get(Tenant, tenant_id)
+    if tenant is None:
+        return False
     if module_code in CORE_MODULES:
         return True
+    if tenant.is_trial:
+        allowed_codes = trial_modules_for_business(tenant.business_type)
+        if module_code not in allowed_codes:
+            return False
     module = db.scalar(select(SystemModule).where(SystemModule.code == module_code, SystemModule.is_active.is_(True)))
     if module is None:
         return False
