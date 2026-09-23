@@ -24,15 +24,11 @@ from app.modules.companies.models import Company
 from app.modules.branches.models import Branch
 
 # Identity models.
-# User lives exclusively in the identity module. The legacy
-# app.modules.auth.models.User duplicate has been removed so SQLAlchemy
-# has a single authoritative mapper for the users table.
 from app.modules.identity.models.user import User
-from app.modules.roles.models import (
-    Permission,
-    Role,
-    role_permissions,
-)
+from app.modules.roles.models import Permission, Role, role_permissions
+
+# Legal models.
+from app.modules.legal.models import LegalAcceptance, LegalDocument
 
 # Restaurant models.
 from app.modules.restaurant.models import (
@@ -50,64 +46,16 @@ from app.modules.accounting.chart_of_accounts.models import (
     AccountingSettings,
     NaturalAccount,
 )
-
-from app.modules.transactions.models import (
-    BusinessTransaction,
-    NumberSequence,
-    TransactionEvent,
-)
-
-from app.modules.accounting.fiscal_years.models import (
-    AccountingPeriod,
-    FiscalYear,
-)
-
-from app.modules.accounting.journals.models import (
-    AccountingJournal,
-    JournalEntry,
-    JournalEntryLine,
-)
+from app.modules.transactions.models import BusinessTransaction, NumberSequence, TransactionEvent
+from app.modules.accounting.fiscal_years.models import AccountingPeriod, FiscalYear
+from app.modules.accounting.journals.models import AccountingJournal, JournalEntry, JournalEntryLine
 
 __all__ = [
-    # SaaS
-    "Tenant",
-    "SubscriptionPlan",
-    "Subscription",
-    "SystemModule",
-    "PlanModule",
-    "TenantModule",
-
-    # Platform
-    "Plan",
-
-    # Organization
-    "Company",
-    "Branch",
-
-    # Identity
-    "User",
-    "Role",
-    "Permission",
-    "role_permissions",
-
-    # Restaurant
-    "Floor",
-    "RestaurantTable",
-    "PreparationStation",
-    "OrderType",
-
-    # Accounting
-    "AccountingDepartment",
-    "AccountingCostCenter",
-    "NaturalAccount",
-    "AccountCombination",
-    "AccountingSettings",
-    "NumberSequence",
-    "BusinessTransaction",
-    "TransactionEvent",
-    "FiscalYear",
-    "AccountingPeriod",
-    "AccountingJournal",
-    "JournalEntry",
-    "JournalEntryLine",
+    "Tenant", "SubscriptionPlan", "Subscription", "SystemModule", "PlanModule", "TenantModule",
+    "Plan", "Company", "Branch", "User", "Role", "Permission", "role_permissions",
+    "LegalDocument", "LegalAcceptance",
+    "Floor", "RestaurantTable", "PreparationStation", "OrderType",
+    "AccountingDepartment", "AccountingCostCenter", "NaturalAccount", "AccountCombination", "AccountingSettings",
+    "NumberSequence", "BusinessTransaction", "TransactionEvent", "FiscalYear", "AccountingPeriod",
+    "AccountingJournal", "JournalEntry", "JournalEntryLine",
 ]
