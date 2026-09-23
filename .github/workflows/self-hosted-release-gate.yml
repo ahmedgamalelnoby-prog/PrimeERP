@@ -101,6 +101,7 @@ jobs:
             'DEBUG=false'
             'ETA_ENABLED=false'
             'WHATSAPP_ENABLED=false'
+            'FRONTEND_HOST_PORT=3001'
           ) | Set-Content -Encoding utf8 .env
           "PRIMEERP_CI_POSTGRES_PASSWORD=$pgPassword" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "PRIMEERP_CI_SECRET_KEY=$secretKey" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
@@ -222,6 +223,52 @@ jobs:
           $ErrorActionPreference = 'Stop'
           docker compose build --pull migrate backend backend-test report-worker frontend
 
+
+      - name: Reclaim PrimeERP Docker resources
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+        run: |
+          $ErrorActionPreference = 'Continue'
+
+          # Reclaim only PrimeERP-owned containers/resources left by an interrupted CI run.
+          docker compose down -v --remove-orphans
+
+          $staleContainers = @(
+            'primeerp-db',
+            'primeerp-migrate',
+            'primeerp-backend',
+            'primeerp-backend-test',
+            'primeerp-report-worker',
+            'primeerp-frontend'
+          )
+
+          foreach ($container in $staleContainers) {
+            docker rm -f $container 2>$null
+          }
+
+          Write-Host 'PrimeERP Docker resources reclaimed.'
+
+      - name: Check frontend host port
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+        env:
+          FRONTEND_HOST_PORT: "3001"
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $listeners = Get-NetTCPConnection -LocalPort ([int]$env:FRONTEND_HOST_PORT) -State Listen -ErrorAction SilentlyContinue
+
+          if ($listeners) {
+            $details = @()
+            foreach ($listener in $listeners) {
+              $process = Get-Process -Id $listener.OwningProcess -ErrorAction SilentlyContinue
+              $name = if ($process) { $process.ProcessName } else { 'unknown' }
+              $details += "PID $($listener.OwningProcess): $name"
+            }
+            $details | ForEach-Object { Write-Host $_ }
+            throw "Frontend host port $env:FRONTEND_HOST_PORT is already in use on the self-hosted runner."
+          }
+
+          Write-Host "Frontend host port $env:FRONTEND_HOST_PORT is available."
+
       - name: Start database and run migrations
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
@@ -263,7 +310,7 @@ jobs:
             $frontendStatus = docker inspect -f '{{.State.Health.Status}}' primeerp-frontend 2>$null
             $workerStatus = docker inspect -f '{{.State.Status}}' primeerp-report-worker 2>$null
             if ($backendStatus -eq 'healthy' -and $frontendStatus -eq 'healthy' -and $workerStatus -eq 'running') {
-              Invoke-WebRequest -UseBasicParsing http://127.0.0.1:3000/ | Out-Null
+              Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:$env:FRONTEND_HOST_PORT/" | Out-Null
               Write-Host 'Runtime health: PASS'
               exit 0
             }
