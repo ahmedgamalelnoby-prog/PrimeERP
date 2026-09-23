@@ -15,6 +15,19 @@ from app.modules.identity.services.refresh_token_service import RefreshTokenReus
 from app.modules.identity.services.token_service import token_service
 from app.modules.saas.models import Subscription, SystemModule, Tenant, TenantModule
 
+TRIAL_BUSINESS_MODULES = {
+    "restaurant": {"dashboard","users","companies","branches","accounting","sales","inventory","purchasing","restaurant","pos","reports"},
+    "cafe": {"dashboard","users","companies","branches","accounting","sales","inventory","purchasing","restaurant","pos","reports"},
+    "retail": {"dashboard","users","companies","branches","accounting","sales","inventory","purchasing","crm","pos","shipping","reports"},
+    "fashion": {"dashboard","users","companies","branches","accounting","sales","inventory","purchasing","crm","pos","shipping","reports"},
+    "perfume": {"dashboard","users","companies","branches","accounting","sales","inventory","purchasing","crm","pos","manufacturing","shipping","reports"},
+    "manufacturing": {"dashboard","users","companies","branches","accounting","sales","inventory","purchasing","manufacturing","reports"},
+    "supermarket": {"dashboard","users","companies","branches","accounting","sales","inventory","purchasing","pos","crm","shipping","reports"},
+    "pharmacy": {"dashboard","users","companies","branches","accounting","sales","inventory","purchasing","reports"},
+    "services": {"dashboard","users","companies","branches","accounting","sales","crm","reports"},
+    "other": {"dashboard","users","companies","branches","accounting","reports"},
+ }
+
 
 class AuthenticationService:
     LOGIN_WINDOW_MINUTES = 10
@@ -244,10 +257,15 @@ class AuthenticationService:
 
     @staticmethod
     def _get_enabled_modules(db: Session, tenant_id: int) -> list[str]:
+        tenant = db.get(Tenant, tenant_id)
         rows = db.query(SystemModule.code).join(TenantModule, TenantModule.module_id == SystemModule.id).filter(
             TenantModule.tenant_id == tenant_id, TenantModule.is_enabled.is_(True), SystemModule.is_active.is_(True)
         ).order_by(SystemModule.display_order.asc()).all()
-        return [row[0] for row in rows]
+        enabled = [row[0] for row in rows]
+        if tenant is not None and tenant.is_trial:
+            allowed = TRIAL_BUSINESS_MODULES.get(tenant.business_type, TRIAL_BUSINESS_MODULES["other"])
+            enabled = [code for code in enabled if code in allowed]
+        return enabled
 
     @staticmethod
     def _raise_invalid_credentials() -> None:
