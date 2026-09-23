@@ -53,8 +53,6 @@ export const navigationItems: NavigationItem[] = [
  {id:"saas",label:"SaaS Administration",labelAr:"منصة SaaS",type:"group",icon:BadgeDollarSign,module:"saas",visible:true,order:14,children:[
   {id:"saas-dashboard",label:"SaaS Overview",labelAr:"نظرة عامة",type:"item",path:"/saas",icon:Gauge,module:"saas",visible:true,order:1,isNew:true},
   {id:"plans",label:"Plans & Entitlements",labelAr:"الباقات والاستحقاقات",type:"item",path:"/platform/plans",icon:BadgeDollarSign,permission:"plans.view",module:"saas",visible:true,order:2},
-  {id:"saas-subscriptions",label:"Subscriptions",labelAr:"الاشتراكات",type:"item",path:"/subscriptions",icon:Wallet,module:"saas",visible:true,order:3},
-  {id:"saas-tenants",label:"Tenants",labelAr:"العملاء والشركات",type:"item",path:"/platform/tenants",icon:Building2,module:"saas",visible:true,order:4},
  ]},
  {id:"reports",label:"Reports",labelAr:"التقارير",type:"item",path:"/reports",icon:BarChart3,permission:"reports.view",module:"reports",visible:true,order:14},
  {id:"settings",label:"Settings",labelAr:"الإعدادات",type:"item",path:"/settings",icon:Settings,permission:"settings.view",module:"settings",visible:true,order:15},
