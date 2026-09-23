@@ -88,6 +88,7 @@ export function AuthProvider({
     usernameOrEmail: string,
     password: string,
     tenantSlug: string | null = null,
+    tenantName: string | null = null,
   ): Promise<void> => {
     const normalizedLogin =
       usernameOrEmail.trim();
@@ -96,8 +97,8 @@ export function AuthProvider({
       await authService.login({
         login: normalizedLogin,
         password,
-        tenant_slug:
-          tenantSlug?.trim() || null,
+        tenant_slug: tenantSlug?.trim() || null,
+        tenant_name: tenantName?.trim() || null,
       });
 
     setUser(response.user);
