@@ -50,8 +50,12 @@ export const navigationItems: NavigationItem[] = [
   {id:"hotel-revenue",label:"Hotel Revenue",labelAr:"إيرادات الفنادق",type:"item",path:"/hospitality/revenue",icon:BadgeDollarSign,permission:"hotel_revenue.view",module:"hospitality",visible:true,order:2},
   {id:"hotel-profit-share",label:"Profit Share",labelAr:"نسب الأرباح",type:"item",path:"/hospitality/profit-share",icon:BarChart3,permission:"hotel_profit_share.view",module:"hospitality",visible:true,order:3}]},
  {id:"shipping",label:"Shipping",labelAr:"الشحن",type:"group",icon:Truck,module:"shipping",visible:true,order:13,children:[{id:"shipping-status-settings",label:"Status Settings",labelAr:"إعدادات حالات الشحن",type:"item",path:"/shipping/settings",icon:Settings,permission:"shipping.access",module:"shipping",visible:true,order:1},{id:"shipping-pricing",label:"Carrier Pricing",labelAr:"تسعير شركات الشحن",type:"item",path:"/shipping/pricing",icon:Calculator,permission:"shipping.access",module:"shipping",visible:true,order:2},{id:"shipping-settlements",label:"Settlements",labelAr:"تسويات شركات الشحن",type:"item",path:"/shipping/settlements",icon:Wallet,permission:"shipping.access",module:"shipping",visible:true,order:3},{id:"shipping-reconciliation",label:"Carrier Reconciliation",labelAr:"تقرير مواقف شركات الشحن",type:"item",path:"/shipping/reconciliation",icon:BarChart3,permission:"shipping.access",module:"shipping",visible:true,order:4}]},
- {id:"saas",label:"SaaS Administration",labelAr:"إدارة SaaS",type:"group",icon:BadgeDollarSign,module:"saas",visible:true,order:14,children:[
-  {id:"plans",label:"Plans",labelAr:"الباقات",type:"item",path:"/platform/plans",icon:BadgeDollarSign,permission:"plans.view",module:"saas",visible:true,order:1}]},
+ {id:"saas",label:"SaaS Administration",labelAr:"منصة SaaS",type:"group",icon:BadgeDollarSign,module:"saas",visible:true,order:14,children:[
+  {id:"saas-dashboard",label:"SaaS Overview",labelAr:"نظرة عامة",type:"item",path:"/saas",icon:Gauge,module:"saas",visible:true,order:1,isNew:true},
+  {id:"plans",label:"Plans & Entitlements",labelAr:"الباقات والاستحقاقات",type:"item",path:"/platform/plans",icon:BadgeDollarSign,permission:"plans.view",module:"saas",visible:true,order:2},
+  {id:"saas-subscriptions",label:"Subscriptions",labelAr:"الاشتراكات",type:"item",path:"/subscriptions",icon:Wallet,module:"saas",visible:true,order:3},
+  {id:"saas-tenants",label:"Tenants",labelAr:"العملاء والشركات",type:"item",path:"/platform/tenants",icon:Building2,module:"saas",visible:true,order:4},
+ ]},
  {id:"reports",label:"Reports",labelAr:"التقارير",type:"item",path:"/reports",icon:BarChart3,permission:"reports.view",module:"reports",visible:true,order:14},
  {id:"settings",label:"Settings",labelAr:"الإعدادات",type:"item",path:"/settings",icon:Settings,permission:"settings.view",module:"settings",visible:true,order:15},
 ];
