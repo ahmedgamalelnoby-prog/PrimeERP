@@ -4,6 +4,7 @@ export interface LoginPayload {
   login: string;
   password: string;
   tenant_slug?: string | null;
+  tenant_name?: string | null;
 }
 
 export interface LoginResponse {
