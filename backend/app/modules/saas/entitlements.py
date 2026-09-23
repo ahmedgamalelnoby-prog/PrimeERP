@@ -15,6 +15,19 @@ from app.modules.inventory.items.models import InventoryItem
 from app.modules.saas.models import PlanModule, Subscription, SubscriptionPlan, SystemModule, Tenant, TenantModule
 
 CORE_MODULES = {"dashboard", "users", "companies", "branches"}
+TRIAL_BUSINESS_MODULES: dict[str, set[str]] = {
+    "restaurant": {"dashboard","users","companies","branches","accounting","sales","inventory","purchasing","restaurant","pos","reports"},
+    "cafe": {"dashboard","users","companies","branches","accounting","sales","inventory","purchasing","restaurant","pos","reports"},
+    "retail": {"dashboard","users","companies","branches","accounting","sales","inventory","purchasing","crm","pos","shipping","reports"},
+    "fashion": {"dashboard","users","companies","branches","accounting","sales","inventory","purchasing","crm","pos","shipping","reports"},
+    "perfume": {"dashboard","users","companies","branches","accounting","sales","inventory","purchasing","crm","pos","manufacturing","shipping","reports"},
+    "manufacturing": {"dashboard","users","companies","branches","accounting","sales","inventory","purchasing","manufacturing","reports"},
+    "supermarket": {"dashboard","users","companies","branches","accounting","sales","inventory","purchasing","pos","crm","shipping","reports"},
+    "pharmacy": {"dashboard","users","companies","branches","accounting","sales","inventory","purchasing","reports"},
+    "services": {"dashboard","users","companies","branches","accounting","sales","crm","reports"},
+    "other": {"dashboard","users","companies","branches","accounting","reports"},
+}
+
 
 
 def _active_subscription(db: Session, tenant_id: int) -> Subscription | None:
@@ -40,8 +53,15 @@ def tenant_has_module(db: Session, tenant_id: int, module_code: str) -> bool:
     subscription = _active_subscription(db, tenant_id)
     if subscription is None:
         return False
+    tenant = db.get(Tenant, tenant_id)
+    if tenant is None:
+        return False
     if module_code in CORE_MODULES:
         return True
+    if tenant.is_trial:
+        allowed_codes = TRIAL_BUSINESS_MODULES.get(tenant.business_type, TRIAL_BUSINESS_MODULES["other"])
+        if module_code not in allowed_codes:
+            return False
     module = db.scalar(select(SystemModule).where(SystemModule.code == module_code, SystemModule.is_active.is_(True)))
     if module is None:
         return False
