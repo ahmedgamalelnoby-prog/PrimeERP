@@ -267,7 +267,7 @@ export default function RegisterPage() {
 
     const payload: RegisterRequest = {
   business_name: companyName,
-  business_type: "other",
+  business_type: businessType,
   owner_name: fullName,
   username,
   email,
