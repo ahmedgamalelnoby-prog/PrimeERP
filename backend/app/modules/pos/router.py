@@ -15,6 +15,7 @@ from app.modules.commerce.schemas import DocumentCreate, DocumentLineCreate, Pay
 from app.modules.commerce.service import commerce_service
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models.user import User
+from app.modules.saas.entitlements import require_module
 from app.modules.inventory.items.models import InventoryItem
 from app.modules.inventory.warehouses.models import InventoryWarehouse
 from app.modules.jurisdiction.commerce_guard import capture_document_tax_snapshot, validate_document_tax_snapshot
@@ -28,7 +29,7 @@ from app.modules.restaurant.models import (
     PosTerminalMenu,
 )
 
-router = APIRouter(prefix="/pos", tags=["POS"], dependencies=[Depends(require_permission("commerce.access"))])
+router = APIRouter(prefix="/pos", tags=["POS"], dependencies=[Depends(require_permission("commerce.access")), Depends(require_module("pos"))])
 
 
 class OutletCreate(BaseModel):
