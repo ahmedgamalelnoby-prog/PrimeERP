@@ -5,6 +5,7 @@ export interface LoginRequest {
   login: string;
   password: string;
   tenant_slug?: string | null;
+  tenant_name?: string | null;
 }
 
 export interface RegisterRequest {
@@ -88,13 +89,14 @@ async function login(
     );
   }
 
-  const tenantSlug =
-    payload.tenant_slug?.trim() || null;
+  const tenantSlug = payload.tenant_slug?.trim() || null;
+  const tenantName = payload.tenant_name?.trim() || null;
 
   const requestPayload: LoginRequest = {
     login: loginValue,
     password: payload.password,
     tenant_slug: tenantSlug,
+    tenant_name: tenantName,
   };
 
   const response =
