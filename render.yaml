@@ -30,7 +30,7 @@ services:
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_MODEL
-        value: gpt-5.6-mini
+        value: gpt-5.6-luna
 
   - type: web
     name: primeerp-web
