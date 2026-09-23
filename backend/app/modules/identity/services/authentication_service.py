@@ -13,9 +13,7 @@ from app.modules.identity.schemas.auth import LoginRequest
 from app.modules.identity.services.password_service import password_service
 from app.modules.identity.services.refresh_token_service import RefreshTokenReuseError, refresh_token_service
 from app.modules.identity.services.token_service import token_service
-from app.modules.saas.models import Subscription, SystemModule, Tenant, TenantModule
-
-TRIAL_BUSINESS_MODULES = {
+            allowed = TRIAL_BUSINESS_MODULES.get(tenant.business_type, TRIAL_BUSINESS_MODULES["other"])
     "restaurant": {"dashboard","users","companies","branches","accounting","sales","inventory","purchasing","restaurant","pos","reports"},
     "cafe": {"dashboard","users","companies","branches","accounting","sales","inventory","purchasing","restaurant","pos","reports"},
     "retail": {"dashboard","users","companies","branches","accounting","sales","inventory","purchasing","crm","pos","shipping","reports"},
