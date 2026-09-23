@@ -28,6 +28,8 @@ from app.modules.saas.models import (
 from app.modules.saas.schemas import TenantRegistrationRequest
 
 
+CORE_TRIAL_MODULES = {"dashboard", "users", "companies", "branches", "accounting", "reports"}
+
 BUSINESS_MODULES: dict[str, set[str]] = {
     "restaurant": {"dashboard", "users", "companies", "branches", "accounting", "sales", "inventory", "purchasing", "restaurant", "pos", "reports"},
     "cafe": {"dashboard", "users", "companies", "branches", "accounting", "sales", "inventory", "purchasing", "restaurant", "pos", "reports"},
@@ -35,6 +37,11 @@ BUSINESS_MODULES: dict[str, set[str]] = {
     "fashion": {"dashboard", "users", "companies", "branches", "accounting", "sales", "inventory", "purchasing", "crm", "pos", "shipping", "reports"},
     "perfume": {"dashboard", "users", "companies", "branches", "accounting", "sales", "inventory", "purchasing", "crm", "pos", "manufacturing", "shipping", "reports"},
     "manufacturing": {"dashboard", "users", "companies", "branches", "accounting", "sales", "inventory", "purchasing", "manufacturing", "reports"},
+    "supermarket": {"dashboard", "users", "companies", "branches", "accounting", "sales", "inventory", "purchasing", "pos", "crm", "shipping", "reports"},
+    "pharmacy": {"dashboard", "users", "companies", "branches", "accounting", "sales", "inventory", "purchasing", "reports"},
+    "services": {"dashboard", "users", "companies", "branches", "accounting", "sales", "crm", "reports"},
+    # Unknown/general businesses receive only the safe operational baseline.
+    "other": CORE_TRIAL_MODULES,
 }
 
 
@@ -84,9 +91,7 @@ def resolve_enabled_modules(db: Session, plan: SubscriptionPlan, business_type: 
         PlanModule.is_enabled.is_(True),
         SystemModule.is_active.is_(True),
     ).all()
-    allowed_codes = BUSINESS_MODULES.get(business_type)
-    if not allowed_codes:
-        return plan_modules
+    allowed_codes = BUSINESS_MODULES.get(business_type, CORE_TRIAL_MODULES)
     return [module for module in plan_modules if module.is_core or module.code in allowed_codes]
 
 
