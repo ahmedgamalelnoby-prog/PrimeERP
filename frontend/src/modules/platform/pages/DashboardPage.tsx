@@ -1,5 +1,6 @@
 import { CalendarDays, CheckCircle2, RefreshCw, ShieldCheck, Sparkles, Users, Boxes, CircleDollarSign } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useAuth } from "@/modules/identity/hooks/useAuth";
 
 import {
   BusinessUnitsSummary,
@@ -11,6 +12,8 @@ import {
 import { dashboardStatistics } from "../data/dashboard.data";
 
 export default function DashboardPage() {
+  const { user } = useAuth();
+  const companyName = user?.tenant_name || "مساحة العمل";
   const currentDate = new Intl.DateTimeFormat("ar-EG", {
     weekday: "long",
     year: "numeric",
@@ -28,7 +31,7 @@ export default function DashboardPage() {
             <span className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-bold">
               <Sparkles className="h-4 w-4" /> PrimeERP Azul
             </span>
-            <h1 className="mt-4 text-3xl font-black tracking-tight md:text-4xl">لوحة القيادة</h1>
+            <h1 className="mt-4 text-3xl font-black tracking-tight md:text-4xl">{companyName}</h1><p className="mt-2 text-lg font-bold text-cyan-100">لوحة القيادة</p>
             <p className="mt-3 max-w-2xl text-sm leading-7 text-blue-50/90">
               رؤية موحدة للأداء المالي والتشغيلي مع وصول سريع إلى الموديولات التي تحتاجها اليوم.
             </p>
