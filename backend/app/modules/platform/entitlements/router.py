@@ -9,6 +9,7 @@ from app.database.session import get_db
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.platform.plans.models import Plan
+from app.modules.platform.plans.catalog_sync import sync_canonical_plans
 from app.modules.saas.models import PlanModule, SubscriptionPlan, SystemModule, TenantModule
 
 router = APIRouter(prefix="/platform/entitlements", tags=["Platform Entitlements"])
@@ -45,6 +46,17 @@ class LimitPayload(BaseModel):
 LIMIT_FIELDS = ("max_users", "max_companies", "max_branches", "max_products", "max_integrations", "storage_limit_mb")
 
 
+def resolve_legacy_plan(db: Session, plan_id: int) -> tuple[Plan | None, SubscriptionPlan | None]:
+    """Resolve canonical platform plans to legacy subscription plans by code."""
+    canonical = db.get(Plan, plan_id)
+    if canonical is None or canonical.is_deleted:
+        return None, db.get(SubscriptionPlan, plan_id)
+    legacy = db.scalar(select(SubscriptionPlan).where(SubscriptionPlan.code == canonical.code))
+    return canonical, legacy
+
+
+
+
 @router.get("/modules")
 def list_modules(_: User = Depends(require_platform_admin), db: Session = Depends(get_db)):
     modules = db.scalars(select(SystemModule).order_by(SystemModule.display_order, SystemModule.id)).all()
@@ -53,20 +65,26 @@ def list_modules(_: User = Depends(require_platform_admin), db: Session = Depend
 
 @router.get("/plans/{plan_id}/modules")
 def list_plan_modules(plan_id: int, _: User = Depends(require_platform_admin), db: Session = Depends(get_db)):
-    if db.get(SubscriptionPlan, plan_id) is None:
+    sync_canonical_plans(db)
+    canonical, legacy = resolve_legacy_plan(db, plan_id)
+    if canonical is None and legacy is None:
         raise HTTPException(status_code=404, detail="Subscription plan not found")
+    legacy_id = legacy.id
     rows = db.execute(
         select(SystemModule, PlanModule.is_enabled)
-        .outerjoin(PlanModule, (PlanModule.module_id == SystemModule.id) & (PlanModule.plan_id == plan_id))
+        .outerjoin(PlanModule, (PlanModule.module_id == SystemModule.id) & (PlanModule.plan_id == legacy_id))
         .order_by(SystemModule.display_order, SystemModule.id)
     ).all()
-    return [{"module_id": m.id, "code": m.code, "is_core": m.is_core, "is_enabled": enabled is True} for m, enabled in rows]
+    return [{"module_id": m.id, "code": m.code, "name_ar": m.name_ar, "name_en": m.name_en, "is_core": m.is_core, "is_enabled": enabled is True} for m, enabled in rows]
 
 
 @router.put("/plans/{plan_id}/modules/{module_id}")
 def set_plan_module(plan_id: int, module_id: int, payload: PlanModulePayload, _: User = Depends(require_platform_admin), db: Session = Depends(get_db)):
-    if db.get(SubscriptionPlan, plan_id) is None:
+    sync_canonical_plans(db)
+    _, legacy = resolve_legacy_plan(db, plan_id)
+    if legacy is None:
         raise HTTPException(status_code=404, detail="Subscription plan not found")
+    plan_id = legacy.id
     if db.get(SystemModule, module_id) is None:
         raise HTTPException(status_code=404, detail="System module not found")
     row = db.scalar(select(PlanModule).where(PlanModule.plan_id == plan_id, PlanModule.module_id == module_id))
@@ -118,8 +136,8 @@ def set_tenant_module(tenant_id: int, module_id: int, payload: TenantModulePaylo
 
 @router.patch("/plans/{plan_id}/limits")
 def update_plan_limits(plan_id: int, payload: LimitPayload, _: User = Depends(require_platform_admin), db: Session = Depends(get_db)):
-    canonical = db.get(Plan, plan_id)
-    legacy = db.get(SubscriptionPlan, plan_id)
+    sync_canonical_plans(db)
+    canonical, legacy = resolve_legacy_plan(db, plan_id)
     if canonical is None and legacy is None:
         raise HTTPException(status_code=404, detail="Subscription plan not found")
     values = payload.model_dump(exclude_unset=True)
@@ -135,8 +153,8 @@ def update_plan_limits(plan_id: int, payload: LimitPayload, _: User = Depends(re
 
 @router.get("/plans/{plan_id}/limits")
 def get_plan_limits(plan_id: int, _: User = Depends(require_platform_admin), db: Session = Depends(get_db)):
-    canonical = db.get(Plan, plan_id)
-    legacy = db.get(SubscriptionPlan, plan_id)
+    sync_canonical_plans(db)
+    canonical, legacy = resolve_legacy_plan(db, plan_id)
     if canonical is None and legacy is None:
         raise HTTPException(status_code=404, detail="Subscription plan not found")
     source = canonical or legacy
