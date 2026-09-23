@@ -105,6 +105,7 @@ jobs:
           ) | Set-Content -Encoding utf8 .env
           "PRIMEERP_CI_POSTGRES_PASSWORD=$pgPassword" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "PRIMEERP_CI_SECRET_KEY=$secretKey" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "FRONTEND_HOST_PORT=3001" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Backend compile and architecture checks
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
@@ -302,6 +303,8 @@ jobs:
 
       - name: Validate runtime health
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+        env:
+          FRONTEND_HOST_PORT: "3001"
         run: |
           $ErrorActionPreference = 'Stop'
           $deadline = (Get-Date).AddMinutes(10)
