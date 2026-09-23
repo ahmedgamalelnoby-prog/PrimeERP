@@ -58,16 +58,31 @@ export const navigationItems: NavigationItem[] = [
  {id:"settings",label:"Settings",labelAr:"الإعدادات",type:"item",path:"/settings",icon:Settings,permission:"settings.view",module:"settings",visible:true,order:15},
 ];
 
-export function getVisibleNavigationItems(): NavigationItem[] {
+const TENANT_CORE_NAVIGATION = new Set(["dashboard", "users", "companies", "branches", "settings", "helpdesk"]);
+
+function isNavigationAllowed(item: NavigationItem, enabledModules: Set<string>, isPlatformAdmin: boolean): boolean {
+  if (isPlatformAdmin) return true;
+  if (TENANT_CORE_NAVIGATION.has(item.id)) return true;
+  if (item.id === "module-catalog" || item.id === "saas") return false;
+  if (item.id === "reports") return enabledModules.has("reports");
+  if (item.id === "identity") return enabledModules.has("users");
+  if (item.id === "organization") return enabledModules.has("companies") || enabledModules.has("branches");
+  if (item.module) return enabledModules.has(item.module);
+  return true;
+}
+
+export function getVisibleNavigationItems(enabledModuleCodes: string[] = [], isPlatformAdmin = false): NavigationItem[] {
+  const enabledModules = new Set(enabledModuleCodes.map((code) => code.trim().toLowerCase()).filter(Boolean));
   return navigationItems
-    .filter((item) => item.visible !== false)
+    .filter((item) => item.visible !== false && isNavigationAllowed(item, enabledModules, isPlatformAdmin))
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
     .map((item) => ({
       ...item,
       children: item.children
-        ?.filter((child) => child.visible !== false)
+        ?.filter((child) => child.visible !== false && isNavigationAllowed(child, enabledModules, isPlatformAdmin))
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
-    }));
+    }))
+    .filter((item) => item.type !== "group" || Boolean(item.children?.length));
 }
 
 export function findNavigationItemByPath(
