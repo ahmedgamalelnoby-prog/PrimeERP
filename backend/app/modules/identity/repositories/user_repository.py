@@ -104,6 +104,7 @@ class UserRepository(BaseRepository[User]):
         login: str,
         *,
         tenant_slug: str | None = None,
+        tenant_name: str | None = None,
     ) -> list[User]:
         """
         Returns up to two matching users.
@@ -130,8 +131,11 @@ class UserRepository(BaseRepository[User]):
 
         if tenant_slug:
             query = query.where(
-                func.lower(Tenant.slug)
-                == tenant_slug.strip().lower()
+                func.lower(Tenant.slug) == tenant_slug.strip().lower()
+            )
+        if tenant_name:
+            query = query.where(
+                func.lower(Tenant.name) == tenant_name.strip().lower()
             )
 
         query = query.limit(2)
