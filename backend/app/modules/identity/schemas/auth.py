@@ -32,6 +32,12 @@ class LoginRequest(BaseModel):
         max_length=100,
     )
 
+    tenant_name: Optional[str] = Field(
+        default=None,
+        min_length=2,
+        max_length=200,
+    )
+
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str = Field(
