@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 
 revision = "20260911_odoo_module_catalog"
-down_revision = "20260911_commerce_payment_idempotency"
+down_revision = "20260831legal"
 branch_labels = None
 depends_on = None
 
