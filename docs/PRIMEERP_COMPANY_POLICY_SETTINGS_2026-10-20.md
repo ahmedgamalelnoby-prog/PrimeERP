@@ -15,7 +15,7 @@ Company-specific business policies must be data/configuration, not customer-spec
 - This branch has not been runtime-tested locally; the user's Docker/local machine is offline. CI must validate migration graph, API tests and frontend build before pull.
 
 ## Catalog coverage
-The typed registry currently exposes 66 options across General, Accounting, Taxes, Sales, Purchasing, Inventory, HR, Approvals, POS, Manufacturing, CRM, Integrations, and Audit. Exact keys and defaults are in `backend/app/modules/company_settings/registry.py`.
+The typed registry currently exposes 68 options across General, Accounting, Taxes, Sales, Purchasing, Inventory, HR, Approvals, POS, Manufacturing, CRM, Integrations, and Audit. Exact keys and defaults are in `backend/app/modules/company_settings/registry.py`.
 
 ### General
 - Language, date format, timezone, functional currency, multi-currency, mandatory cost center/project, mandatory branch, intercompany transactions.
