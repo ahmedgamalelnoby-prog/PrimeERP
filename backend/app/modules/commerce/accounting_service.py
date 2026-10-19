@@ -12,6 +12,7 @@ from app.modules.accounting.journals.services.journal_service import journal_ser
 from app.modules.commerce.accounting_models import CommerceAccountingSettings
 from app.modules.commerce.models import PurchaseBillReceiptAllocation, PurchaseBillReceiptLink
 from app.modules.companies.models import Company
+from app.modules.company_settings.service import get_company_setting
 from app.modules.branches.models import Branch
 from app.modules.inventory.items.models import InventoryItem
 from app.modules.inventory.stock_moves.models import InventoryStockMove
@@ -41,7 +42,7 @@ class CommerceAccountingService:
         if company is None: return None
         return db.scalar(select(JournalEntry).where(JournalEntry.tenant_id == company.tenant_id, JournalEntry.company_id == company_id, JournalEntry.source_module == "commerce", JournalEntry.source_entity == source_entity, JournalEntry.source_id == source_id))
 
-    def _post(self, db: Session, *, company_id: int, user_id: int, entry_date: date, journal_id: int, entry_number: str, description: str, lines: list[dict], source_entity: str, source_id: int):
+    def _post(self, db: Session, *, company_id: int, user_id: int, entry_date: date, journal_id: int, entry_number: str, description: str, lines: list[dict], source_entity: str, source_id: int, auto_post_policy_key: str | None = None):
         validate_double_entry(lines); validate_source(source_module="commerce", source_entity=source_entity, source_id=source_id)
         settings, tenant_id, period, fiscal_year = self._context(db, company_id, entry_date)
         existing = db.scalar(select(JournalEntry).where(JournalEntry.tenant_id == tenant_id, JournalEntry.company_id == company_id, JournalEntry.source_module == "commerce", JournalEntry.source_entity == source_entity, JournalEntry.source_id == source_id).with_for_update())
@@ -52,14 +53,15 @@ class CommerceAccountingService:
         entry = journal_service.create_draft(db, tenant_id=tenant_id, company_id=company_id, branch_id=settings.default_branch_id, journal_id=journal_id, fiscal_year_id=fiscal_year.id, period_id=period.id, entry_number=entry_number, entry_date=entry_date, description=description, lines=lines, user_id=user_id, source_module="commerce", source_entity=source_entity, source_id=source_id, commit=False)
         journal_service.submit(db, tenant_id=tenant_id, entry_id=entry.id, user_id=user_id, commit=False)
         if journal.requires_approval: journal_service.approve(db, tenant_id=tenant_id, entry_id=entry.id, user_id=user_id, commit=False)
-        if settings.auto_post and journal.auto_post: journal_service.post(db, tenant_id=tenant_id, entry_id=entry.id, user_id=user_id, commit=False)
+        company_auto_post_enabled = auto_post_policy_key is None or get_company_setting(db, company_id, auto_post_policy_key) is True
+        if settings.auto_post and journal.auto_post and company_auto_post_enabled: journal_service.post(db, tenant_id=tenant_id, entry_id=entry.id, user_id=user_id, commit=False)
         return entry
 
     def post_sales_invoice(self, db, document, user_id: int):
         settings = self._settings(db, document.company_id)
         lines = [{"account_combination_id": settings.ar_account_id, "debit": Decimal(document.total), "credit": 0, "description": f"AR {document.number}"}, {"account_combination_id": settings.sales_account_id, "debit": 0, "credit": Decimal(document.subtotal), "description": f"Sales {document.number}"}]
         if Decimal(document.tax_total or 0): lines.append({"account_combination_id": settings.output_vat_account_id, "debit": 0, "credit": Decimal(document.tax_total), "description": f"Output VAT {document.number}"})
-        return self._post(db, company_id=document.company_id, user_id=user_id, entry_date=document.document_date, journal_id=settings.sales_journal_id, entry_number=f"SI-{document.id}", description=f"Sales invoice {document.number}", lines=lines, source_entity="sales_invoice", source_id=document.id)
+        return self._post(db, company_id=document.company_id, user_id=user_id, entry_date=document.document_date, journal_id=settings.sales_journal_id, entry_number=f"SI-{document.id}", description=f"Sales invoice {document.number}", lines=lines, source_entity="sales_invoice", source_id=document.id, auto_post_policy_key="accounting.auto_post_sales_invoice")
 
     def post_sales_credit_note(self, db, document, user_id: int):
         settings = self._settings(db, document.company_id)
@@ -110,7 +112,7 @@ class CommerceAccountingService:
 
     def post_purchase_bill(self, db, document, user_id: int):
         settings = self._settings(db, document.company_id)
-        existing = self._existing_source(db, company_id=document.company_id, source_entity="purchase_bill", source_id=document.id)
+        existing = self._existing_source(db, company_id=document.company_id, source_entity="purchase_bill", source_id=document.id, auto_post_policy_key="accounting.auto_post_purchase_invoice")
         if existing: return existing
         stock_total, expense_total = self._purchase_stock_expense_totals(db, document)
         linked_receipts = self._linked_receipt_ids(db, document)
