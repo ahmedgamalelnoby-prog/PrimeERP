@@ -1,18 +1,22 @@
 from __future__ import annotations
 
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_HALF_EVEN, ROUND_HALF_UP
 
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.modules.accounting.models import TaxRate
+from app.modules.company_settings.service import get_company_setting
 
 CENT = Decimal("0.01")
 
 
-def money(value: Decimal) -> Decimal:
-    return value.quantize(CENT, rounding=ROUND_HALF_UP)
+def money(value: Decimal, rounding_method: str = "half_up") -> Decimal:
+    if rounding_method == "none":
+        return value
+    rounding = ROUND_HALF_EVEN if rounding_method == "bankers" else ROUND_HALF_UP
+    return value.quantize(CENT, rounding=rounding)
 
 
 def calculate_taxes(
@@ -21,7 +25,7 @@ def calculate_taxes(
     company_id: int,
     amount: Decimal,
     tax_ids: list[int],
-    inclusive: bool = False,
+    inclusive: bool | None = None,
 ) -> dict:
     """Calculate VAT/custom taxes and withholding taxes consistently.
 
@@ -29,6 +33,9 @@ def calculate_taxes(
     withholding deduction and never increases the payable invoice total.
     For inclusive pricing, the taxable base is extracted from the tax stack.
     """
+    if inclusive is None:
+        inclusive = get_company_setting(db, company_id, "tax.default_tax_inclusive_pricing") is True
+    rounding_method = str(get_company_setting(db, company_id, "accounting.rounding_method"))
     if amount < 0:
         raise HTTPException(422, "Amount cannot be negative")
     if len(tax_ids) != len(set(tax_ids)):
@@ -62,7 +69,7 @@ def calculate_taxes(
         base = base / divisor
 
     for tax in additive:
-        tax_amount = money(base * Decimal(tax.rate) / Decimal("100"))
+        tax_amount = money(base * Decimal(tax.rate) / Decimal("100"), rounding_method)
         additive_total += tax_amount
         tax_details.append({
             "id": tax.id,
@@ -74,10 +81,10 @@ def calculate_taxes(
             "withholding": False,
         })
 
-    gross = money(base + additive_total)
+    gross = money(base + additive_total, rounding_method)
     withholding_total = Decimal("0")
     for tax in withholding:
-        tax_amount = money(base * Decimal(tax.rate) / Decimal("100"))
+        tax_amount = money(base * Decimal(tax.rate) / Decimal("100"), rounding_method)
         withholding_total += tax_amount
         tax_details.append({
             "id": tax.id,
@@ -89,15 +96,15 @@ def calculate_taxes(
             "withholding": True,
         })
 
-    withholding_total = money(withholding_total)
+    withholding_total = money(withholding_total, rounding_method)
     if withholding_total > gross:
         raise HTTPException(422, "Total withholding tax cannot exceed the gross taxable amount")
 
-    payable = money(gross - withholding_total)
+    payable = money(gross - withholding_total, rounding_method)
     return {
-        "input_amount": money(Decimal(amount)),
-        "taxable_base": money(base),
-        "tax_total": money(additive_total),
+        "input_amount": money(Decimal(amount), rounding_method),
+        "taxable_base": money(base, rounding_method),
+        "tax_total": money(additive_total, rounding_method),
         "gross_total": gross,
         "withholding_total": withholding_total,
         "payable_total": payable,
