@@ -121,6 +121,10 @@ class CommerceService:
         for p in payload.lines:
             item = db.scalar(select(InventoryItem).where(InventoryItem.id == p.item_id, InventoryItem.company_id == payload.company_id, InventoryItem.is_active.is_(True)))
             if not item: raise ValueError(f"Item {p.item_id} not found")
+            if item.item_type in {"stockable", "consumable"} and payload.warehouse_id is None and get_company_setting(
+                db, payload.company_id, "inventory.require_warehouse"
+            ) is True:
+                raise ValueError("Company policy requires a warehouse for stockable/consumable document lines")
             variant_id = getattr(p, "variant_id", None); self._resolve_line_variant(db, company_id=payload.company_id, item=item, variant_id=variant_id)
             explicit_tax_ids = getattr(p, "tax_rate_ids", None); tax_ids = self._resolve_line_tax_ids(db, company_id=payload.company_id, item=item, explicit_tax_ids=explicit_tax_ids, is_sale=is_sale)
             if explicit_tax_ids is None and p.tax_percent != 0: raise ValueError("Tax Master is required for non-zero tax rates")
