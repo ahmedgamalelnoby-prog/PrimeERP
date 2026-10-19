@@ -10,16 +10,16 @@ _RAW = [
     # Company-wide defaults
     ("general.default_language","general","General","enum","ar","Interface language",["ar","en"],"catalog"),
     ("general.date_format","general","General","enum","DD/MM/YYYY","Date display format",["DD/MM/YYYY","MM/DD/YYYY","YYYY-MM-DD"],"catalog"),
-    ("general.timezone","general","General","string","Africa/Cairo","Company timezone",None,"catalog"),
-    ("general.base_currency","general","General","string","EGP","Functional currency code",None,"catalog"),
-    ("general.allow_multi_currency","general","General","bool",True,"Allow foreign-currency transactions",None,"catalog"),
-    ("general.require_cost_center","general","General","bool",False,"Require cost center where supported",None,"catalog"),
+    ("general.timezone","general","General","string","Africa/Cairo","Company timezone",None,"runtime"),
+    ("general.base_currency","general","General","string","EGP","Functional currency code",None,"runtime"),
+    ("general.allow_multi_currency","general","General","bool",True,"Allow foreign-currency transactions",None,"runtime"),
+    ("general.require_cost_center","general","General","bool",False,"Require cost center where supported",None,"runtime"),
     ("general.require_project","general","General","bool",False,"Require project dimension where supported",None,"catalog"),
     ("general.branch_required","general","General","bool",False,"Require branch on company transactions",None,"catalog"),
     ("general.intercompany_enabled","general","General","bool",False,"Enable intercompany workflows",None,"catalog"),
     # Accounting and tax
     ("accounting.period_lock_enabled","accounting","Accounting","bool",True,"Prevent posting into closed periods",None,"catalog"),
-    ("accounting.allow_backdated_entries","accounting","Accounting","bool",False,"Allow backdated entries subject to period controls",None,"catalog"),
+    ("accounting.allow_backdated_entries","accounting","Accounting","bool",False,"Allow backdated entries subject to period controls",None,"runtime"),
     ("accounting.require_journal_approval","accounting","Accounting","bool",True,"Require approval before journal posting",None,"runtime"),
     ("accounting.auto_post_sales_invoice","accounting","Accounting","bool",False,"Automatically post eligible sales invoices",None,"catalog"),
     ("accounting.auto_post_purchase_invoice","accounting","Accounting","bool",False,"Automatically post eligible purchase invoices",None,"catalog"),
@@ -81,8 +81,8 @@ _RAW = [
     ("manufacturing.allow_overproduction","manufacturing","Manufacturing","bool",False,"Allow production above planned quantity",None,"catalog"),
     ("crm.duplicate_customer_check","crm","CRM","bool",True,"Warn/block likely duplicate customers",None,"catalog"),
     ("integrations.auto_sync_enabled","integrations","Integrations","bool",False,"Enable automatic sync for configured integrations",None,"catalog"),
-    ("integrations.retry_limit","integrations","Integrations","int",5,"Retry count for transient integration failures",None,"catalog"),
-    ("integrations.webhook_signature_required","integrations","Integrations","bool",True,"Require signatures for supported inbound webhooks",None,"catalog"),
+    ("integrations.retry_limit","integrations","Integrations","int",5,"Retry count for transient integration failures",None,"runtime"),
+    ("integrations.webhook_signature_required","integrations","Integrations","bool",True,"Require signatures for supported inbound webhooks",None,"runtime"),
     
 ]
 CATALOG: list[dict[str, Any]] = [
