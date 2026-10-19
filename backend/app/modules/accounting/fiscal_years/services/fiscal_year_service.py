@@ -25,6 +25,7 @@ from app.modules.accounting.fiscal_years.schemas import (
     FiscalYearUpdate,
 )
 from app.modules.companies.models import Company
+from app.modules.company_settings.service import get_company_setting
 from app.modules.identity.models import User
 
 
@@ -44,6 +45,12 @@ class FiscalYearService:
             tenant_id=tenant_id,
             company_id=payload.company_id,
         )
+        required_start_month = int(get_company_setting(db, payload.company_id, "accounting.fiscal_year_start_month"))
+        if payload.start_date.month != required_start_month:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Fiscal year must start in company policy month {required_start_month}",
+            )
 
         overlap = (
             fiscal_year_repository
