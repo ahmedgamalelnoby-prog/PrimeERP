@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { BadgeDollarSign, Banknote, BarChart3, Boxes, Building2, Calculator, CalendarRange, CheckSquare, ClipboardCheck, Contact, FileCheck2, FileText, Gauge, Hotel, Landmark, LayoutDashboard, Package, Settings, ShieldCheck, ShoppingCart, Store, Truck, UserCog, Users, UsersRound, Wallet, Warehouse } from "lucide-react";
+import { BadgeDollarSign, Banknote, BarChart3, Boxes, Building2, Calculator, CalendarRange, CheckSquare, ClipboardCheck, Contact, FileCheck2, FileText, Gauge, Hotel, Landmark, LayoutDashboard, Package, Settings, ShieldCheck, SlidersHorizontal, ShoppingCart, Store, Truck, UserCog, Users, UsersRound, Wallet, Warehouse } from "lucide-react";
 
 export type NavigationItemType = "item" | "group" | "separator";
 export interface NavigationItem { id:string; label:string; labelAr:string; type:NavigationItemType; path?:string; icon?:LucideIcon; children?:NavigationItem[]; permission?:string; module?:string; visible?:boolean; disabled?:boolean; isNew?:boolean; comingSoon?:boolean; order?:number; }
