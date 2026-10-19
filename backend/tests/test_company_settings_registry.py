@@ -17,7 +17,17 @@ def test_every_registered_default_passes_its_own_validator(setting):
 
 def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
     runtime_keys = {item["key"] for item in CATALOG if item["status"] == "runtime"}
-    assert runtime_keys == {"inventory.allow_negative_stock", "accounting.require_journal_approval"}
+    assert runtime_keys == {
+        "inventory.allow_negative_stock",
+        "accounting.require_journal_approval",
+        "general.timezone",
+        "general.base_currency",
+        "general.allow_multi_currency",
+        "general.require_cost_center",
+        "accounting.allow_backdated_entries",
+        "integrations.retry_limit",
+        "integrations.webhook_signature_required",
+    }
 
 
 def test_negative_stock_policy_is_company_setting_and_disabled_by_default():
