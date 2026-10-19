@@ -9,6 +9,7 @@ from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.catalog.models import Menu, MenuItem, ProductPrice
 from app.modules.companies.models import Company
+from app.modules.company_settings.service import get_company_setting
 from app.modules.branches.models import Branch
 from app.modules.commerce.models import SalesDocument, SalesLine
 from app.modules.commerce.schemas import DocumentCreate, DocumentLineCreate, PaymentCreate
@@ -101,6 +102,17 @@ class Checkout(BaseModel):
 class RouteStatusUpdate(BaseModel):
     status: str = Field(pattern="^(queued|preparing|ready|served|cancelled)$")
     notes: str | None = None
+
+
+
+
+def _validate_discount_policy(db: Session, company_id: int, discount_percent: Decimal) -> None:
+    if discount_percent <= 0:
+        return
+    allow_without_approval = get_company_setting(db, company_id, "pos.allow_discount_without_approval") is True
+    maximum_without_approval = Decimal(str(get_company_setting(db, company_id, "pos.max_discount_pct_without_approval") or 0))
+    if not allow_without_approval and discount_percent > maximum_without_approval:
+        raise HTTPException(409, f"Discount {discount_percent}% exceeds the company limit of {maximum_without_approval}% without approval")
 
 
 def _company(db: Session, company_id: int, user: User) -> Company:
@@ -390,6 +402,7 @@ def checkout(payload: Checkout, current_user: User = Depends(get_current_user), 
     lines: list[DocumentLineCreate] = []
     routes: list[int | None] = []
     for line in payload.lines:
+        _validate_discount_policy(db, payload.company_id, line.discount_percent)
         if line.menu_item_id:
             if terminal is None:
                 raise HTTPException(422, "terminal_id is required when selling from a menu")
