@@ -27,6 +27,11 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
         "accounting.allow_backdated_entries",
         "integrations.retry_limit",
         "integrations.webhook_signature_required",
+        "accounting.rounding_method",
+        "accounting.fiscal_year_start_month",
+        "tax.default_tax_inclusive_pricing",
+        "inventory.require_bin_location",
+        "workflow.allow_self_approval",
     }
 
 
