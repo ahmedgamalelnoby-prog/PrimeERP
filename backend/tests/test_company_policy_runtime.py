@@ -34,3 +34,26 @@ def test_requester_cannot_approve_own_transaction_when_company_policy_disables_i
 
     assert exc.value.status_code == 409
     assert "does not allow" in exc.value.detail.lower()
+
+
+
+def test_required_branch_policy_blocks_generic_transaction_without_branch(monkeypatch):
+    service = transaction_service_module.transaction_service
+    monkeypatch.setattr(service, "_get_tenant_id", lambda _user: 3)
+    monkeypatch.setattr(service, "_validate_scope", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        transaction_service_module,
+        "get_company_setting",
+        lambda _db, _company_id, key: key == "general.branch_required",
+    )
+
+    payload = SimpleNamespace(company_id=7, branch_id=None, source_id=None)
+    with pytest.raises(HTTPException) as exc:
+        service.create_transaction(
+            db=object(),
+            payload=payload,
+            current_user=SimpleNamespace(id=42),
+        )
+
+    assert exc.value.status_code == 422
+    assert "requires a branch" in exc.value.detail.lower()
