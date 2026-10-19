@@ -13,6 +13,7 @@ from app.modules.accounting.fiscal_years.repositories.fiscal_year_repository imp
 from app.modules.accounting.journals.models import JournalEntry, JournalEntryLine
 from app.modules.accounting.journals.repositories.journal_repository import journal_repository
 from app.modules.branches.models import Branch
+from app.modules.company_settings.service import get_company_setting
 
 
 class JournalService:
@@ -118,7 +119,10 @@ class JournalService:
         entry = self._locked_entry(db, tenant_id, entry_id)
         if entry.status not in {"approved", "pending"}:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only approved or pending entries can be posted")
-        if entry.status == "pending" and entry.journal.requires_approval:
+        company_requires_approval = get_company_setting(
+            db, entry.company_id, "accounting.require_journal_approval"
+        ) is True
+        if entry.status == "pending" and (entry.journal.requires_approval or company_requires_approval):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Journal approval is required before posting")
         if entry.status == "approved" and entry.approved_by is not None and entry.approved_by == user_id:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The user who approved the journal entry cannot post it")
