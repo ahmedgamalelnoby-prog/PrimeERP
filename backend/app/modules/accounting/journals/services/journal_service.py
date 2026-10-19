@@ -154,6 +154,16 @@ class JournalService:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Journal approval is required before posting")
         if entry.status == "approved" and entry.approved_by is not None and entry.approved_by == user_id:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The user who approved the journal entry cannot post it")
+        base_currency = str(get_company_setting(db, entry.company_id, "general.base_currency")).upper()
+        allow_multi_currency = get_company_setting(db, entry.company_id, "general.allow_multi_currency") is True
+        if entry.currency_code != base_currency and not allow_multi_currency:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Company policy does not allow posting a foreign-currency journal")
+        if entry.currency_code == base_currency and Decimal(str(entry.exchange_rate)) != Decimal("1"):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Base-currency journal entries must use an exchange rate of 1")
+        company_timezone = str(get_company_setting(db, entry.company_id, "general.timezone"))
+        company_today = datetime.now(ZoneInfo(company_timezone)).date()
+        if get_company_setting(db, entry.company_id, "accounting.allow_backdated_entries") is not True and entry.entry_date < company_today:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Company policy does not allow posting backdated journal entries")
         period = fiscal_year_repository.get_period_by_id(db, entry.period_id, tenant_id, for_update=True)
         if period is None or period.company_id != entry.company_id or period.fiscal_year_id != entry.fiscal_year_id or period.status != "open" or not period.allow_posting:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Accounting period is not open for posting")
@@ -185,6 +195,13 @@ class JournalService:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=str(exc),
             ) from exc
+        if get_company_setting(db, entry.company_id, "general.require_cost_center") is True:
+            missing_cost_center_lines = [line.line_number for line in db_lines if line.cost_center_id is None]
+            if missing_cost_center_lines:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={"message": "Company policy requires a cost center on every journal line", "line_numbers": missing_cost_center_lines},
+                )
         entry.total_debit = debit
         entry.total_credit = credit
         entry.status = "posted"; entry.posting_date = entry.entry_date; entry.posted_by = user_id; entry.posted_at = datetime.now(timezone.utc)
