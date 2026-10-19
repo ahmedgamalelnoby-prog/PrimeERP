@@ -57,3 +57,21 @@ def test_required_branch_policy_blocks_generic_transaction_without_branch(monkey
 
     assert exc.value.status_code == 422
     assert "requires a branch" in exc.value.detail.lower()
+
+
+
+def test_disabled_customer_credit_limit_policy_skips_limit_check(monkeypatch):
+    from app.modules.commerce import service as commerce_service_module
+
+    service = commerce_service_module.commerce_service
+    monkeypatch.setattr(
+        commerce_service_module,
+        "get_company_setting",
+        lambda _db, _company_id, key: False if key == "sales.credit_limit_enforced" else None,
+    )
+    # If the policy is disabled, no customer lookup or exposure calculation is needed.
+    service.enforce_credit_limit(
+        db=object(),
+        company_id=7,
+        document=SimpleNamespace(document_type="invoice", partner_id=10, total=Decimal("500")),
+    )
