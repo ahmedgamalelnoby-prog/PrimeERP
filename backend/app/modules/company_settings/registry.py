@@ -18,7 +18,7 @@ _RAW = [
     ("general.branch_required","general","General","bool",False,"Require branch on company transactions",None,"runtime"),
     ("general.intercompany_enabled","general","General","bool",False,"Enable intercompany workflows",None,"catalog"),
     # Accounting and tax
-    ("accounting.period_lock_enabled","accounting","Accounting","bool",True,"Prevent posting into closed periods",None,"catalog"),
+    ("accounting.period_lock_enabled","accounting","Accounting","bool",True,"Prevent posting into closed periods",None,"runtime"),
     ("accounting.allow_backdated_entries","accounting","Accounting","bool",False,"Allow backdated entries subject to period controls",None,"runtime"),
     ("accounting.require_journal_approval","accounting","Accounting","bool",True,"Require approval before journal posting",None,"runtime"),
     ("accounting.auto_post_sales_invoice","accounting","Accounting","bool",False,"Automatically post eligible sales invoices",None,"catalog"),
