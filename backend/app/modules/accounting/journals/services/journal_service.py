@@ -165,8 +165,13 @@ class JournalService:
         if get_company_setting(db, entry.company_id, "accounting.allow_backdated_entries") is not True and entry.entry_date < company_today:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Company policy does not allow posting backdated journal entries")
         period = fiscal_year_repository.get_period_by_id(db, entry.period_id, tenant_id, for_update=True)
-        if period is None or period.company_id != entry.company_id or period.fiscal_year_id != entry.fiscal_year_id or period.status != "open" or not period.allow_posting:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Accounting period is not open for posting")
+        period_lock_enabled = get_company_setting(
+            db, entry.company_id, "accounting.period_lock_enabled"
+        ) is True
+        if period is None or period.company_id != entry.company_id or period.fiscal_year_id != entry.fiscal_year_id:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Accounting period does not belong to this company and fiscal year")
+        if period_lock_enabled and (period.status != "open" or not period.allow_posting):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Accounting period is locked for posting by company policy")
         if not (period.start_date <= entry.entry_date <= period.end_date):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Entry date is outside the posting period")
 
