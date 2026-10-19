@@ -6,9 +6,9 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 ## Result
 
 - Catalog entries audited individually: **68**.
-- Confirmed workflow consumers in this change: **9**.
-- Visible/persisted options not yet enforced by their owning workflows: **59**.
-- Confirmed runtime consumers: `inventory.allow_negative_stock` (stock-movement posting), `accounting.require_journal_approval` (journal posting), `general.timezone`, `general.base_currency`, `general.allow_multi_currency`, `general.require_cost_center` and `accounting.allow_backdated_entries` (journal creation), plus `integrations.retry_limit` and `integrations.webhook_signature_required` (integration retry and Salla webhook intake). Journal posting still honors period status/allow_posting independently; company settings do not bypass closed-period protections. FIFO negative issues remain blocked for valuation safety, and reserved quantities remain protected.
+- Confirmed workflow consumers in this change: **15**.
+- Visible/persisted options not yet enforced by their owning workflows: **53**.
+- Confirmed runtime consumers: `inventory.allow_negative_stock` (stock-movement posting), `accounting.require_journal_approval` (journal posting), `general.timezone`, `general.base_currency`, `general.allow_multi_currency`, `general.require_cost_center` and `accounting.allow_backdated_entries` (journal creation), plus `integrations.retry_limit` and `integrations.webhook_signature_required` (integration retry and Salla webhook intake), `accounting.fiscal_year_start_month` (fiscal-year creation), `accounting.rounding_method` and `tax.default_tax_inclusive_pricing` (tax calculation), `workflow.allow_self_approval` (generic transaction approval), and `inventory.require_bin_location` (stock movement creation). Journal posting still honors period status/allow_posting independently; company settings do not bypass closed-period protections. FIFO negative issues remain blocked for valuation safety, and reserved quantities remain protected.
 - This is a source-level audit, not a successful runtime test. Docker is unavailable/offline for the user, and the GitHub self-hosted Release Gate is queued; no test-pass claim is made.
 
 ## Status definitions
@@ -39,8 +39,8 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 | `accounting.require_journal_approval` | bool | **RUNTIME** | Require approval before journal posting |
 | `accounting.auto_post_sales_invoice` | bool | CATALOG ONLY | Automatically post eligible sales invoices |
 | `accounting.auto_post_purchase_invoice` | bool | CATALOG ONLY | Automatically post eligible purchase invoices |
-| `accounting.rounding_method` | enum | CATALOG ONLY | Document rounding policy |
-| `accounting.fiscal_year_start_month` | int | CATALOG ONLY | First month of fiscal year |
+| `accounting.rounding_method` | enum | **RUNTIME** | Tax calculation rounding mode |
+| `accounting.fiscal_year_start_month` | int | **RUNTIME** | Enforce configured month when creating a fiscal year |
 | `accounting.default_receivable_account` | string | CATALOG ONLY | Default receivable account code |
 | `accounting.default_payable_account` | string | CATALOG ONLY | Default payable account code |
 | `accounting.default_sales_account` | string | CATALOG ONLY | Default sales account code |
@@ -51,7 +51,7 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 
 | Option key | Type | Current status | Purpose |
 |---|---|---|---|
-| `tax.default_tax_inclusive_pricing` | bool | CATALOG ONLY | Sales prices include tax by default |
+| `tax.default_tax_inclusive_pricing` | bool | **RUNTIME** | Default tax-inclusive behavior when caller does not explicitly choose |
 | `tax.require_tax_code_on_invoice` | bool | CATALOG ONLY | Require tax code on taxable invoices |
 | `tax.einvoice_required_for_sales` | bool | CATALOG ONLY | Require Egyptian e-invoice submission for eligible sales |
 
@@ -86,7 +86,7 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 | `inventory.allow_negative_stock` | bool | **RUNTIME** | Allow stock to fall below zero where the valuation method supports it |
 | `inventory.valuation_method` | enum | CATALOG ONLY | Inventory costing method for supported flows |
 | `inventory.require_warehouse` | bool | CATALOG ONLY | Require warehouse on stock transactions |
-| `inventory.require_bin_location` | bool | CATALOG ONLY | Require a storage/bin location |
+| `inventory.require_bin_location` | bool | **RUNTIME** | Require child/bin locations for stock movement endpoints |
 | `inventory.auto_reserve_sales_orders` | bool | CATALOG ONLY | Reserve stock on sales order confirmation |
 | `inventory.allow_below_cost_sale` | bool | CATALOG ONLY | Allow sale below cost subject to permission |
 | `inventory.expiry_tracking_required` | bool | CATALOG ONLY | Require expiry dates for perishable/batch items |
@@ -111,7 +111,7 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 | Option key | Type | Current status | Purpose |
 |---|---|---|---|
 | `workflow.approval_mode` | enum | CATALOG ONLY | Approval chain mode |
-| `workflow.allow_self_approval` | bool | CATALOG ONLY | Allow requester to approve their own request |
+| `workflow.allow_self_approval` | bool | **RUNTIME** | Block requesters from approving their own generic transactions when disabled |
 | `workflow.escalation_after_hours` | int | CATALOG ONLY | Escalate pending approvals after hours |
 
 ## Point of Sale (4)
@@ -153,7 +153,7 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 
 ## Recommended order for full wiring
 
-1. Accounting controls: backdated journal creation, base currency, foreign-currency allowance, required cost centers and journal approval are now enforced. Closed-period controls remain authoritative; default accounts, rounding, fiscal-year policies and auto-posting still require workflow wiring.
+1. Accounting controls: backdated journal creation, base currency, foreign-currency allowance, required cost centers, journal approval, fiscal-year start month, tax rounding and default tax-inclusive pricing are now enforced. Closed-period controls remain authoritative; default accounts and auto-posting still require workflow wiring.
 2. Sales and procurement: approval rules, delivery/receipt requirements, customer credit limits, overbilling and price variance tolerances.
 3. Inventory: warehouse/bin requirements, reservation behavior, below-cost sales, serial/batch/expiry, and valuation method consistency.
 4. HR: biometric device ingestion, attendance correction/overtime/leave/payroll approvals, leave balances and work schedules.
