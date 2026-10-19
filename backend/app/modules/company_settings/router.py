@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -18,7 +18,14 @@ router = APIRouter(prefix="/company-settings", tags=["Company Policy Settings"])
 
 class SettingsUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    settings: dict[str, object] = Field(min_length=1, max_length=100)
+    settings: dict[str, object]
+
+    @field_validator("settings")
+    @classmethod
+    def validate_settings_count(cls, value: dict[str, object]) -> dict[str, object]:
+        if not value or len(value) > 100:
+            raise ValueError("Provide between 1 and 100 setting changes")
+        return value
 
 
 def _company(db: Session, company_id: int, user: User) -> Company:
