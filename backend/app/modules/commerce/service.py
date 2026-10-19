@@ -1,6 +1,6 @@
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.modules.accounting.models import TaxRate
@@ -34,7 +34,27 @@ def resolve_due_date(document_type: str, document_date, explicit_due_date, payme
 
 class CommerceService:
     def create_partner(self, db: Session, payload):
-        if db.scalar(select(BusinessPartner).where(BusinessPartner.company_id == payload.company_id, BusinessPartner.code == payload.code)): raise ValueError("Partner code already exists")
+        if db.scalar(select(BusinessPartner).where(BusinessPartner.company_id == payload.company_id, BusinessPartner.code == payload.code)):
+            raise ValueError("Partner code already exists")
+        if getattr(payload, "partner_type", None) in {"customer", "both"} and get_company_setting(
+            db, payload.company_id, "crm.duplicate_customer_check"
+        ) is True:
+            duplicate_conditions = []
+            email = (getattr(payload, "email", None) or "").strip().lower()
+            tax_number = (getattr(payload, "tax_number", None) or "").strip()
+            if email:
+                duplicate_conditions.append(func.lower(BusinessPartner.email) == email)
+            if tax_number:
+                duplicate_conditions.append(BusinessPartner.tax_number == tax_number)
+            if duplicate_conditions:
+                duplicate = db.scalar(select(BusinessPartner.id).where(
+                    BusinessPartner.company_id == payload.company_id,
+                    BusinessPartner.partner_type.in_(["customer", "both"]),
+                    BusinessPartner.is_active.is_(True),
+                    or_(*duplicate_conditions),
+                ).limit(1))
+                if duplicate is not None:
+                    raise ValueError("Possible duplicate customer: matching email or tax registration number already exists")
         obj = BusinessPartner(**payload.model_dump()); db.add(obj); db.flush(); return obj
 
     def list_partners(self, db, company_id, partner_type=None):
