@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.branches.models import Branch
 from app.modules.companies.models import Company
+from app.modules.company_settings.service import get_company_setting
 from app.modules.identity.models import User
 from app.modules.transactions.models import (
     BusinessTransaction,
@@ -281,6 +282,14 @@ class TransactionService:
             transaction_id=transaction_id,
             current_user=current_user,
         )
+        if (
+            get_company_setting(db, transaction.company_id, "workflow.allow_self_approval") is not True
+            and transaction.created_by == current_user.id
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Company policy does not allow a requester to approve their own transaction",
+            )
 
         try:
             validate_transaction_transition(
