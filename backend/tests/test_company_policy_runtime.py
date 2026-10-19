@@ -75,3 +75,33 @@ def test_disabled_customer_credit_limit_policy_skips_limit_check(monkeypatch):
         company_id=7,
         document=SimpleNamespace(document_type="invoice", partner_id=10, total=Decimal("500")),
     )
+
+
+
+def test_duplicate_customer_policy_blocks_matching_customer(monkeypatch):
+    from app.modules.commerce import service as commerce_service_module
+
+    class FakeDB:
+        def __init__(self):
+            self.calls = 0
+
+        def scalar(self, _query):
+            self.calls += 1
+            return None if self.calls == 1 else 123
+
+    monkeypatch.setattr(
+        commerce_service_module,
+        "get_company_setting",
+        lambda _db, _company_id, key: key == "crm.duplicate_customer_check",
+    )
+    payload = SimpleNamespace(
+        company_id=7,
+        code="C-100",
+        partner_type="customer",
+        email="same@example.com",
+        tax_number=None,
+        model_dump=lambda: {},
+    )
+
+    with pytest.raises(ValueError, match="Possible duplicate customer"):
+        commerce_service_module.commerce_service.create_partner(FakeDB(), payload)
