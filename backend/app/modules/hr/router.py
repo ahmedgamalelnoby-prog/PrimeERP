@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.database.session import get_db
 from app.modules.audit.service import record_audit_event
 from app.modules.companies.models import Company
-from app.modules.core.permissions import require_permission
+from app.core.permissions import require_permission
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models.user import User
 from app.modules.saas.entitlements import require_module
