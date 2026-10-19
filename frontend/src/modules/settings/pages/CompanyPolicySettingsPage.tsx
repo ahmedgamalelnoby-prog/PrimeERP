@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, Building2, Loader2, Save, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { ArrowRight, Building2, Loader2, Save, Search, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import client from "@/shared/api/client";
@@ -31,6 +31,8 @@ export default function CompanyPolicySettingsPage() {
   const [activeCategory,setActiveCategory] = useState("General");
   const [loading,setLoading] = useState(true);
   const [saving,setSaving] = useState(false);
+  const [search,setSearch] = useState("");
+  const [statusFilter,setStatusFilter] = useState<"all"|"runtime"|"catalog">("all");
 
   useEffect(() => {
     client.get<Company[]>("/companies?active_only=true").then(({data}) => {
@@ -54,7 +56,7 @@ export default function CompanyPolicySettingsPage() {
       .finally(()=>setLoading(false));
   }, [companyId]);
 
-  const visibleSettings = useMemo(()=>payload?.settings.filter(s=>s.category===activeCategory) ?? [],[payload,activeCategory]);
+  const visibleSettings = useMemo(()=>{const q=search.trim().toLocaleLowerCase();return (payload?.settings??[]).filter(s=>s.category===activeCategory).filter(s=>statusFilter==="all"||s.status===statusFilter).filter(s=>!q||[s.label,s.key,s.module,categoryAr[s.category]??s.category,moduleAr[s.module]??s.module].some(v=>v.toLocaleLowerCase().includes(q))).sort((a,b)=>Number(b.status==="runtime")-Number(a.status==="runtime")||a.label.localeCompare(b.label,"ar"));},[payload,activeCategory,search,statusFilter]);
   const setValue=(key:string,value:any)=>setValues(old=>({...old,[key]:value}));
 
   async function save() {
@@ -91,6 +93,8 @@ export default function CompanyPolicySettingsPage() {
       <nav className="h-fit space-y-1 rounded-2xl border bg-card p-3">{(payload?.categories??[]).map(c=><button key={c} onClick={()=>setActiveCategory(c)} className={`w-full rounded-xl px-4 py-3 text-right text-sm font-semibold transition ${activeCategory===c?"bg-primary text-primary-foreground":"hover:bg-muted"}`}>{categoryAr[c]??c}<span className="mt-1 block text-xs opacity-70">{payload?.settings.filter(s=>s.category===c).length} إعداد</span></button>)}</nav>
       <section className="space-y-4">
         <div className="flex flex-col justify-between gap-3 rounded-2xl border bg-card p-5 sm:flex-row sm:items-center"><div><h2 className="text-xl font-black">{categoryAr[activeCategory]??activeCategory}</h2><p className="mt-1 text-sm text-muted-foreground">تغيّر السياسة هنا يؤثر على الشركة المختارة فقط، ولا يمنح صلاحيات إضافية للمستخدمين.</p></div><Button onClick={()=>void save()} disabled={saving||!payload} className="gap-2"><Save className="size-4"/>{saving?"جارٍ الحفظ":"حفظ التغييرات"}</Button></div>
+        <div className="grid gap-3 rounded-2xl border bg-card p-4 md:grid-cols-[minmax(0,1fr)_220px]"><label className="relative block"><Search className="pointer-events-none absolute right-3 top-3 size-4 text-muted-foreground"/><input aria-label="بحث في الإعدادات" value={search} onChange={e=>setSearch(e.target.value)} placeholder="ابحث باسم الإعداد أو المفتاح أو الموديول..." className="h-10 w-full rounded-xl border bg-background pr-10 pl-3 text-sm"/></label><select aria-label="تصفية حالة الربط" value={statusFilter} onChange={e=>setStatusFilter(e.target.value as "all"|"runtime"|"catalog")} className="h-10 rounded-xl border bg-background px-3 text-sm"><option value="all">كل الحالات</option><option value="runtime">مفعّل في النظام فقط</option><option value="catalog">يحتاج ربطًا تشغيليًا فقط</option></select></div>
+        <div className="flex items-center justify-between px-1 text-xs text-muted-foreground"><span>عدد النتائج: {visibleSettings.length}</span><button type="button" onClick={()=>{setSearch("");setStatusFilter("all");}} className="underline underline-offset-4">مسح البحث والتصفية</button></div>
         {visibleSettings.map(s=><article key={s.key} className="grid gap-4 rounded-2xl border bg-card p-5 md:grid-cols-[minmax(0,1fr)_220px] md:items-center"><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-bold">{s.label}</h3><span className={`rounded-full px-2 py-1 text-[11px] ${s.status==="runtime"?"bg-emerald-100 text-emerald-800":"bg-amber-100 text-amber-800"}`}>{s.status==="runtime"?"مفعّل في النظام":"كتالوج — يحتاج ربط تشغيلي"}</span></div><p className="mt-2 text-xs text-muted-foreground">الموديول: {moduleAr[s.module]??s.module}</p><code className="mt-1 block break-all text-[11px] text-muted-foreground">{s.key}</code></div><div className="flex items-center justify-between gap-4">{renderControl(s)}</div></article>)}
         <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-950"><ShieldCheck className="mb-2 size-5"/>الإعدادات الحساسة مثل بيانات الدخول ومفاتيح API لا تُحفظ هنا؛ يجب إدارتها من خزنة التكاملات. لا يتم تغيير المستندات المرحلة سابقًا عند تعديل سياسة افتراضية.</div>
       </section>
