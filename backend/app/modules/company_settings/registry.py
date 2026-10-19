@@ -52,7 +52,7 @@ _RAW = [
     # Inventory
     ("inventory.allow_negative_stock","inventory","Inventory","bool",False,"Allow stock to fall below zero where the valuation method supports it",None,"runtime"),
     ("inventory.valuation_method","inventory","Inventory","enum","fifo","Inventory costing method for supported flows",["fifo","moving_average","standard_cost"],"catalog"),
-    ("inventory.require_warehouse","inventory","Inventory","bool",True,"Require warehouse on stock transactions",None,"catalog"),
+    ("inventory.require_warehouse","inventory","Inventory","bool",True,"Require warehouse on stock transactions",None,"runtime"),
     ("inventory.require_bin_location","inventory","Inventory","bool",False,"Require a storage/bin location",None,"runtime"),
     ("inventory.auto_reserve_sales_orders","inventory","Inventory","bool",False,"Reserve stock on sales order confirmation",None,"catalog"),
     ("inventory.allow_below_cost_sale","inventory","Inventory","bool",False,"Allow sale below cost subject to permission",None,"catalog"),
