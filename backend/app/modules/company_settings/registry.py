@@ -5,9 +5,9 @@ from typing import Any
 # status='runtime' is reserved for options whose behavior is enforced by a workflow.
 _RAW = [
     # Company-wide defaults
-    ("general.default_language","general","General","enum","ar","Interface language",["ar","en"],"runtime"),
+    ("general.default_language","general","General","enum","ar","Interface language",["ar","en"],"catalog"),
     ("general.date_format","general","General","enum","DD/MM/YYYY","Date display format",["DD/MM/YYYY","MM/DD/YYYY","YYYY-MM-DD"],"catalog"),
-    ("general.timezone","general","General","string","Africa/Cairo","Company timezone",None,"runtime"),
+    ("general.timezone","general","General","string","Africa/Cairo","Company timezone",None,"catalog"),
     ("general.base_currency","general","General","string","EGP","Functional currency code",None,"catalog"),
     ("general.allow_multi_currency","general","General","bool",True,"Allow foreign-currency transactions",None,"catalog"),
     ("general.require_cost_center","general","General","bool",False,"Require cost center where supported",None,"catalog"),
@@ -47,7 +47,7 @@ _RAW = [
     ("purchasing.price_variance_tolerance_pct","purchasing","Purchasing","number",0,"Allowed price variance percentage",None,"catalog"),
     ("purchasing.default_payment_terms_days","purchasing","Purchasing","int",30,"Default supplier payment term",None,"catalog"),
     # Inventory
-    ("inventory.allow_negative_stock","inventory","Inventory","bool",False,"Allow stock to fall below zero",None,"catalog"),
+    ("inventory.allow_negative_stock","inventory","Inventory","bool",False,"Allow stock to fall below zero where the valuation method supports it",None,"runtime"),
     ("inventory.valuation_method","inventory","Inventory","enum","fifo","Inventory costing method for supported flows",["fifo","moving_average","standard_cost"],"catalog"),
     ("inventory.require_warehouse","inventory","Inventory","bool",True,"Require warehouse on stock transactions",None,"catalog"),
     ("inventory.require_bin_location","inventory","Inventory","bool",False,"Require a storage/bin location",None,"catalog"),
@@ -80,7 +80,7 @@ _RAW = [
     ("integrations.auto_sync_enabled","integrations","Integrations","bool",False,"Enable automatic sync for configured integrations",None,"catalog"),
     ("integrations.retry_limit","integrations","Integrations","int",5,"Retry count for transient integration failures",None,"catalog"),
     ("integrations.webhook_signature_required","integrations","Integrations","bool",True,"Require signatures for supported inbound webhooks",None,"catalog"),
-    ("audit.log_settings_changes","audit","Security & Audit","bool",True,"Audit company policy changes",None,"runtime"),
+    
 ]
 CATALOG: list[dict[str, Any]] = [
     {"key":key,"module":module,"category":category,"type":kind,"default":default,"label":label,
