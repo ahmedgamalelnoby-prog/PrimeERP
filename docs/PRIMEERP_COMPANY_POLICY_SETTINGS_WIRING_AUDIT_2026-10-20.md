@@ -6,8 +6,8 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 ## Result
 
 - Catalog entries audited individually: **68**.
-- Confirmed workflow consumers in this change: **15**.
-- Visible/persisted options not yet enforced by their owning workflows: **53**.
+- Confirmed workflow consumers in this change: **14**.
+- Visible/persisted options not yet enforced by their owning workflows: **54**.
 - Confirmed runtime consumers: `inventory.allow_negative_stock` (stock-movement posting), `accounting.require_journal_approval` (journal posting), `general.timezone`, `general.base_currency`, `general.allow_multi_currency`, `general.require_cost_center` and `accounting.allow_backdated_entries` (journal creation), plus `integrations.retry_limit` and `integrations.webhook_signature_required` (integration retry and Salla webhook intake), `accounting.fiscal_year_start_month` (fiscal-year creation), `accounting.rounding_method` and `tax.default_tax_inclusive_pricing` (tax calculation), `workflow.allow_self_approval` (generic transaction approval), and `inventory.require_bin_location` (stock movement creation). Journal posting still honors period status/allow_posting independently; company settings do not bypass closed-period protections. FIFO negative issues remain blocked for valuation safety, and reserved quantities remain protected.
 - This is a source-level audit, not a successful runtime test. Docker is unavailable/offline for the user, and the GitHub self-hosted Release Gate is queued; no test-pass claim is made.
 
@@ -147,7 +147,7 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 ## Defects and improvements made during this audit
 
 1. Validation now rejects unknown setting keys, invalid enum values, wrong booleans, non-finite numbers (NaN/Infinity), invalid IANA time zones, malformed 3-letter uppercase currency codes, out-of-range fiscal year months, and workday lengths outside 0–24 hours.
-2. Added parameterized tests that validate every catalog default and key boundary cases. These tests are committed but have **not yet been executed successfully** locally or in CI.
+2. Added parameterized tests for every catalog default, key validation boundaries, company rounding modes, and self-approval policy. These tests are committed but have **not yet been executed successfully** locally or in CI.
 3. The UI distinguishes runtime-enabled settings from catalog-only settings, so saving a value does not falsely imply that a business workflow uses it.
 4. Company settings writes are tenant-scoped, permission-protected, and audited by changed key names without recording values or credentials.
 
