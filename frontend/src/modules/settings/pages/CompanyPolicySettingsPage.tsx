@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, Building2, Check, Loader2, Save, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { ArrowRight, Building2, Loader2, Save, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import client from "@/shared/api/client";
