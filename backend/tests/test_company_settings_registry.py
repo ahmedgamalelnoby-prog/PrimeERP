@@ -17,7 +17,7 @@ def test_every_registered_default_passes_its_own_validator(setting):
 
 def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
     runtime_keys = {item["key"] for item in CATALOG if item["status"] == "runtime"}
-    assert runtime_keys == {"inventory.allow_negative_stock"}
+    assert runtime_keys == {"inventory.allow_negative_stock", "accounting.require_journal_approval"}
 
 
 def test_negative_stock_policy_is_company_setting_and_disabled_by_default():
@@ -70,3 +70,9 @@ def test_setting_validation_rejects_unreasonable_workday_length():
     for value in (0, -1, 24.01, 100):
         with pytest.raises(ValueError):
             validate_value("hr.default_work_hours_per_day", value)
+
+
+def test_journal_approval_policy_defaults_to_required():
+    assert BY_KEY["accounting.require_journal_approval"]["default"] is True
+    assert BY_KEY["accounting.require_journal_approval"]["status"] == "runtime"
+    assert validate_value("accounting.require_journal_approval", False) is False
