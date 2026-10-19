@@ -1,5 +1,3 @@
-import math
-
 import pytest
 
 from app.modules.company_settings.registry import BY_KEY, CATALOG, validate_value
