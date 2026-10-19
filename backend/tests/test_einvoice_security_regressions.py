@@ -73,7 +73,7 @@ def test_einvoice_rejects_source_from_another_company():
 def test_einvoice_rejects_company_from_another_tenant():
     with pytest.raises(ValueError, match="does not belong to the tenant"):
         create_document(
-            _DB(8, None),
+            _DB(None, None),
             tenant_id=7,
             company_id=7,
             source_type="sales_document",
