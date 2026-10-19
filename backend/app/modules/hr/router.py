@@ -113,7 +113,6 @@ def update_workforce(
     if not changes:
         raise HTTPException(422, "At least one workforce field must be supplied")
 
-    before = {key: getattr(obj, key) for key in changes}
     for key, value in changes.items():
         setattr(obj, key, value)
 
@@ -125,7 +124,7 @@ def update_workforce(
         user_id=current_user.id,
         tenant_id=tenant_id,
         company_id=company_id,
-        metadata={"changed_fields": sorted(changes), "before": before, "after": changes},
+        metadata={"changed_fields": sorted(changes)},
     )
     db.commit()
     db.refresh(obj)
