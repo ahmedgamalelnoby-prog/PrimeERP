@@ -104,10 +104,10 @@ class CommerceService:
             if explicit_tax_ids is None and p.tax_percent != 0: raise ValueError("Tax Master is required for non-zero tax rates")
             gross = p.quantity * p.unit_price; disc = gross * p.discount_percent / Decimal("100"); net = gross - disc
             if net < 0: raise ValueError("Line discount cannot exceed the line gross amount")
-            tax_result = calculate_taxes(db, company_id=payload.company_id, amount=net, tax_ids=tax_ids, inclusive=None); tax_amount = Decimal(tax_result["tax_total"]); line_total = net + tax_amount
+            tax_result = calculate_taxes(db, company_id=payload.company_id, amount=net, tax_ids=tax_ids, inclusive=None); tax_amount = Decimal(tax_result["tax_total"]); taxable_base = Decimal(tax_result["taxable_base"]); line_total = Decimal(tax_result["gross_total"])
             tax_rows = list(db.scalars(select(TaxRate).where(TaxRate.id.in_(tax_ids), TaxRate.company_id == payload.company_id)).all()) if tax_ids else []
             non_wht_ids = [tax.id for tax in tax_rows if not tax.is_withholding]; primary_tax_id = non_wht_ids[0] if non_wht_ids else (tax_ids[0] if tax_ids else None); primary_tax_percent = Decimal(next((tax.rate for tax in tax_rows if tax.id == primary_tax_id), 0))
-            obj.lines.append(line_model(item_id=p.item_id, variant_id=variant_id, tax_rate_id=primary_tax_id, tax_rate_ids=tax_ids, description=p.description, quantity=p.quantity, unit_price=p.unit_price, discount_percent=p.discount_percent, tax_percent=primary_tax_percent, line_total=line_total)); subtotal += net; discount += disc; tax += tax_amount
+            obj.lines.append(line_model(item_id=p.item_id, variant_id=variant_id, tax_rate_id=primary_tax_id, tax_rate_ids=tax_ids, description=p.description, quantity=p.quantity, unit_price=p.unit_price, discount_percent=p.discount_percent, tax_percent=primary_tax_percent, line_total=line_total)); subtotal += taxable_base if tax_result["inclusive"] else net; discount += disc; tax += tax_amount
         obj.subtotal = subtotal; obj.discount_total = discount; obj.tax_total = tax; obj.total = subtotal + tax; db.add(obj); db.flush()
         if payload.receipt_ids:
             for receipt_id in payload.receipt_ids: db.add(PurchaseBillReceiptLink(company_id=payload.company_id, bill_id=obj.id, receipt_id=receipt_id))
