@@ -6,9 +6,9 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 ## Result
 
 - Catalog entries audited individually: **68**.
-- Confirmed workflow consumers in this change: **14**.
-- Visible/persisted options not yet enforced by their owning workflows: **54**.
-- Confirmed runtime consumers: `inventory.allow_negative_stock` (stock-movement posting), `accounting.require_journal_approval` (journal posting), `general.timezone`, `general.base_currency`, `general.allow_multi_currency`, `general.require_cost_center` and `accounting.allow_backdated_entries` (journal creation), plus `integrations.retry_limit` and `integrations.webhook_signature_required` (integration retry and Salla webhook intake), `accounting.fiscal_year_start_month` (fiscal-year creation), `accounting.rounding_method` and `tax.default_tax_inclusive_pricing` (tax calculation), `workflow.allow_self_approval` (generic transaction approval), and `inventory.require_bin_location` (stock movement creation). Journal posting still honors period status/allow_posting independently; company settings do not bypass closed-period protections. FIFO negative issues remain blocked for valuation safety, and reserved quantities remain protected.
+- Confirmed workflow consumers in this change: **15**.
+- Visible/persisted options not yet enforced by their owning workflows: **53**.
+- Confirmed runtime consumers: `inventory.allow_negative_stock` (stock-movement posting), `accounting.require_journal_approval` (journal posting), `general.timezone`, `general.base_currency`, `general.allow_multi_currency`, `general.require_cost_center` and `accounting.allow_backdated_entries` (journal creation), plus `integrations.retry_limit` and `integrations.webhook_signature_required` (integration retry and Salla webhook intake), `accounting.fiscal_year_start_month` (fiscal-year creation), `accounting.rounding_method` and `tax.default_tax_inclusive_pricing` (tax calculation), `workflow.allow_self_approval` (generic transaction approval), `inventory.require_bin_location` (stock movement creation), and `general.branch_required` (generic transaction creation). Journal posting still honors period status/allow_posting independently; company settings do not bypass closed-period protections. FIFO negative issues remain blocked for valuation safety, and reserved quantities remain protected.
 - This is a source-level audit, not a successful runtime test. Docker is unavailable/offline for the user, and the GitHub self-hosted Release Gate is queued; no test-pass claim is made.
 
 ## Status definitions
@@ -27,7 +27,7 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 | `general.allow_multi_currency` | bool | **RUNTIME** | Allow foreign-currency journal entries |
 | `general.require_cost_center` | bool | **RUNTIME** | Require cost center on every journal line |
 | `general.require_project` | bool | CATALOG ONLY | Require project dimension where supported |
-| `general.branch_required` | bool | CATALOG ONLY | Require branch on company transactions |
+| `general.branch_required` | bool | **RUNTIME** | Reject generic transaction creation without a branch when enabled |
 | `general.intercompany_enabled` | bool | CATALOG ONLY | Enable intercompany workflows |
 
 ## Accounting (12)
@@ -154,7 +154,7 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 ## Recommended order for full wiring
 
 1. Accounting controls: backdated journal creation, base currency, foreign-currency allowance, required cost centers, journal approval, fiscal-year start month, tax rounding and default tax-inclusive pricing are now enforced. Closed-period controls remain authoritative; default accounts and auto-posting still require workflow wiring.
-2. Sales and procurement: approval rules, delivery/receipt requirements, customer credit limits, overbilling and price variance tolerances.
+2. Sales and procurement: approval rules, delivery/receipt requirements, customer credit limits, overbilling and price variance tolerances. Generic transaction creation now enforces `general.branch_required` when enabled.
 3. Inventory: warehouse/bin requirements, reservation behavior, below-cost sales, serial/batch/expiry, and valuation method consistency.
 4. HR: biometric device ingestion, attendance correction/overtime/leave/payroll approvals, leave balances and work schedules.
 5. POS, manufacturing, CRM and integrations: cashier shift close, discount limits, work orders, duplicate checks, retry policy and signed webhooks.
@@ -166,4 +166,4 @@ A setting should be promoted from CATALOG ONLY to RUNTIME only after the consume
 - Company policies remain grouped by category in registry order. Within a category, runtime-enforced entries are listed before catalog-only entries, then labels are alphabetically sorted using Arabic locale rules.
 - The page now searches by display label, canonical setting key, module, and translated category/module names; a status filter narrows results to runtime or catalog-only entries.
 - The page shows total/runtime/catalog/unsaved-change counters, a result count, a reset control, an empty-result message, and disables Save when no values differ from the loaded values.
-- These UX changes improve navigation but do not change the audited runtime count: **14 runtime / 54 catalog-only**.
+- These UX changes improve navigation. The current source audit records **15 runtime / 53 catalog-only** after enforcing `general.branch_required` on generic transaction creation; tests still need to run.
