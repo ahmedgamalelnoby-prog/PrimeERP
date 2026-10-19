@@ -24,7 +24,7 @@ class JournalEntryCreate(BaseModel):
     entry_date: date
     description: str = Field(min_length=1, max_length=500)
     lines: list[JournalLineInput] = Field(min_length=2)
-    currency_code: str = Field(default="EGP", min_length=3, max_length=3)
+    currency_code: str | None = Field(default=None, min_length=3, max_length=3)
     exchange_rate: Decimal = Field(default=Decimal("1"), gt=0)
     reference: str | None = Field(default=None, max_length=100)
     source_module: str | None = Field(default=None, max_length=100)
