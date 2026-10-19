@@ -56,9 +56,10 @@ export const navigationItems: NavigationItem[] = [
  ]},
  {id:"reports",label:"Reports",labelAr:"التقارير",type:"item",path:"/reports",icon:BarChart3,permission:"reports.view",module:"reports",visible:true,order:14},
  {id:"settings",label:"Settings",labelAr:"الإعدادات",type:"item",path:"/settings",icon:Settings,permission:"settings.view",module:"settings",visible:true,order:15},
+ {id:"company-policies",label:"Company Policies",labelAr:"سياسات الشركة",type:"item",path:"/settings/company-policies",icon:SlidersHorizontal,permission:"company.write",module:"settings",visible:true,order:16},
 ];
 
-const TENANT_CORE_NAVIGATION = new Set(["dashboard", "users", "companies", "branches", "settings", "helpdesk"]);
+const TENANT_CORE_NAVIGATION = new Set(["dashboard", "users", "companies", "branches", "settings", "company-policies", "helpdesk"]);
 
 function isNavigationAllowed(item: NavigationItem, enabledModules: Set<string>, isPlatformAdmin: boolean): boolean {
   if (isPlatformAdmin) return true;
