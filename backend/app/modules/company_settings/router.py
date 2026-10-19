@@ -97,13 +97,12 @@ def update_company_settings(
 
     try:
         if changed:
-            if all(BY_KEY[item["key"]]["key"] for item in changed):
-                record_audit_event(
-                    db, action="company.policy_settings_updated",
-                    entity_type="company", entity_id=company.id,
-                    tenant_id=company.tenant_id, company_id=company.id, user_id=user.id,
-                    metadata={"changed_keys": [item["key"] for item in changed]},
-                )
+            record_audit_event(
+                db, action="company.policy_settings_updated",
+                entity_type="company", entity_id=company.id,
+                tenant_id=company.tenant_id, company_id=company.id, user_id=user.id,
+                metadata={"changed_keys": [item["key"] for item in changed]},
+            )
             db.commit()
     except Exception:
         db.rollback()
