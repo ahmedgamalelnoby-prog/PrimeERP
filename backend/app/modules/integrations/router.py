@@ -13,6 +13,7 @@ from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.saas.entitlements import require_module
+from app.modules.company_settings.service import get_company_setting
 from .models import IntegrationConnection, IntegrationEvent
 from .schemas import ConnectionCreate, ConnectionResponse, WebhookEventCreate
 from .salla_models import SallaCustomer, SallaInvoice, SallaOrder, SallaOrderItem, SallaProduct, SallaProductVariant, SallaShipment
@@ -130,7 +131,9 @@ async def receive_salla_webhook_public(connection_id: int, request: Request, x_s
         except ValueError: raise HTTPException(400, "Invalid Content-Length header")
     connection = _get_salla_connection(db, connection_id); raw_body = await request.body()
     if len(raw_body) > MAX_WEBHOOK_BODY_BYTES: raise HTTPException(413, "Webhook payload is too large")
-    _verify_salla_signature(connection, raw_body, x_salla_security_strategy, x_salla_signature)
+    signature_required = get_company_setting(db, connection.company_id, "integrations.webhook_signature_required") is True
+    if signature_required or x_salla_signature:
+        _verify_salla_signature(connection, raw_body, x_salla_security_strategy, x_salla_signature)
     try: payload = json.loads(raw_body.decode())
     except (UnicodeDecodeError, json.JSONDecodeError) as exc: raise HTTPException(400, "Invalid webhook JSON") from exc
     if not isinstance(payload, dict): raise HTTPException(422, "Webhook payload must be a JSON object")
@@ -185,7 +188,8 @@ def retry_event(event_id: int, company_id: int = Query(..., gt=0), current_user:
     event = db.scalar(select(IntegrationEvent).where(IntegrationEvent.id == event_id, IntegrationEvent.company_id == company_id).with_for_update())
     if event is None: raise HTTPException(404, "Integration event not found")
     if event.status == "processed": raise HTTPException(409, "Processed events cannot be retried")
-    if event.attempts >= 10: event.status = "dead_letter"; db.commit(); raise HTTPException(409, "Maximum retry attempts reached; event moved to dead letter")
+    retry_limit = int(get_company_setting(db, company_id, "integrations.retry_limit"))
+    if event.attempts >= retry_limit: event.status = "dead_letter"; db.commit(); raise HTTPException(409, "Company integration retry limit reached; event moved to dead letter")
     event.attempts += 1; event.status = "queued"; event.next_attempt_at = datetime.now(timezone.utc) + timedelta(seconds=min(300, 2 ** min(event.attempts, 8))); event.last_error = None; db.commit()
     result = _process_event(db, event)
     return {"accepted": True, "event_id": event.id, "status": "processed" if "error" not in result else "failed", "attempts": event.attempts, "normalized": result}
