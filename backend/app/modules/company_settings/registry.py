@@ -20,7 +20,7 @@ _RAW = [
     # Accounting and tax
     ("accounting.period_lock_enabled","accounting","Accounting","bool",True,"Prevent posting into closed periods",None,"catalog"),
     ("accounting.allow_backdated_entries","accounting","Accounting","bool",False,"Allow backdated entries subject to period controls",None,"catalog"),
-    ("accounting.require_journal_approval","accounting","Accounting","bool",True,"Require approval before journal posting",None,"catalog"),
+    ("accounting.require_journal_approval","accounting","Accounting","bool",True,"Require approval before journal posting",None,"runtime"),
     ("accounting.auto_post_sales_invoice","accounting","Accounting","bool",False,"Automatically post eligible sales invoices",None,"catalog"),
     ("accounting.auto_post_purchase_invoice","accounting","Accounting","bool",False,"Automatically post eligible purchase invoices",None,"catalog"),
     ("accounting.rounding_method","accounting","Accounting","enum","currency","Document rounding policy",["currency","half_up","bankers","none"],"catalog"),
