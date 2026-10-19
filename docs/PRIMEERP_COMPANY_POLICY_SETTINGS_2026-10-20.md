@@ -49,3 +49,11 @@ Use a deterministic order: system safety/legal constraints > tenant plan entitle
 
 ## Safe rollout rule
 Never rewrite posted documents merely because a policy changed. Changes apply prospectively unless a separately approved migration/recalculation process explicitly supports historical changes.
+
+
+## Settings page organization update (2026-10-20)
+- Settings are grouped by business category using the registry's stable module order; within each category, runtime-enforced policies appear before catalog-only entries, then labels are sorted in Arabic.
+- Added text search across the setting label, key, module, and translated category/module names.
+- Added a status filter for all / runtime-enforced / catalog-only options and an empty-state message when no options match.
+- Added a top-level summary of total settings, runtime-enforced settings, catalog-only settings, and unsaved changes. Save controls should be treated as unavailable when no changes are pending.
+- The UI continues to distinguish saved configuration from operational behavior; this is not a claim that all catalog options have been wired.
