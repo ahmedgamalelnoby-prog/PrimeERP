@@ -40,7 +40,7 @@ _RAW = [
     ("sales.allow_overbilling","sales","Sales","bool",False,"Allow billing above ordered quantity",None,"catalog"),
     ("sales.credit_limit_enforced","sales","Sales","bool",True,"Block orders beyond customer credit limit",None,"runtime"),
     ("sales.allow_negative_customer_balance","sales","Sales","bool",False,"Allow defined customer balance exceptions",None,"catalog"),
-    ("sales.default_payment_terms_days","sales","Sales","int",30,"Default customer payment term",None,"catalog"),
+    ("sales.default_payment_terms_days","sales","Sales","int",30,"Default customer payment term",None,"runtime"),
     ("sales.document_numbering","sales","Sales","enum","per_company_year","Sales document numbering policy",["per_company_year","per_company","global"],"catalog"),
     # Procurement / suppliers
     ("purchasing.require_purchase_order","purchasing","Purchasing","bool",True,"Require PO before supplier invoice",None,"catalog"),
@@ -48,7 +48,7 @@ _RAW = [
     ("purchasing.require_goods_receipt","purchasing","Purchasing","bool",True,"Require receipt before supplier invoice",None,"runtime"),
     ("purchasing.allow_invoice_price_variance","purchasing","Purchasing","bool",False,"Allow invoice price variance beyond tolerance",None,"catalog"),
     ("purchasing.price_variance_tolerance_pct","purchasing","Purchasing","number",0,"Allowed price variance percentage",None,"catalog"),
-    ("purchasing.default_payment_terms_days","purchasing","Purchasing","int",30,"Default supplier payment term",None,"catalog"),
+    ("purchasing.default_payment_terms_days","purchasing","Purchasing","int",30,"Default supplier payment term",None,"runtime"),
     # Inventory
     ("inventory.allow_negative_stock","inventory","Inventory","bool",False,"Allow stock to fall below zero where the valuation method supports it",None,"runtime"),
     ("inventory.valuation_method","inventory","Inventory","enum","fifo","Inventory costing method for supported flows",["fifo","moving_average","standard_cost"],"catalog"),
