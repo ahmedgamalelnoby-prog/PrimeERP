@@ -94,7 +94,9 @@ class CommerceService:
             db, payload.company_id, "purchasing.require_goods_receipt"
         ) is True and not payload.receipt_ids:
             raise ValueError("Company policy requires a received goods receipt before creating a supplier bill")
-        obj = model(company_id=payload.company_id, partner_id=payload.partner_id, document_type=payload.document_type, number=payload.number, document_date=payload.document_date, warehouse_id=payload.warehouse_id, due_date=resolve_due_date(payload.document_type, payload.document_date, payload.due_date, partner.payment_terms_days), notes=payload.notes)
+        payment_terms_key = "sales.default_payment_terms_days" if is_sale else "purchasing.default_payment_terms_days"
+        payment_terms_days = partner.payment_terms_days or int(get_company_setting(db, payload.company_id, payment_terms_key))
+        obj = model(company_id=payload.company_id, partner_id=payload.partner_id, document_type=payload.document_type, number=payload.number, document_date=payload.document_date, warehouse_id=payload.warehouse_id, due_date=resolve_due_date(payload.document_type, payload.document_date, payload.due_date, payment_terms_days), notes=payload.notes)
         subtotal = Decimal("0"); tax = Decimal("0"); discount = Decimal("0")
         for p in payload.lines:
             item = db.scalar(select(InventoryItem).where(InventoryItem.id == p.item_id, InventoryItem.company_id == payload.company_id, InventoryItem.is_active.is_(True)))
