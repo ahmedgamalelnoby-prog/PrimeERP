@@ -52,8 +52,7 @@ def verify_partner_tax_identity(partner_id: int, company_id: int = Query(..., gt
     # real-time validation call is performed by the configured ETA integration.
     partner.eta_party_id = partner.tax_number
     partner.eta_registration_status = "pending"
-    partner.eta_last_verified_at = datetime.now(timezone.utc)
-    record_audit_event(db, action="einvoice.partner_verify_requested", entity_type="commerce_partner", entity_id=partner.id, user_id=current_user.id, tenant_id=current_user.tenant_id, company_id=company_id, metadata={"tax_number": partner.tax_number, "commercial_registration_number": partner.commercial_registration_number})
+    record_audit_event(db, action="einvoice.partner_verify_requested", entity_type="commerce_partner", entity_id=partner.id, user_id=current_user.id, tenant_id=current_user.tenant_id, company_id=company_id, metadata={"verification_status": "pending"})
     db.commit()
     db.refresh(partner)
     return {"id": partner.id, "tax_number": partner.tax_number, "commercial_registration_number": partner.commercial_registration_number, "eta_party_id": partner.eta_party_id, "eta_registration_status": partner.eta_registration_status, "eta_last_verified_at": partner.eta_last_verified_at}
