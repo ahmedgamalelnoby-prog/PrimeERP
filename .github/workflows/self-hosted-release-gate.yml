@@ -18,6 +18,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  policy-settings-tests:
+    name: Company policy settings tests (GitHub-hosted)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest
+      - name: Run isolated company policy tests
+        working-directory: backend
+        env:
+          APP_ENV: test
+          DATABASE_URL: sqlite:///./company_policy_ci.db
+        run: |
+          python -m pytest -q tests/test_company_settings_registry.py tests/accounting/test_company_journal_approval_policy.py
+
   runner-and-docker:
     name: Windows self-hosted runner + Docker release validation
     runs-on: [self-hosted, Windows, X64, PrimeERP]
