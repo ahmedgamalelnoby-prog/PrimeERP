@@ -31,7 +31,7 @@ _RAW = [
     ("accounting.default_purchase_account","accounting","Accounting","string","","Default purchase account code",None,"catalog"),
     ("accounting.default_cash_account","accounting","Accounting","string","","Default cash account code",None,"catalog"),
     ("tax.default_tax_inclusive_pricing","taxes","Taxes","bool",False,"Sales prices include tax by default",None,"runtime"),
-    ("tax.require_tax_code_on_invoice","taxes","Taxes","bool",True,"Require tax code on taxable invoices",None,"catalog"),
+    ("tax.require_tax_code_on_invoice","taxes","Taxes","bool",True,"Require tax code on taxable invoices",None,"runtime"),
     ("tax.einvoice_required_for_sales","egyptian-einvoice","Taxes","bool",False,"Require Egyptian e-invoice submission for eligible sales",None,"catalog"),
     # Sales / customer credit
     ("sales.require_quote_approval","sales","Sales","bool",False,"Require quotation approval above configured limits",None,"catalog"),
