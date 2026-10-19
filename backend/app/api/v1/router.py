@@ -36,6 +36,7 @@ from app.modules.integrations.product_mapping_router import router as integratio
 from app.modules.integrations.provider_catalog_router import router as integration_providers_router
 from app.modules.uom.router import router as uom_router
 from app.modules.companies.router import router as companies_router
+from app.modules.company_settings.router import router as company_settings_router
 from app.modules.branches.router import router as branches_router
 from app.modules.treasury.router import router as treasury_router
 from app.modules.treasury.bank_reconciliation.router import router as bank_reconciliation_router
@@ -101,6 +102,7 @@ def build_router() -> APIRouter:
     api_router.include_router(integration_providers_router)
     api_router.include_router(uom_router)
     api_router.include_router(companies_router)
+    api_router.include_router(company_settings_router)
     api_router.include_router(branches_router)
     api_router.include_router(treasury_router)
     api_router.include_router(bank_reconciliation_router)
