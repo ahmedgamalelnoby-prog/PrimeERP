@@ -15,7 +15,7 @@ _RAW = [
     ("general.allow_multi_currency","general","General","bool",True,"Allow foreign-currency transactions",None,"runtime"),
     ("general.require_cost_center","general","General","bool",False,"Require cost center where supported",None,"runtime"),
     ("general.require_project","general","General","bool",False,"Require project dimension where supported",None,"catalog"),
-    ("general.branch_required","general","General","bool",False,"Require branch on company transactions",None,"catalog"),
+    ("general.branch_required","general","General","bool",False,"Require branch on company transactions",None,"runtime"),
     ("general.intercompany_enabled","general","General","bool",False,"Enable intercompany workflows",None,"catalog"),
     # Accounting and tax
     ("accounting.period_lock_enabled","accounting","Accounting","bool",True,"Prevent posting into closed periods",None,"catalog"),
