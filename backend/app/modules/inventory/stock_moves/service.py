@@ -156,15 +156,19 @@ class InventoryStockMoveService:
         if source_balance:
             on_hand = Decimal(source_balance.quantity_on_hand or 0)
             reserved = Decimal(source_balance.quantity_reserved or 0)
-            if move.movement_type in {"issue", "transfer", "adjustment"} and on_hand - reserved < quantity and not allow_negative_stock:
-                raise ValueError("Insufficient available stock after excluding reserved quantity")
+            if move.movement_type in {"issue", "transfer", "adjustment"} and reserved > 0 and on_hand - reserved < quantity:
+                raise ValueError("Movement would consume stock reserved for another transaction")
             if on_hand < quantity and not allow_negative_stock:
                 raise ValueError("Insufficient stock at source location")
             if on_hand < quantity and item.costing_method == "fifo":
                 raise ValueError("Negative stock is not supported for FIFO valuation; receive stock or use a supported valuation policy")
             warehouse_source = self._warehouse_stock(db, company_id, move.item_id, variant_id, source_warehouse_id)
-            if move.movement_type in {"issue", "transfer", "adjustment"} and Decimal(warehouse_source.quantity_on_hand or 0) - Decimal(warehouse_source.quantity_reserved or 0) < quantity and not allow_negative_stock:
-                raise ValueError("Insufficient available warehouse stock after excluding reserved quantity")
+            warehouse_on_hand = Decimal(warehouse_source.quantity_on_hand or 0)
+            warehouse_reserved = Decimal(warehouse_source.quantity_reserved or 0)
+            if move.movement_type in {"issue", "transfer", "adjustment"} and warehouse_reserved > 0 and warehouse_on_hand - warehouse_reserved < quantity:
+                raise ValueError("Movement would consume warehouse stock reserved for another transaction")
+            if warehouse_on_hand < quantity and not allow_negative_stock:
+                raise ValueError("Insufficient warehouse stock")
             if item.costing_method == "fifo":
                 fifo_allocations = self._consume_fifo_layers(db, company_id, move.item_id, variant_id, source_warehouse_id, quantity)
                 unit_cost = self._weighted_cost(fifo_allocations)
