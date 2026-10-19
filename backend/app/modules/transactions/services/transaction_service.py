@@ -52,6 +52,14 @@ class TransactionService:
             branch_id=payload.branch_id,
         )
 
+        if payload.branch_id is None and get_company_setting(
+            db, payload.company_id, "general.branch_required"
+        ) is True:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Company policy requires a branch for transactions",
+            )
+
         if payload.source_id is not None:
             existing = (
                 transaction_repository
