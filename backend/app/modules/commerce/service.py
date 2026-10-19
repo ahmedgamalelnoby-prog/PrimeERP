@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.accounting.models import TaxRate
 from app.modules.companies.models import Company
+from app.modules.company_settings.service import get_company_setting
 from app.modules.identity.models import User
 from app.modules.accounting.tax_engine import calculate_taxes
 from app.modules.commerce.accounting_service import commerce_accounting_service
@@ -89,6 +90,10 @@ class CommerceService:
         if payload.receipt_ids:
             receipts = list(db.scalars(select(PurchaseDocument).where(PurchaseDocument.id.in_(payload.receipt_ids), PurchaseDocument.company_id == payload.company_id, PurchaseDocument.partner_id == payload.partner_id, PurchaseDocument.document_type == "receipt", PurchaseDocument.status.in_(["received", "partially_received"]))).all()); found = {r.id for r in receipts}; missing = [r for r in payload.receipt_ids if r not in found]
             if missing: raise ValueError(f"Receipt(s) not found, not received, or not owned by the vendor/company: {missing}")
+        if payload.document_type == "bill" and get_company_setting(
+            db, payload.company_id, "purchasing.require_goods_receipt"
+        ) is True and not payload.receipt_ids:
+            raise ValueError("Company policy requires a received goods receipt before creating a supplier bill")
         obj = model(company_id=payload.company_id, partner_id=payload.partner_id, document_type=payload.document_type, number=payload.number, document_date=payload.document_date, warehouse_id=payload.warehouse_id, due_date=resolve_due_date(payload.document_type, payload.document_date, payload.due_date, partner.payment_terms_days), notes=payload.notes)
         subtotal = Decimal("0"); tax = Decimal("0"); discount = Decimal("0")
         for p in payload.lines:
@@ -99,7 +104,7 @@ class CommerceService:
             if explicit_tax_ids is None and p.tax_percent != 0: raise ValueError("Tax Master is required for non-zero tax rates")
             gross = p.quantity * p.unit_price; disc = gross * p.discount_percent / Decimal("100"); net = gross - disc
             if net < 0: raise ValueError("Line discount cannot exceed the line gross amount")
-            tax_result = calculate_taxes(db, company_id=payload.company_id, amount=net, tax_ids=tax_ids, inclusive=False); tax_amount = Decimal(tax_result["tax_total"]); line_total = net + tax_amount
+            tax_result = calculate_taxes(db, company_id=payload.company_id, amount=net, tax_ids=tax_ids, inclusive=None); tax_amount = Decimal(tax_result["tax_total"]); line_total = net + tax_amount
             tax_rows = list(db.scalars(select(TaxRate).where(TaxRate.id.in_(tax_ids), TaxRate.company_id == payload.company_id)).all()) if tax_ids else []
             non_wht_ids = [tax.id for tax in tax_rows if not tax.is_withholding]; primary_tax_id = non_wht_ids[0] if non_wht_ids else (tax_ids[0] if tax_ids else None); primary_tax_percent = Decimal(next((tax.rate for tax in tax_rows if tax.id == primary_tax_id), 0))
             obj.lines.append(line_model(item_id=p.item_id, variant_id=variant_id, tax_rate_id=primary_tax_id, tax_rate_ids=tax_ids, description=p.description, quantity=p.quantity, unit_price=p.unit_price, discount_percent=p.discount_percent, tax_percent=primary_tax_percent, line_total=line_total)); subtotal += net; discount += disc; tax += tax_amount
@@ -173,6 +178,8 @@ class CommerceService:
         if document.document_type != "invoice":
             return
         partner = db.scalar(select(BusinessPartner).where(BusinessPartner.id == document.partner_id, BusinessPartner.company_id == company_id).with_for_update())
+        if get_company_setting(db, company_id, "sales.credit_limit_enforced") is not True:
+            return
         limit = Decimal(partner.credit_limit or 0) if partner else Decimal("0")
         if limit <= 0:
             return
