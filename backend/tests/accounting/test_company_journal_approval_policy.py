@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from app.modules.accounting.journals.services import journal_service as service_module
+import app.modules.accounting.journals.services.journal_service as service_module
 
 
 class FakeDB:
