@@ -1,5 +1,8 @@
 """Typed, centrally-defined company policy catalog. Secrets belong in the integrations credential vault, never here."""
+import math
+import re
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 # status='catalog' means persisted and visible, but the owning workflow still needs to consume it before it changes transactions.
 # status='runtime' is reserved for options whose behavior is enforced by a workflow.
@@ -91,20 +94,34 @@ BY_KEY = {item["key"]: item for item in CATALOG}
 
 
 def validate_value(key: str, value: Any) -> Any:
-    item = BY_KEY[key]
+    item = BY_KEY.get(key)
+    if item is None:
+        raise ValueError(f"Unknown company setting: {key}")
     kind = item["type"]
     if kind == "bool" and not isinstance(value, bool):
         raise ValueError(f"{key} must be true or false")
     if kind == "int" and (isinstance(value, bool) or not isinstance(value, int)):
         raise ValueError(f"{key} must be an integer")
-    if kind == "number" and (isinstance(value, bool) or not isinstance(value, (int, float))):
-        raise ValueError(f"{key} must be numeric")
+    if kind == "number" and (
+        isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value))
+    ):
+        raise ValueError(f"{key} must be a finite number")
     if kind == "string" and (not isinstance(value, str) or len(value) > 200):
         raise ValueError(f"{key} must be text up to 200 characters")
-    if kind == "enum" and value not in item["choices"]:
+    if kind == "enum" and (not isinstance(value, str) or value not in item["choices"]):
         raise ValueError(f"{key} has an unsupported option")
-    if kind == "int" and key.endswith("fiscal_year_start_month") and not 1 <= value <= 12:
+
+    if key == "general.timezone":
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, TypeError):
+            raise ValueError(f"{key} must be a valid IANA timezone") from None
+    if key == "general.base_currency" and not re.fullmatch(r"[A-Z]{3}", value):
+        raise ValueError(f"{key} must be a 3-letter uppercase currency code")
+    if key.endswith("fiscal_year_start_month") and not 1 <= value <= 12:
         raise ValueError(f"{key} must be between 1 and 12")
+    if key == "hr.default_work_hours_per_day" and not 0 < float(value) <= 24:
+        raise ValueError(f"{key} must be greater than 0 and at most 24")
     if kind == "int" and ("days" in key or "hours" in key or "minutes" in key or "limit" in key) and not 0 <= value <= 10000:
         raise ValueError(f"{key} must be between 0 and 10000")
     if kind == "number" and not 0 <= float(value) <= 100:
