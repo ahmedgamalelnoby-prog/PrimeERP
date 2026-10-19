@@ -6,9 +6,9 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 ## Result
 
 - Catalog entries audited individually: **68**.
-- Confirmed workflow consumers in this change: **1**.
-- Visible/persisted options not yet enforced by their owning workflows: **67**.
-- The only confirmed runtime consumer is `inventory.allow_negative_stock`, read during stock-movement posting. FIFO negative issues remain blocked for valuation safety, and reserved quantities remain protected.
+- Confirmed workflow consumers in this change: **2**.
+- Visible/persisted options not yet enforced by their owning workflows: **66**.
+- Confirmed runtime consumers are `inventory.allow_negative_stock` (stock-movement posting) and `accounting.require_journal_approval` (journal posting). Journal posting now checks the company policy in addition to the journal-specific approval rule. FIFO negative issues remain blocked for valuation safety, and reserved quantities remain protected.
 - This is a source-level audit, not a successful runtime test. Docker is unavailable/offline for the user, and the GitHub self-hosted Release Gate is queued; no test-pass claim is made.
 
 ## Status definitions
@@ -36,7 +36,7 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 |---|---|---|---|
 | `accounting.period_lock_enabled` | bool | CATALOG ONLY | Prevent posting into closed periods |
 | `accounting.allow_backdated_entries` | bool | CATALOG ONLY | Allow backdated entries subject to period controls |
-| `accounting.require_journal_approval` | bool | CATALOG ONLY | Require approval before journal posting |
+| `accounting.require_journal_approval` | bool | **RUNTIME** | Require approval before journal posting |
 | `accounting.auto_post_sales_invoice` | bool | CATALOG ONLY | Automatically post eligible sales invoices |
 | `accounting.auto_post_purchase_invoice` | bool | CATALOG ONLY | Automatically post eligible purchase invoices |
 | `accounting.rounding_method` | enum | CATALOG ONLY | Document rounding policy |
@@ -153,7 +153,7 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 
 ## Recommended order for full wiring
 
-1. Accounting controls: closed-period posting, backdated journals, approvals, default accounts, rounding and fiscal-year policies.
+1. Accounting controls: closed-period posting, backdated journals, default accounts, rounding and fiscal-year policies. Journal approval is now enforced from company policy; remaining controls still require workflow wiring.
 2. Sales and procurement: approval rules, delivery/receipt requirements, customer credit limits, overbilling and price variance tolerances.
 3. Inventory: warehouse/bin requirements, reservation behavior, below-cost sales, serial/batch/expiry, and valuation method consistency.
 4. HR: biometric device ingestion, attendance correction/overtime/leave/payroll approvals, leave balances and work schedules.
