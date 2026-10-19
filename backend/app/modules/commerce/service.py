@@ -127,6 +127,12 @@ class CommerceService:
                 raise ValueError("Company policy requires a warehouse for stockable/consumable document lines")
             variant_id = getattr(p, "variant_id", None); self._resolve_line_variant(db, company_id=payload.company_id, item=item, variant_id=variant_id)
             explicit_tax_ids = getattr(p, "tax_rate_ids", None); tax_ids = self._resolve_line_tax_ids(db, company_id=payload.company_id, item=item, explicit_tax_ids=explicit_tax_ids, is_sale=is_sale)
+            if payload.document_type in {"invoice", "bill"} and get_company_setting(
+                db, payload.company_id, "tax.require_tax_code_on_invoice"
+            ) is True:
+                configured_tax_ids = list((item.sales_tax_ids if is_sale else item.purchase_tax_ids) or [])
+                if configured_tax_ids and not tax_ids:
+                    raise ValueError("Company policy requires a tax code on taxable invoice lines")
             if explicit_tax_ids is None and p.tax_percent != 0: raise ValueError("Tax Master is required for non-zero tax rates")
             gross = p.quantity * p.unit_price; disc = gross * p.discount_percent / Decimal("100"); net = gross - disc
             if net < 0: raise ValueError("Line discount cannot exceed the line gross amount")
