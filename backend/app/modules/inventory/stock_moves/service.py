@@ -82,12 +82,15 @@ class InventoryStockMoveService:
         if item.item_type not in {"stockable", "consumable"}:
             raise ValueError("Only stockable or consumable items can have stock movements")
         self._validate_variant(db, company_id=payload.company_id, item=item, variant_id=payload.variant_id)
+        require_bin_location = get_company_setting(db, payload.company_id, "inventory.require_bin_location") is True
         locations = {}
         for location_id in (payload.source_location_id, payload.destination_location_id):
             if location_id is not None:
                 location = db.scalar(select(InventoryLocation).where(InventoryLocation.id == location_id, InventoryLocation.company_id == payload.company_id, InventoryLocation.is_active.is_(True)))
                 if location is None:
                     raise ValueError("Location does not belong to the company or is inactive")
+                if require_bin_location and location.parent_id is None:
+                    raise ValueError("Company policy requires stock movements to use child/bin locations")
                 locations[location_id] = location
         if payload.source_location_id is None and payload.destination_location_id is None:
             raise ValueError("At least one stock location is required")
