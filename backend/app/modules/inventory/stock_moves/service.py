@@ -150,6 +150,14 @@ class InventoryStockMoveService:
         variant_id = getattr(move, "variant_id", None)
         source_balance = self._location_balance(db, company_id, move.item_id, variant_id, move.source_location_id, lock=True) if move.source_location_id else None
         destination_balance = self._location_balance(db, company_id, move.item_id, variant_id, move.destination_location_id, lock=True) if move.destination_location_id else None
+        require_bin_location = get_company_setting(db, company_id, "inventory.require_bin_location") is True
+        if require_bin_location:
+            endpoint_locations = [
+                balance.location for balance in (source_balance, destination_balance)
+                if balance is not None
+            ]
+            if any(location.parent_id is None for location in endpoint_locations):
+                raise ValueError("Company policy requires stock movements to use child/bin locations")
         source_warehouse_id = source_balance.location.warehouse_id if source_balance else None
         destination_warehouse_id = destination_balance.location.warehouse_id if destination_balance else None
         unit_cost = Decimal(move.unit_cost or 0)
