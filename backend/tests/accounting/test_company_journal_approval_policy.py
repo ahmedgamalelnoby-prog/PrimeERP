@@ -6,6 +6,7 @@ import pytest
 from fastapi import HTTPException
 
 import app.modules.accounting.journals.services.journal_service as service_module
+from app.modules.company_settings.registry import BY_KEY
 
 
 class FakeDB:
@@ -57,7 +58,14 @@ def _lines():
 
 def _wire(monkeypatch, entry, db, policy):
     monkeypatch.setattr(service_module.journal_service, "_locked_entry", lambda *_args, **_kwargs: entry)
-    monkeypatch.setattr(service_module, "get_company_setting", lambda _db, _company_id, _key: policy)
+    def company_policy(_db, _company_id, key):
+        if key == "accounting.require_journal_approval":
+            return policy
+        if key == "accounting.allow_backdated_entries":
+            return True  # Keep these focused approval tests independent of the date policy.
+        return BY_KEY[key]["default"]
+
+    monkeypatch.setattr(service_module, "get_company_setting", company_policy)
     monkeypatch.setattr(
         service_module.fiscal_year_repository,
         "get_period_by_id",
