@@ -20,8 +20,8 @@ const moduleAr:Record<string,string> = {
   general:"عام", accounting:"المحاسبة", taxes:"الضرائب", "egyptian-einvoice":"الفاتورة الإلكترونية",
   sales:"المبيعات", purchasing:"المشتريات", inventory:"المخزون", hr:"الموارد البشرية",
   approvals:"الموافقات", pos:"نقاط البيع", manufacturing:"التصنيع", crm:"إدارة العملاء",
-  integrations:"التكاملات", audit:"المراجعة
-"};
+  integrations:"التكاملات", audit:"المراجعة"
+};
 
 export default function CompanyPolicySettingsPage() {
   const [companies,setCompanies] = useState<Company[]>([]);
