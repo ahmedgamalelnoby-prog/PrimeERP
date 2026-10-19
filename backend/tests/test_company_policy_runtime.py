@@ -105,3 +105,34 @@ def test_duplicate_customer_policy_blocks_matching_customer(monkeypatch):
 
     with pytest.raises(ValueError, match="Possible duplicate customer"):
         commerce_service_module.commerce_service.create_partner(FakeDB(), payload)
+
+
+
+def test_pos_discount_is_blocked_above_company_limit(monkeypatch):
+    from app.modules.pos import router as pos_router_module
+
+    monkeypatch.setattr(
+        pos_router_module,
+        "get_company_setting",
+        lambda _db, _company_id, key: {
+            "pos.allow_discount_without_approval": False,
+            "pos.max_discount_pct_without_approval": 5,
+        }[key],
+    )
+    with pytest.raises(HTTPException) as exc:
+        pos_router_module._validate_discount_policy(object(), 7, Decimal("10"))
+    assert exc.value.status_code == 409
+
+
+def test_pos_discount_within_company_limit_is_allowed(monkeypatch):
+    from app.modules.pos import router as pos_router_module
+
+    monkeypatch.setattr(
+        pos_router_module,
+        "get_company_setting",
+        lambda _db, _company_id, key: {
+            "pos.allow_discount_without_approval": False,
+            "pos.max_discount_pct_without_approval": 5,
+        }[key],
+    )
+    pos_router_module._validate_discount_policy(object(), 7, Decimal("5"))
