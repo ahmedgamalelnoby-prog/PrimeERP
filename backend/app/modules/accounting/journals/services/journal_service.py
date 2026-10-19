@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
@@ -31,7 +32,7 @@ class JournalService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Journal entry not found")
         return entry
 
-    def create_draft(self, db: Session, *, tenant_id: int, company_id: int, branch_id: int, journal_id: int, fiscal_year_id: int, period_id: int, entry_number: str, entry_date: date, description: str, lines: list[dict], user_id: int | None = None, currency_code: str = "EGP", exchange_rate: Decimal = Decimal("1"), reference: str | None = None, source_module: str | None = None, source_entity: str | None = None, source_id: int | None = None, commit: bool = True) -> JournalEntry:
+    def create_draft(self, db: Session, *, tenant_id: int, company_id: int, branch_id: int, journal_id: int, fiscal_year_id: int, period_id: int, entry_number: str, entry_date: date, description: str, lines: list[dict], user_id: int | None = None, currency_code: str | None = None, exchange_rate: Decimal = Decimal("1"), reference: str | None = None, source_module: str | None = None, source_entity: str | None = None, source_id: int | None = None, commit: bool = True) -> JournalEntry:
         journal = journal_repository.get_journal(db, journal_id, tenant_id, company_id)
         if journal is None or not journal.is_active:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Accounting journal not found")
@@ -41,6 +42,33 @@ class JournalService:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Journal entry requires at least two lines")
         if exchange_rate <= 0:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Exchange rate must be positive")
+        base_currency = str(get_company_setting(db, company_id, "general.base_currency")).upper()
+        allow_multi_currency = get_company_setting(db, company_id, "general.allow_multi_currency") is True
+        currency_code = str(currency_code or base_currency).upper()
+        if currency_code != base_currency and not allow_multi_currency:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Company policy does not allow foreign-currency journals (base currency: {base_currency})",
+            )
+        if currency_code == base_currency and exchange_rate != Decimal("1"):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Base-currency journal entries must use an exchange rate of 1",
+            )
+        company_timezone = str(get_company_setting(db, company_id, "general.timezone"))
+        company_today = datetime.now(ZoneInfo(company_timezone)).date()
+        if get_company_setting(db, company_id, "accounting.allow_backdated_entries") is not True and entry_date < company_today:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Company policy does not allow backdated journal entries",
+            )
+        if get_company_setting(db, company_id, "general.require_cost_center") is True:
+            missing_cost_center = [index + 1 for index, line in enumerate(lines) if line.get("cost_center_id") is None]
+            if missing_cost_center:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={"message": "Company policy requires a cost center on every journal line", "line_numbers": missing_cost_center},
+                )
         branch = db.scalar(select(Branch).where(Branch.id == branch_id, Branch.company_id == company_id, Branch.tenant_id == tenant_id, Branch.is_active.is_(True)))
         if branch is None:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Branch does not belong to the selected company and tenant")
