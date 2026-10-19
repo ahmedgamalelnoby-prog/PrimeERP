@@ -20,6 +20,7 @@ from app.modules.inventory.stock_moves.location_stock import InventoryLocationSt
 from app.modules.inventory.stock_moves.models import InventoryAccountingConfig, InventoryCostLayer, InventoryStockMove, InventoryValuationAllocation
 from app.modules.inventory.stock_moves.repository import inventory_stock_move_repository
 from app.modules.inventory.reservations.models import InventoryReservation
+from app.modules.company_settings.service import get_company_setting
 
 
 class InventoryStockMoveService:
@@ -120,6 +121,7 @@ class InventoryStockMoveService:
             raise ValueError("Company is outside the current tenant")
         if getattr(move, "source_entity", None) == "sales_delivery" and move.movement_type != "issue":
             raise ValueError("Sales delivery stock moves must be issue movements")
+        allow_negative_stock = get_company_setting(db, company_id, "inventory.allow_negative_stock") is True
         reservation = None
         reservation_id = getattr(move, "reservation_id", None)
         if reservation_id is not None:
@@ -154,12 +156,14 @@ class InventoryStockMoveService:
         if source_balance:
             on_hand = Decimal(source_balance.quantity_on_hand or 0)
             reserved = Decimal(source_balance.quantity_reserved or 0)
-            if move.movement_type in {"issue", "transfer", "adjustment"} and on_hand - reserved < quantity:
+            if move.movement_type in {"issue", "transfer", "adjustment"} and on_hand - reserved < quantity and not allow_negative_stock:
                 raise ValueError("Insufficient available stock after excluding reserved quantity")
-            if on_hand < quantity:
+            if on_hand < quantity and not allow_negative_stock:
                 raise ValueError("Insufficient stock at source location")
+            if on_hand < quantity and item.costing_method == "fifo":
+                raise ValueError("Negative stock is not supported for FIFO valuation; receive stock or use a supported valuation policy")
             warehouse_source = self._warehouse_stock(db, company_id, move.item_id, variant_id, source_warehouse_id)
-            if move.movement_type in {"issue", "transfer", "adjustment"} and Decimal(warehouse_source.quantity_on_hand or 0) - Decimal(warehouse_source.quantity_reserved or 0) < quantity:
+            if move.movement_type in {"issue", "transfer", "adjustment"} and Decimal(warehouse_source.quantity_on_hand or 0) - Decimal(warehouse_source.quantity_reserved or 0) < quantity and not allow_negative_stock:
                 raise ValueError("Insufficient available warehouse stock after excluding reserved quantity")
             if item.costing_method == "fifo":
                 fifo_allocations = self._consume_fifo_layers(db, company_id, move.item_id, variant_id, source_warehouse_id, quantity)
