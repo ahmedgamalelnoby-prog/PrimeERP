@@ -144,6 +144,14 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 | `integrations.retry_limit` | int | **RUNTIME** | Maximum manual integration event retries before dead-lettering |
 | `integrations.webhook_signature_required` | bool | **RUNTIME** | Require signature for public Salla webhook intake; supplied signatures are always verified |
 
+## Follow-up review fixes (2026-10-20)
+
+- Corrected purchase-bill source idempotency lookup so it no longer passes an unsupported keyword to _existing_source.
+- Applied accounting.auto_post_purchase_invoice at the actual purchase-bill posting decision, rather than during the existing-source lookup.
+- Aligned commerce accounting-period selection with accounting.period_lock_enabled; the journal posting service remains the enforcement point and still checks company/fiscal-year membership and entry-date range.
+- Hardened POS discount behavior: when approval-free discounts are disabled, any positive discount is rejected because the checkout path has no approval-capture workflow; when enabled, discounts above pos.max_discount_pct_without_approval are rejected.
+- Added POS regression coverage for approval-required discounts, above-limit discounts, and an allowed discount at the configured limit. These tests are committed but have not been executed successfully.
+
 ## Defects and improvements made during this audit
 
 1. Validation now rejects unknown setting keys, invalid enum values, wrong booleans, non-finite numbers (NaN/Infinity), invalid IANA time zones, malformed 3-letter uppercase currency codes, out-of-range fiscal year months, and workday lengths outside 0–24 hours.
