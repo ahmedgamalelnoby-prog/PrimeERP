@@ -238,3 +238,58 @@ Added focused unit tests for the Salla signature verifier: a valid HMAC-SHA256 s
 ### Salla webhook company-policy endpoint coverage (2026-10-20)
 
 Added a public-webhook endpoint regression test that sets `integrations.webhook_signature_required` to true and verifies a request with no signature is rejected with HTTP 401 before JSON/event processing. This complements the direct valid/invalid HMAC verifier tests. The endpoint test is committed but has not been executed; the self-hosted Windows runner remains the only permitted test gate, and no passing result is claimed.
+
+
+## Remaining catalog-only backlog — grouped implementation plan (2026-10-20)
+
+The 41 catalog-only settings below are the remaining candidates for workflow wiring. Grouping is by the primary workflow needed; it is not a claim that the work is already implemented.
+
+### A. Company defaults and accounting configuration (9)
+- `general.default_language`, `general.date_format`: apply company preferences consistently in frontend formatting/localization.
+- `general.require_project`: add project dimension to the supported document schemas and persistence first.
+- `general.intercompany_enabled`: implement intercompany transaction lifecycle, balancing, and cross-company permissions.
+- `accounting.default_receivable_account`, `accounting.default_payable_account`, `accounting.default_sales_account`, `accounting.default_purchase_account`, `accounting.default_cash_account`: resolve configured account codes against the company chart of accounts, validate account eligibility, and use them only as fallbacks when creating accounting lines.
+
+### B. Tax and Egyptian e-invoice (1)
+- `tax.einvoice_required_for_sales`: enforce submission/acceptance requirements at the sales document finalization boundary; define failure/retry behavior and exemptions before blocking transactions.
+
+### C. Sales and customer rules (6)
+- `sales.require_quote_approval`, `sales.require_order_approval`: add explicit draft → pending approval → approved/rejected transitions, approver permissions, audit history and tests.
+- `sales.invoice_requires_delivery`, `sales.allow_overbilling`: introduce reliable order-line ↔ delivery-line ↔ invoice-line allocation and quantity accounting; do not infer relationships by customer alone.
+- `sales.allow_negative_customer_balance`: define which transaction types and permissions may create negative balances, then enforce in the credit/balance service.
+- `sales.document_numbering`: implement company/year sequence generation with transaction-safe allocation and uniqueness constraints/migration.
+
+### D. Purchasing and supplier controls (4)
+- `purchasing.require_purchase_order`, `purchasing.require_purchase_approval`: persist purchase-order source links and approval lifecycle before enforcing supplier-bill restrictions.
+- `purchasing.allow_invoice_price_variance`, `purchasing.price_variance_tolerance_pct`: compare supplier invoice line price/quantity with linked PO/receipt lines and apply the tolerance at bill validation; these two settings must be implemented together.
+
+### E. Inventory and costing (6)
+- `inventory.valuation_method`: verify all issue/receipt/return/adjustment paths share a consistent company costing strategy; requires migration/revaluation strategy if existing stock has balances.
+- `inventory.auto_reserve_sales_orders`: add atomic reservation records and release/expiry behavior on cancellation, edits and fulfillment.
+- `inventory.allow_below_cost_sale`: enforce using current valuation cost and explicit permission/audit behavior at sales-line validation.
+- `inventory.expiry_tracking_required`, `inventory.serial_tracking_default`, `inventory.batch_tracking_default`: connect item tracking flags to receipt, stock movement, lot/serial identity and issue validation; defaults should affect new items only unless a migration is deliberately approved.
+
+### F. HR (8)
+- `hr.attendance_source`, `hr.biometric_sync_interval_minutes`: add supported source adapters and a scheduler/worker with per-company configuration.
+- `hr.require_attendance_approval`, `hr.overtime_requires_approval`, `hr.leave_requires_approval`, `hr.payroll_requires_approval`: implement approval states and role checks in each corresponding HR lifecycle before marking runtime.
+- `hr.allow_negative_leave_balance`: enforce at leave request/approval and concurrent balance update.
+- `hr.default_work_hours_per_day`: use as a company fallback in schedules and overtime calculations where an employee-specific schedule is absent.
+
+### G. Approval engine and operations (2)
+- `workflow.approval_mode`, `workflow.escalation_after_hours`: complete the approval engine (sequential/parallel/any-one decisions, due-time tracking, escalation jobs and audit trail). Do not wire these to UI labels alone.
+
+### H. POS and manufacturing (4)
+- `pos.allow_open_cash_drawer`, `pos.require_shift_close`: add permission-checked cash-drawer events and enforced shift close/reconciliation before session finalization.
+- `manufacturing.require_work_order`, `manufacturing.allow_overproduction`: enforce work-order linkage and planned-vs-produced quantity at production completion, with stock/ledger consistency.
+
+### I. Integrations (1)
+- `integrations.auto_sync_enabled`: implement a per-company scheduled sync worker, locking/idempotency and failure handling. Keep manual sync available regardless of this setting; the toggle should control scheduled runs only.
+
+### Recommended execution sequence
+1. Low-dependency defaults: date/language presentation, account-code fallback resolution, workday/payment defaults where their owning service already exists.
+2. Sales/purchasing lifecycle foundations: document approval states and source-line relationships, followed by delivery/overbilling and PO/price variance policies.
+3. Inventory tracking/reservation/costing after migrations and valuation compatibility review.
+4. HR and approval engine with schedulers/workers and auditable transitions.
+5. POS session lifecycle, manufacturing completion controls, intercompany, and scheduled integration sync.
+
+For each policy, promotion to `runtime` requires: (a) an identified authoritative workflow boundary, (b) company/tenant isolation, (c) positive and negative tests, and (d) successful execution in the free self-hosted test gate. Until then it remains explicitly `catalog`.
