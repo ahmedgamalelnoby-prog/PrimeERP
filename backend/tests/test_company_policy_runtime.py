@@ -257,3 +257,73 @@ def test_company_setting_registry_defaults_match_declared_types():
     assert len({item["key"] for item in CATALOG}) == len(CATALOG)
     for item in CATALOG:
         assert validate_value(item["key"], item["default"]) == item["default"]
+
+
+
+def test_integration_retry_policy_moves_exhausted_event_to_dead_letter(monkeypatch):
+    from app.modules.integrations import router as integrations_router
+
+    event = SimpleNamespace(id=9, status="failed", attempts=5, company_id=7)
+    class FakeDB:
+        committed = False
+        def scalar(self, _query):
+            return event
+        def commit(self):
+            self.committed = True
+
+    db = FakeDB()
+    monkeypatch.setattr(integrations_router, "_company_for_user", lambda *_args: None)
+    monkeypatch.setattr(
+        integrations_router,
+        "get_company_setting",
+        lambda _db, _company_id, key: 5 if key == "integrations.retry_limit" else None,
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        integrations_router.retry_event(
+            event_id=9,
+            company_id=7,
+            current_user=SimpleNamespace(tenant_id=3),
+            db=db,
+        )
+
+    assert exc.value.status_code == 409
+    assert event.status == "dead_letter"
+    assert db.committed is True
+
+
+def test_integration_retry_policy_allows_retry_below_company_limit(monkeypatch):
+    from app.modules.integrations import router as integrations_router
+
+    event = SimpleNamespace(
+        id=9, status="failed", attempts=2, company_id=7,
+        next_attempt_at=None, last_error="previous failure",
+    )
+    class FakeDB:
+        committed = False
+        def scalar(self, _query):
+            return event
+        def commit(self):
+            self.committed = True
+
+    db = FakeDB()
+    monkeypatch.setattr(integrations_router, "_company_for_user", lambda *_args: None)
+    monkeypatch.setattr(
+        integrations_router,
+        "get_company_setting",
+        lambda _db, _company_id, key: 5 if key == "integrations.retry_limit" else None,
+    )
+    monkeypatch.setattr(integrations_router, "_process_event", lambda _db, _event: {"ok": True})
+
+    result = integrations_router.retry_event(
+        event_id=9,
+        company_id=7,
+        current_user=SimpleNamespace(tenant_id=3),
+        db=db,
+    )
+
+    assert result["status"] == "processed"
+    assert event.attempts == 3
+    assert event.status == "queued"
+    assert event.last_error is None
+    assert db.committed is True
