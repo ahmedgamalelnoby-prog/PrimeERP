@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import client from "@/shared/api/client";
 import "@/shared/api/interceptors";
+import { formatCompanyDate, isCompanyDateFormat, type CompanyDateFormat } from "@/utils/format-date";
 
 type Row = Record<string, unknown>;
 type RouteConfig = { title: string; endpoint: string; kind: "partners" | "documents" | "shipping"; partnerType?: "customer" | "vendor"; documentKind?: "sale" | "purchase"; documentType?: string };
@@ -43,6 +44,7 @@ export default function OperationalPage() {
   const [chequeBank, setChequeBank] = useState("");
   const [chequeDueDate, setChequeDueDate] = useState(new Date().toISOString().slice(0, 10));
   const [payments, setPayments] = useState<Row[]>([]);
+  const [dateFormat, setDateFormat] = useState<CompanyDateFormat>("DD/MM/YYYY");
   const companyId = selectedCompanyId();
   const query = useMemo(() => companyId ? `?company_id=${companyId}` : "", [companyId]);
   const isSale = meta.endpoint === "/commerce/sales/documents";
@@ -65,6 +67,18 @@ export default function OperationalPage() {
       await load();
     } catch (e: any) {
       setError(e?.response?.data?.detail || "تعذر تنفيذ العملية");
+    }
+  }
+
+  async function loadDateFormat() {
+    if (!companyId) { setDateFormat("DD/MM/YYYY"); return; }
+    try {
+      const response = await client.get("/company-settings", { params: { company_id: companyId } });
+      const value = response.data?.settings?.find((setting: { key?: string }) => setting.key === "general.date_format")?.value;
+      setDateFormat(isCompanyDateFormat(value) ? value : "DD/MM/YYYY");
+    } catch {
+      // A policy-settings outage must not block document operations.
+      setDateFormat("DD/MM/YYYY");
     }
   }
 
@@ -126,7 +140,7 @@ export default function OperationalPage() {
     }
   }
 
-  useEffect(() => { void load(); void loadPayments(); }, [meta.endpoint, query]);
+  useEffect(() => { void load(); void loadPayments(); void loadDateFormat(); }, [meta.endpoint, query]);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -184,7 +198,7 @@ export default function OperationalPage() {
       </form>
       <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
         <div className="flex items-center justify-between border-b p-4"><h2 className="font-semibold">السجلات</h2><button onClick={() => void load()} className="rounded-lg border px-3 py-1.5 text-sm">تحديث</button></div>
-        {loading ? <div className="p-8 text-center text-sm text-muted-foreground">جارٍ التحميل...</div> : rows.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">لا توجد سجلات.</div> : <div className="overflow-auto"><table className="w-full text-sm"><thead><tr className="border-b bg-muted/40">{Object.keys(rows[0]).slice(0, 8).map(k => <th key={k} className="whitespace-nowrap px-4 py-3 text-right font-semibold">{k}</th>)}{(isSale || isPurchase) && <th className="whitespace-nowrap px-4 py-3 text-right font-semibold">إجراءات</th>}</tr></thead><tbody>{rows.map((r, i) => <tr key={String(r.id ?? i)} className="border-b last:border-0">{Object.keys(rows[0]).slice(0, 8).map(k => <td key={k} className="whitespace-nowrap px-4 py-3">{String(r[k] ?? "—")}</td>)}{(isSale || isPurchase) && <td className="whitespace-nowrap px-4 py-3"><div className="flex gap-2"><button type="button" onClick={() => void actionDocument(Number(r.id), "confirm")} className="rounded border px-2 py-1 text-xs">اعتماد</button><button type="button" onClick={() => void actionDocument(Number(r.id), "inventory")} className="rounded border px-2 py-1 text-xs">مخزون</button><div className="mt-2 flex gap-1"><input type="number" min="0.01" step="0.01" value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} placeholder="مبلغ" className="w-20 rounded border px-1 py-1 text-xs" /><select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className="rounded border px-1 py-1 text-xs"><option value="bank">Bank</option><option value="cash">Cash</option><option value="cheque">Cheque</option><option value="transfer">Transfer</option></select>{paymentMethod === "cheque" && <><input value={chequeNumber} onChange={e => setChequeNumber(e.target.value)} placeholder="رقم الشيك" className="w-24 rounded border px-1 py-1 text-xs" /><input value={chequeBank} onChange={e => setChequeBank(e.target.value)} placeholder="البنك" className="w-20 rounded border px-1 py-1 text-xs" /><input type="date" value={chequeDueDate} onChange={e => setChequeDueDate(e.target.value)} className="rounded border px-1 py-1 text-xs" /></>}<button type="button" onClick={() => void recordPayment(Number(r.id))} className="rounded border px-2 py-1 text-xs">دفع</button></div>{payments.filter(p => Number(p.document_id) === Number(r.id) && p.status === "posted").map(p => <button key={String(p.id)} type="button" onClick={() => void reversePayment(Number(p.id))} className="mt-1 block rounded border border-destructive/40 px-2 py-1 text-xs text-destructive">عكس دفعة {String(p.amount)}</button>)}</div></td>}</tr>)}</tbody></table></div>}
+        {loading ? <div className="p-8 text-center text-sm text-muted-foreground">جارٍ التحميل...</div> : rows.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">لا توجد سجلات.</div> : <div className="overflow-auto"><table className="w-full text-sm"><thead><tr className="border-b bg-muted/40">{Object.keys(rows[0]).slice(0, 8).map(k => <th key={k} className="whitespace-nowrap px-4 py-3 text-right font-semibold">{k}</th>)}{(isSale || isPurchase) && <th className="whitespace-nowrap px-4 py-3 text-right font-semibold">إجراءات</th>}</tr></thead><tbody>{rows.map((r, i) => <tr key={String(r.id ?? i)} className="border-b last:border-0">{Object.keys(rows[0]).slice(0, 8).map(k => <td key={k} className="whitespace-nowrap px-4 py-3">{(() => { const value = String(r[k] ?? "—"); return formatCompanyDate(value, dateFormat); })()}</td>)}{(isSale || isPurchase) && <td className="whitespace-nowrap px-4 py-3"><div className="flex gap-2"><button type="button" onClick={() => void actionDocument(Number(r.id), "confirm")} className="rounded border px-2 py-1 text-xs">اعتماد</button><button type="button" onClick={() => void actionDocument(Number(r.id), "inventory")} className="rounded border px-2 py-1 text-xs">مخزون</button><div className="mt-2 flex gap-1"><input type="number" min="0.01" step="0.01" value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} placeholder="مبلغ" className="w-20 rounded border px-1 py-1 text-xs" /><select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className="rounded border px-1 py-1 text-xs"><option value="bank">Bank</option><option value="cash">Cash</option><option value="cheque">Cheque</option><option value="transfer">Transfer</option></select>{paymentMethod === "cheque" && <><input value={chequeNumber} onChange={e => setChequeNumber(e.target.value)} placeholder="رقم الشيك" className="w-24 rounded border px-1 py-1 text-xs" /><input value={chequeBank} onChange={e => setChequeBank(e.target.value)} placeholder="البنك" className="w-20 rounded border px-1 py-1 text-xs" /><input type="date" value={chequeDueDate} onChange={e => setChequeDueDate(e.target.value)} className="rounded border px-1 py-1 text-xs" /></>}<button type="button" onClick={() => void recordPayment(Number(r.id))} className="rounded border px-2 py-1 text-xs">دفع</button></div>{payments.filter(p => Number(p.document_id) === Number(r.id) && p.status === "posted").map(p => <button key={String(p.id)} type="button" onClick={() => void reversePayment(Number(p.id))} className="mt-1 block rounded border border-destructive/40 px-2 py-1 text-xs text-destructive">عكس دفعة {String(p.amount)}</button>)}</div></td>}</tr>)}</tbody></table></div>}
       </div>
     </div>
   </section>;
