@@ -108,7 +108,24 @@ def test_duplicate_customer_policy_blocks_matching_customer(monkeypatch):
 
 
 
-def test_pos_discount_is_blocked_above_company_limit(monkeypatch):
+def test_pos_discount_above_no_approval_limit_is_blocked(monkeypatch):
+    from app.modules.pos import router as pos_router_module
+
+    monkeypatch.setattr(
+        pos_router_module,
+        "get_company_setting",
+        lambda _db, _company_id, key: {
+            "pos.allow_discount_without_approval": True,
+            "pos.max_discount_pct_without_approval": 5,
+        }[key],
+    )
+    with pytest.raises(HTTPException) as exc:
+        pos_router_module._validate_discount_policy(object(), 7, Decimal("10"))
+    assert exc.value.status_code == 409
+    assert "maximum" in exc.value.detail.lower()
+
+
+def test_pos_discount_is_blocked_when_approval_is_required(monkeypatch):
     from app.modules.pos import router as pos_router_module
 
     monkeypatch.setattr(
@@ -120,8 +137,9 @@ def test_pos_discount_is_blocked_above_company_limit(monkeypatch):
         }[key],
     )
     with pytest.raises(HTTPException) as exc:
-        pos_router_module._validate_discount_policy(object(), 7, Decimal("10"))
+        pos_router_module._validate_discount_policy(object(), 7, Decimal("1"))
     assert exc.value.status_code == 409
+    assert "requires approval" in exc.value.detail.lower()
 
 
 def test_pos_discount_within_company_limit_is_allowed(monkeypatch):
@@ -131,7 +149,7 @@ def test_pos_discount_within_company_limit_is_allowed(monkeypatch):
         pos_router_module,
         "get_company_setting",
         lambda _db, _company_id, key: {
-            "pos.allow_discount_without_approval": False,
+            "pos.allow_discount_without_approval": True,
             "pos.max_discount_pct_without_approval": 5,
         }[key],
     )
