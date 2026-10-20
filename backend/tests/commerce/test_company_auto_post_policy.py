@@ -1,6 +1,8 @@
 from datetime import date
 from types import SimpleNamespace
 
+import pytest
+
 import app.modules.commerce.accounting_service as accounting_module
 
 
@@ -85,3 +87,43 @@ def test_company_policy_allows_automatic_purchase_bill_journal_posting(monkeypat
 
     assert result.id == 99
     assert calls == ["submit", "post"]
+
+
+
+def test_company_account_code_default_overrides_legacy_account_id(monkeypatch):
+    db = SimpleNamespace(scalar=lambda _query: 812)
+    monkeypatch.setattr(
+        accounting_module,
+        "get_company_setting",
+        lambda _db, _company_id, key: "01005101" if key == "accounting.default_receivable_account" else "",
+    )
+
+    service = accounting_module.CommerceAccountingService()
+    assert service._configured_account_id(
+        db, 7, "accounting.default_receivable_account", 123
+    ) == 812
+
+
+def test_company_account_code_default_uses_legacy_fallback_when_unset(monkeypatch):
+    db = SimpleNamespace(scalar=lambda _query: pytest.fail("account lookup must not run"))
+    monkeypatch.setattr(accounting_module, "get_company_setting", lambda *_args: "")
+
+    service = accounting_module.CommerceAccountingService()
+    assert service._configured_account_id(
+        db, 7, "accounting.default_receivable_account", 123
+    ) == 123
+
+
+def test_company_account_code_default_rejects_unknown_account(monkeypatch):
+    from fastapi import HTTPException
+    import pytest
+
+    db = SimpleNamespace(scalar=lambda _query: None)
+    monkeypatch.setattr(accounting_module, "get_company_setting", lambda *_args: "99999999")
+
+    service = accounting_module.CommerceAccountingService()
+    with pytest.raises(HTTPException) as exc:
+        service._configured_account_id(
+            db, 7, "accounting.default_receivable_account", 123
+        )
+    assert exc.value.status_code == 409
