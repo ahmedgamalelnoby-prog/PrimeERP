@@ -1,5 +1,6 @@
 from datetime import date
 from decimal import Decimal
+from types import SimpleNamespace
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
@@ -24,8 +25,12 @@ class CommerceAccountingService:
         obj = db.scalar(select(CommerceAccountingSettings).where(CommerceAccountingSettings.company_id == company_id))
         if obj is None:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Commerce accounting configuration is missing for this company")
-        # Company account-code defaults override the legacy commerce-accounting
-        # IDs only when explicitly configured. Invalid codes fail closed.
+        # Return a detached value object: mutating the ORM row with policy
+        # overrides could accidentally persist company defaults as legacy IDs
+        # on a later commit in the same request.
+        settings = SimpleNamespace(
+            **{column.key: getattr(obj, column.key) for column in obj.__table__.columns}
+        )
         for attribute, policy_key in (
             ("ar_account_id", "accounting.default_receivable_account"),
             ("ap_account_id", "accounting.default_payable_account"),
@@ -34,10 +39,10 @@ class CommerceAccountingService:
             ("default_payment_account_id", "accounting.default_cash_account"),
         ):
             configured_id = self._configured_account_id(
-                db, company_id, policy_key, getattr(obj, attribute)
+                db, company_id, policy_key, getattr(settings, attribute)
             )
-            setattr(obj, attribute, configured_id)
-        return obj
+            setattr(settings, attribute, configured_id)
+        return settings
 
     def _configured_account_id(self, db: Session, company_id: int, policy_key: str, fallback_id: int) -> int:
         code = get_company_setting(db, company_id, policy_key)
