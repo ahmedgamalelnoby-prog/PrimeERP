@@ -189,3 +189,10 @@ A setting should be promoted from CATALOG ONLY to RUNTIME only after the consume
 - Added isolated tests for malformed currency codes, invalid IANA timezones, out-of-range POS discount percentages, boolean type confusion, and unknown setting keys.
 - Added a registry contract test checking key uniqueness and that every declared default passes its own type/range validator.
 - These are source-level unit tests only; they have not been executed because the Windows self-hosted runner depends on the user's currently-offline machine. No green CI status is implied.
+
+
+## Follow-up verification on 2026-10-20
+
+- Corrected the registry test's expected runtime-setting set to match the 27 settings currently marked `runtime`; the test had retained an older 14-setting expectation and would fail despite the newer registry coverage.
+- Added/retained validation coverage for invalid values and defaults in `backend/tests/test_company_policy_runtime.py` and `backend/tests/test_company_settings_registry.py`.
+- These are source-level corrections only. The self-hosted Windows runner is still queued while the user's local machine is unavailable, so no test pass is claimed.
