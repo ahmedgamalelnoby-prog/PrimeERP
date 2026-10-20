@@ -120,3 +120,20 @@ def test_journal_approval_policy_defaults_to_required():
     assert BY_KEY["accounting.require_journal_approval"]["default"] is True
     assert BY_KEY["accounting.require_journal_approval"]["status"] == "runtime"
     assert validate_value("accounting.require_journal_approval", False) is False
+
+
+@pytest.mark.parametrize("bad_format", ["DD-MM-YYYY", "YYYY/MM/DD", "", None, True])
+def test_company_date_format_accepts_only_declared_formats(bad_format):
+    with pytest.raises(ValueError):
+        validate_value("general.date_format", bad_format)
+
+
+@pytest.mark.parametrize("valid_format", ["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"])
+def test_company_date_format_accepts_declared_formats(valid_format):
+    assert validate_value("general.date_format", valid_format) == valid_format
+
+
+@pytest.mark.parametrize("bad_value", [-0.01, 100.01, float("nan"), float("inf"), True, "5"])
+def test_purchase_price_variance_tolerance_rejects_out_of_range_values(bad_value):
+    with pytest.raises(ValueError):
+        validate_value("purchasing.price_variance_tolerance_pct", bad_value)
