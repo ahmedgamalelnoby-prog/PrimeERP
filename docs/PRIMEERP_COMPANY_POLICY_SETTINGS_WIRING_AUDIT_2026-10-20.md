@@ -233,3 +233,8 @@ Added focused tests for `integrations.retry_limit`: an event at the configured a
 ### Salla webhook signature verification regression coverage (2026-10-20)
 
 Added focused unit tests for the Salla signature verifier: a valid HMAC-SHA256 signature is accepted, an invalid signature is rejected with HTTP 401, and a missing signature is rejected with HTTP 401. These exercise the verifier itself; they do not replace a full endpoint test of the company-level `integrations.webhook_signature_required` switch. Tests remain unverified until the self-hosted Windows runner executes them.
+
+
+### Salla webhook company-policy endpoint coverage (2026-10-20)
+
+Added a public-webhook endpoint regression test that sets `integrations.webhook_signature_required` to true and verifies a request with no signature is rejected with HTTP 401 before JSON/event processing. This complements the direct valid/invalid HMAC verifier tests. The endpoint test is committed but has not been executed; the self-hosted Windows runner remains the only permitted test gate, and no passing result is claimed.
