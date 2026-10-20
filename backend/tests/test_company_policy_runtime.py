@@ -154,3 +154,83 @@ def test_pos_discount_within_company_limit_is_allowed(monkeypatch):
         }[key],
     )
     pos_router_module._validate_discount_policy(object(), 7, Decimal("5"))
+
+
+def test_period_lookup_can_select_date_covering_closed_period_when_lock_disabled():
+    from app.modules.accounting.fiscal_years.models import AccountingPeriod
+    from app.modules.accounting.fiscal_years.repositories.fiscal_year_repository import FiscalYearRepository
+    from datetime import date
+
+    class Query:
+        def __init__(self):
+            self.filters = []
+            self.ordering = []
+
+        def filter(self, *conditions):
+            self.filters.extend(conditions)
+            return self
+
+        def order_by(self, *expressions):
+            self.ordering.extend(expressions)
+            return self
+
+        def first(self):
+            return "date-covering-period"
+
+    class DB:
+        def __init__(self):
+            self.query_object = Query()
+
+        def query(self, _model):
+            assert _model is AccountingPeriod
+            return self.query_object
+
+    db = DB()
+    result = FiscalYearRepository().get_period_for_date(
+        db, tenant_id=3, company_id=7, posting_date=date(2026, 10, 20), require_open=False
+    )
+
+    assert result == "date-covering-period"
+    rendered_filters = [str(condition) for condition in db.query_object.filters]
+    assert any("accounting_periods.start_date" in condition for condition in rendered_filters)
+    assert any("accounting_periods.end_date" in condition for condition in rendered_filters)
+    assert not any("accounting_periods.status" in condition for condition in rendered_filters)
+    assert not any("accounting_periods.allow_posting" in condition for condition in rendered_filters)
+
+
+def test_period_lookup_requires_open_and_postable_period_by_default():
+    from app.modules.accounting.fiscal_years.models import AccountingPeriod
+    from app.modules.accounting.fiscal_years.repositories.fiscal_year_repository import FiscalYearRepository
+    from datetime import date
+
+    class Query:
+        def __init__(self):
+            self.filters = []
+
+        def filter(self, *conditions):
+            self.filters.extend(conditions)
+            return self
+
+        def order_by(self, *_expressions):
+            return self
+
+        def first(self):
+            return None
+
+    class DB:
+        def __init__(self):
+            self.query_object = Query()
+
+        def query(self, _model):
+            assert _model is AccountingPeriod
+            return self.query_object
+
+    db = DB()
+    FiscalYearRepository().get_period_for_date(
+        db, tenant_id=3, company_id=7, posting_date=date(2026, 10, 20)
+    )
+
+    rendered_filters = [str(condition) for condition in db.query_object.filters]
+    assert any("accounting_periods.status" in condition for condition in rendered_filters)
+    assert any("accounting_periods.allow_posting" in condition for condition in rendered_filters)
+
