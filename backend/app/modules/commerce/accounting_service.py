@@ -123,7 +123,7 @@ class CommerceAccountingService:
 
     def post_purchase_bill(self, db, document, user_id: int):
         settings = self._settings(db, document.company_id)
-        existing = self._existing_source(db, company_id=document.company_id, source_entity="purchase_bill", source_id=document.id, auto_post_policy_key="accounting.auto_post_purchase_invoice")
+        existing = self._existing_source(db, company_id=document.company_id, source_entity="purchase_bill", source_id=document.id)
         if existing: return existing
         stock_total, expense_total = self._purchase_stock_expense_totals(db, document)
         linked_receipts = self._linked_receipt_ids(db, document)
@@ -146,7 +146,7 @@ class CommerceAccountingService:
         if expense_total: lines.append({"account_combination_id": settings.purchase_account_id, "debit": expense_total, "credit": 0, "description": f"Purchase expense {document.number}"})
         if Decimal(document.tax_total or 0): lines.append({"account_combination_id": settings.input_vat_account_id, "debit": Decimal(document.tax_total), "credit": 0, "description": f"Input VAT {document.number}"})
         lines.append({"account_combination_id": settings.ap_account_id, "debit": 0, "credit": Decimal(document.total), "description": f"AP {document.number}"})
-        return self._post(db, company_id=document.company_id, user_id=user_id, entry_date=document.document_date, journal_id=settings.purchase_journal_id, entry_number=f"PB-{document.id}", description=f"Purchase bill {document.number}", lines=lines, source_entity="purchase_bill", source_id=document.id)
+        return self._post(db, company_id=document.company_id, user_id=user_id, entry_date=document.document_date, journal_id=settings.purchase_journal_id, entry_number=f"PB-{document.id}", description=f"Purchase bill {document.number}", lines=lines, source_entity="purchase_bill", source_id=document.id, auto_post_policy_key="accounting.auto_post_purchase_invoice")
 
     def post_purchase_debit_note(self, db, document, user_id: int):
         settings = self._settings(db, document.company_id); stock_total, expense_total = self._purchase_stock_expense_totals(db, document); lines = []
