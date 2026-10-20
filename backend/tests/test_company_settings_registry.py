@@ -51,6 +51,8 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
         "accounting.default_sales_account",
         "accounting.default_purchase_account",
         "accounting.default_cash_account",
+        "purchasing.allow_invoice_price_variance",
+        "purchasing.price_variance_tolerance_pct",
     }
 
 
