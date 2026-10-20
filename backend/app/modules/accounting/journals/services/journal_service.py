@@ -227,22 +227,39 @@ class JournalService:
         if not reason or not reason.strip():
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="A reversal reason is required")
 
-        target_date = reversal_date or date.today()
+        company_timezone = str(get_company_setting(db, original.company_id, "general.timezone"))
+        company_today = datetime.now(ZoneInfo(company_timezone)).date()
+        target_date = reversal_date or company_today
+        if (
+            get_company_setting(db, original.company_id, "accounting.allow_backdated_entries") is not True
+            and target_date < company_today
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Company policy does not allow backdated journal reversals",
+            )
+        period_lock_enabled = get_company_setting(
+            db, original.company_id, "accounting.period_lock_enabled"
+        ) is True
 
-        # A reversal is a new accounting event. Its posting period must be
-        # resolved from the reversal date, not inherited from the original
-        # entry. This is essential when an entry is reversed after month/year
-        # close or in a later open fiscal period.
+        # A reversal is a new accounting event. Resolve its period from the
+        # reversal date and apply the same company period-lock policy as normal
+        # journal posting. Company/fiscal-year/date membership is always checked.
         period = fiscal_year_repository.get_period_for_date(
             db=db,
             tenant_id=tenant_id,
             company_id=original.company_id,
             posting_date=target_date,
+            require_open=period_lock_enabled,
         )
         if period is None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="No open accounting period is available for the reversal date",
+                detail=(
+                    "No open accounting period is available for the reversal date"
+                    if period_lock_enabled
+                    else "No accounting period covers the reversal date"
+                ),
             )
         period = fiscal_year_repository.get_period_by_id(
             db,
@@ -250,10 +267,15 @@ class JournalService:
             tenant_id,
             for_update=True,
         )
-        if period is None or period.status != "open" or not period.allow_posting:
+        if period is None or period.company_id != original.company_id or period.fiscal_year_id is None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Accounting period is not open for reversal posting",
+                detail="Accounting period does not belong to this company",
+            )
+        if period_lock_enabled and (period.status != "open" or not period.allow_posting):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Accounting period is locked for reversal posting by company policy",
             )
 
         lines = db.scalars(
