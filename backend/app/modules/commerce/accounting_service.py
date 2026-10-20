@@ -158,6 +158,29 @@ class CommerceAccountingService:
         if inventory_value <= 0: return None
         return self._post(db, company_id=document.company_id, user_id=user_id, entry_date=document.document_date, journal_id=settings.purchase_journal_id, entry_number=f"GRN-{document.id}", description=f"Goods receipt {document.number}", lines=[{"account_combination_id": settings.inventory_account_id, "debit": inventory_value, "credit": 0, "description": f"Inventory receipt {document.number}"}, {"account_combination_id": settings.grni_account_id, "debit": 0, "credit": inventory_value, "description": f"GRNI {document.number}"}], source_entity="purchase_receipt_accounting", source_id=document.id)
 
+    def _validate_purchase_price_variance(
+        self, db: Session, *, company_id: int, invoice_value: Decimal, receipt_value: Decimal
+    ) -> None:
+        if receipt_value <= 0:
+            return
+        variance_pct = abs(invoice_value - receipt_value) / receipt_value * Decimal("100")
+        tolerance = Decimal(str(get_company_setting(
+            db, company_id, "purchasing.price_variance_tolerance_pct"
+        )))
+        allow_beyond_tolerance = get_company_setting(
+            db, company_id, "purchasing.allow_invoice_price_variance"
+        ) is True
+        if variance_pct > tolerance and not allow_beyond_tolerance:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Supplier invoice price variance exceeds the company tolerance "
+                    f"({variance_pct:.4f}% > {tolerance:.4f}%). "
+                    "Review the invoice/receipt values or enable the company policy "
+                    "to allow variance beyond tolerance."
+                ),
+            )
+
     def post_purchase_bill(self, db, document, user_id: int):
         settings = self._settings(db, document.company_id)
         existing = self._existing_source(db, company_id=document.company_id, source_entity="purchase_bill", source_id=document.id)
@@ -173,6 +196,12 @@ class CommerceAccountingService:
                     item = db.scalar(select(InventoryItem).where(InventoryItem.id == line.item_id, InventoryItem.company_id == document.company_id))
                     if item and item.item_type in {"stockable", "consumable"}: receipt_value += self._allocate_receipt_value(db, document=document, line=line)
                 if receipt_value <= 0 and stock_total > 0: raise HTTPException(409, "Linked purchase receipts have no inventory valuation")
+                self._validate_purchase_price_variance(
+                    db,
+                    company_id=document.company_id,
+                    invoice_value=stock_total,
+                    receipt_value=receipt_value,
+                )
                 lines.append({"account_combination_id": account, "debit": receipt_value, "credit": 0, "description": f"GRNI clearing {document.number}"})
                 variance = stock_total - receipt_value
                 if variance != 0 and settings.purchase_price_variance_account_id is None: raise HTTPException(409, "Purchase Price Variance account is required when bill and receipt valuations differ")
