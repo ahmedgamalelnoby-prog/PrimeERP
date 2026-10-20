@@ -6,9 +6,9 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 ## Result
 
 - Catalog entries audited individually: **68**.
-- Confirmed workflow consumers in this change: **28**.
-- Visible/persisted options not yet enforced by their owning workflows: **40**.
-- Confirmed runtime consumers: `inventory.allow_negative_stock` (stock-movement posting), `accounting.require_journal_approval` (journal posting), `general.timezone`, `general.base_currency`, `general.allow_multi_currency`, `general.require_cost_center` and `accounting.allow_backdated_entries` (journal creation), plus `integrations.retry_limit` and `integrations.webhook_signature_required` (integration retry and Salla webhook intake), `accounting.fiscal_year_start_month` (fiscal-year creation), `accounting.rounding_method` and `tax.default_tax_inclusive_pricing` (tax calculation), `workflow.allow_self_approval` (generic transaction approval), `inventory.require_bin_location` (stock movement creation), `general.branch_required` (generic transaction creation), and `accounting.period_lock_enabled` (journal posting), `sales.credit_limit_enforced` (customer credit exposure check), `purchasing.require_goods_receipt` (supplier-bill creation), `sales.default_payment_terms_days` / `purchasing.default_payment_terms_days` (sales invoices and supplier bills when partner terms are unset), `crm.duplicate_customer_check` (customer creation by email/tax number), `pos.allow_discount_without_approval` / `pos.max_discount_pct_without_approval` (POS checkout discounts), `inventory.require_warehouse` (stockable/consumable commerce documents), `tax.require_tax_code_on_invoice` (taxable sales/purchase invoice lines), and `accounting.auto_post_sales_invoice` / `accounting.auto_post_purchase_invoice` (company-gated accounting auto-post). FIFO negative issues remain blocked for valuation safety, and reserved quantities remain protected.
+- Confirmed workflow consumers in this change: **33**.
+- Visible/persisted options not yet enforced by their owning workflows: **35**.
+- Confirmed runtime consumers: `inventory.allow_negative_stock` (stock-movement posting), `accounting.require_journal_approval` (journal posting), `general.timezone`, `general.base_currency`, `general.allow_multi_currency`, `general.require_cost_center` and `accounting.allow_backdated_entries` (journal creation), plus `integrations.retry_limit` and `integrations.webhook_signature_required` (integration retry and Salla webhook intake), `accounting.fiscal_year_start_month` (fiscal-year creation), `accounting.rounding_method` and `tax.default_tax_inclusive_pricing` (tax calculation), `workflow.allow_self_approval` (generic transaction approval), `inventory.require_bin_location` (stock movement creation), `general.branch_required` (generic transaction creation), and `accounting.period_lock_enabled` (journal posting), `sales.credit_limit_enforced` (customer credit exposure check), `purchasing.require_goods_receipt` (supplier-bill creation), `sales.default_payment_terms_days` / `purchasing.default_payment_terms_days` (sales invoices and supplier bills when partner terms are unset), `crm.duplicate_customer_check` (customer creation by email/tax number), `pos.allow_discount_without_approval` / `pos.max_discount_pct_without_approval` (POS checkout discounts), `inventory.require_warehouse` (stockable/consumable commerce documents), `tax.require_tax_code_on_invoice` (taxable sales/purchase invoice lines), and `accounting.auto_post_sales_invoice` / `accounting.auto_post_purchase_invoice` (company-gated accounting auto-post), and the five `accounting.default_*_account` code settings (company-scoped active posting-account overrides for commerce AR, AP, sales, purchase expense, and payment/cash lines). FIFO negative issues remain blocked for valuation safety, and reserved quantities remain protected.
 - This is a source-level audit, not a successful runtime test. Docker is unavailable/offline for the user, and the GitHub self-hosted Release Gate is queued; no test-pass claim is made.
 
 ## Status definitions
@@ -41,11 +41,11 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 | `accounting.auto_post_purchase_invoice` | bool | **RUNTIME** | Gate automatic posting of purchase-bill journals, alongside accounting/journal configuration |
 | `accounting.rounding_method` | enum | **RUNTIME** | Tax calculation rounding mode |
 | `accounting.fiscal_year_start_month` | int | **RUNTIME** | Enforce configured month when creating a fiscal year |
-| `accounting.default_receivable_account` | string | CATALOG ONLY | Default receivable account code |
-| `accounting.default_payable_account` | string | CATALOG ONLY | Default payable account code |
-| `accounting.default_sales_account` | string | CATALOG ONLY | Default sales account code |
-| `accounting.default_purchase_account` | string | CATALOG ONLY | Default purchase account code |
-| `accounting.default_cash_account` | string | CATALOG ONLY | Default cash account code |
+| `accounting.default_receivable_account` | string | **RUNTIME** | Overrides the commerce receivable account using an active company posting-account code; blank preserves legacy configuration |
+| `accounting.default_payable_account` | string | **RUNTIME** | Overrides the commerce payable account using an active company posting-account code; blank preserves legacy configuration |
+| `accounting.default_sales_account` | string | **RUNTIME** | Overrides the commerce sales account using an active company posting-account code; blank preserves legacy configuration |
+| `accounting.default_purchase_account` | string | **RUNTIME** | Overrides the commerce purchase-expense account using an active company posting-account code; blank preserves legacy configuration |
+| `accounting.default_cash_account` | string | **RUNTIME** | Overrides the commerce payment account using an active company posting-account code; blank preserves legacy configuration |
 
 ## Taxes (3)
 
@@ -307,3 +307,10 @@ For each policy, promotion to `runtime` requires: (a) an identified authoritativ
 - Added registry tests confirming that only the three declared `general.date_format` values are accepted.
 - Added boundary tests for `purchasing.price_variance_tolerance_pct` including negative, above-100, non-finite and wrong-type inputs. These settings remain catalog-only until their full display/workflow consumers are implemented.
 - These are committed regression tests; execution is still pending on the offline self-hosted runner and is not claimed as passing.
+
+
+## Additional accounting default-account wiring (2026-10-20)
+
+The five company account-code settings are now consumed by `CommerceAccountingService`. A non-empty configured code must resolve to an active `AccountCombination` belonging to the same company and an active, posting `NaturalAccount` belonging to that company. Unknown, inactive, non-posting, or cross-company codes fail closed with HTTP 409. Empty values retain the existing `CommerceAccountingSettings` account IDs for backward compatibility. The mappings cover receivable, payable, sales, purchase-expense, and payment/cash lines in commerce accounting flows. They do not replace inventory, GRNI, tax, COGS, WHT, or purchase-price-variance accounts.
+
+Regression tests cover a configured override, an unset fallback, and invalid-code rejection. These tests are committed but have not been executed in this environment; the self-hosted runner status remains the gate for verification.
