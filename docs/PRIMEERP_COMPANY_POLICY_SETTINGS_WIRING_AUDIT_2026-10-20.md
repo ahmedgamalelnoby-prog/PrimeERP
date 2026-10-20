@@ -223,3 +223,8 @@ The focused commerce accounting tests now exercise both company gates at the jou
 - `accounting.auto_post_purchase_invoice`: enabled and disabled cases.
 
 Each disabled case expects the draft journal to be submitted but not posted automatically; each enabled case expects the post transition, provided the existing commerce and journal auto-post switches also permit it. These are committed tests, not evidence of a passing run. Verification still depends on the local Windows self-hosted runner becoming available; no paid hosted runner was added.
+
+
+### Integration retry-limit regression coverage (2026-10-20)
+
+Added focused tests for `integrations.retry_limit`: an event at the configured attempt limit is moved to `dead_letter` and returns HTTP 409, while an event below the limit is allowed through the retry/process path. These tests are committed but not yet verified by execution. The free-only constraint remains in force; the self-hosted Windows release gate is still the only configured test gate.
