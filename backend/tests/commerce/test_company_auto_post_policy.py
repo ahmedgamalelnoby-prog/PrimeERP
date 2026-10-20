@@ -166,3 +166,65 @@ def test_company_purchase_price_variance_tolerance(
         assert exc.value.status_code == 409
     else:
         check()
+
+def test_company_account_code_overrides_do_not_mutate_persisted_legacy_settings(monkeypatch):
+    from app.modules.commerce.accounting_models import CommerceAccountingSettings
+
+    legacy = CommerceAccountingSettings(
+        company_id=7,
+        sales_journal_id=1,
+        purchase_journal_id=2,
+        cash_journal_id=3,
+        ar_account_id=101,
+        ap_account_id=102,
+        sales_account_id=103,
+        purchase_account_id=104,
+        inventory_account_id=105,
+        grni_account_id=106,
+        cogs_account_id=107,
+        output_vat_account_id=108,
+        input_vat_account_id=109,
+        default_payment_account_id=110,
+        default_branch_id=4,
+        auto_post=True,
+    )
+    resolved = iter([201, 202, 203, 204, 205])
+
+    class SettingsDB:
+        def scalar(self, _query):
+            # The first lookup loads the persisted settings; subsequent lookups
+            # resolve configured account codes without writing to the ORM object.
+            if not hasattr(self, "loaded"):
+                self.loaded = True
+                return legacy
+            return next(resolved)
+
+    db = SettingsDB()
+    monkeypatch.setattr(
+        accounting_module,
+        "get_company_setting",
+        lambda _db, _company_id, key: {
+            "accounting.default_receivable_account": "AR",
+            "accounting.default_payable_account": "AP",
+            "accounting.default_sales_account": "SALES",
+            "accounting.default_purchase_account": "PURCHASE",
+            "accounting.default_cash_account": "CASH",
+        }[key],
+    )
+
+    effective = accounting_module.CommerceAccountingService()._settings(db, 7)
+
+    assert (
+        effective.ar_account_id,
+        effective.ap_account_id,
+        effective.sales_account_id,
+        effective.purchase_account_id,
+        effective.default_payment_account_id,
+    ) == (201, 202, 203, 204, 205)
+    assert (
+        legacy.ar_account_id,
+        legacy.ap_account_id,
+        legacy.sales_account_id,
+        legacy.purchase_account_id,
+        legacy.default_payment_account_id,
+    ) == (101, 102, 103, 104, 110)
