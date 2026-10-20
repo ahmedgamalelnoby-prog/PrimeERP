@@ -248,7 +248,6 @@ The 40 catalog-only settings below are the remaining candidates for workflow wir
 - `general.date_format`: apply the selected format consistently through shared frontend date-formatting utilities; enum validation is covered, but display-wide wiring is not yet complete.
 - `general.require_project`: add project dimension to the supported document schemas and persistence first.
 - `general.intercompany_enabled`: implement intercompany transaction lifecycle, balancing, and cross-company permissions.
-- `accounting.default_receivable_account`, `accounting.default_payable_account`, `accounting.default_sales_account`, `accounting.default_purchase_account`, `accounting.default_cash_account`: resolve configured account codes against the company chart of accounts, validate account eligibility, and use them only as fallbacks when creating accounting lines.
 
 ### B. Tax and Egyptian e-invoice (1)
 - `tax.einvoice_required_for_sales`: enforce submission/acceptance requirements at the sales document finalization boundary; define failure/retry behavior and exemptions before blocking transactions.
@@ -311,6 +310,6 @@ For each policy, promotion to `runtime` requires: (a) an identified authoritativ
 
 ## Additional accounting default-account wiring (2026-10-20)
 
-The five company account-code settings are now consumed by `CommerceAccountingService`. A non-empty configured code must resolve to an active `AccountCombination` belonging to the same company and an active, posting `NaturalAccount` belonging to that company. Unknown, inactive, non-posting, or cross-company codes fail closed with HTTP 409. Empty values retain the existing `CommerceAccountingSettings` account IDs for backward compatibility. The mappings cover receivable, payable, sales, purchase-expense, and payment/cash lines in commerce accounting flows. They do not replace inventory, GRNI, tax, COGS, WHT, or purchase-price-variance accounts.
+The five company account-code settings are now consumed by `CommerceAccountingService`. A non-empty configured code must resolve to an active `AccountCombination` belonging to the same company and an active, posting `NaturalAccount` belonging to that company. Unknown, inactive, non-posting, or cross-company codes fail closed with HTTP 409. Empty values retain the existing `CommerceAccountingSettings` account IDs for backward compatibility. The mappings cover receivable, payable, sales, purchase-expense, and payment/cash lines in commerce accounting flows. A configured code overrides the existing commerce account ID; a blank setting preserves that legacy ID. They do not replace inventory, GRNI, tax, COGS, WHT, or purchase-price-variance accounts.
 
 Regression tests cover a configured override, an unset fallback, and invalid-code rejection. These tests are committed but have not been executed in this environment; the self-hosted runner status remains the gate for verification.
