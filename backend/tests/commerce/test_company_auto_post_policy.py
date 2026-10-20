@@ -127,3 +127,42 @@ def test_company_account_code_default_rejects_unknown_account(monkeypatch):
             db, 7, "accounting.default_receivable_account", 123
         )
     assert exc.value.status_code == 409
+
+@pytest.mark.parametrize(
+    ("invoice_value", "receipt_value", "tolerance", "allow_beyond", "should_raise"),
+    [
+        ("100", "100", 0, False, False),
+        ("101", "100", 1, False, False),
+        ("102", "100", 1, False, True),
+        ("102", "100", 1, True, False),
+        ("90", "100", 10, False, False),
+    ],
+)
+def test_company_purchase_price_variance_tolerance(
+    monkeypatch, invoice_value, receipt_value, tolerance, allow_beyond, should_raise
+):
+    from decimal import Decimal
+    from fastapi import HTTPException
+
+    values = {
+        "purchasing.price_variance_tolerance_pct": tolerance,
+        "purchasing.allow_invoice_price_variance": allow_beyond,
+    }
+    monkeypatch.setattr(
+        accounting_module,
+        "get_company_setting",
+        lambda _db, _company_id, key: values[key],
+    )
+    service = accounting_module.CommerceAccountingService()
+    check = lambda: service._validate_purchase_price_variance(
+        SimpleNamespace(),
+        company_id=7,
+        invoice_value=Decimal(invoice_value),
+        receipt_value=Decimal(receipt_value),
+    )
+    if should_raise:
+        with pytest.raises(HTTPException) as exc:
+            check()
+        assert exc.value.status_code == 409
+    else:
+        check()
