@@ -330,3 +330,51 @@ def test_integration_retry_policy_allows_retry_below_company_limit(monkeypatch):
     assert event.status == "processed"
     assert event.last_error is None
     assert db.committed is True
+
+
+
+def test_salla_webhook_signature_accepts_valid_hmac(monkeypatch):
+    import hashlib
+    import hmac
+    from app.modules.integrations.router import _verify_salla_signature
+
+    secret = "local-test-secret"
+    body = b'{"event":"order.created","id":"evt-1"}'
+    signature = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    monkeypatch.setenv("PRIMEERP_TEST_SALLA_SECRET", secret)
+
+    _verify_salla_signature(
+        SimpleNamespace(webhook_secret_env="PRIMEERP_TEST_SALLA_SECRET"),
+        body,
+        "Signature",
+        signature,
+    )
+
+
+def test_salla_webhook_signature_rejects_invalid_hmac(monkeypatch):
+    from app.modules.integrations.router import _verify_salla_signature
+
+    monkeypatch.setenv("PRIMEERP_TEST_SALLA_SECRET", "local-test-secret")
+    with pytest.raises(HTTPException) as exc:
+        _verify_salla_signature(
+            SimpleNamespace(webhook_secret_env="PRIMEERP_TEST_SALLA_SECRET"),
+            b'{"event":"order.created"}',
+            "Signature",
+            "not-a-valid-signature",
+        )
+
+    assert exc.value.status_code == 401
+
+
+def test_salla_webhook_signature_rejects_missing_signature():
+    from app.modules.integrations.router import _verify_salla_signature
+
+    with pytest.raises(HTTPException) as exc:
+        _verify_salla_signature(
+            SimpleNamespace(webhook_secret_env="PRIMEERP_TEST_SALLA_SECRET"),
+            b"{}",
+            "Signature",
+            None,
+        )
+
+    assert exc.value.status_code == 401
