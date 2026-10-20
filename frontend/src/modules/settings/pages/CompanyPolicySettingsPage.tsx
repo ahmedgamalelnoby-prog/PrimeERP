@@ -3,6 +3,7 @@ import { ArrowRight, Building2, Loader2, Save, Search, ShieldCheck, SlidersHoriz
 import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import client from "@/shared/api/client";
+import i18n from "@/shared/i18n/i18n";
 import { Button } from "@/components/ui/button";
 
 type Company = { id:number; name:string };
@@ -50,6 +51,8 @@ export default function CompanyPolicySettingsPage() {
       .then(({data}) => {
         setPayload(data);
         setValues(Object.fromEntries(data.settings.map(s=>[s.key,s.value])));
+        const companyLanguage = data.settings.find(s=>s.key==="general.default_language")?.value;
+        if (companyLanguage === "ar" || companyLanguage === "en") void i18n.changeLanguage(companyLanguage);
         if (!data.categories.includes(activeCategory)) setActiveCategory(data.categories[0] || "General");
       })
       .catch((e:any)=>toast.error(e?.response?.data?.detail ?? "تعذر تحميل سياسات الشركة"))
@@ -69,6 +72,8 @@ export default function CompanyPolicySettingsPage() {
       const {data}=await client.get<Payload>("/company-settings",{params:{company_id:companyId}});
       setPayload(data);
       setValues(Object.fromEntries(data.settings.map(s=>[s.key,s.value])));
+      const companyLanguage = data.settings.find(s=>s.key==="general.default_language")?.value;
+      if (companyLanguage === "ar" || companyLanguage === "en") await i18n.changeLanguage(companyLanguage);
       toast.success("تم حفظ سياسات الشركة");
     } catch(e:any) { toast.error(e?.response?.data?.detail?.message ?? e?.response?.data?.detail ?? "تعذر حفظ السياسات"); }
     finally { setSaving(false); }
