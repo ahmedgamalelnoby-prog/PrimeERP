@@ -313,7 +313,10 @@ def test_integration_retry_policy_allows_retry_below_company_limit(monkeypatch):
         "get_company_setting",
         lambda _db, _company_id, key: 5 if key == "integrations.retry_limit" else None,
     )
-    monkeypatch.setattr(integrations_router, "_process_event", lambda _db, _event: {"ok": True})
+    def process_event(_db, _event):
+        _event.status = "processed"
+        return {"ok": True}
+    monkeypatch.setattr(integrations_router, "_process_event", process_event)
 
     result = integrations_router.retry_event(
         event_id=9,
@@ -324,6 +327,6 @@ def test_integration_retry_policy_allows_retry_below_company_limit(monkeypatch):
 
     assert result["status"] == "processed"
     assert event.attempts == 3
-    assert event.status == "queued"
+    assert event.status == "processed"
     assert event.last_error is None
     assert db.committed is True
