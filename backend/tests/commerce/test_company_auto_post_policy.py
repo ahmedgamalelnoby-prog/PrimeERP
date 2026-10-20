@@ -15,7 +15,7 @@ class FakeDB:
         return None if self.scalar_calls == 1 else self.journal
 
 
-def _run_post(monkeypatch, company_auto_post_enabled):
+def _run_post(monkeypatch, company_auto_post_enabled, *, policy_key="accounting.auto_post_sales_invoice", source_entity="sales_invoice"):
     journal = SimpleNamespace(id=11, requires_approval=False, auto_post=True)
     db = FakeDB(journal)
     service = accounting_module.CommerceAccountingService()
@@ -26,7 +26,7 @@ def _run_post(monkeypatch, company_auto_post_enabled):
     monkeypatch.setattr(
         accounting_module,
         "get_company_setting",
-        lambda _db, _company_id, key: company_auto_post_enabled if key == "accounting.auto_post_sales_invoice" else None,
+        lambda _db, _company_id, key: company_auto_post_enabled if key == policy_key else None,
     )
     calls = []
     monkeypatch.setattr(accounting_module.journal_service, "create_draft", lambda *_args, **_kwargs: SimpleNamespace(id=99))
@@ -42,9 +42,9 @@ def _run_post(monkeypatch, company_auto_post_enabled):
         entry_number="SI-100",
         description="Sales invoice 100",
         lines=[{"debit": 10, "credit": 0}, {"debit": 0, "credit": 10}],
-        source_entity="sales_invoice",
+        source_entity=source_entity,
         source_id=100,
-        auto_post_policy_key="accounting.auto_post_sales_invoice",
+        auto_post_policy_key=policy_key,
     )
     return result, calls
 
@@ -58,6 +58,30 @@ def test_company_policy_disables_automatic_sales_invoice_journal_posting(monkeyp
 
 def test_company_policy_allows_automatic_sales_invoice_journal_posting(monkeypatch):
     result, calls = _run_post(monkeypatch, True)
+
+    assert result.id == 99
+    assert calls == ["submit", "post"]
+
+
+def test_company_policy_disables_automatic_purchase_bill_journal_posting(monkeypatch):
+    result, calls = _run_post(
+        monkeypatch,
+        False,
+        policy_key="accounting.auto_post_purchase_invoice",
+        source_entity="purchase_bill",
+    )
+
+    assert result.id == 99
+    assert calls == ["submit"]
+
+
+def test_company_policy_allows_automatic_purchase_bill_journal_posting(monkeypatch):
+    result, calls = _run_post(
+        monkeypatch,
+        True,
+        policy_key="accounting.auto_post_purchase_invoice",
+        source_entity="purchase_bill",
+    )
 
     assert result.id == 99
     assert calls == ["submit", "post"]
