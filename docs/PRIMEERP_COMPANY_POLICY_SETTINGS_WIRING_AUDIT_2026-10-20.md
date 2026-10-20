@@ -297,6 +297,6 @@ For each policy, promotion to `runtime` requires: (a) an identified authoritativ
 
 ## Company language preference wiring (2026-10-20)
 
-- Promoted `general.default_language` to runtime because the company policy settings page now applies the saved `ar`/`en` language through the existing i18next instance when a company's settings are loaded and after settings are saved. The existing i18n handler updates document language/direction and persists the selected language locally.
-- Scope note: this policy is applied when the company policy settings page loads; the application does not yet fetch company settings globally at every app startup, so do not interpret this as a complete company-aware locale bootstrap across every fresh session.
+- Promoted `general.default_language` to runtime because authenticated app bootstrap now loads the selected active company's saved `ar`/`en` language through the existing i18next instance; the Company Policy Settings page also applies it when settings are loaded and after settings are saved. The existing i18n handler updates document language/direction and persists the selected language locally.
+- Bootstrap uses the saved `company_id` when it matches an active company, otherwise it selects the first active company and stores that selection. If company lookup/settings cannot load, bootstrap leaves the current browser/user language unchanged rather than blocking authentication.
 - Updated the registry contract test to include this key among verified runtime consumers. Tests remain unexecuted in this environment; no green status is claimed.
