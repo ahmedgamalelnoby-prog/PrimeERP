@@ -313,3 +313,10 @@ For each policy, promotion to `runtime` requires: (a) an identified authoritativ
 The five company account-code settings are now consumed by `CommerceAccountingService`. A non-empty configured code must resolve to an active `AccountCombination` belonging to the same company and an active, posting `NaturalAccount` belonging to that company. Unknown, inactive, non-posting, or cross-company codes fail closed with HTTP 409. Empty values retain the existing `CommerceAccountingSettings` account IDs for backward compatibility. The mappings cover receivable, payable, sales, purchase-expense, and payment/cash lines in commerce accounting flows. A configured code overrides the existing commerce account ID; a blank setting preserves that legacy ID. They do not replace inventory, GRNI, tax, COGS, WHT, or purchase-price-variance accounts.
 
 Regression tests cover a configured override, an unset fallback, and invalid-code rejection. These tests are committed but have not been executed in this environment; the self-hosted runner status remains the gate for verification.
+
+
+## Partial company date-format display support (2026-10-20)
+
+- Added a pure formatter for the three declared date formats and connected it to the generic commerce operational list. That page loads `general.date_format` for the selected company and formats ISO date-only fields without timezone conversion; if the settings API fails or returns an unsupported value, the page falls back to `DD/MM/YYYY` and remains usable.
+- This is deliberately **not** promoted to runtime: other pages and date-bearing workflows have not yet been audited and migrated to the shared formatter. The setting remains catalog-only until date formatting is consistent across the application.
+- Frontend build/tests have not been executed in this environment.
