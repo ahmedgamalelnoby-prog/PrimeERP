@@ -29,10 +29,10 @@ def _run_post(monkeypatch, company_auto_post_enabled):
         lambda _db, _company_id, key: company_auto_post_enabled if key == "accounting.auto_post_sales_invoice" else None,
     )
     calls = []
-    monkeypatch.setattr(accounting_module.journal_service, "create_draft", lambda **_kwargs: SimpleNamespace(id=99))
-    monkeypatch.setattr(accounting_module.journal_service, "submit", lambda **_kwargs: calls.append("submit"))
-    monkeypatch.setattr(accounting_module.journal_service, "approve", lambda **_kwargs: calls.append("approve"))
-    monkeypatch.setattr(accounting_module.journal_service, "post", lambda **_kwargs: calls.append("post"))
+    monkeypatch.setattr(accounting_module.journal_service, "create_draft", lambda *_args, **_kwargs: SimpleNamespace(id=99))
+    monkeypatch.setattr(accounting_module.journal_service, "submit", lambda *_args, **_kwargs: calls.append("submit"))
+    monkeypatch.setattr(accounting_module.journal_service, "approve", lambda *_args, **_kwargs: calls.append("approve"))
+    monkeypatch.setattr(accounting_module.journal_service, "post", lambda *_args, **_kwargs: calls.append("post"))
     result = service._post(
         db,
         company_id=7,
