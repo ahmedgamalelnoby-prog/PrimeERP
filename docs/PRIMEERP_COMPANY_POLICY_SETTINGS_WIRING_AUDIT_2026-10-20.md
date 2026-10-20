@@ -183,3 +183,9 @@ A setting should be promoted from CATALOG ONLY to RUNTIME only after the consume
 - Added focused unit coverage for the fiscal-period repository's two policy modes: default lookup filters to periods that are both open and allow posting; `require_open=False` retains tenant/company/date coverage filters while omitting those two state filters.
 - This tests the repository contract used by `accounting.period_lock_enabled` without requiring Docker or a database service. It does not replace the full journal reversal integration test.
 - Current CI status at time of update: the Windows self-hosted release gate for the preceding commit was queued and had not reported a result. The new commit may trigger another self-hosted run; no test-pass claim is made.
+
+
+## Registry validation regression coverage (2026-10-20)
+- Added isolated tests for malformed currency codes, invalid IANA timezones, out-of-range POS discount percentages, boolean type confusion, and unknown setting keys.
+- Added a registry contract test checking key uniqueness and that every declared default passes its own type/range validator.
+- These are source-level unit tests only; they have not been executed because the Windows self-hosted runner depends on the user's currently-offline machine. No green CI status is implied.
