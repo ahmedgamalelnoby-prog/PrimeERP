@@ -6,9 +6,9 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 ## Result
 
 - Catalog entries audited individually: **68**.
-- Confirmed workflow consumers in this change: **33**.
-- Visible/persisted options not yet enforced by their owning workflows: **35**.
-- Confirmed runtime consumers: `inventory.allow_negative_stock` (stock-movement posting), `accounting.require_journal_approval` (journal posting), `general.timezone`, `general.base_currency`, `general.allow_multi_currency`, `general.require_cost_center` and `accounting.allow_backdated_entries` (journal creation), plus `integrations.retry_limit` and `integrations.webhook_signature_required` (integration retry and Salla webhook intake), `accounting.fiscal_year_start_month` (fiscal-year creation), `accounting.rounding_method` and `tax.default_tax_inclusive_pricing` (tax calculation), `workflow.allow_self_approval` (generic transaction approval), `inventory.require_bin_location` (stock movement creation), `general.branch_required` (generic transaction creation), and `accounting.period_lock_enabled` (journal posting), `sales.credit_limit_enforced` (customer credit exposure check), `purchasing.require_goods_receipt` (supplier-bill creation), `sales.default_payment_terms_days` / `purchasing.default_payment_terms_days` (sales invoices and supplier bills when partner terms are unset), `crm.duplicate_customer_check` (customer creation by email/tax number), `pos.allow_discount_without_approval` / `pos.max_discount_pct_without_approval` (POS checkout discounts), `inventory.require_warehouse` (stockable/consumable commerce documents), `tax.require_tax_code_on_invoice` (taxable sales/purchase invoice lines), and `accounting.auto_post_sales_invoice` / `accounting.auto_post_purchase_invoice` (company-gated accounting auto-post), and the five `accounting.default_*_account` code settings (company-scoped active posting-account overrides for commerce AR, AP, sales, purchase expense, and payment/cash lines). FIFO negative issues remain blocked for valuation safety, and reserved quantities remain protected.
+- Confirmed workflow consumers in this change: **35**.
+- Visible/persisted options not yet enforced by their owning workflows: **33**.
+- Confirmed runtime consumers: `inventory.allow_negative_stock` (stock-movement posting), `accounting.require_journal_approval` (journal posting), `general.timezone`, `general.base_currency`, `general.allow_multi_currency`, `general.require_cost_center` and `accounting.allow_backdated_entries` (journal creation), plus `integrations.retry_limit` and `integrations.webhook_signature_required` (integration retry and Salla webhook intake), `accounting.fiscal_year_start_month` (fiscal-year creation), `accounting.rounding_method` and `tax.default_tax_inclusive_pricing` (tax calculation), `workflow.allow_self_approval` (generic transaction approval), `inventory.require_bin_location` (stock movement creation), `general.branch_required` (generic transaction creation), and `accounting.period_lock_enabled` (journal posting), `sales.credit_limit_enforced` (customer credit exposure check), `purchasing.require_goods_receipt` (supplier-bill creation), `sales.default_payment_terms_days` / `purchasing.default_payment_terms_days` (sales invoices and supplier bills when partner terms are unset), `crm.duplicate_customer_check` (customer creation by email/tax number), `pos.allow_discount_without_approval` / `pos.max_discount_pct_without_approval` (POS checkout discounts), `inventory.require_warehouse` (stockable/consumable commerce documents), `tax.require_tax_code_on_invoice` (taxable sales/purchase invoice lines), and `accounting.auto_post_sales_invoice` / `accounting.auto_post_purchase_invoice` (company-gated accounting auto-post), and the five `accounting.default_*_account` code settings (company-scoped active posting-account overrides for commerce AR, AP, sales, purchase expense, and payment/cash lines), and `purchasing.allow_invoice_price_variance` / `purchasing.price_variance_tolerance_pct` (supplier bill vs linked receipt valuation comparison at bill accounting posting). FIFO negative issues remain blocked for valuation safety, and reserved quantities remain protected.
 - This is a source-level audit, not a successful runtime test. Docker is unavailable/offline for the user, and the GitHub self-hosted Release Gate is queued; no test-pass claim is made.
 
 ## Status definitions
@@ -75,8 +75,8 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 | `purchasing.require_purchase_order` | bool | CATALOG ONLY | Require PO before supplier invoice |
 | `purchasing.require_purchase_approval` | bool | CATALOG ONLY | Require purchase order approval |
 | `purchasing.require_goods_receipt` | bool | **RUNTIME** | Block supplier-bill creation without a validated receipt link when enabled |
-| `purchasing.allow_invoice_price_variance` | bool | CATALOG ONLY | Allow invoice price variance beyond tolerance |
-| `purchasing.price_variance_tolerance_pct` | number | CATALOG ONLY | Allowed price variance percentage |
+| `purchasing.allow_invoice_price_variance` | bool | **RUNTIME** | Allow linked receipt-vs-bill stock valuation variance above the configured tolerance |
+| `purchasing.price_variance_tolerance_pct` | number | **RUNTIME** | Maximum invoice-vs-receipt stock valuation variance percentage before the allow-beyond-tolerance switch is required |
 | `purchasing.default_payment_terms_days` | int | **RUNTIME** | Default due-date terms for supplier bills when partner terms are unset |
 
 ## Inventory (9)
@@ -242,7 +242,7 @@ Added a public-webhook endpoint regression test that sets `integrations.webhook_
 
 ## Remaining catalog-only backlog — grouped implementation plan (2026-10-20)
 
-The 40 catalog-only settings below are the remaining candidates for workflow wiring. Grouping is by the primary workflow needed; it is not a claim that the work is already implemented.
+The 33 catalog-only settings below are the remaining candidates for workflow wiring. Grouping is by the primary workflow needed; it is not a claim that the work is already implemented.
 
 ### A. Company defaults and accounting configuration (8)
 - `general.date_format`: apply the selected format consistently through shared frontend date-formatting utilities; enum validation is covered, but display-wide wiring is not yet complete.
@@ -258,9 +258,8 @@ The 40 catalog-only settings below are the remaining candidates for workflow wir
 - `sales.allow_negative_customer_balance`: define which transaction types and permissions may create negative balances, then enforce in the credit/balance service.
 - `sales.document_numbering`: implement company/year sequence generation with transaction-safe allocation and uniqueness constraints/migration.
 
-### D. Purchasing and supplier controls (4)
+### D. Purchasing and supplier controls (2)
 - `purchasing.require_purchase_order`, `purchasing.require_purchase_approval`: persist purchase-order source links and approval lifecycle before enforcing supplier-bill restrictions.
-- `purchasing.allow_invoice_price_variance`, `purchasing.price_variance_tolerance_pct`: compare supplier invoice line price/quantity with linked PO/receipt lines and apply the tolerance at bill validation; these two settings must be implemented together.
 
 ### E. Inventory and costing (6)
 - `inventory.valuation_method`: verify all issue/receipt/return/adjustment paths share a consistent company costing strategy; requires migration/revaluation strategy if existing stock has balances.
@@ -320,3 +319,12 @@ Regression tests cover a configured override, an unset fallback, and invalid-cod
 - Added a pure formatter for the three declared date formats and connected it to the generic commerce operational list. That page loads `general.date_format` for the selected company and formats ISO date-only fields without timezone conversion; if the settings API fails or returns an unsupported value, the page falls back to `DD/MM/YYYY` and remains usable.
 - This is deliberately **not** promoted to runtime: other pages and date-bearing workflows have not yet been audited and migrated to the shared formatter. The setting remains catalog-only until date formatting is consistent across the application.
 - Frontend build/tests have not been executed in this environment.
+
+
+## Purchase price variance policy wiring (2026-10-20)
+
+- Promoted `purchasing.allow_invoice_price_variance` and `purchasing.price_variance_tolerance_pct` to runtime.
+- At supplier-bill accounting posting, when the bill is linked to received goods, the service compares the bill's stock-item subtotal with the allocated receipt valuation. A variance within the configured percentage is accepted; a variance above tolerance returns HTTP 409 unless the company explicitly enables `purchasing.allow_invoice_price_variance`.
+- This implementation currently evaluates the aggregate stock-item valuation variance against linked receipts, not a per-line PO comparison. Purchase-order relationships and purchase-approval lifecycle remain unimplemented and catalog-only.
+- Added focused tests for equal values, at-tolerance and above-tolerance values, the explicit allow-beyond-tolerance switch, and downward variance. Tests are committed but not yet executed; the self-hosted release gate remains queued, so no passing result is claimed.
+- The generic commerce list's date formatter was also hardened to preserve an ISO timestamp suffix and leave invalid ISO-like dates unchanged; the date-format setting remains catalog-only until app-wide display coverage is complete.
