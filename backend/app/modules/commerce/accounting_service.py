@@ -9,6 +9,7 @@ from app.modules.accounting.compliance_controls import validate_double_entry, va
 from app.modules.accounting.fiscal_years.models import AccountingPeriod, FiscalYear
 from app.modules.accounting.journals.models import AccountingJournal, JournalEntry
 from app.modules.accounting.journals.services.journal_service import journal_service
+from app.modules.accounting.chart_of_accounts.models import AccountCombination, NaturalAccount
 from app.modules.commerce.accounting_models import CommerceAccountingSettings
 from app.modules.commerce.models import PurchaseBillReceiptAllocation, PurchaseBillReceiptLink
 from app.modules.companies.models import Company
@@ -23,7 +24,43 @@ class CommerceAccountingService:
         obj = db.scalar(select(CommerceAccountingSettings).where(CommerceAccountingSettings.company_id == company_id))
         if obj is None:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Commerce accounting configuration is missing for this company")
+        # Company account-code defaults override the legacy commerce-accounting
+        # IDs only when explicitly configured. Invalid codes fail closed.
+        for attribute, policy_key in (
+            ("ar_account_id", "accounting.default_receivable_account"),
+            ("ap_account_id", "accounting.default_payable_account"),
+            ("sales_account_id", "accounting.default_sales_account"),
+            ("purchase_account_id", "accounting.default_purchase_account"),
+            ("default_payment_account_id", "accounting.default_cash_account"),
+        ):
+            configured_id = self._configured_account_id(
+                db, company_id, policy_key, getattr(obj, attribute)
+            )
+            setattr(obj, attribute, configured_id)
         return obj
+
+    def _configured_account_id(self, db: Session, company_id: int, policy_key: str, fallback_id: int) -> int:
+        code = get_company_setting(db, company_id, policy_key)
+        if not isinstance(code, str) or not code.strip():
+            return fallback_id
+        account_id = db.scalar(
+            select(AccountCombination.id)
+            .join(NaturalAccount, NaturalAccount.id == AccountCombination.natural_account_id)
+            .where(
+                AccountCombination.company_id == company_id,
+                AccountCombination.code == code.strip(),
+                AccountCombination.is_active.is_(True),
+                NaturalAccount.company_id == company_id,
+                NaturalAccount.is_active.is_(True),
+                NaturalAccount.is_posting.is_(True),
+            )
+        )
+        if account_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Configured company setting {policy_key} does not identify an active posting account",
+            )
+        return account_id
 
     def _context(self, db: Session, company_id: int, entry_date: date):
         settings = self._settings(db, company_id)
