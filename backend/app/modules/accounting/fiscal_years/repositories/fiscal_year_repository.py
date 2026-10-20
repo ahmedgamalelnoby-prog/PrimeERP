@@ -136,19 +136,17 @@ class FiscalYearRepository:
                 AccountingPeriod.end_date
                 >= posting_date,
             )
-            .order_by(
-                AccountingPeriod.start_date.desc(),
-                AccountingPeriod.end_date.desc(),
-                AccountingPeriod.id.desc(),
-            )
-            .first()
         )
         if require_open:
             query = query.filter(
                 AccountingPeriod.status == "open",
                 AccountingPeriod.allow_posting.is_(True),
             )
-        return query
+        return query.order_by(
+            AccountingPeriod.start_date.desc(),
+            AccountingPeriod.end_date.desc(),
+            AccountingPeriod.id.desc(),
+        ).first()
 
 
 fiscal_year_repository = (
