@@ -210,3 +210,7 @@ A second source review deliberately did **not** promote several settings to runt
 A registry regression test now asserts these options remain `catalog` until the corresponding safe workflow/data model exists. This is intentional: a visible toggle is not proof of enforcement. The next implementation batch should add the missing source relationships/approval states or scheduler first, then wire and test the relevant setting end-to-end.
 
 Tests remain **not executed/verified** in this review; the local Windows self-hosted runner is unavailable, and no paid hosted runner was used.
+
+### Focused runtime regression tests added — 2026-10-20
+
+Added `backend/tests/commerce/test_company_auto_post_policy.py` to exercise the actual accounting service posting path with isolated dependencies: when `accounting.auto_post_sales_invoice` is false, the journal is submitted but not posted automatically; when true, auto-post proceeds (assuming the existing company accounting configuration and journal also allow it). These tests are committed but have **not been executed** because the permitted self-hosted runner remains unavailable.
