@@ -112,7 +112,7 @@ class CommerceAccountingService:
 
     def post_purchase_bill(self, db, document, user_id: int):
         settings = self._settings(db, document.company_id)
-        existing = self._existing_source(db, company_id=document.company_id, source_entity="purchase_bill", source_id=document.id, auto_post_policy_key="accounting.auto_post_purchase_invoice")
+        existing = self._existing_source(db, company_id=document.company_id, source_entity="purchase_bill", source_id=document.id)
         if existing: return existing
         stock_total, expense_total = self._purchase_stock_expense_totals(db, document)
         linked_receipts = self._linked_receipt_ids(db, document)
