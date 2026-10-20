@@ -46,8 +46,8 @@ _RAW = [
     ("purchasing.require_purchase_order","purchasing","Purchasing","bool",True,"Require PO before supplier invoice",None,"catalog"),
     ("purchasing.require_purchase_approval","purchasing","Purchasing","bool",True,"Require purchase order approval",None,"catalog"),
     ("purchasing.require_goods_receipt","purchasing","Purchasing","bool",True,"Require receipt before supplier invoice",None,"runtime"),
-    ("purchasing.allow_invoice_price_variance","purchasing","Purchasing","bool",False,"Allow invoice price variance beyond tolerance",None,"catalog"),
-    ("purchasing.price_variance_tolerance_pct","purchasing","Purchasing","number",0,"Allowed price variance percentage",None,"catalog"),
+    ("purchasing.allow_invoice_price_variance","purchasing","Purchasing","bool",False,"Allow invoice price variance beyond tolerance",None,"runtime"),
+    ("purchasing.price_variance_tolerance_pct","purchasing","Purchasing","number",0,"Allowed price variance percentage",None,"runtime"),
     ("purchasing.default_payment_terms_days","purchasing","Purchasing","int",30,"Default supplier payment term",None,"runtime"),
     # Inventory
     ("inventory.allow_negative_stock","inventory","Inventory","bool",False,"Allow stock to fall below zero where the valuation method supports it",None,"runtime"),
