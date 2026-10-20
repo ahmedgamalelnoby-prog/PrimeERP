@@ -8,6 +8,8 @@ import {
 } from "react";
 
 import { authService } from "../services/authentication.service";
+import client from "../../../shared/api/client";
+import i18n from "../../../shared/i18n/i18n";
 import { storage } from "../../../shared/utils/storage";
 
 import type { AuthenticatedUser } from "../types/user";
@@ -62,6 +64,47 @@ export function AuthProvider({
         setUser(null);
       }
     };
+
+  useEffect(() => {
+    if (!user) return;
+
+    let cancelled = false;
+    const applyCompanyLanguage = async (): Promise<void> => {
+      try {
+        const { data: companies } = await client.get<Array<{ id: number }>>(
+          "/companies?active_only=true",
+        );
+        if (cancelled || companies.length === 0) return;
+
+        const storedCompanyId = Number(localStorage.getItem("company_id")) || 0;
+        const companyId = companies.some((company) => company.id === storedCompanyId)
+          ? storedCompanyId
+          : companies[0].id;
+        if (!storedCompanyId || !companies.some((company) => company.id === storedCompanyId)) {
+          localStorage.setItem("company_id", String(companyId));
+        }
+
+        const { data: settings } = await client.get<{
+          settings: Array<{ key: string; value: unknown }>;
+        }>("/company-settings", { params: { company_id: companyId } });
+        if (cancelled) return;
+
+        const language = settings.settings.find(
+          (setting) => setting.key === "general.default_language",
+        )?.value;
+        if (language === "ar" || language === "en") {
+          await i18n.changeLanguage(language);
+        }
+      } catch {
+        // Company settings are optional during bootstrap; keep the existing user/browser language.
+      }
+    };
+
+    void applyCompanyLanguage();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   useEffect(() => {
     const initializeAuthentication =
