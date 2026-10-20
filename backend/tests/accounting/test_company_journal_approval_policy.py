@@ -97,3 +97,54 @@ def test_company_policy_can_allow_posting_when_journal_does_not_require_approval
     assert result.total_debit == Decimal("100")
     assert result.total_credit == Decimal("100")
     assert db.flushed
+
+
+def test_company_policy_blocks_backdated_journal_reversal(monkeypatch):
+    from datetime import datetime as real_datetime
+
+    original = SimpleNamespace(
+        id=10,
+        company_id=20,
+        status="posted",
+        reversal_entry_id=None,
+        posted_by=7,
+    )
+    monkeypatch.setattr(
+        service_module.journal_service,
+        "_locked_entry",
+        lambda *_args, **_kwargs: original,
+    )
+
+    class FrozenDateTime:
+        @staticmethod
+        def now(tz=None):
+            return real_datetime(2026, 10, 20, 12, 0, tzinfo=tz)
+
+    monkeypatch.setattr(service_module, "datetime", FrozenDateTime)
+    monkeypatch.setattr(
+        service_module,
+        "get_company_setting",
+        lambda _db, _company_id, key: {
+            "general.timezone": "UTC",
+            "accounting.allow_backdated_entries": False,
+        }.get(key, BY_KEY[key]["default"]),
+    )
+    monkeypatch.setattr(
+        service_module.fiscal_year_repository,
+        "get_period_for_date",
+        lambda **_kwargs: pytest.fail("A prohibited backdated reversal must not look up a period"),
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        service_module.journal_service.reverse(
+            object(),
+            tenant_id=1,
+            entry_id=10,
+            user_id=99,
+            reversal_date=date(2026, 10, 19),
+            reason="Correction",
+        )
+
+    assert exc.value.status_code == 409
+    assert "backdated" in exc.value.detail.lower()
+
