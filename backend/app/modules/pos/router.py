@@ -111,8 +111,10 @@ def _validate_discount_policy(db: Session, company_id: int, discount_percent: De
         return
     allow_without_approval = get_company_setting(db, company_id, "pos.allow_discount_without_approval") is True
     maximum_without_approval = Decimal(str(get_company_setting(db, company_id, "pos.max_discount_pct_without_approval") or 0))
-    if not allow_without_approval and discount_percent > maximum_without_approval:
-        raise HTTPException(409, f"Discount {discount_percent}% exceeds the company limit of {maximum_without_approval}% without approval")
+    if not allow_without_approval:
+        raise HTTPException(409, "Company policy requires approval for POS discounts; checkout cannot record an approval")
+    if discount_percent > maximum_without_approval:
+        raise HTTPException(409, f"Discount {discount_percent}% exceeds the maximum {maximum_without_approval}% allowed without approval")
 
 
 def _company(db: Session, company_id: int, user: User) -> Company:
