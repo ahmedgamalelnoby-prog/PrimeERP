@@ -48,6 +48,21 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
     }
 
 
+def test_policies_without_a_safe_workflow_consumer_remain_catalog_only():
+    # These policies require data relationships or a scheduler that the current
+    # implementation does not provide. Do not advertise them as enforced.
+    catalog_only_keys = {
+        "sales.require_order_approval",
+        "sales.invoice_requires_delivery",
+        "sales.allow_overbilling",
+        "purchasing.require_purchase_order",
+        "purchasing.require_purchase_approval",
+        "integrations.auto_sync_enabled",
+        "general.require_project",
+    }
+    assert all(BY_KEY[key]["status"] == "catalog" for key in catalog_only_keys)
+
+
 def test_negative_stock_policy_is_company_setting_and_disabled_by_default():
     assert BY_KEY["inventory.allow_negative_stock"]["default"] is False
     assert validate_value("inventory.allow_negative_stock", True) is True
