@@ -46,6 +46,11 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
         "tax.require_tax_code_on_invoice",
         "accounting.auto_post_sales_invoice",
         "accounting.auto_post_purchase_invoice",
+        "accounting.default_receivable_account",
+        "accounting.default_payable_account",
+        "accounting.default_sales_account",
+        "accounting.default_purchase_account",
+        "accounting.default_cash_account",
     }
 
 
