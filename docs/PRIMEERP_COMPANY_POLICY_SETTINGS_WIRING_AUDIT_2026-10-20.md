@@ -228,3 +228,8 @@ Each disabled case expects the draft journal to be submitted but not posted auto
 ### Integration retry-limit regression coverage (2026-10-20)
 
 Added focused tests for `integrations.retry_limit`: an event at the configured attempt limit is moved to `dead_letter` and returns HTTP 409, while an event below the limit is allowed through the retry/process path. These tests are committed but not yet verified by execution. The free-only constraint remains in force; the self-hosted Windows release gate is still the only configured test gate.
+
+
+### Salla webhook signature verification regression coverage (2026-10-20)
+
+Added focused unit tests for the Salla signature verifier: a valid HMAC-SHA256 signature is accepted, an invalid signature is rejected with HTTP 401, and a missing signature is rejected with HTTP 401. These exercise the verifier itself; they do not replace a full endpoint test of the company-level `integrations.webhook_signature_required` switch. Tests remain unverified until the self-hosted Windows runner executes them.
