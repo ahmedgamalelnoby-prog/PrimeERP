@@ -177,3 +177,9 @@ A setting should be promoted from CATALOG ONLY to RUNTIME only after the consume
 - The page now searches by display label, canonical setting key, module, and translated category/module names; a status filter narrows results to runtime or catalog-only entries.
 - The page shows total/runtime/catalog/unsaved-change counters, a result count, a reset control, an empty-result message, and disables Save when no values differ from the loaded values.
 - These UX changes improve navigation. The current source audit records **27 runtime / 41 catalog-only** after adding transaction branch requirements, journal period-lock policy, customer credit-limit enforcement, supplier receipt requirements, company payment-term defaults, duplicate-customer checks, POS discount policy enforcement, warehouse requirements, taxable invoice tax-code enforcement, and accounting auto-post gates; tests still need to run.
+
+
+## Follow-up regression coverage (2026-10-20)
+- Added focused unit coverage for the fiscal-period repository's two policy modes: default lookup filters to periods that are both open and allow posting; `require_open=False` retains tenant/company/date coverage filters while omitting those two state filters.
+- This tests the repository contract used by `accounting.period_lock_enabled` without requiring Docker or a database service. It does not replace the full journal reversal integration test.
+- Current CI status at time of update: the Windows self-hosted release gate for the preceding commit was queued and had not reported a result. The new commit may trigger another self-hosted run; no test-pass claim is made.
