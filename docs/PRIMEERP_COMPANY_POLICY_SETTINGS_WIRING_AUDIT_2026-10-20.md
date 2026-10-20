@@ -6,8 +6,8 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 ## Result
 
 - Catalog entries audited individually: **68**.
-- Confirmed workflow consumers in this change: **27**.
-- Visible/persisted options not yet enforced by their owning workflows: **41**.
+- Confirmed workflow consumers in this change: **28**.
+- Visible/persisted options not yet enforced by their owning workflows: **40**.
 - Confirmed runtime consumers: `inventory.allow_negative_stock` (stock-movement posting), `accounting.require_journal_approval` (journal posting), `general.timezone`, `general.base_currency`, `general.allow_multi_currency`, `general.require_cost_center` and `accounting.allow_backdated_entries` (journal creation), plus `integrations.retry_limit` and `integrations.webhook_signature_required` (integration retry and Salla webhook intake), `accounting.fiscal_year_start_month` (fiscal-year creation), `accounting.rounding_method` and `tax.default_tax_inclusive_pricing` (tax calculation), `workflow.allow_self_approval` (generic transaction approval), `inventory.require_bin_location` (stock movement creation), `general.branch_required` (generic transaction creation), and `accounting.period_lock_enabled` (journal posting), `sales.credit_limit_enforced` (customer credit exposure check), `purchasing.require_goods_receipt` (supplier-bill creation), `sales.default_payment_terms_days` / `purchasing.default_payment_terms_days` (sales invoices and supplier bills when partner terms are unset), `crm.duplicate_customer_check` (customer creation by email/tax number), `pos.allow_discount_without_approval` / `pos.max_discount_pct_without_approval` (POS checkout discounts), `inventory.require_warehouse` (stockable/consumable commerce documents), `tax.require_tax_code_on_invoice` (taxable sales/purchase invoice lines), and `accounting.auto_post_sales_invoice` / `accounting.auto_post_purchase_invoice` (company-gated accounting auto-post). FIFO negative issues remain blocked for valuation safety, and reserved quantities remain protected.
 - This is a source-level audit, not a successful runtime test. Docker is unavailable/offline for the user, and the GitHub self-hosted Release Gate is queued; no test-pass claim is made.
 
@@ -20,7 +20,7 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 
 | Option key | Type | Current status | Purpose |
 |---|---|---|---|
-| `general.default_language` | enum | CATALOG ONLY | Interface language |
+| `general.default_language` | enum | **RUNTIME** | Applies the saved company interface language when the Company Policy Settings page loads or saves |
 | `general.date_format` | enum | CATALOG ONLY | Date display format |
 | `general.timezone` | string | **RUNTIME** | Company-local date used by journal backdating policy |
 | `general.base_currency` | string | **RUNTIME** | Default journal currency and foreign-currency policy |
@@ -293,3 +293,10 @@ The 41 catalog-only settings below are the remaining candidates for workflow wir
 5. POS session lifecycle, manufacturing completion controls, intercompany, and scheduled integration sync.
 
 For each policy, promotion to `runtime` requires: (a) an identified authoritative workflow boundary, (b) company/tenant isolation, (c) positive and negative tests, and (d) successful execution in the free self-hosted test gate. Until then it remains explicitly `catalog`.
+
+
+## Company language preference wiring (2026-10-20)
+
+- Promoted `general.default_language` to runtime because the company policy settings page now applies the saved `ar`/`en` language through the existing i18next instance when a company's settings are loaded and after settings are saved. The existing i18n handler updates document language/direction and persists the selected language locally.
+- Scope note: this policy is applied when the company policy settings page loads; the application does not yet fetch company settings globally at every app startup, so do not interpret this as a complete company-aware locale bootstrap across every fresh session.
+- Updated the registry contract test to include this key among verified runtime consumers. Tests remain unexecuted in this environment; no green status is claimed.
