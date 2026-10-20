@@ -242,10 +242,10 @@ Added a public-webhook endpoint regression test that sets `integrations.webhook_
 
 ## Remaining catalog-only backlog — grouped implementation plan (2026-10-20)
 
-The 41 catalog-only settings below are the remaining candidates for workflow wiring. Grouping is by the primary workflow needed; it is not a claim that the work is already implemented.
+The 40 catalog-only settings below are the remaining candidates for workflow wiring. Grouping is by the primary workflow needed; it is not a claim that the work is already implemented.
 
-### A. Company defaults and accounting configuration (9)
-- `general.default_language`, `general.date_format`: apply company preferences consistently in frontend formatting/localization.
+### A. Company defaults and accounting configuration (8)
+- `general.date_format`: apply the selected format consistently through shared frontend date-formatting utilities; enum validation is covered, but display-wide wiring is not yet complete.
 - `general.require_project`: add project dimension to the supported document schemas and persistence first.
 - `general.intercompany_enabled`: implement intercompany transaction lifecycle, balancing, and cross-company permissions.
 - `accounting.default_receivable_account`, `accounting.default_payable_account`, `accounting.default_sales_account`, `accounting.default_purchase_account`, `accounting.default_cash_account`: resolve configured account codes against the company chart of accounts, validate account eligibility, and use them only as fallbacks when creating accounting lines.
@@ -300,3 +300,10 @@ For each policy, promotion to `runtime` requires: (a) an identified authoritativ
 - Promoted `general.default_language` to runtime because authenticated app bootstrap now loads the selected active company's saved `ar`/`en` language through the existing i18next instance; the Company Policy Settings page also applies it when settings are loaded and after settings are saved. The existing i18n handler updates document language/direction and persists the selected language locally.
 - Bootstrap uses the saved `company_id` when it matches an active company, otherwise it selects the first active company and stores that selection. If company lookup/settings cannot load, bootstrap leaves the current browser/user language unchanged rather than blocking authentication.
 - Updated the registry contract test to include this key among verified runtime consumers. Tests remain unexecuted in this environment; no green status is claimed.
+
+
+## Additional catalog validation coverage (2026-10-20)
+
+- Added registry tests confirming that only the three declared `general.date_format` values are accepted.
+- Added boundary tests for `purchasing.price_variance_tolerance_pct` including negative, above-100, non-finite and wrong-type inputs. These settings remain catalog-only until their full display/workflow consumers are implemented.
+- These are committed regression tests; execution is still pending on the offline self-hosted runner and is not claimed as passing.
