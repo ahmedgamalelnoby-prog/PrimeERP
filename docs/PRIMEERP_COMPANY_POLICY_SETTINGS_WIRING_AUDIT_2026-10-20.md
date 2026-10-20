@@ -196,3 +196,17 @@ A setting should be promoted from CATALOG ONLY to RUNTIME only after the consume
 - Corrected the registry test's expected runtime-setting set to match the 27 settings currently marked `runtime`; the test had retained an older 14-setting expectation and would fail despite the newer registry coverage.
 - Added/retained validation coverage for invalid values and defaults in `backend/tests/test_company_policy_runtime.py` and `backend/tests/test_company_settings_registry.py`.
 - These are source-level corrections only. The self-hosted Windows runner is still queued while the user's local machine is unavailable, so no test pass is claimed.
+
+## Follow-up safety review — 2026-10-20
+
+A second source review deliberately did **not** promote several settings to runtime, because the current data/workflow model cannot enforce them safely:
+
+- `sales.require_order_approval` and `purchasing.require_purchase_approval`: commerce confirmation currently transitions a draft document directly to confirmed; no company-policy-aware approval state transition was verified for these document types.
+- `sales.invoice_requires_delivery` and `sales.allow_overbilling`: sales documents do not carry a verified order-to-delivery/invoice line-allocation relationship that can prove which quantities have been delivered or billed. Matching only by customer would risk accepting an unrelated delivery or rejecting a valid invoice.
+- `purchasing.require_purchase_order`: purchase bills do not carry a verified purchase-order source relationship; matching only by vendor is insufficient.
+- `integrations.auto_sync_enabled`: the Salla full-sync path found in this review is an explicitly invoked API endpoint, not an automatic scheduler. This option must not block manual sync or be represented as active until an automatic sync runner exists.
+- `general.require_project`: commerce document schemas/models reviewed here do not expose a project dimension to validate.
+
+A registry regression test now asserts these options remain `catalog` until the corresponding safe workflow/data model exists. This is intentional: a visible toggle is not proof of enforcement. The next implementation batch should add the missing source relationships/approval states or scheduler first, then wire and test the relevant setting end-to-end.
+
+Tests remain **not executed/verified** in this review; the local Windows self-hosted runner is unavailable, and no paid hosted runner was used.
