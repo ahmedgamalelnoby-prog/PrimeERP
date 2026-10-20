@@ -31,7 +31,18 @@ class CommerceAccountingService:
         if company is None: raise HTTPException(404, "Company not found")
         branch = db.scalar(select(Branch).where(Branch.id == settings.default_branch_id, Branch.company_id == company_id, Branch.tenant_id == company.tenant_id, Branch.is_active.is_(True)))
         if branch is None: raise HTTPException(409, "Configured accounting branch was not found")
-        period = db.scalar(select(AccountingPeriod).where(AccountingPeriod.company_id == company_id, AccountingPeriod.tenant_id == company.tenant_id, AccountingPeriod.start_date <= entry_date, AccountingPeriod.end_date >= entry_date, AccountingPeriod.status == "open", AccountingPeriod.allow_posting.is_(True)).order_by(AccountingPeriod.period_number.desc()))
+        period_query = select(AccountingPeriod).where(
+            AccountingPeriod.company_id == company_id,
+            AccountingPeriod.tenant_id == company.tenant_id,
+            AccountingPeriod.start_date <= entry_date,
+            AccountingPeriod.end_date >= entry_date,
+        )
+        if get_company_setting(db, company_id, "accounting.period_lock_enabled") is True:
+            period_query = period_query.where(
+                AccountingPeriod.status == "open",
+                AccountingPeriod.allow_posting.is_(True),
+            )
+        period = db.scalar(period_query.order_by(AccountingPeriod.period_number.desc()))
         if period is None: raise HTTPException(409, "No open posting period exists for the document date")
         fiscal_year = db.scalar(select(FiscalYear).where(FiscalYear.id == period.fiscal_year_id, FiscalYear.company_id == company_id, FiscalYear.tenant_id == company.tenant_id))
         if fiscal_year is None: raise HTTPException(409, "Fiscal year for the posting period was not found")
@@ -112,7 +123,7 @@ class CommerceAccountingService:
 
     def post_purchase_bill(self, db, document, user_id: int):
         settings = self._settings(db, document.company_id)
-        existing = self._existing_source(db, company_id=document.company_id, source_entity="purchase_bill", source_id=document.id)
+        existing = self._existing_source(db, company_id=document.company_id, source_entity="purchase_bill", source_id=document.id, auto_post_policy_key="accounting.auto_post_purchase_invoice")
         if existing: return existing
         stock_total, expense_total = self._purchase_stock_expense_totals(db, document)
         linked_receipts = self._linked_receipt_ids(db, document)
