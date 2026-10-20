@@ -20,6 +20,7 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
     assert runtime_keys == {
         "inventory.allow_negative_stock",
         "accounting.require_journal_approval",
+        "general.default_language",
         "general.timezone",
         "general.base_currency",
         "general.allow_multi_currency",
