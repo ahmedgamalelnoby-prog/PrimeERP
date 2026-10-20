@@ -378,3 +378,48 @@ def test_salla_webhook_signature_rejects_missing_signature():
         )
 
     assert exc.value.status_code == 401
+
+
+
+def test_company_webhook_signature_policy_is_enforced_by_public_endpoint(monkeypatch):
+    import asyncio
+    from app.modules.integrations import router as integrations_router
+
+    connection = SimpleNamespace(
+        id=12,
+        company_id=7,
+        webhook_secret_env="PRIMEERP_TEST_SALLA_SECRET",
+    )
+
+    class FakeRequest:
+        headers = {}
+
+        async def body(self):
+            return b'{"event":"order.created","id":"evt-endpoint"}'
+
+    monkeypatch.setattr(
+        integrations_router,
+        "_get_salla_connection",
+        lambda _db, _connection_id: connection,
+    )
+    monkeypatch.setattr(
+        integrations_router,
+        "get_company_setting",
+        lambda _db, _company_id, key: key == "integrations.webhook_signature_required",
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(
+            integrations_router.receive_salla_webhook_public(
+                connection_id=12,
+                request=FakeRequest(),
+                x_salla_security_strategy="Signature",
+                x_salla_signature=None,
+                x_salla_event=None,
+                x_salla_event_id=None,
+                db=object(),
+            )
+        )
+
+    assert exc.value.status_code == 401
+    assert "signature" in exc.value.detail.lower()
