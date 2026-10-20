@@ -30,8 +30,21 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
         "accounting.rounding_method",
         "accounting.fiscal_year_start_month",
         "tax.default_tax_inclusive_pricing",
-        "inventory.require_bin_location",
         "workflow.allow_self_approval",
+        "inventory.require_bin_location",
+        "general.branch_required",
+        "accounting.period_lock_enabled",
+        "sales.credit_limit_enforced",
+        "purchasing.require_goods_receipt",
+        "sales.default_payment_terms_days",
+        "purchasing.default_payment_terms_days",
+        "crm.duplicate_customer_check",
+        "pos.allow_discount_without_approval",
+        "pos.max_discount_pct_without_approval",
+        "inventory.require_warehouse",
+        "tax.require_tax_code_on_invoice",
+        "accounting.auto_post_sales_invoice",
+        "accounting.auto_post_purchase_invoice",
     }
 
 
