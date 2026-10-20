@@ -151,6 +151,7 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 - Aligned commerce accounting-period selection with accounting.period_lock_enabled; the journal posting service remains the enforcement point and still checks company/fiscal-year membership and entry-date range.
 - Hardened POS discount behavior: when approval-free discounts are disabled, any positive discount is rejected because the checkout path has no approval-capture workflow; when enabled, discounts above pos.max_discount_pct_without_approval are rejected.
 - Aligned journal reversals with the company timezone, `accounting.allow_backdated_entries`, and `accounting.period_lock_enabled`; period lookup can select a date-covering period without open-status filtering when the company explicitly disables period locking. Tenant/company scope and period date coverage remain enforced.
+- Added a focused regression test proving a backdated journal reversal is rejected before accounting-period lookup when `accounting.allow_backdated_entries` is disabled. This test is committed but has not yet run successfully.
 - Added POS regression coverage for approval-required discounts, above-limit discounts, and an allowed discount at the configured limit. These tests are committed but have not been executed successfully.
 
 ## Defects and improvements made during this audit
