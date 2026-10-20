@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 # status='runtime' is reserved for options whose behavior is enforced by a workflow.
 _RAW = [
     # Company-wide defaults
-    ("general.default_language","general","General","enum","ar","Interface language",["ar","en"],"catalog"),
+    ("general.default_language","general","General","enum","ar","Interface language",["ar","en"],"runtime"),
     ("general.date_format","general","General","enum","DD/MM/YYYY","Date display format",["DD/MM/YYYY","MM/DD/YYYY","YYYY-MM-DD"],"catalog"),
     ("general.timezone","general","General","string","Africa/Cairo","Company timezone",None,"runtime"),
     ("general.base_currency","general","General","string","EGP","Functional currency code",None,"runtime"),
