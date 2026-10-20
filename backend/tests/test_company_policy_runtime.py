@@ -234,3 +234,26 @@ def test_period_lookup_requires_open_and_postable_period_by_default():
     assert any("accounting_periods.status" in condition for condition in rendered_filters)
     assert any("accounting_periods.allow_posting" in condition for condition in rendered_filters)
 
+
+
+def test_company_setting_registry_rejects_invalid_values():
+    from app.modules.company_settings.registry import validate_value
+
+    with pytest.raises(ValueError, match="3-letter uppercase currency code"):
+        validate_value("general.base_currency", "egp")
+    with pytest.raises(ValueError, match="valid IANA timezone"):
+        validate_value("general.timezone", "Not/A_Timezone")
+    with pytest.raises(ValueError, match="between 0 and 100"):
+        validate_value("pos.max_discount_pct_without_approval", 100.1)
+    with pytest.raises(ValueError, match="must be true or false"):
+        validate_value("inventory.allow_negative_stock", 1)
+    with pytest.raises(ValueError, match="Unknown company setting"):
+        validate_value("general.not_a_real_setting", True)
+
+
+def test_company_setting_registry_defaults_match_declared_types():
+    from app.modules.company_settings.registry import CATALOG, validate_value
+
+    assert len({item["key"] for item in CATALOG}) == len(CATALOG)
+    for item in CATALOG:
+        assert validate_value(item["key"], item["default"]) == item["default"]
