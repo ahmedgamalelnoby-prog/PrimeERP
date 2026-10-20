@@ -328,3 +328,10 @@ Regression tests cover a configured override, an unset fallback, and invalid-cod
 - This implementation currently evaluates the aggregate stock-item valuation variance against linked receipts, not a per-line PO comparison. Purchase-order relationships and purchase-approval lifecycle remain unimplemented and catalog-only.
 - Added focused tests for equal values, at-tolerance and above-tolerance values, the explicit allow-beyond-tolerance switch, and downward variance. Tests are committed but not yet executed; the self-hosted release gate remains queued, so no passing result is claimed.
 - The generic commerce list's date formatter was also hardened to preserve an ISO timestamp suffix and leave invalid ISO-like dates unchanged; the date-format setting remains catalog-only until app-wide display coverage is complete.
+
+
+## Effective account-default isolation fix (2026-10-20)
+
+- The commerce accounting service now builds a detached effective-settings value object before applying company account-code overrides. It no longer mutates the SQLAlchemy `CommerceAccountingSettings` row while resolving runtime policy values, preventing a later unrelated transaction commit from persisting an override into the legacy account-ID columns.
+- Added a regression test that checks effective account IDs use the company policy values while the persisted legacy values remain unchanged.
+- This is source-level verification only; the test has not run because the configured free self-hosted Windows runner is unavailable. No passing test status is claimed.
