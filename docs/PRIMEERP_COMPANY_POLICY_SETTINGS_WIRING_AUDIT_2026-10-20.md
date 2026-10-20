@@ -214,3 +214,12 @@ Tests remain **not executed/verified** in this review; the local Windows self-ho
 ### Focused runtime regression tests added — 2026-10-20
 
 Added `backend/tests/commerce/test_company_auto_post_policy.py` to exercise the actual accounting service posting path with isolated dependencies: when `accounting.auto_post_sales_invoice` is false, the journal is submitted but not posted automatically; when true, auto-post proceeds (assuming the existing company accounting configuration and journal also allow it). These tests are committed but have **not been executed** because the permitted self-hosted runner remains unavailable.
+
+
+### Purchase auto-post regression coverage (2026-10-20)
+
+The focused commerce accounting tests now exercise both company gates at the journal-posting decision:
+- `accounting.auto_post_sales_invoice`: enabled and disabled cases.
+- `accounting.auto_post_purchase_invoice`: enabled and disabled cases.
+
+Each disabled case expects the draft journal to be submitted but not posted automatically; each enabled case expects the post transition, provided the existing commerce and journal auto-post switches also permit it. These are committed tests, not evidence of a passing run. Verification still depends on the local Windows self-hosted runner becoming available; no paid hosted runner was added.
