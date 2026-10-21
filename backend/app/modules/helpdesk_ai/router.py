@@ -8,6 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
+from app.core.permissions import require_permission
+from app.modules.saas.entitlements import require_module
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.database.session import get_db
@@ -117,12 +119,23 @@ def answer_helpdesk(
 ) -> HelpdeskAnswer:
     from app.models.company import Company
     company = db.get(Company, request.company_id)
-    if company is None or getattr(company, "tenant_id", None) != get_effective_tenant_id(current_user):
+    if (
+        company is None
+        or getattr(company, "tenant_id", None) != get_effective_tenant_id(current_user)
+        or not getattr(company, "is_active", False)
+    ):
         raise HTTPException(status_code=404, detail="Company not found")
     return _ask_ai(request)
 
 
-@router.post("/ai/advice", response_model=AdvisoryResponse)
+@router.post(
+    "/ai/advice",
+    response_model=AdvisoryResponse,
+    dependencies=[
+        Depends(require_permission("accounting.access")),
+        Depends(require_module("accounting")),
+    ],
+)
 def business_advice(
     request: AdvisoryRequest,
     current_user: User = Depends(get_current_user),
@@ -146,7 +159,11 @@ def business_advice(
 
     from app.models.company import Company
     company = db.get(Company, request.company_id)
-    if company is None or getattr(company, "tenant_id", None) != get_effective_tenant_id(current_user):
+    if (
+        company is None
+        or getattr(company, "tenant_id", None) != get_effective_tenant_id(current_user)
+        or not getattr(company, "is_active", False)
+    ):
         raise HTTPException(status_code=404, detail="Company not found")
 
     summary = financial_report_service.financial_summary(
