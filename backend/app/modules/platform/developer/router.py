@@ -15,7 +15,7 @@ from app.modules.platform.developer.service import create_app,create_key,authent
 router=APIRouter(prefix="/developer",tags=["Developer Platform"])
 MAX_DELIVERY_ATTEMPTS=5
 def company_ok(db,cid,user):
-    if not get_effective_tenant_id(user) or not db.scalar(select(Company.id).where(Company.id==cid,Company.tenant_id==get_effective_tenant_id(user))):raise HTTPException(404,"Company not found")
+    if not get_effective_tenant_id(user) or not db.scalar(select(Company.id).where(Company.id==cid,Company.tenant_id==get_effective_tenant_id(user),Company.is_active.is_(True))):raise HTTPException(404,"Company not found")
 @router.post("/apps",response_model=AppCreated,status_code=201,dependencies=[Depends(require_permission("developer.manage"))])
 def apps(p:AppCreate,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     company_ok(db,p.company_id,user);a,s=create_app(db,user,p);return {**AppResponse.model_validate(a).model_dump(),"client_secret":s}
