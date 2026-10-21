@@ -11,6 +11,7 @@ import { authService } from "../services/authentication.service";
 import client from "../../../shared/api/client";
 import i18n from "../../../shared/i18n/i18n";
 import { storage } from "../../../shared/utils/storage";
+import { setCompanyDateFormat } from "../../../utils/format-date";
 
 import type { AuthenticatedUser } from "../types/user";
 
@@ -88,6 +89,11 @@ export function AuthProvider({
           settings: Array<{ key: string; value: unknown }>;
         }>("/company-settings", { params: { company_id: companyId } });
         if (cancelled) return;
+
+        const dateFormat = settings.settings.find(
+          (setting) => setting.key === "general.date_format",
+        )?.value;
+        setCompanyDateFormat(companyId, dateFormat);
 
         const language = settings.settings.find(
           (setting) => setting.key === "general.default_language",
