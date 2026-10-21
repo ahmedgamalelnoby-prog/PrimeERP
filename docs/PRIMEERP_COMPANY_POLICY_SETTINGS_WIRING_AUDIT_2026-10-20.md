@@ -1,6 +1,6 @@
 # Company Policy Settings — Static Wiring Audit
 
-Date: 2026-10-20  
+Date: 2026-10-22  
 Branch: `feature/primeerp-full-system-audit-20261020-v2`
 
 ## Result
@@ -176,7 +176,7 @@ A setting should be promoted from CATALOG ONLY to RUNTIME only after the consume
 - Company policies remain grouped by category in registry order. Within a category, runtime-enforced entries are listed before catalog-only entries, then labels are alphabetically sorted using Arabic locale rules.
 - The page now searches by display label, canonical setting key, module, and translated category/module names; a status filter narrows results to runtime or catalog-only entries.
 - The page shows total/runtime/catalog/unsaved-change counters, a result count, a reset control, an empty-result message, and disables Save when no values differ from the loaded values.
-- These UX changes improve navigation. The current source audit records **27 runtime / 41 catalog-only** after adding transaction branch requirements, journal period-lock policy, customer credit-limit enforcement, supplier receipt requirements, company payment-term defaults, duplicate-customer checks, POS discount policy enforcement, warehouse requirements, taxable invoice tax-code enforcement, and accounting auto-post gates; tests still need to run.
+- These UX changes improve navigation. The current source audit records **35 runtime / 33 catalog-only** after adding transaction branch requirements, journal period-lock policy, customer credit-limit enforcement, supplier receipt requirements, company payment-term defaults, duplicate-customer checks, POS discount policy enforcement, warehouse requirements, taxable invoice tax-code enforcement, and accounting auto-post gates; tests still need to run.
 
 
 ## Follow-up regression coverage (2026-10-20)
@@ -335,3 +335,11 @@ Regression tests cover a configured override, an unset fallback, and invalid-cod
 - The commerce accounting service now builds a detached effective-settings value object before applying company account-code overrides. It no longer mutates the SQLAlchemy `CommerceAccountingSettings` row while resolving runtime policy values, preventing a later unrelated transaction commit from persisting an override into the legacy account-ID columns.
 - Added a regression test that checks effective account IDs use the company policy values while the persisted legacy values remain unchanged.
 - This is source-level verification only; the test has not run because the configured free self-hosted Windows runner is unavailable. No passing test status is claimed.
+
+
+## Company date-format preference synchronization (2026-10-22)
+
+- Added a company-scoped browser preference helper for the validated `general.date_format` values. Authenticated bootstrap hydrates it from the selected company's settings, and the Company Policy Settings page refreshes it when a company is loaded or saved.
+- The commerce operational list continues to read the authoritative setting from the API and now keeps the same company-scoped preference cache in sync. The shared formatter can use the selected company's cached preference when a caller does not supply an explicit format.
+- This does not make date display consistent across every module: consumers outside the commerce operational list have not all been migrated to the shared formatter. `general.date_format` correctly remains catalog-only until that migration is complete.
+- No frontend build or tests were run in this environment.
