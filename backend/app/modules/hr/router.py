@@ -15,8 +15,8 @@ from app.core.permissions import require_permission
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models.user import User
 from app.modules.saas.entitlements import require_module
-from app.modules.hr.models import HRLeaveBalance, HRLeaveRequest, HRAttendanceRecord, HRAttendanceCorrection
-from app.modules.hr.schemas import AttendanceCreate, AttendanceCorrectionCreate, AttendanceCorrectionDecision, AttendanceCorrectionResponse, AttendanceResponse, LeaveBalanceResponse, LeaveBalanceUpdate, LeaveDecision, LeaveRequestCreate, LeaveRequestResponse
+from app.modules.hr.models import HRLeaveBalance, HRLeaveRequest, HRAttendanceRecord, HRAttendanceCorrection, HROvertimeRequest
+from app.modules.hr.schemas import AttendanceCreate, AttendanceCorrectionCreate, AttendanceCorrectionDecision, AttendanceCorrectionResponse, AttendanceResponse, LeaveBalanceResponse, LeaveBalanceUpdate, LeaveDecision, LeaveRequestCreate, LeaveRequestResponse, OvertimeRequestCreate, OvertimeRequestResponse
 from app.modules.hr.service import hr_leave_service
 
 router = APIRouter(
@@ -512,6 +512,106 @@ def decide_attendance_correction(
         db.commit()
         db.refresh(correction)
         return correction
+    except LookupError as exc:
+        db.rollback()
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc)) from exc
+
+
+@router.get(
+    "/overtime-requests",
+    response_model=list[OvertimeRequestResponse],
+    dependencies=[Depends(require_permission("enterprise.access"))],
+)
+def list_overtime_requests(
+    company_id: int = Query(..., gt=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    tenant_id = _tenant(current_user)
+    _company_for_tenant(db, company_id, tenant_id)
+    return hr_leave_service.list_overtime_requests(db, company_id=company_id)
+
+
+@router.post(
+    "/overtime-requests",
+    response_model=OvertimeRequestResponse,
+    status_code=201,
+    dependencies=[Depends(require_permission("enterprise.write"))],
+)
+def create_overtime_request(
+    payload: OvertimeRequestCreate,
+    company_id: int = Query(..., gt=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    tenant_id = _tenant(current_user)
+    _company_for_tenant(db, company_id, tenant_id)
+    try:
+        request = hr_leave_service.create_overtime_request(
+            db, company_id=company_id, payload=payload, actor_user_id=current_user.id
+        )
+        _leave_audit(
+            db,
+            action="hr.overtime_request_submitted",
+            request_id=request.id,
+            user=current_user,
+            tenant_id=tenant_id,
+            company_id=company_id,
+            leave_type="overtime",
+            status=request.status,
+            days=Decimal(request.requested_hours),
+        )
+        db.commit()
+        db.refresh(request)
+        return request
+    except LookupError as exc:
+        db.rollback()
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc)) from exc
+
+
+@router.post(
+    "/overtime-requests/{request_id}/decision",
+    response_model=OvertimeRequestResponse,
+    dependencies=[Depends(require_permission("enterprise.post"))],
+)
+def decide_overtime_request(
+    request_id: int,
+    payload: LeaveDecision,
+    company_id: int = Query(..., gt=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    tenant_id = _tenant(current_user)
+    _company_for_tenant(db, company_id, tenant_id)
+    try:
+        request = hr_leave_service.decide_overtime_request(
+            db,
+            company_id=company_id,
+            request_id=request_id,
+            actor_user_id=current_user.id,
+            decision=payload.decision,
+            reason=payload.reason,
+        )
+        _leave_audit(
+            db,
+            action="hr.overtime_request_approved" if payload.decision == "approve" else "hr.overtime_request_rejected",
+            request_id=request.id,
+            user=current_user,
+            tenant_id=tenant_id,
+            company_id=company_id,
+            leave_type="overtime",
+            status=request.status,
+            days=Decimal(request.requested_hours),
+        )
+        db.commit()
+        db.refresh(request)
+        return request
     except LookupError as exc:
         db.rollback()
         raise HTTPException(404, str(exc)) from exc
