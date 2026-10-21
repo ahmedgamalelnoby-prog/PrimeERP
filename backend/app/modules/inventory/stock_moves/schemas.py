@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-MovementType = Literal["receipt", "issue", "transfer", "adjustment", "opening", "return"]
+MovementType = Literal["receipt", "issue", "transfer", "adjustment", "opening", "return", "production_issue", "production_receipt"]
 
 
 class StockMoveCreate(BaseModel):
