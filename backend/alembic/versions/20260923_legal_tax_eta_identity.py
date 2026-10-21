@@ -1,12 +1,12 @@
 """Add legal/tax identity and ETA linkage fields.
 Revision ID: 20260923_legal_tax_eta_identity
-Revises: 20260920_enterprise_finance, 20260920_pos_outlet_routing
+Revises: 20260920_pos_outlet_routing (which already includes enterprise finance ancestry)
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = "20260923_legal_tax_eta_identity"
-down_revision = ("20260920_enterprise_finance", "20260920_pos_outlet_routing")
+down_revision = "20260920_pos_outlet_routing"
 branch_labels = None
 depends_on = None
 
