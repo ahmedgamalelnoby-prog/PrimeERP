@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from decimal import Decimal
 
 from sqlalchemy import and_, select
@@ -165,6 +166,10 @@ class HRLeaveService:
             raise ValueError("Only the requester can cancel this leave request")
         if request.status not in {"pending", "approved"}:
             raise ValueError("Only pending or approved leave requests can be cancelled")
+        company_timezone = get_company_setting(db, company_id, "general.timezone")
+        company_today = datetime.now(ZoneInfo(company_timezone)).date()
+        if request.status == "approved" and request.start_date <= company_today:
+            raise ValueError("An approved leave cannot be cancelled after its start date in the company timezone")
         if request.status == "approved" and request.leave_type in PAID_LEAVE_TYPES:
             balance = db.scalar(select(HRLeaveBalance).where(
                 HRLeaveBalance.company_id == company_id,
