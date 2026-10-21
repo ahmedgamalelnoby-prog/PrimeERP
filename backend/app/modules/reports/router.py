@@ -21,7 +21,7 @@ from app.modules.identity.models import User
 from app.modules.saas.entitlements import require_module
 from app.modules.reports.models import ReportDefinition, ReportDelivery
 from app.modules.accounting.reports.service import financial_report_service
-from app.modules.reports.worker import calculate_next_run
+from app.modules.reports.worker import PROVIDERS, calculate_next_run
 from app.modules.platform.module_registry import REGISTRY_VERSION, knowledge_context
 
 router = APIRouter(prefix="/reports", tags=["reports"], dependencies=[Depends(require_module("reports"))])
@@ -45,7 +45,7 @@ class ScheduleRequest(BaseModel):
     company_id: int = Field(gt=0)
     code: str = Field(min_length=1, max_length=100)
     name: str = Field(min_length=1, max_length=255)
-    report_type: str = Field(default="custom", max_length=50)
+    report_type: str = Field(default="manifest", pattern="^(snapshot|manifest)$", description="Use the metadata snapshot provider; live ERP report providers are not registered yet.")
     channel: str = Field(pattern="^(email|whatsapp)$")
     destination: str = Field(min_length=3, max_length=320)
     schedule: str = Field(min_length=1, max_length=120)
@@ -158,6 +158,10 @@ def create_schedule(request: ScheduleRequest, current_user: User = Depends(get_c
         db.flush()
     elif not definition.is_active:
         raise HTTPException(409, "Report definition is inactive")
+    elif definition.report_type.lower() not in PROVIDERS:
+        raise HTTPException(409, "Report definition has no registered provider")
+    elif definition.report_type.lower() != request.report_type.lower():
+        raise HTTPException(409, "Report code already exists with a different report type")
     delivery = ReportDelivery(company_id=request.company_id, report_definition_id=definition.id, channel=request.channel, destination=request.destination, schedule=request.schedule, format=request.format, filters_json=json.dumps(request.filters, ensure_ascii=False), next_run_at=next_run, delivery_key=uuid.uuid4().hex)
     db.add(delivery)
     db.commit()
@@ -205,11 +209,14 @@ def analyze_report(
     }
     if actual_metrics["revenue"]:
         actual_metrics["net_margin_pct"] = round(actual_metrics["net_profit"] / actual_metrics["revenue"] * 100, 2)
-    actual_metrics.update(request.metrics)
+    # Keep caller-supplied context useful to the analysis without letting it
+    # replace figures calculated from the tenant-scoped accounting records.
+    supplemental_metrics = {key: value for key, value in request.metrics.items() if key not in actual_metrics}
+    analysis_metrics = {**supplemental_metrics, **actual_metrics}
     enriched = AIAnalysisRequest(
         company_id=request.company_id,
         domain=request.domain,
-        metrics=actual_metrics,
+        metrics=analysis_metrics,
         question=request.question,
         from_date=request.from_date,
         to_date=request.to_date,
