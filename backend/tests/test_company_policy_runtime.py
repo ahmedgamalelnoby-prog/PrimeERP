@@ -1,10 +1,11 @@
 from decimal import Decimal
+import importlib
 from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
 
-import app.modules.transactions.services.transaction_service as transaction_service_module
+transaction_service_module = importlib.import_module("app.modules.transactions.services.transaction_service")
 from app.modules.accounting.tax_engine import money
 
 
@@ -17,7 +18,7 @@ def test_company_rounding_policy_modes():
 
 def test_requester_cannot_approve_own_transaction_when_company_policy_disables_it(monkeypatch):
     service = transaction_service_module.transaction_service
-    transaction = SimpleNamespace(company_id=7, created_by=42, status="pending")
+    transaction = SimpleNamespace(company_id=7, tenant_id=3, created_by=42, status="pending")
     monkeypatch.setattr(service, "_get_locked", lambda **_kwargs: transaction)
     monkeypatch.setattr(
         transaction_service_module,
@@ -47,7 +48,7 @@ def test_required_branch_policy_blocks_generic_transaction_without_branch(monkey
         lambda _db, _company_id, key: key == "general.branch_required",
     )
 
-    payload = SimpleNamespace(company_id=7, branch_id=None, source_id=None)
+    payload = SimpleNamespace(company_id=7, branch_id=None, project_id=None, source_id=None)
     with pytest.raises(HTTPException) as exc:
         service.create_transaction(
             db=object(),
@@ -261,7 +262,7 @@ def test_company_setting_registry_defaults_match_declared_types():
 
 
 def test_integration_retry_policy_moves_exhausted_event_to_dead_letter(monkeypatch):
-    from app.modules.integrations import router as integrations_router
+    integrations_router = importlib.import_module("app.modules.integrations.router")
 
     event = SimpleNamespace(id=9, status="failed", attempts=5, company_id=7)
     class FakeDB:
