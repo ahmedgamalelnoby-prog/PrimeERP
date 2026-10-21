@@ -8,7 +8,7 @@ from app.database.base import Base
 class ManufacturingWorkOrder(Base):
     __tablename__ = "manufacturing_work_orders"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     number = Column(String(60), nullable=False)
     recipe_id = Column(Integer, ForeignKey("recipes.id", ondelete="RESTRICT"), nullable=False, index=True)
