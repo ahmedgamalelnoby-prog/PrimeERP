@@ -44,7 +44,7 @@ export default function OperationalPage() {
   const [chequeBank, setChequeBank] = useState("");
   const [chequeDueDate, setChequeDueDate] = useState(new Date().toISOString().slice(0, 10));
   const [payments, setPayments] = useState<Row[]>([]);
-  const [dateFormat, setDateFormat] = useState<CompanyDateFormat>(() => getCompanyDateFormat(companyId));
+  const [dateFormat, setDateFormat] = useState<CompanyDateFormat>(() => getCompanyDateFormat(selectedCompanyId()));
   const companyId = selectedCompanyId();
   const query = useMemo(() => companyId ? `?company_id=${companyId}` : "", [companyId]);
   const isSale = meta.endpoint === "/commerce/sales/documents";
