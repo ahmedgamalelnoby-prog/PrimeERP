@@ -17,6 +17,7 @@ from app.modules.branches.models import Branch
 from app.modules.companies.models import Company
 from app.modules.company_settings.service import get_company_setting
 from app.modules.identity.models import User
+from app.modules.enterprise.models import Project
 from app.modules.transactions.models import (
     BusinessTransaction,
     TransactionEvent,
@@ -35,6 +36,22 @@ from app.modules.transactions.services.numbering_service import (
 
 
 class TransactionService:
+    @staticmethod
+    def _validate_project(db: Session, *, company_id: int, project_id: int | None, required: bool) -> None:
+        if required and project_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Company policy requires a project on this business transaction",
+            )
+        if project_id is not None and db.query(Project.id).filter(
+            Project.id == project_id,
+            Project.company_id == company_id,
+        ).first() is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Project does not belong to this company",
+            )
+
     def create_transaction(
         self,
         db: Session,
@@ -50,6 +67,13 @@ class TransactionService:
             tenant_id=tenant_id,
             company_id=payload.company_id,
             branch_id=payload.branch_id,
+        )
+
+        self._validate_project(
+            db,
+            company_id=payload.company_id,
+            project_id=payload.project_id,
+            required=get_company_setting(db, payload.company_id, "general.require_project") is True,
         )
 
         if payload.branch_id is None and get_company_setting(
@@ -104,6 +128,7 @@ class TransactionService:
                 tenant_id=tenant_id,
                 company_id=payload.company_id,
                 branch_id=payload.branch_id,
+                project_id=payload.project_id,
                 transaction_number=(
                     number_result[
                         "generated_number"
@@ -221,6 +246,13 @@ class TransactionService:
 
         update_data = payload.model_dump(
             exclude_unset=True
+        )
+        effective_project_id = update_data.get("project_id", transaction.project_id)
+        self._validate_project(
+            db,
+            company_id=transaction.company_id,
+            project_id=effective_project_id,
+            required=get_company_setting(db, transaction.company_id, "general.require_project") is True,
         )
 
         for field_name, value in (
