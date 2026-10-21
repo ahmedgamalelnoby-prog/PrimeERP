@@ -686,63 +686,128 @@ class CommerceService:
             if user is None:
                 raise ValueError("No active tenant user is available for inventory posting")
             user_id = user.id
-        locations = list(db.scalars(select(InventoryLocation).where(InventoryLocation.warehouse_id == obj.warehouse_id, InventoryLocation.company_id == company_id, InventoryLocation.is_active.is_(True)).order_by(InventoryLocation.id)).all())
+        locations = list(db.scalars(select(InventoryLocation).where(InventoryLocation.warehouse_id == obj.warehouse_id, InventoryLocation.company_id == company_id, InventoryLocation.is_active.is_(True), InventoryLocation.is_virtual.is_(False)).order_by(InventoryLocation.id)).all())
         if not locations: raise ValueError("Warehouse has no active location")
         loc = locations[0]; source_entity = "sales_delivery" if kind == "sale" else "purchase_receipt"
-
-        def active_recipe(product_id: int, variant_id: int | None):
-            recipes = list(db.scalars(select(Recipe).where(
-                Recipe.company_id == company_id,
-                Recipe.product_id == product_id,
-                Recipe.is_active.is_(True),
-            ).order_by(Recipe.version.desc())).all())
-            if variant_id is not None:
-                for recipe in recipes:
-                    if recipe.variant_id == variant_id:
-                        return recipe
-            return next((recipe for recipe in recipes if recipe.variant_id is None), None)
-
-        def expand_recipe(product_id: int, variant_id: int | None, quantity: Decimal, visited: set[tuple[int, int | None]]):
-            recipe = active_recipe(product_id, variant_id)
-            if recipe is None:
-                return [(product_id, variant_id, quantity)]
-            key = (product_id, variant_id)
-            if key in visited:
-                raise ValueError(f"Recipe cycle detected while posting inventory for item {product_id}")
-            visited = set(visited)
-            visited.add(key)
-            multiplier = quantity / Decimal(recipe.yield_quantity)
-            multiplier *= Decimal("1") + Decimal(recipe.waste_percentage or 0) / Decimal("100")
-            expanded = []
-            for recipe_line in recipe.lines:
-                line_qty = multiplier * Decimal(recipe_line.quantity)
-                line_qty *= Decimal("1") + Decimal(recipe_line.waste_percentage or 0) / Decimal("100")
-                expanded.extend(expand_recipe(recipe_line.ingredient_product_id, None, line_qty, visited))
-            return expanded
+        auto_reserve = get_company_setting(db, company_id, "inventory.auto_reserve_sales_orders") is True
+        source_order = None
+        if kind == "sale" and obj.source_order_id is not None:
+            source_order = db.scalar(select(SalesDocument).where(
+                SalesDocument.id == obj.source_order_id,
+                SalesDocument.company_id == company_id,
+                SalesDocument.document_type == "order",
+            ).with_for_update())
+            if source_order is None:
+                raise ValueError("Linked sales order is unavailable during inventory posting")
+            if auto_reserve and source_order.warehouse_id != obj.warehouse_id:
+                raise ValueError("A delivery using automatic order reservations must use the sales order warehouse")
 
         for line in obj.lines:
             if kind == "sale":
-                components = expand_recipe(line.item_id, line.variant_id, Decimal(line.quantity), set())
-                for component_index, (component_item_id, component_variant_id, component_qty) in enumerate(components, start=1):
-                    source_id = f"{obj.id}:{line.id}:component:{component_index}:{component_item_id}:{component_variant_id or 0}"
-                    existing = db.scalar(select(InventoryStockMove).where(
-                        InventoryStockMove.company_id == company_id,
-                        InventoryStockMove.source_module == "commerce",
-                        InventoryStockMove.source_entity == source_entity,
-                        InventoryStockMove.source_id == source_id,
-                        InventoryStockMove.status.in_(["draft", "posted"]),
+                components = self._expand_sales_components(
+                    db, company_id=company_id, product_id=line.item_id,
+                    variant_id=line.variant_id, quantity=Decimal(line.quantity),
+                )
+                order_line = None
+                if source_order is not None and line.source_sales_line_id is not None:
+                    order_line = db.scalar(select(SalesLine).where(
+                        SalesLine.id == line.source_sales_line_id,
+                        SalesLine.document_id == source_order.id,
                     ))
-                    if existing:
+                    if order_line is None:
+                        raise ValueError("Delivery line does not belong to the linked sales order")
+                    line_reservations = db.scalars(select(InventoryReservation).where(
+                        InventoryReservation.company_id == company_id,
+                        InventoryReservation.source_module == "commerce",
+                        InventoryReservation.source_entity == "sales_order_line",
+                        InventoryReservation.source_id == str(order_line.id),
+                        InventoryReservation.status == "active",
+                    ).with_for_update()).all()
+                    if auto_reserve and not line_reservations:
+                        self._reserve_sales_line(db, order=source_order, line=order_line, quantity=Decimal(line.quantity))
+
+                for component_index, (component_item_id, component_variant_id, raw_component_qty) in enumerate(components, start=1):
+                    component_item = db.scalar(select(InventoryItem).where(
+                        InventoryItem.id == component_item_id,
+                        InventoryItem.company_id == company_id,
+                        InventoryItem.is_active.is_(True),
+                    ))
+                    if component_item is None:
+                        raise ValueError("Sales delivery component is unavailable")
+                    if component_item.item_type not in {"stockable", "consumable"}:
                         continue
-                    payload = StockMoveCreate(
-                        company_id=company_id, item_id=component_item_id, variant_id=component_variant_id,
-                        movement_type="issue", source_location_id=loc.id, destination_location_id=None,
-                        quantity=component_qty, unit_cost=0, transaction_date=obj.document_date,
-                        reference=obj.number, source_module="commerce", source_entity=source_entity,
-                        source_id=source_id, notes=f"Sales delivery component for line {line.id}",
-                    )
-                    move = inventory_stock_move_service.create_draft(db, payload)
-                    inventory_stock_move_service.post(db, tenant_id=tenant_id, company_id=company_id, move_id=move.id, user_id=user_id)
+                    component_qty = Decimal(raw_component_qty).quantize(Decimal("0.0001"), rounding=ROUND_CEILING)
+                    if component_qty <= 0:
+                        raise ValueError("Sales delivery component quantity must be positive")
+                    active_reservations = []
+                    if order_line is not None:
+                        active_reservations = db.scalars(select(InventoryReservation).where(
+                            InventoryReservation.company_id == company_id,
+                            InventoryReservation.source_module == "commerce",
+                            InventoryReservation.source_entity == "sales_order_line",
+                            InventoryReservation.source_id == str(order_line.id),
+                            InventoryReservation.item_id == component_item_id,
+                            InventoryReservation.variant_id == component_variant_id,
+                            InventoryReservation.status == "active",
+                        ).order_by(InventoryReservation.location_id, InventoryReservation.id).with_for_update()).all()
+                    reserved_quantity = sum((Decimal(row.quantity) for row in active_reservations), Decimal("0"))
+                    if active_reservations and reserved_quantity < component_qty:
+                        raise ValueError(
+                            f"Reserved stock for sales order line {order_line.id}, item {component_item_id} is insufficient"
+                        )
+                    if auto_reserve and order_line is not None and not active_reservations:
+                        raise ValueError(
+                            f"No matching stock reservation exists for sales order line {order_line.id}, item {component_item_id}"
+                        )
+
+                    if active_reservations:
+                        remaining = component_qty
+                        for reservation in active_reservations:
+                            take = min(remaining, Decimal(reservation.quantity))
+                            if take <= 0:
+                                continue
+                            source_id = f"{obj.id}:{line.id}:component:{component_index}:{component_item_id}:{component_variant_id or 0}:reservation:{reservation.id}"
+                            existing = db.scalar(select(InventoryStockMove).where(
+                                InventoryStockMove.company_id == company_id,
+                                InventoryStockMove.source_module == "commerce",
+                                InventoryStockMove.source_entity == source_entity,
+                                InventoryStockMove.source_id == source_id,
+                                InventoryStockMove.status.in_(["draft", "posted"]),
+                            ))
+                            if existing:
+                                remaining -= take
+                                continue
+                            move = inventory_stock_move_service.create_draft(db, StockMoveCreate(
+                                company_id=company_id, item_id=component_item_id, variant_id=component_variant_id,
+                                movement_type="issue", source_location_id=reservation.location_id, destination_location_id=None,
+                                quantity=take, unit_cost=0, transaction_date=obj.document_date,
+                                reference=obj.number, source_module="commerce", source_entity=source_entity,
+                                source_id=source_id, reservation_id=reservation.id,
+                                notes=f"Sales delivery component for line {line.id}",
+                            ))
+                            inventory_stock_move_service.post(db, tenant_id=tenant_id, company_id=company_id, move_id=move.id, user_id=user_id)
+                            remaining -= take
+                        if remaining > 0:
+                            raise ValueError("Active reservations could not cover the sales delivery quantity")
+                    else:
+                        source_id = f"{obj.id}:{line.id}:component:{component_index}:{component_item_id}:{component_variant_id or 0}"
+                        existing = db.scalar(select(InventoryStockMove).where(
+                            InventoryStockMove.company_id == company_id,
+                            InventoryStockMove.source_module == "commerce",
+                            InventoryStockMove.source_entity == source_entity,
+                            InventoryStockMove.source_id == source_id,
+                            InventoryStockMove.status.in_(["draft", "posted"]),
+                        ))
+                        if existing:
+                            continue
+                        move = inventory_stock_move_service.create_draft(db, StockMoveCreate(
+                            company_id=company_id, item_id=component_item_id, variant_id=component_variant_id,
+                            movement_type="issue", source_location_id=loc.id, destination_location_id=None,
+                            quantity=component_qty, unit_cost=0, transaction_date=obj.document_date,
+                            reference=obj.number, source_module="commerce", source_entity=source_entity,
+                            source_id=source_id, notes=f"Sales delivery component for line {line.id}",
+                        ))
+                        inventory_stock_move_service.post(db, tenant_id=tenant_id, company_id=company_id, move_id=move.id, user_id=user_id)
             else:
                 source_id = f"{obj.id}:{line.id}"
                 existing = db.scalar(select(InventoryStockMove).where(
