@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import client from "@/shared/api/client";
+import { formatCompanyDate, useCompanyDateFormat } from "@/utils/format-date";
 
 type Cheque = {
   id: number;
@@ -23,6 +24,7 @@ const issuedStatuses = ["issued", "cleared"];
 
 export default function TreasuryPage() {
   const companyId = cid();
+  const dateFormat = useCompanyDateFormat(companyId);
   const [rows, setRows] = useState<Cheque[]>([]);
   const [withdrawableIds, setWithdrawableIds] = useState<Set<number>>(new Set());
   const [error, setError] = useState("");
@@ -155,7 +157,7 @@ export default function TreasuryPage() {
                 <tbody>{rows.map(c => <tr key={c.id} className="border-b">
                   <td className="p-3">{c.direction === "received" ? "مستلم" : "صادر"}</td>
                   <td className="p-3">{c.cheque_number}</td><td className="p-3">{c.bank_name || "—"}</td>
-                  <td className="p-3">{c.amount} {c.currency}</td><td className="p-3">{c.due_date}</td><td className="p-3">{c.status}</td>
+                  <td className="p-3">{c.amount} {c.currency}</td><td className="p-3">{formatCompanyDate(c.due_date, dateFormat)}</td><td className="p-3">{c.status}</td>
                   <td className="p-3"><div className="flex flex-wrap gap-1">
                     {c.status === "received" && <button onClick={() => void action(c.id, "deposit")} className="rounded border px-2 py-1 text-xs">إيداع</button>}
                     {c.status === "deposited" && <button onClick={() => void action(c.id, "under-collection")} className="rounded border px-2 py-1 text-xs">تحت التحصيل</button>}
