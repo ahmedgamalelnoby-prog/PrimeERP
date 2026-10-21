@@ -413,6 +413,24 @@ Regression tests cover a configured override, an unset fallback, and invalid-cod
 - Registry contract updated. Migration/tests have not been executed, so this is not runtime-verified.
 
 
+
+## Remaining catalog-only review — 2026-10-22
+The following **15** policies remain catalog-only after POS shift wiring. They were reviewed against the current branch; each needs its owning workflow before it can be promoted.
+
+- `general.date_format`: the preference and formatter exist, but most date-bearing screens and exports still render dates independently. Migrate all app display/export paths before promotion.
+- `inventory.auto_reserve_sales_orders`: reservations support whole-reservation actions, while sales delivery supports partial fulfillment. Add per-line allocation, partial consumption/release, edit/cancel cleanup, and idempotent order-confirmation handling.
+- `inventory.allow_below_cost_sale`: compare against the authoritative outbound valuation for the selected warehouse and quantity (including FIFO layers), and enforce an explicit permission plus audit record.
+- `inventory.expiry_tracking_required`, `inventory.serial_tracking_default`, `inventory.batch_tracking_default`: the item and stock movement lifecycle has no linked lot/serial identity across receipts, transfers, issues, returns, and adjustments. Add that traceability model and validate it end to end; defaults must affect new items only.
+- `hr.attendance_source`, `hr.biometric_sync_interval_minutes`: manual attendance exists, but there is no authenticated biometric/mobile connector or sync worker. Keep non-manual options visibly catalog-only until ingestion exists.
+- `hr.payroll_requires_approval`: payroll is currently a preview; it has no approval state or payroll journal posting lifecycle.
+- `workflow.approval_mode`: existing approvals are single-decision flows; there are no assigned approver chains or parallel/any-one decision semantics.
+- `workflow.escalation_after_hours`: pending approvals have no reliable scheduler or escalation recipient model.
+- `pos.allow_open_cash_drawer`: cashier shifts now reconcile cash sales, but the system has no authenticated drawer event or hardware command integration.
+- `manufacturing.require_work_order`, `manufacturing.allow_overproduction`: no production order, material consumption, output receipt, or production-cost ledger workflow exists.
+- `integrations.auto_sync_enabled`: integrations support manual event retries, but no scheduled synchronization lifecycle exists.
+
+These are implementation dependencies, not reasons to treat the settings as active. The registry and contract keep all 15 at `catalog` until the named workflow and its company-isolation/positive/negative verification are in place. No tests, builds, or migrations were run for this review.
+
 ## POS cashier shift foundation — 2026-10-22
 - Added company/branch/terminal-scoped cashier shifts with one open shift per terminal, opening float, opener/closer, and close reconciliation fields.
 - POS checkout now requires an active terminal shift while `pos.require_shift_close` is enabled and links each POS invoice to the shift. The offline POS page prevents closing while locally queued checkouts remain.
