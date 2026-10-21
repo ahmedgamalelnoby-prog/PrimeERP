@@ -98,7 +98,7 @@ class DocumentResponse(BaseModel):
     company_id: int
     partner_id: int
     document_type: str
-    source_order_id: int | None
+    source_order_id: int | None = None
     number: str
     document_date: date
     due_date: date | None
