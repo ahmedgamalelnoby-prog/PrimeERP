@@ -15,6 +15,7 @@ export type Document = {
   discount_total: string | number;
   paid_total: string | number;
   total: string | number;
+  lines?: Array<{ id: number; item_id: number; variant_id?: number | null; quantity: string | number; source_sales_line_id?: number | null; source_purchase_line_id?: number | null }>;
 };
 
 export type Partner = {
