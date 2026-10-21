@@ -55,6 +55,21 @@ export default function HrPage() {
 
   useEffect(() => { void load(); }, [load]);
 
+  async function saveWorkforce(user: any) {
+    if (!companyId) return;
+    setBusy(true); setError("");
+    try {
+      await client.patch(`/hr/workforce/${user.id}`, {
+        full_name: user.full_name || null,
+        phone: user.phone || null,
+        address: user.address || null,
+        preferred_language: user.preferred_language || "ar",
+      }, { params: { company_id: companyId } });
+      await load();
+    } catch (e: any) { setError(e?.response?.data?.detail || "تعذر حفظ ملف المستخدم."); }
+    finally { setBusy(false); }
+  }
+
   async function submitEmployee(e: FormEvent) {
     e.preventDefault();
     if (!companyId) return;
@@ -172,7 +187,7 @@ export default function HrPage() {
 
     <section className="space-y-3 rounded-2xl border bg-card p-5">
       <h2 className="font-semibold">ملفات مستخدمي الشركة</h2>
-      {workforce.length === 0 ? <p className="text-sm text-muted-foreground">لا يوجد مستخدمون مسجلون.</p> : <div className="overflow-auto"><table className="w-full text-sm"><thead><tr className="border-b"><th className="p-2 text-right">المستخدم</th><th className="p-2 text-right">الاسم</th><th className="p-2 text-right">الهاتف</th></tr></thead><tbody>{workforce.map((user:any) => <tr key={user.id} className="border-b"><td className="p-2">{user.username}</td><td className="p-2">{user.full_name || "—"}</td><td className="p-2">{user.phone || "—"}</td></tr>)}</tbody></table></div>}
+      {workforce.length === 0 ? <p className="text-sm text-muted-foreground">لا يوجد مستخدمون مسجلون.</p> : <div className="overflow-auto"><table className="w-full text-sm"><thead><tr className="border-b"><th className="p-2 text-right">المستخدم</th><th className="p-2 text-right">الاسم</th><th className="p-2 text-right">الهاتف</th><th className="p-2 text-right">العنوان</th><th className="p-2 text-right">إجراء</th></tr></thead><tbody>{workforce.map((user:any) => <tr key={user.id} className="border-b"><td className="p-2">{user.username}</td><td className="p-2"><input value={user.full_name || ""} onChange={e => setWorkforce(workforce.map(row => row.id === user.id ? { ...row, full_name: e.target.value } : row))} className="rounded border px-2 py-1" /></td><td className="p-2"><input value={user.phone || ""} onChange={e => setWorkforce(workforce.map(row => row.id === user.id ? { ...row, phone: e.target.value } : row))} className="rounded border px-2 py-1" /></td><td className="p-2"><input value={user.address || ""} onChange={e => setWorkforce(workforce.map(row => row.id === user.id ? { ...row, address: e.target.value } : row))} className="rounded border px-2 py-1" /></td><td className="p-2"><button disabled={busy} onClick={() => void saveWorkforce(user)} className="rounded border px-3 py-1">حفظ</button></td></tr>)}</tbody></table></div>}
     </section>
   </section>;
 }
