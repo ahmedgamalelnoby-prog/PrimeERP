@@ -36,6 +36,9 @@ export default function OperationalPage() {
   const [partnerId, setPartnerId] = useState("");
   const [itemId, setItemId] = useState("");
   const [number, setNumber] = useState("");
+  const [sourceOrderId, setSourceOrderId] = useState("");
+  const [sourceLineId, setSourceLineId] = useState("");
+  const [receiptIds, setReceiptIds] = useState("");
   const [type, setType] = useState(path === "/sales/invoices" ? "invoice" : path === "/purchasing/invoices" ? "bill" : path.startsWith("/purchases") ? "order" : path.includes("quotations") ? "quotation" : "order");
   const [amount, setAmount] = useState("");
   const [paymentAmount, setPaymentAmount] = useState("");
@@ -55,15 +58,15 @@ export default function OperationalPage() {
     if (!companyId) return;
     setError("");
     try {
-      const endpoint = isSale
-        ? action === "confirm" ? `/commerce/sales/${id}/confirm?company_id=${companyId}`
-          : action === "inventory" ? `/commerce/sales/${id}/post-inventory?company_id=${companyId}` : null
-        : isPurchase
-          ? action === "confirm" ? `/commerce/purchases/${id}/confirm?company_id=${companyId}`
-            : action === "inventory" ? `/commerce/purchases/${id}/receive?company_id=${companyId}` : null
-          : null;
+      const prefix = isSale ? "sales" : isPurchase ? "purchases" : null;
+      if (!prefix) return;
+      const endpoint = action === "confirm" ? `/commerce/${prefix}/${id}/confirm?company_id=${companyId}`
+        : action === "inventory" ? `/commerce/${prefix}/${id}/${isSale ? "post-inventory" : "receive"}?company_id=${companyId}`
+        : action === "approve" || action === "reject" ? `/commerce/${prefix}/${id}/approval-decision?company_id=${companyId}`
+        : null;
       if (!endpoint) return;
-      await client.post(endpoint);
+      if (action === "approve" || action === "reject") await client.post(endpoint, { decision: action });
+      else await client.post(endpoint);
       await load();
     } catch (e: any) {
       setError(e?.response?.data?.detail || "تعذر تنفيذ العملية");
@@ -163,12 +166,21 @@ export default function OperationalPage() {
           document_type: type,
           number,
           document_date: new Date().toISOString().slice(0, 10),
-          lines: [{ item_id: Number(itemId), description: name, quantity: 1, unit_price: Number(amount || 0) }],
+          ...(sourceOrderId ? { source_order_id: Number(sourceOrderId) } : {}),
+          ...(type === "bill" && receiptIds.trim() ? { receipt_ids: receiptIds.split(",").map(value => Number(value.trim())).filter(value => Number.isInteger(value) && value > 0) } : {}),
+          lines: [{
+            item_id: Number(itemId),
+            description: name,
+            quantity: 1,
+            unit_price: Number(amount || 0),
+            ...(sourceLineId && isSale ? { source_sales_line_id: Number(sourceLineId) } : {}),
+            ...(sourceLineId && isPurchase ? { source_purchase_line_id: Number(sourceLineId) } : {}),
+          }],
         });
       } else {
         await client.post("/shipping/carriers", { company_id: companyId, code, name });
       }
-      setName(""); setCode(""); setPartnerId(""); setItemId(""); setNumber(""); setAmount("");
+      setName(""); setCode(""); setPartnerId(""); setItemId(""); setNumber(""); setSourceOrderId(""); setSourceLineId(""); setReceiptIds(""); setAmount("");
       await load();
     } catch (e: any) {
       setError(e?.response?.data?.detail || "تعذر حفظ السجل");
@@ -194,6 +206,11 @@ export default function OperationalPage() {
           <select value={type} onChange={e => setType(e.target.value)} className="w-full rounded-lg border bg-background px-3 py-2">
             {allowedDocumentTypes.map(value => <option key={value} value={value}>{value}</option>)}
           </select>
+          {((isSale && ["delivery", "invoice"].includes(type)) || (isPurchase && ["receipt", "bill"].includes(type))) && <>
+            <input type="number" min="1" value={sourceOrderId} onChange={e => setSourceOrderId(e.target.value)} placeholder="رقم أمر المصدر" className="w-full rounded-lg border bg-background px-3 py-2" />
+            <input type="number" min="1" value={sourceLineId} onChange={e => setSourceLineId(e.target.value)} placeholder="رقم بند أمر المصدر" className="w-full rounded-lg border bg-background px-3 py-2" />
+          </>}
+          {isPurchase && type === "bill" && <input value={receiptIds} onChange={e => setReceiptIds(e.target.value)} placeholder="أرقام إذون الاستلام (مفصولة بفاصلة)" className="w-full rounded-lg border bg-background px-3 py-2" />}
           <input required type="number" min="0" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="سعر الوحدة" className="w-full rounded-lg border bg-background px-3 py-2" />
         </>}
         {error && <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm">{error}</div>}
@@ -201,7 +218,7 @@ export default function OperationalPage() {
       </form>
       <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
         <div className="flex items-center justify-between border-b p-4"><h2 className="font-semibold">السجلات</h2><button onClick={() => void load()} className="rounded-lg border px-3 py-1.5 text-sm">تحديث</button></div>
-        {loading ? <div className="p-8 text-center text-sm text-muted-foreground">جارٍ التحميل...</div> : rows.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">لا توجد سجلات.</div> : <div className="overflow-auto"><table className="w-full text-sm"><thead><tr className="border-b bg-muted/40">{Object.keys(rows[0]).slice(0, 8).map(k => <th key={k} className="whitespace-nowrap px-4 py-3 text-right font-semibold">{k}</th>)}{(isSale || isPurchase) && <th className="whitespace-nowrap px-4 py-3 text-right font-semibold">إجراءات</th>}</tr></thead><tbody>{rows.map((r, i) => <tr key={String(r.id ?? i)} className="border-b last:border-0">{Object.keys(rows[0]).slice(0, 8).map(k => <td key={k} className="whitespace-nowrap px-4 py-3">{(() => { const value = String(r[k] ?? "—"); return formatCompanyDate(value, dateFormat); })()}</td>)}{(isSale || isPurchase) && <td className="whitespace-nowrap px-4 py-3"><div className="flex gap-2"><button type="button" onClick={() => void actionDocument(Number(r.id), "confirm")} className="rounded border px-2 py-1 text-xs">اعتماد</button><button type="button" onClick={() => void actionDocument(Number(r.id), "inventory")} className="rounded border px-2 py-1 text-xs">مخزون</button><div className="mt-2 flex gap-1"><input type="number" min="0.01" step="0.01" value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} placeholder="مبلغ" className="w-20 rounded border px-1 py-1 text-xs" /><select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className="rounded border px-1 py-1 text-xs"><option value="bank">Bank</option><option value="cash">Cash</option><option value="cheque">Cheque</option><option value="transfer">Transfer</option></select>{paymentMethod === "cheque" && <><input value={chequeNumber} onChange={e => setChequeNumber(e.target.value)} placeholder="رقم الشيك" className="w-24 rounded border px-1 py-1 text-xs" /><input value={chequeBank} onChange={e => setChequeBank(e.target.value)} placeholder="البنك" className="w-20 rounded border px-1 py-1 text-xs" /><input type="date" value={chequeDueDate} onChange={e => setChequeDueDate(e.target.value)} className="rounded border px-1 py-1 text-xs" /></>}<button type="button" onClick={() => void recordPayment(Number(r.id))} className="rounded border px-2 py-1 text-xs">دفع</button></div>{payments.filter(p => Number(p.document_id) === Number(r.id) && p.status === "posted").map(p => <button key={String(p.id)} type="button" onClick={() => void reversePayment(Number(p.id))} className="mt-1 block rounded border border-destructive/40 px-2 py-1 text-xs text-destructive">عكس دفعة {String(p.amount)}</button>)}</div></td>}</tr>)}</tbody></table></div>}
+        {loading ? <div className="p-8 text-center text-sm text-muted-foreground">جارٍ التحميل...</div> : rows.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">لا توجد سجلات.</div> : <div className="overflow-auto"><table className="w-full text-sm"><thead><tr className="border-b bg-muted/40">{Object.keys(rows[0]).slice(0, 8).map(k => <th key={k} className="whitespace-nowrap px-4 py-3 text-right font-semibold">{k}</th>)}{(isSale || isPurchase) && <th className="whitespace-nowrap px-4 py-3 text-right font-semibold">إجراءات</th>}</tr></thead><tbody>{rows.map((r, i) => <tr key={String(r.id ?? i)} className="border-b last:border-0">{Object.keys(rows[0]).slice(0, 8).map(k => <td key={k} className="whitespace-nowrap px-4 py-3">{(() => { const value = String(r[k] ?? "—"); return formatCompanyDate(value, dateFormat); })()}</td>)}{(isSale || isPurchase) && <td className="whitespace-nowrap px-4 py-3"><div className="flex gap-2">{r.status === "pending_approval" ? <><button type="button" onClick={() => void actionDocument(Number(r.id), "approve")} className="rounded border px-2 py-1 text-xs">موافقة</button><button type="button" onClick={() => void actionDocument(Number(r.id), "reject")} className="rounded border px-2 py-1 text-xs text-destructive">رفض</button></> : (r.status === "draft" || r.status === "approved") ? <button type="button" onClick={() => void actionDocument(Number(r.id), "confirm")} className="rounded border px-2 py-1 text-xs">تأكيد</button> : null}{(r.document_type === "delivery" || r.document_type === "receipt") && <button type="button" onClick={() => void actionDocument(Number(r.id), "inventory")} className="rounded border px-2 py-1 text-xs">مخزون</button>}<div className="mt-2 flex gap-1"><input type="number" min="0.01" step="0.01" value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} placeholder="مبلغ" className="w-20 rounded border px-1 py-1 text-xs" /><select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className="rounded border px-1 py-1 text-xs"><option value="bank">Bank</option><option value="cash">Cash</option><option value="cheque">Cheque</option><option value="transfer">Transfer</option></select>{paymentMethod === "cheque" && <><input value={chequeNumber} onChange={e => setChequeNumber(e.target.value)} placeholder="رقم الشيك" className="w-24 rounded border px-1 py-1 text-xs" /><input value={chequeBank} onChange={e => setChequeBank(e.target.value)} placeholder="البنك" className="w-20 rounded border px-1 py-1 text-xs" /><input type="date" value={chequeDueDate} onChange={e => setChequeDueDate(e.target.value)} className="rounded border px-1 py-1 text-xs" /></>}<button type="button" onClick={() => void recordPayment(Number(r.id))} className="rounded border px-2 py-1 text-xs">دفع</button></div>{payments.filter(p => Number(p.document_id) === Number(r.id) && p.status === "posted").map(p => <button key={String(p.id)} type="button" onClick={() => void reversePayment(Number(p.id))} className="mt-1 block rounded border border-destructive/40 px-2 py-1 text-xs text-destructive">عكس دفعة {String(p.amount)}</button>)}</div></td>}</tr>)}</tbody></table></div>}
       </div>
     </div>
   </section>;
