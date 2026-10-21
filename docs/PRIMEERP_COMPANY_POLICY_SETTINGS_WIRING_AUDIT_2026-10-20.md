@@ -340,6 +340,6 @@ Regression tests cover a configured override, an unset fallback, and invalid-cod
 ## Company date-format preference synchronization (2026-10-22)
 
 - Added a company-scoped browser preference helper for the validated `general.date_format` values. Authenticated bootstrap hydrates it from the selected company's settings, and the Company Policy Settings page refreshes it when a company is loaded or saved.
-- The commerce operational list continues to read the authoritative setting from the API and keeps the company-scoped preference cache in sync. A reactive shared hook applies the cached preference to journal entries, AR aging, fiscal-year/period dates, partner statements, and treasury cheque due dates as well.
+- The commerce operational list continues to read the authoritative setting from the API and keeps the company-scoped preference cache in sync. A reactive shared hook applies the cached preference to commerce operational lists, journal entries, AR aging, fiscal-year/period dates, partner statements, treasury cheque due dates, and shipment/settlement dates.
 - This still does not make date display consistent across every module: several other screens and exports have not been migrated to the shared formatter. `general.date_format` correctly remains catalog-only until that migration is complete.
 - No frontend build or tests were run in this environment.
