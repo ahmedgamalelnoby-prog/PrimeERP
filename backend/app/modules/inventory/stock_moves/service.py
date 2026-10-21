@@ -94,9 +94,9 @@ class InventoryStockMoveService:
                 locations[location_id] = location
         if payload.source_location_id is None and payload.destination_location_id is None:
             raise ValueError("At least one stock location is required")
-        if payload.movement_type in {"issue", "transfer", "return"} and payload.source_location_id is None:
+        if payload.movement_type in {"issue", "transfer", "return", "production_issue"} and payload.source_location_id is None:
             raise ValueError("Source location is required for this movement")
-        if payload.movement_type in {"receipt", "transfer", "return"} and payload.destination_location_id is None:
+        if payload.movement_type in {"receipt", "transfer", "return", "production_receipt"} and payload.destination_location_id is None:
             raise ValueError("Destination location is required for this movement")
         if payload.source_location_id and payload.destination_location_id and payload.source_location_id == payload.destination_location_id:
             raise ValueError("Source and destination locations must differ")
@@ -124,6 +124,8 @@ class InventoryStockMoveService:
             raise ValueError("Company is outside the current tenant")
         if getattr(move, "source_entity", None) == "sales_delivery" and move.movement_type != "issue":
             raise ValueError("Sales delivery stock moves must be issue movements")
+        if move.movement_type in {"production_issue", "production_receipt"}:
+            self._validate_production_movement(db, company_id=company_id, move=move)
         allow_negative_stock = get_company_setting(db, company_id, "inventory.allow_negative_stock") is True
         reservation = None
         reservation_id = getattr(move, "reservation_id", None)
@@ -175,7 +177,7 @@ class InventoryStockMoveService:
         if source_balance:
             on_hand = Decimal(source_balance.quantity_on_hand or 0)
             reserved = Decimal(source_balance.quantity_reserved or 0)
-            if move.movement_type in {"issue", "transfer", "adjustment"} and reserved > 0 and on_hand - reserved < quantity:
+            if move.movement_type in {"issue", "transfer", "adjustment", "production_issue"} and reserved > 0 and on_hand - reserved < quantity:
                 raise ValueError("Movement would consume stock reserved for another transaction")
             if on_hand < quantity and not allow_negative_stock:
                 raise ValueError("Insufficient stock at source location")
@@ -184,7 +186,7 @@ class InventoryStockMoveService:
             warehouse_source = self._warehouse_stock(db, company_id, move.item_id, variant_id, source_warehouse_id)
             warehouse_on_hand = Decimal(warehouse_source.quantity_on_hand or 0)
             warehouse_reserved = Decimal(warehouse_source.quantity_reserved or 0)
-            if move.movement_type in {"issue", "transfer", "adjustment"} and warehouse_reserved > 0 and warehouse_on_hand - warehouse_reserved < quantity:
+            if move.movement_type in {"issue", "transfer", "adjustment", "production_issue"} and warehouse_reserved > 0 and warehouse_on_hand - warehouse_reserved < quantity:
                 raise ValueError("Movement would consume warehouse stock reserved for another transaction")
             if warehouse_on_hand < quantity and not allow_negative_stock:
                 raise ValueError("Insufficient warehouse stock")
@@ -312,6 +314,44 @@ class InventoryStockMoveService:
         db.flush()
         return move
 
+    @staticmethod
+    def _validate_production_movement(db, *, company_id: int, move: InventoryStockMove) -> None:
+        if move.source_module != "manufacturing":
+            raise ValueError("Production stock movements must originate from a manufacturing work order")
+        from app.modules.manufacturing.production_orders.models import ManufacturingWorkOrder, ManufacturingWorkOrderLine
+
+        if move.movement_type == "production_issue":
+            try:
+                line_id = int(move.source_id or "")
+            except ValueError as exc:
+                raise ValueError("Production issue must identify its work-order material line") from exc
+            row = db.execute(
+                select(ManufacturingWorkOrderLine, ManufacturingWorkOrder)
+                .join(ManufacturingWorkOrder, ManufacturingWorkOrder.id == ManufacturingWorkOrderLine.work_order_id)
+                .where(
+                    ManufacturingWorkOrderLine.id == line_id,
+                    ManufacturingWorkOrderLine.issue_move_id == move.id,
+                    ManufacturingWorkOrder.company_id == company_id,
+                    ManufacturingWorkOrder.status == "released",
+                )
+            ).first()
+            if row is None or row[0].ingredient_item_id != move.item_id:
+                raise ValueError("Production issue is not linked to a released work-order material line")
+        else:
+            try:
+                work_order_id = int(move.source_id or "")
+            except ValueError as exc:
+                raise ValueError("Production receipt must identify its work order") from exc
+            order = db.scalar(select(ManufacturingWorkOrder).where(
+                ManufacturingWorkOrder.id == work_order_id,
+                ManufacturingWorkOrder.company_id == company_id,
+                ManufacturingWorkOrder.status == "released",
+                ManufacturingWorkOrder.output_item_id == move.item_id,
+                ManufacturingWorkOrder.output_variant_id == move.variant_id,
+            ))
+            if order is None:
+                raise ValueError("Production receipt is not linked to a released work order")
+
     def _post_accounting(self, db: Session, *, tenant_id: int, company_id: int, move: InventoryStockMove, user_id: int):
         if move.unit_cost <= 0:
             raise ValueError("A positive inventory valuation is required before accounting can be posted")
@@ -338,10 +378,12 @@ class InventoryStockMoveService:
     @staticmethod
     def _accounting_lines(move, config, amount):
         inv, cogs, adjustment, clearing = config.inventory_account_id, config.cogs_account_id, config.adjustment_account_id, config.clearing_account_id
-        if move.movement_type in {"receipt", "opening"}:
+        if move.movement_type in {"receipt", "opening", "production_receipt"}:
             debit, credit = inv, clearing
         elif move.movement_type == "issue":
             debit, credit = cogs, inv
+        elif move.movement_type == "production_issue":
+            debit, credit = clearing, inv
         elif move.movement_type == "return":
             debit, credit = (inv, cogs) if move.destination_location_id else (clearing, inv)
         elif move.movement_type == "adjustment":
