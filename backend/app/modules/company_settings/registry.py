@@ -34,7 +34,7 @@ _RAW = [
     ("tax.require_tax_code_on_invoice","taxes","Taxes","bool",True,"Require tax code on taxable invoices",None,"runtime"),
     ("tax.einvoice_required_for_sales","egyptian-einvoice","Taxes","bool",False,"Require a valid Egyptian e-invoice before sales invoice confirmation",None,"runtime"),
     # Sales / customer credit
-    ("sales.require_quote_approval","sales","Sales","bool",False,"Require quotation approval above configured limits",None,"catalog"),
+    ("sales.require_quote_approval","sales","Sales","bool",False,"Require approval before confirming sales quotations",None,"runtime"),
     ("sales.require_order_approval","sales","Sales","bool",True,"Require approval before confirming sales orders",None,"runtime"),
     ("sales.invoice_requires_delivery","sales","Sales","bool",False,"Require posted delivery quantity before invoicing linked stock order lines",None,"runtime"),
     ("sales.allow_overbilling","sales","Sales","bool",False,"Allow order-linked sales invoices to exceed the ordered quantity",None,"runtime"),
