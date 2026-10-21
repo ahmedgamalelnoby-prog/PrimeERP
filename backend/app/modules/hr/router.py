@@ -32,6 +32,7 @@ def _company_for_tenant(db: Session, company_id: int, tenant_id: int) -> Company
         select(Company).where(
             Company.id == company_id,
             Company.tenant_id == tenant_id,
+            Company.is_active.is_(True),
         )
     )
     if company is None:
