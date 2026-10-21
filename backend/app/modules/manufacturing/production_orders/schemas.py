@@ -9,11 +9,11 @@ class WorkOrderCreate(BaseModel):
     number: str = Field(min_length=1, max_length=60)
     source_location_id: int = Field(gt=0)
     destination_location_id: int = Field(gt=0)
-    planned_quantity: Decimal = Field(gt=0)
+    planned_quantity: Decimal = Field(gt=0, max_digits=18, decimal_places=4)
 
 
 class WorkOrderComplete(BaseModel):
-    produced_quantity: Decimal = Field(gt=0)
+    produced_quantity: Decimal = Field(gt=0, max_digits=18, decimal_places=4)
 
 
 class WorkOrderLineResponse(BaseModel):
