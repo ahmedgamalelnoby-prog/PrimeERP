@@ -541,5 +541,6 @@ class PosCashierShift(Base):
             "terminal_id",
             unique=True,
             postgresql_where=text("status = 'open'"),
+            sqlite_where=text("status = 'open'"),
         ),
     )
