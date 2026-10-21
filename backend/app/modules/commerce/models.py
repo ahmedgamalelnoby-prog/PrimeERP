@@ -45,7 +45,7 @@ class SalesDocument(Base):
     lines = relationship("SalesLine", back_populates="document", cascade="all, delete-orphan")
     __table_args__ = (
         CheckConstraint("document_type IN ('quotation','order','delivery','invoice','credit_note')", name="ck_sales_document_type"),
-        CheckConstraint("status IN ('draft','confirmed','partially_fulfilled','fulfilled','cancelled','posted')", name="ck_sales_document_status"),
+        CheckConstraint("status IN ('draft','pending_approval','approved','rejected','confirmed','partially_fulfilled','fulfilled','cancelled','posted')", name="ck_sales_document_status"),
     )
 
 
@@ -89,7 +89,7 @@ class PurchaseDocument(Base):
     lines = relationship("PurchaseLine", back_populates="document", cascade="all, delete-orphan")
     __table_args__ = (
         CheckConstraint("document_type IN ('requisition','rfq','order','receipt','bill','debit_note')", name="ck_purchase_document_type"),
-        CheckConstraint("status IN ('draft','confirmed','partially_received','received','cancelled','posted')", name="ck_purchase_document_status"),
+        CheckConstraint("status IN ('draft','pending_approval','approved','rejected','confirmed','partially_received','received','cancelled','posted')", name="ck_purchase_document_status"),
     )
 
 
