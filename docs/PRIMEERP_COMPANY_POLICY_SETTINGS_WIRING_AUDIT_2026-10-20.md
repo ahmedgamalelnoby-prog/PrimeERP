@@ -413,7 +413,7 @@ Regression tests cover a configured override, an unset fallback, and invalid-cod
 - Registry contract updated. Migration/tests have not been executed, so this is not runtime-verified.
 
 
-## POS cashier shift foundation — 2026-10-29
+## POS cashier shift foundation — 2026-10-22
 - Added company/branch/terminal-scoped cashier shifts with one open shift per terminal, opening float, opener/closer, and close reconciliation fields.
 - POS checkout now requires an active terminal shift while `pos.require_shift_close` is enabled and links each POS invoice to the shift. The offline POS page prevents closing while locally queued checkouts remain.
 - Shift close calculates expected cash from the opening float plus posted cash payments linked to that shift, then records counted cash and variance. Card, bank, and wallet tenders remain outside the cash drawer total.
