@@ -88,7 +88,7 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 | `inventory.require_warehouse` | bool | **RUNTIME** | Require a warehouse for stockable/consumable commerce document lines |
 | `inventory.require_bin_location` | bool | **RUNTIME** | Require child/bin locations for stock movement endpoints |
 | `inventory.auto_reserve_sales_orders` | bool | **RUNTIME** | Reserve stock on sales order confirmation |
-| `inventory.allow_below_cost_sale` | bool | CATALOG ONLY | Allow sale below cost subject to permission |
+| `inventory.allow_below_cost_sale` | bool | **RUNTIME** | Compare net delivery-line revenue with posted inventory issue cost; an override needs the dedicated permission and is audited |
 | `inventory.expiry_tracking_required` | bool | CATALOG ONLY | Require expiry dates for perishable/batch items |
 | `inventory.serial_tracking_default` | bool | CATALOG ONLY | Default serial tracking for eligible items |
 | `inventory.batch_tracking_default` | bool | CATALOG ONLY | Default batch/lot tracking for eligible items |
@@ -179,7 +179,7 @@ A setting should be promoted from CATALOG ONLY to RUNTIME only after the consume
 - Company policies remain grouped by category in registry order. Within a category, runtime-enforced entries are listed before catalog-only entries, then labels are alphabetically sorted using Arabic locale rules.
 - The page now searches by display label, canonical setting key, module, and translated category/module names; a status filter narrows results to runtime or catalog-only entries.
 - The page shows total/runtime/catalog/unsaved-change counters, a result count, a reset control, an empty-result message, and disables Save when no values differ from the loaded values.
-- These UX changes improve navigation. The current source audit records **56 runtime / 12 catalog-only** after wiring sales numbering, approval lifecycles, project dimensions, linked sales/purchase workflows, and POS cashier shifts. Migrations and tests have not been executed in this environment.
+- These UX changes improve navigation. The current source audit records **57 runtime / 11 catalog-only** after wiring sales numbering, approval lifecycles, project dimensions, linked sales/purchase workflows, and POS cashier shifts. Migrations and tests have not been executed in this environment.
 
 
 ## Follow-up regression coverage (2026-10-20)
@@ -427,7 +427,7 @@ The following **12** policies remain catalog-only after manufacturing and sales-
 - `pos.allow_open_cash_drawer`: cashier shifts now reconcile cash sales, but the system has no authenticated drawer event or hardware command integration.
 - `integrations.auto_sync_enabled`: integrations support manual event retries, but no scheduled synchronization lifecycle exists.
 
-These remaining 12 settings stay at `catalog` until their named workflows and company-isolation controls are implemented. The sales reservation policy is runtime. No tests, builds, or migrations were run for this review.
+These remaining 11 settings stay at `catalog` until their named workflows and company-isolation controls are implemented. The sales reservation and below-cost policies are runtime. No tests, builds, or migrations were run for this review.
 
 ## POS cashier shift foundation — 2026-10-22
 - Added company/branch/terminal-scoped cashier shifts with one open shift per terminal, opening float, opener/closer, and close reconciliation fields.
@@ -453,3 +453,9 @@ These remaining 12 settings stay at `catalog` until their named workflows and co
 - Cancelling an eligible sales order releases its remaining active reservations. Delivery posting rejects documents whose source order was cancelled. The sales screen exposes the warehouse on sales orders, copies it to linked deliveries, and offers order cancellation with a confirmation prompt.
 - Orders created before the policy is enabled can reserve the quantity needed by a linked delivery at posting time. If the policy is disabled after reservations exist, linked deliveries still consume those reservations.
 - The policy is promoted to runtime and included in the registry contract. No database schema change was needed because the existing reservation model supports source links and the existing stock move supports reservation IDs. No test suite or application build was run; this remains a source-level review.
+
+
+## Below-cost sales control — 2026-10-22
+- Promoted `inventory.allow_below_cost_sale` to runtime. Delivery posting compares each line's net revenue after discount and before tax against the actual posted outbound inventory moves (which carry the inventory valuation cost).
+- Below-cost deliveries are blocked by default. When the company enables the policy, posting still requires the active `commerce.below_cost_override` role permission; the override records delivery, revenue, cost, and loss in the audit log in the same transaction.
+- No tests, builds, or migrations were run; this is a source-level review. A platform administrator must add the named permission in Roles & Permissions and assign it to authorized roles before anyone can use the override.
