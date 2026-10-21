@@ -182,12 +182,24 @@ class CommerceService:
                     if already_invoiced.get(source_line_id, Decimal("0")) + requested > Decimal(source_line.quantity):
                         raise ValueError("Company policy does not allow invoicing above the linked order quantity")
             if get_company_setting(db, payload.company_id, "sales.invoice_requires_delivery") is True:
+                source_item_ids = {line.item_id for line in source_lines.values()}
+                stock_item_ids = set(db.scalars(select(InventoryItem.id).where(
+                    InventoryItem.company_id == payload.company_id,
+                    InventoryItem.id.in_(source_item_ids or {-1}),
+                    InventoryItem.item_type.in_({"stockable", "consumable"}),
+                )).all())
+                stock_source_line_ids = {
+                    line_id for line_id, line in source_lines.items()
+                    if line.item_id in stock_item_ids
+                }
                 delivered = self._linked_sales_quantities(
                     db, company_id=payload.company_id, order_id=source_order.id,
-                    source_line_ids=set(source_lines), document_types={"delivery"},
+                    source_line_ids=stock_source_line_ids, document_types={"delivery"},
                     statuses={"fulfilled", "posted"},
                 )
                 for source_line_id, requested in source_requested.items():
+                    if source_line_id not in stock_source_line_ids:
+                        continue
                     available = delivered.get(source_line_id, Decimal("0")) - already_invoiced.get(source_line_id, Decimal("0"))
                     if requested > available:
                         raise ValueError("Company policy requires enough posted delivery quantity before invoicing")
