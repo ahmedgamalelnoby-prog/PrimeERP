@@ -5,6 +5,7 @@ from sqlalchemy import select,func
 from sqlalchemy.orm import Session
 from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
+from app.modules.saas.entitlements import require_module
 from app.database.session import get_db
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
@@ -14,7 +15,11 @@ from app.modules.enterprise.finance_schemas import *
 from app.modules.accounting.journals.models.journal_entry import JournalEntry
 from app.modules.accounting.journals.models.journal_entry_line import JournalEntryLine
 from app.modules.accounting.chart_of_accounts.models import AccountCombination
-router=APIRouter(prefix="/enterprise/finance",tags=["Enterprise Finance"])
+router = APIRouter(
+    prefix="/enterprise/finance",
+    tags=["Enterprise Finance"],
+    dependencies=[Depends(require_module("enterprise"))],
+)
 def company_ok(db, cid, user):
     tenant_id = get_effective_tenant_id(user)
     if tenant_id is None or not db.scalar(
