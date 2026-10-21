@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission, require_platform_admin
 from app.database.session import get_db
 from app.modules.commerce.models import BusinessPartner
@@ -22,7 +23,7 @@ _OVERLAP_CONSTRAINTS = {
 
 
 def company_for_user(db: Session, company_id: int, user: User):
-    obj = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == user.tenant_id, Company.is_active.is_(True)))
+    obj = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == get_effective_tenant_id(user), Company.is_active.is_(True)))
     if obj is None:
         raise HTTPException(403, "Company is outside the current tenant")
     return obj
@@ -32,7 +33,7 @@ def partner_for_user(db: Session, partner_id: int, user: User):
     obj = db.scalar(
         select(BusinessPartner)
         .join(Company, Company.id == BusinessPartner.company_id)
-        .where(BusinessPartner.id == partner_id, Company.tenant_id == user.tenant_id)
+        .where(BusinessPartner.id == partner_id, Company.tenant_id == get_effective_tenant_id(user))
     )
     if obj is None:
         raise HTTPException(403, "Partner is outside the current tenant")
