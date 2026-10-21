@@ -170,7 +170,7 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 5. Broaden company date-format display across all relevant tables, forms, exports and reports before changing `general.date_format` from catalog-only.
 6. Review the remaining inventory policy controls (below-cost authorization and cost-layer checks) after cost and permission checks are consistently exposed to the sales workflow.
 
-The leave-request foundation now enforces company-scoped balances, overlapping-request checks, policy-controlled self-approval, approval/rejection audit events, and balance restoration when an approved leave is cancelled before its start date. Requested leave days are supplied by the authorized HR user and bounded by the inclusive calendar date span; a company workday/holiday calendar is not yet available. Attendance, overtime, payroll approval, POS shift, manufacturing and scheduled integration foundations remain incomplete. A catalog entry must stay catalog-only until its owner workflow exists and is wired. This document is a source-level audit; migrations and tests were not executed in this environment.
+The leave-request foundation now enforces company-scoped balances, overlapping-request checks, policy-controlled self-approval, approval/rejection audit events, and balance restoration when an approved leave is cancelled before its start date. Requested leave days are supplied by the authorized HR user and bounded by the inclusive calendar date span; a company workday/holiday calendar is not yet available. Attendance, overtime, payroll approval, POS shift, and scheduled integration foundations remain incomplete. A catalog entry must stay catalog-only until its owner workflow exists and is wired. This document is a source-level audit; migrations and tests were not executed in this environment.
 
 A setting should be promoted from CATALOG ONLY to RUNTIME only after the consumer is wired, company-isolation tests pass, and positive/negative workflow tests prove the behavior.
 
@@ -179,7 +179,7 @@ A setting should be promoted from CATALOG ONLY to RUNTIME only after the consume
 - Company policies remain grouped by category in registry order. Within a category, runtime-enforced entries are listed before catalog-only entries, then labels are alphabetically sorted using Arabic locale rules.
 - The page now searches by display label, canonical setting key, module, and translated category/module names; a status filter narrows results to runtime or catalog-only entries.
 - The page shows total/runtime/catalog/unsaved-change counters, a result count, a reset control, an empty-result message, and disables Save when no values differ from the loaded values.
-- These UX changes improve navigation. The current source audit records **53 runtime / 15 catalog-only** after wiring sales numbering, approval lifecycles, project dimensions, linked sales/purchase workflows, and POS cashier shifts. Migrations and tests have not been executed in this environment.
+- These UX changes improve navigation. The current source audit records **55 runtime / 13 catalog-only** after wiring sales numbering, approval lifecycles, project dimensions, linked sales/purchase workflows, and POS cashier shifts. Migrations and tests have not been executed in this environment.
 
 
 ## Follow-up regression coverage (2026-10-20)
@@ -415,7 +415,7 @@ Regression tests cover a configured override, an unset fallback, and invalid-cod
 
 
 ## Remaining catalog-only review — 2026-10-22
-The following **15** policies remain catalog-only after POS shift wiring. They were reviewed against the current branch; each needs its owning workflow before it can be promoted.
+The following **13** policies remain catalog-only after manufacturing work-order wiring. They were reviewed against the current branch; each needs its owning workflow before it can be promoted.
 
 - `general.date_format`: the preference and formatter exist, but most date-bearing screens and exports still render dates independently. Migrate all app display/export paths before promotion.
 - `inventory.auto_reserve_sales_orders`: reservations support whole-reservation actions, while sales delivery supports partial fulfillment. Add per-line allocation, partial consumption/release, edit/cancel cleanup, and idempotent order-confirmation handling.
@@ -426,7 +426,6 @@ The following **15** policies remain catalog-only after POS shift wiring. They w
 - `workflow.approval_mode`: existing approvals are single-decision flows; there are no assigned approver chains or parallel/any-one decision semantics.
 - `workflow.escalation_after_hours`: pending approvals have no reliable scheduler or escalation recipient model.
 - `pos.allow_open_cash_drawer`: cashier shifts now reconcile cash sales, but the system has no authenticated drawer event or hardware command integration.
-- `manufacturing.require_work_order`, `manufacturing.allow_overproduction`: production-order module files are empty. The generic inventory issue movement posts to COGS and receipt credits clearing, so it cannot be reused for manufacturing without a WIP/production clearing flow that transfers consumed component cost to finished goods; implementing only order status would not enforce inventory or cost integrity.
 - `integrations.auto_sync_enabled`: integrations support manual event retries, but no scheduled synchronization lifecycle exists.
 
 These are implementation dependencies, not reasons to treat the settings as active. The registry and contract keep all 15 at `catalog` until the named workflow and its company-isolation/positive/negative verification are in place. No tests, builds, or migrations were run for this review.
@@ -437,3 +436,12 @@ These are implementation dependencies, not reasons to treat the settings as acti
 - Shift close calculates expected cash from the opening float plus posted cash payments linked to that shift, then records counted cash and variance. Card, bank, and wallet tenders remain outside the cash drawer total.
 - The migration is committed but has not been executed. No tests or frontend build were run, so this remains a source-level implementation review.
 - `pos.allow_open_cash_drawer` remains catalog-only: there is no authenticated cash-drawer hardware integration or drawer event workflow to enforce it.
+
+
+## Manufacturing work-order workflow — 2026-10-22
+
+- Added company-scoped work orders that snapshot the active recipe version and component rates, validate the recipe output, component items, and physical stock locations, and enforce unique work-order numbers per company.
+- Work orders move through planned, released, completed, or cancelled states. Completion consumes the recipe-scaled components using inventory valuation, posts the component cost to the production clearing account, receives finished goods at the same total cost, and applies `manufacturing.allow_overproduction`. Direct material issues are blocked by default while `manufacturing.require_work_order` is enabled.
+- Cancellation reverses the output receipt first and then the component issues. The inventory service blocks direct reversals of production movements so work-order state and WIP accounting cannot be bypassed.
+- The manufacturing page now exposes work-order creation, release, completion, and cancellation. Components with active variants are rejected until recipe lines carry a component variant. Production costing also fails closed if the consumed value cannot be represented exactly at the current four-decimal inventory cost precision.
+- Both policies are promoted to runtime and added to the registry contract. The migration and application verification have not been run in this environment; this is a source-level review only.
