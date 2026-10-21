@@ -442,6 +442,29 @@ class CommerceService:
         db.flush()
         return obj
 
+    def list_approval_events(self, db, company_id: int, document_id: int, kind: str):
+        if kind not in {"sale", "purchase"}:
+            raise ValueError("Invalid document kind")
+        model = SalesDocument if kind == "sale" else PurchaseDocument
+        document = db.scalar(select(model.id).where(
+            model.id == document_id,
+            model.company_id == company_id,
+        ))
+        if document is None:
+            raise ValueError("Document not found")
+        events = db.scalars(select(CommerceApprovalEvent).where(
+            CommerceApprovalEvent.company_id == company_id,
+            CommerceApprovalEvent.document_kind == kind,
+            CommerceApprovalEvent.document_id == document_id,
+        ).order_by(CommerceApprovalEvent.id)).all()
+        return [{
+            "id": event.id,
+            "action": event.action,
+            "actor_id": event.actor_id,
+            "reason": event.reason,
+            "created_at": event.created_at,
+        } for event in events]
+
     def post_inventory(self, db, company_id, document_id, kind, user_id: int | None = None):
         model = SalesDocument if kind == "sale" else PurchaseDocument; obj = db.scalar(select(model).where(model.id == document_id, model.company_id == company_id).with_for_update())
         if not obj: raise ValueError("Document not found")
