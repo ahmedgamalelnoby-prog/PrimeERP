@@ -33,6 +33,7 @@ class PartnerResponse(PartnerCreate):
 
 class DocumentLineCreate(BaseModel):
     item_id: int = Field(gt=0)
+    source_sales_line_id: int | None = Field(default=None, gt=0)
     variant_id: int | None = Field(default=None, gt=0)
     tax_rate_id: int | None = Field(default=None, gt=0)
     tax_rate_ids: list[int] | None = None
@@ -63,6 +64,7 @@ class DocumentCreate(BaseModel):
     company_id: int = Field(gt=0)
     partner_id: int = Field(gt=0)
     document_type: SaleType | PurchaseType
+    source_order_id: int | None = Field(default=None, gt=0)
     number: str = Field(min_length=1, max_length=60)
     document_date: date
     due_date: date | None = None
@@ -73,6 +75,14 @@ class DocumentCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_receipt_links(self):
+        source_line_ids = [line.source_sales_line_id for line in self.lines]
+        if self.source_order_id is not None:
+            if self.document_type not in {"delivery", "invoice"}:
+                raise ValueError("source_order_id is allowed only for sales deliveries and invoices")
+            if any(source_line_id is None for source_line_id in source_line_ids):
+                raise ValueError("Every linked sales delivery/invoice line must identify its source order line")
+        elif any(source_line_id is not None for source_line_id in source_line_ids):
+            raise ValueError("source_sales_line_id requires source_order_id")
         if len(self.receipt_ids) != len(set(self.receipt_ids)):
             raise ValueError("Duplicate receipt ids are not allowed")
         if any(receipt_id <= 0 for receipt_id in self.receipt_ids):
@@ -88,6 +98,7 @@ class DocumentResponse(BaseModel):
     company_id: int
     partner_id: int
     document_type: str
+    source_order_id: int | None
     number: str
     document_date: date
     due_date: date | None
