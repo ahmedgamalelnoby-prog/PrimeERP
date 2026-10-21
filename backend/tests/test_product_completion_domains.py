@@ -71,6 +71,9 @@ def test_tax_engine_rejects_withholding_above_gross():
         def scalars(self, _query):
             return FakeScalarResult()
 
+        def scalar(self, _query):
+            return SimpleNamespace(tenant_id=1, id=7)
+
     with pytest.raises(Exception, match='Total withholding tax cannot exceed the gross taxable amount'):
         calculate_taxes(
             FakeDB(),
@@ -484,7 +487,8 @@ def test_stock_move_reservation_contract_is_atomic_and_exact():
     assert "with_for_update()" in source
     assert "reservation.status != " + '"active"' in source
     assert "reservation.item_id != move.item_id" in source
-    assert "Decimal(reservation.quantity) != Decimal(move.quantity)" in source
+    assert "Decimal(reservation.quantity) < Decimal(move.quantity)" in source
+    assert "remaining_quantity = reserved_quantity - quantity" in source
     assert "source_balance.quantity_reserved -= quantity" in source
     assert "warehouse_source.quantity_reserved -= quantity" in source
     assert 'reservation.status = "consumed"' in source
