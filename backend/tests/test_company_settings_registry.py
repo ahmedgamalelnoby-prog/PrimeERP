@@ -53,6 +53,8 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
         "accounting.default_cash_account",
         "purchasing.allow_invoice_price_variance",
         "purchasing.price_variance_tolerance_pct",
+        "general.intercompany_enabled",
+        "tax.einvoice_required_for_sales",
     }
 
 
