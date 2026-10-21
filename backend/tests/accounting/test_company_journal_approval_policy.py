@@ -1,11 +1,12 @@
 from datetime import date
+import importlib
 from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
 
-import app.modules.accounting.journals.services.journal_service as service_module
+service_module = importlib.import_module("app.modules.accounting.journals.services.journal_service")
 from app.modules.company_settings.registry import BY_KEY
 
 
