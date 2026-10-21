@@ -22,7 +22,7 @@ def _run_post(monkeypatch, company_auto_post_enabled, *, policy_key="accounting.
     db = FakeDB(journal)
     service = accounting_module.CommerceAccountingService()
     settings = SimpleNamespace(default_branch_id=3, auto_post=True)
-    monkeypatch.setattr(service, "_context", lambda *_args: (settings, 5, object(), SimpleNamespace(id=8)))
+    monkeypatch.setattr(service, "_context", lambda *_args: (settings, 5, SimpleNamespace(id=6), SimpleNamespace(id=8)))
     monkeypatch.setattr(accounting_module, "validate_double_entry", lambda _lines: None)
     monkeypatch.setattr(accounting_module, "validate_source", lambda **_kwargs: None)
     monkeypatch.setattr(
