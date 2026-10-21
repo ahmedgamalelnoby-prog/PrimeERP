@@ -782,7 +782,7 @@ class CommerceService:
                             take = min(remaining, Decimal(reservation.quantity))
                             if take <= 0:
                                 continue
-                            source_id = f"{obj.id}:{line.id}:component:{component_index}:{component_item_id}:{component_variant_id or 0}:reservation:{reservation.id}"
+                            source_id = f"{obj.id}:{line.id}:{component_index}:{reservation.id}"
                             existing = db.scalar(select(InventoryStockMove).where(
                                 InventoryStockMove.company_id == company_id,
                                 InventoryStockMove.source_module == "commerce",
