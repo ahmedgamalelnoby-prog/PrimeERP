@@ -35,7 +35,7 @@ _RAW = [
     ("tax.einvoice_required_for_sales","egyptian-einvoice","Taxes","bool",False,"Require a valid Egyptian e-invoice before sales invoice confirmation",None,"runtime"),
     # Sales / customer credit
     ("sales.require_quote_approval","sales","Sales","bool",False,"Require quotation approval above configured limits",None,"catalog"),
-    ("sales.require_order_approval","sales","Sales","bool",True,"Require sales order approval",None,"catalog"),
+    ("sales.require_order_approval","sales","Sales","bool",True,"Require approval before confirming sales orders",None,"runtime"),
     ("sales.invoice_requires_delivery","sales","Sales","bool",False,"Require posted delivery quantity before invoicing linked stock order lines",None,"runtime"),
     ("sales.allow_overbilling","sales","Sales","bool",False,"Allow order-linked sales invoices to exceed the ordered quantity",None,"runtime"),
     ("sales.credit_limit_enforced","sales","Sales","bool",True,"Block orders beyond customer credit limit",None,"runtime"),
@@ -44,7 +44,7 @@ _RAW = [
     ("sales.document_numbering","sales","Sales","enum","per_company_year","Sales document numbering policy",["per_company_year","per_company","global"],"catalog"),
     # Procurement / suppliers
     ("purchasing.require_purchase_order","purchasing","Purchasing","bool",True,"Require a confirmed, linked purchase order before supplier billing",None,"runtime"),
-    ("purchasing.require_purchase_approval","purchasing","Purchasing","bool",True,"Require purchase order approval",None,"catalog"),
+    ("purchasing.require_purchase_approval","purchasing","Purchasing","bool",True,"Require approval before confirming purchase orders",None,"runtime"),
     ("purchasing.require_goods_receipt","purchasing","Purchasing","bool",True,"Require receipt before supplier invoice",None,"runtime"),
     ("purchasing.allow_invoice_price_variance","purchasing","Purchasing","bool",False,"Allow invoice price variance beyond tolerance",None,"runtime"),
     ("purchasing.price_variance_tolerance_pct","purchasing","Purchasing","number",0,"Allowed price variance percentage",None,"runtime"),
