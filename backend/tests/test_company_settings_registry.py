@@ -60,6 +60,7 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
         "sales.invoice_requires_delivery",
         "sales.allow_overbilling",
         "sales.require_order_approval",
+        "sales.document_numbering",
         "sales.require_quote_approval",
         "general.require_project",
         "purchasing.require_purchase_order",
