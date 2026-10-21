@@ -179,3 +179,20 @@ class CommercePayment(Base):
         CheckConstraint("wht_amount >= 0 AND wht_amount <= amount", name="ck_commerce_payment_wht"),
         CheckConstraint("status IN ('posted','reversed')", name="ck_commerce_payment_status"),
     )
+
+
+class CommerceApprovalEvent(Base):
+    __tablename__ = "commerce_approval_events"
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    document_kind = Column(String(12), nullable=False)
+    document_id = Column(Integer, nullable=False, index=True)
+    action = Column(String(20), nullable=False)
+    actor_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    reason = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default="CURRENT_TIMESTAMP")
+    __table_args__ = (
+        CheckConstraint("document_kind IN ('sale','purchase')", name="ck_commerce_approval_event_kind"),
+        CheckConstraint("action IN ('submitted','approved','rejected')", name="ck_commerce_approval_event_action"),
+        Index("ix_commerce_approval_document_timeline", "company_id", "document_kind", "document_id", "id"),
+    )
