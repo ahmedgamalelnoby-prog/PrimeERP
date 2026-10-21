@@ -1,9 +1,8 @@
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
-from zoneinfo import ZoneInfo
 from decimal import Decimal
 
-from sqlalchemy import and_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.modules.company_settings.service import get_company_setting
