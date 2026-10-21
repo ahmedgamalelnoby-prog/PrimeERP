@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.database.session import get_db
 from app.modules.audit.service import record_audit_event
 from app.modules.companies.models import Company
+from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models.user import User
@@ -21,9 +22,9 @@ router = APIRouter(
 
 
 def _tenant(user: User) -> int:
-    if user.tenant_id is None:
+    if get_effective_tenant_id(user) is None:
         raise HTTPException(403, "User is not assigned to a tenant")
-    return user.tenant_id
+    return get_effective_tenant_id(user)
 
 
 def _company_for_tenant(db: Session, company_id: int, tenant_id: int) -> Company:
