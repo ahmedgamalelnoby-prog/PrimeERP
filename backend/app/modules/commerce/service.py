@@ -98,6 +98,23 @@ class CommerceService:
         if remaining_wht <= 0 or outstanding <= 0: return Decimal("0")
         return min(remaining_wht, (remaining_wht * amount / outstanding).quantize(Decimal("0.01")))
 
+    def _linked_sales_quantities(self, db, *, company_id: int, order_id: int, source_line_ids: set[int], document_types: set[str], statuses: set[str]) -> dict[int, Decimal]:
+        if not source_line_ids:
+            return {}
+        rows = db.execute(
+            select(SalesLine.source_sales_line_id, func.sum(SalesLine.quantity))
+            .join(SalesDocument, SalesDocument.id == SalesLine.document_id)
+            .where(
+                SalesDocument.company_id == company_id,
+                SalesDocument.source_order_id == order_id,
+                SalesDocument.document_type.in_(document_types),
+                SalesDocument.status.in_(statuses),
+                SalesLine.source_sales_line_id.in_(source_line_ids),
+            )
+            .group_by(SalesLine.source_sales_line_id)
+        ).all()
+        return {int(line_id): Decimal(quantity or 0) for line_id, quantity in rows}
+
     def create_document(self, db, payload):
         is_sale = payload.document_type in SALE_TYPES
         if not is_sale and payload.document_type not in PURCHASE_TYPES: raise ValueError("Unsupported document type")
@@ -115,13 +132,79 @@ class CommerceService:
             db, payload.company_id, "purchasing.require_goods_receipt"
         ) is True and not payload.receipt_ids:
             raise ValueError("Company policy requires a received goods receipt before creating a supplier bill")
+
+        source_order = None
+        source_lines: dict[int, SalesLine] = {}
+        source_requested: dict[int, Decimal] = {}
+        if is_sale and payload.source_order_id is not None:
+            if payload.document_type not in {"delivery", "invoice"}:
+                raise ValueError("Only sales deliveries and invoices can be linked to an order")
+            source_order = db.scalar(select(SalesDocument).where(
+                SalesDocument.id == payload.source_order_id,
+                SalesDocument.company_id == payload.company_id,
+                SalesDocument.partner_id == payload.partner_id,
+                SalesDocument.document_type == "order",
+            ).with_for_update())
+            if source_order is None:
+                raise ValueError("Source sales order was not found for this company/customer")
+            if source_order.status not in {"confirmed", "partially_fulfilled", "fulfilled", "posted"}:
+                raise ValueError("Source sales order must be confirmed before delivery or invoicing")
+            source_ids = {int(line.source_sales_line_id) for line in payload.lines if line.source_sales_line_id is not None}
+            if any(line.source_sales_line_id is None for line in payload.lines):
+                raise ValueError("Every line in an order-linked document must identify its source order line")
+            source_lines = {
+                line.id: line
+                for line in db.scalars(select(SalesLine).where(
+                    SalesLine.document_id == source_order.id,
+                    SalesLine.id.in_(source_ids or {-1}),
+                )).all()
+            }
+            if len(source_lines) != len(source_ids):
+                raise ValueError("A source sales line does not belong to the selected order")
+            for line in payload.lines:
+                source_line = source_lines[int(line.source_sales_line_id)]
+                if source_line.item_id != line.item_id or source_line.variant_id != line.variant_id:
+                    raise ValueError("Linked delivery/invoice line must match the source order item and variant")
+                source_requested[source_line.id] = source_requested.get(source_line.id, Decimal("0")) + Decimal(line.quantity)
+        elif is_sale and any(line.source_sales_line_id is not None for line in payload.lines):
+            raise ValueError("Source sales lines require a source order")
+
+        if payload.document_type == "invoice" and source_order is not None:
+            active_invoice_statuses = {"draft", "confirmed", "partially_fulfilled", "fulfilled", "posted"}
+            already_invoiced = self._linked_sales_quantities(
+                db, company_id=payload.company_id, order_id=source_order.id,
+                source_line_ids=set(source_lines), document_types={"invoice"},
+                statuses=active_invoice_statuses,
+            )
+            if get_company_setting(db, payload.company_id, "sales.allow_overbilling") is not True:
+                for source_line_id, requested in source_requested.items():
+                    source_line = source_lines[source_line_id]
+                    if already_invoiced.get(source_line_id, Decimal("0")) + requested > Decimal(source_line.quantity):
+                        raise ValueError("Company policy does not allow invoicing above the linked order quantity")
+            if get_company_setting(db, payload.company_id, "sales.invoice_requires_delivery") is True:
+                delivered = self._linked_sales_quantities(
+                    db, company_id=payload.company_id, order_id=source_order.id,
+                    source_line_ids=set(source_lines), document_types={"delivery"},
+                    statuses={"fulfilled", "posted"},
+                )
+                for source_line_id, requested in source_requested.items():
+                    available = delivered.get(source_line_id, Decimal("0")) - already_invoiced.get(source_line_id, Decimal("0"))
+                    if requested > available:
+                        raise ValueError("Company policy requires enough posted delivery quantity before invoicing")
         payment_terms_key = "sales.default_payment_terms_days" if is_sale else "purchasing.default_payment_terms_days"
         payment_terms_days = partner.payment_terms_days or int(get_company_setting(db, payload.company_id, payment_terms_key))
         obj = model(company_id=payload.company_id, partner_id=payload.partner_id, document_type=payload.document_type, number=payload.number, document_date=payload.document_date, warehouse_id=payload.warehouse_id, due_date=resolve_due_date(payload.document_type, payload.document_date, payload.due_date, payment_terms_days), notes=payload.notes)
+        if is_sale:
+            obj.source_order_id = payload.source_order_id
         subtotal = Decimal("0"); tax = Decimal("0"); discount = Decimal("0")
         for p in payload.lines:
             item = db.scalar(select(InventoryItem).where(InventoryItem.id == p.item_id, InventoryItem.company_id == payload.company_id, InventoryItem.is_active.is_(True)))
             if not item: raise ValueError(f"Item {p.item_id} not found")
+            if (payload.document_type == "invoice"
+                    and item.item_type in {"stockable", "consumable"}
+                    and get_company_setting(db, payload.company_id, "sales.invoice_requires_delivery") is True
+                    and (source_order is None or p.source_sales_line_id is None)):
+                raise ValueError("Company policy requires stock invoice lines to link to an order with posted delivery")
             if item.item_type in {"stockable", "consumable"} and payload.warehouse_id is None and get_company_setting(
                 db, payload.company_id, "inventory.require_warehouse"
             ) is True:
@@ -140,7 +223,10 @@ class CommerceService:
             tax_result = calculate_taxes(db, company_id=payload.company_id, amount=net, tax_ids=tax_ids, inclusive=None); tax_amount = Decimal(tax_result["tax_total"]); taxable_base = Decimal(tax_result["taxable_base"]); line_total = Decimal(tax_result["gross_total"])
             tax_rows = list(db.scalars(select(TaxRate).where(TaxRate.id.in_(tax_ids), TaxRate.company_id == payload.company_id)).all()) if tax_ids else []
             non_wht_ids = [tax.id for tax in tax_rows if not tax.is_withholding]; primary_tax_id = non_wht_ids[0] if non_wht_ids else (tax_ids[0] if tax_ids else None); primary_tax_percent = Decimal(next((tax.rate for tax in tax_rows if tax.id == primary_tax_id), 0))
-            obj.lines.append(line_model(item_id=p.item_id, variant_id=variant_id, tax_rate_id=primary_tax_id, tax_rate_ids=tax_ids, description=p.description, quantity=p.quantity, unit_price=p.unit_price, discount_percent=p.discount_percent, tax_percent=primary_tax_percent, line_total=line_total)); subtotal += taxable_base if tax_result["inclusive"] else net; discount += disc; tax += tax_amount
+            line_values = dict(item_id=p.item_id, variant_id=variant_id, tax_rate_id=primary_tax_id, tax_rate_ids=tax_ids, description=p.description, quantity=p.quantity, unit_price=p.unit_price, discount_percent=p.discount_percent, tax_percent=primary_tax_percent, line_total=line_total)
+            if is_sale:
+                line_values["source_sales_line_id"] = getattr(p, "source_sales_line_id", None)
+            obj.lines.append(line_model(**line_values)); subtotal += taxable_base if tax_result["inclusive"] else net; discount += disc; tax += tax_amount
         obj.subtotal = subtotal; obj.discount_total = discount; obj.tax_total = tax; obj.total = subtotal + tax; db.add(obj); db.flush()
         if payload.receipt_ids:
             for receipt_id in payload.receipt_ids: db.add(PurchaseBillReceiptLink(company_id=payload.company_id, bill_id=obj.id, receipt_id=receipt_id))
