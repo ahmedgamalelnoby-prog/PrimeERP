@@ -6,7 +6,7 @@ export type Document = {
   partner_id: number;
   document_type: string;
   source_order_id?: number | null;
-  number: string;
+  number?: string;
   document_date: string;
   status: string;
   warehouse_id: number | null;
