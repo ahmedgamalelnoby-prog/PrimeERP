@@ -3,6 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from app.core.context import get_effective_tenant_id
+from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
 from app.modules.commerce.models import BusinessPartner
@@ -10,14 +12,28 @@ from app.modules.commerce.schemas import PartnerCreate, DocumentCreate
 from app.modules.commerce.service import commerce_service
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models.user import User
+from app.modules.saas.entitlements import require_module
 
-router = APIRouter(prefix="/crm", tags=["CRM"])
+router = APIRouter(
+    prefix="/crm",
+    tags=["CRM"],
+    dependencies=[Depends(require_permission("commerce.access")), Depends(require_module("crm"))],
+)
 
 def _company(db, company_id, user):
-    if user.tenant_id is None: raise HTTPException(403, "User is not assigned to a tenant")
-    obj=db.scalar(select(Company).where(Company.id==company_id, Company.tenant_id==user.tenant_id, Company.is_active.is_(True)))
-    if obj is None: raise HTTPException(403, "Company is outside the current tenant")
-    return obj
+    tenant_id = get_effective_tenant_id(user)
+    if tenant_id is None:
+        raise HTTPException(403, "User is not assigned to a tenant")
+    company = db.scalar(
+        select(Company).where(
+            Company.id == company_id,
+            Company.tenant_id == tenant_id,
+            Company.is_active.is_(True),
+        )
+    )
+    if company is None:
+        raise HTTPException(403, "Company is outside the current tenant")
+    return company
 
 class LeadCreate(BaseModel):
     company_id:int=Field(gt=0); code:str=Field(min_length=1,max_length=50); name:str=Field(min_length=1,max_length=200)
@@ -33,7 +49,7 @@ def dashboard(company_id:int=Query(...,gt=0), current_user:User=Depends(get_curr
     opportunities=commerce_service.list_documents(db,company_id,"sale","quotation")
     return {"leads":[{"id":x.id,"code":x.code,"name":x.name,"phone":x.phone,"email":x.email} for x in leads],"opportunities":[x for x in opportunities]}
 
-@router.post("/leads",status_code=201)
+@router.post("/leads", status_code=201, dependencies=[Depends(require_permission("commerce.write"))])
 def create_lead(payload:LeadCreate,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
     _company(db,payload.company_id,current_user)
     if db.scalar(select(BusinessPartner).where(BusinessPartner.company_id==payload.company_id,BusinessPartner.code==payload.code)): raise HTTPException(409,"Lead code already exists")
@@ -41,13 +57,13 @@ def create_lead(payload:LeadCreate,current_user:User=Depends(get_current_user),d
     db.commit(); db.refresh(obj)
     return obj
 
-@router.post("/opportunities",status_code=201)
+@router.post("/opportunities", status_code=201, dependencies=[Depends(require_permission("commerce.write"))])
 def create_opportunity(payload:OpportunityCreate,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
     _company(db,payload.company_id,current_user)
     if payload.document_type!="quotation": raise HTTPException(422,"CRM opportunities must start as quotations")
     obj=commerce_service.create_document(db,payload); db.commit(); db.refresh(obj); return obj
 
-@router.post("/opportunities/{document_id}/advance")
+@router.post("/opportunities/{document_id}/advance", dependencies=[Depends(require_permission("commerce.write"))])
 def advance_opportunity(document_id:int,company_id:int=Query(...,gt=0),target:str=Query(...,pattern="^(order|invoice)$"),current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
     _company(db,company_id,current_user)
     obj=db.scalar(select(__import__("app.modules.commerce.models",fromlist=["SalesDocument"]).SalesDocument).where(__import__("app.modules.commerce.models",fromlist=["SalesDocument"]).SalesDocument.id==document_id,__import__("app.modules.commerce.models",fromlist=["SalesDocument"]).SalesDocument.company_id==company_id))
