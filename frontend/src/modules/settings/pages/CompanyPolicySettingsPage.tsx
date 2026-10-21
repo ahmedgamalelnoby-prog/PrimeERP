@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import client from "@/shared/api/client";
 import i18n from "@/shared/i18n/i18n";
 import { Button } from "@/components/ui/button";
+import { setCompanyDateFormat } from "@/utils/format-date";
 
 type Company = { id:number; name:string };
 type Setting = { key:string; module:string; category:string; type:"bool"|"int"|"number"|"string"|"enum"; default:any; value:any; label:string; choices:string[]|null; status:"runtime"|"catalog" };
@@ -51,7 +52,11 @@ export default function CompanyPolicySettingsPage() {
       .then(({data}) => {
         setPayload(data);
         setValues(Object.fromEntries(data.settings.map(s=>[s.key,s.value])));
-        const companyLanguage = data.settings.find(s=>s.key==="general.default_language")?.value;
+        const companyDateFormat = data.settings.find(s=>s.key==="general.date_format")?.value;
+        setCompanyDateFormat(companyId, companyDateFormat);
+        const companyDateFormat = data.settings.find(s=>s.key==="general.date_format")?.value;
+      setCompanyDateFormat(companyId, companyDateFormat);
+      const companyLanguage = data.settings.find(s=>s.key==="general.default_language")?.value;
         if (companyLanguage === "ar" || companyLanguage === "en") void i18n.changeLanguage(companyLanguage);
         if (!data.categories.includes(activeCategory)) setActiveCategory(data.categories[0] || "General");
       })
