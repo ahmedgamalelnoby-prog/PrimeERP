@@ -95,3 +95,26 @@ class HRAttendanceCorrection(Base):
         CheckConstraint("proposed_check_out_at IS NULL OR proposed_check_out_at > proposed_check_in_at", name="ck_hr_attendance_correction_time_order"),
         Index("ix_hr_attendance_correction_status", "company_id", "status", "created_at"),
     )
+
+
+class HROvertimeRequest(Base):
+    __tablename__ = "hr_overtime_requests"
+
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    attendance_record_id = Column(Integer, ForeignKey("hr_attendance_records.id", ondelete="RESTRICT"), nullable=False, index=True)
+    requested_hours = Column(Numeric(8, 2), nullable=False)
+    reason = Column(Text, nullable=False)
+    status = Column(String(20), nullable=False, default="pending")
+    submitted_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    decided_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=True)
+    decision_reason = Column(Text, nullable=True)
+    decided_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        CheckConstraint("requested_hours > 0", name="ck_hr_overtime_request_hours"),
+        CheckConstraint("status IN ('pending','approved','rejected')", name="ck_hr_overtime_request_status"),
+        Index("ix_hr_overtime_request_status", "company_id", "status", "created_at"),
+    )
