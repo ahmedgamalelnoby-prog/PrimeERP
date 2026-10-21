@@ -176,7 +176,7 @@ A setting should be promoted from CATALOG ONLY to RUNTIME only after the consume
 - Company policies remain grouped by category in registry order. Within a category, runtime-enforced entries are listed before catalog-only entries, then labels are alphabetically sorted using Arabic locale rules.
 - The page now searches by display label, canonical setting key, module, and translated category/module names; a status filter narrows results to runtime or catalog-only entries.
 - The page shows total/runtime/catalog/unsaved-change counters, a result count, a reset control, an empty-result message, and disables Save when no values differ from the loaded values.
-- These UX changes improve navigation. The current source audit records **35 runtime / 33 catalog-only** after adding transaction branch requirements, journal period-lock policy, customer credit-limit enforcement, supplier receipt requirements, company payment-term defaults, duplicate-customer checks, POS discount policy enforcement, warehouse requirements, taxable invoice tax-code enforcement, and accounting auto-post gates; tests still need to run.
+- These UX changes improve navigation. The current source audit records **38 runtime / 30 catalog-only** after adding transaction branch requirements, journal period-lock policy, customer credit-limit enforcement, supplier receipt requirements, company payment-term defaults, duplicate-customer checks, POS discount policy enforcement, warehouse requirements, taxable invoice tax-code enforcement, and accounting auto-post gates; tests still need to run.
 
 
 ## Follow-up regression coverage (2026-10-20)
