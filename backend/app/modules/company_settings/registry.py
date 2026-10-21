@@ -54,7 +54,7 @@ _RAW = [
     ("inventory.valuation_method","inventory","Inventory","enum","fifo","Default costing method for new inventory items; existing items are unchanged",["fifo","moving_average","standard_cost"],"runtime"),
     ("inventory.require_warehouse","inventory","Inventory","bool",True,"Require warehouse on stock transactions",None,"runtime"),
     ("inventory.require_bin_location","inventory","Inventory","bool",False,"Require a storage/bin location",None,"runtime"),
-    ("inventory.auto_reserve_sales_orders","inventory","Inventory","bool",False,"Reserve stock on sales order confirmation",None,"catalog"),
+    ("inventory.auto_reserve_sales_orders","inventory","Inventory","bool",False,"Reserve stock on sales order confirmation",None,"runtime"),
     ("inventory.allow_below_cost_sale","inventory","Inventory","bool",False,"Allow sale below cost subject to permission",None,"catalog"),
     ("inventory.expiry_tracking_required","inventory","Inventory","bool",False,"Require expiry dates for perishable/batch items",None,"catalog"),
     ("inventory.serial_tracking_default","inventory","Inventory","bool",False,"Default serial tracking for eligible items",None,"catalog"),
