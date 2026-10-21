@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.audit.service import record_audit_event
@@ -21,9 +22,10 @@ router = APIRouter(prefix="/egyptian-einvoice", tags=["Egyptian E-Invoicing"])
 
 
 def _company_for_user(db: Session, company_id: int, user: User) -> Company:
-    if user.tenant_id is None:
+    tenant_id = get_effective_tenant_id(user)
+    if tenant_id is None:
         raise HTTPException(403, "User is not assigned to a tenant")
-    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == user.tenant_id, Company.is_active.is_(True)))
+    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == tenant_id, Company.is_active.is_(True)))
     if company is None:
         raise HTTPException(403, "Company is outside the current tenant or inactive")
     return company
@@ -52,7 +54,7 @@ def verify_partner_tax_identity(partner_id: int, company_id: int = Query(..., gt
     # real-time validation call is performed by the configured ETA integration.
     partner.eta_party_id = partner.tax_number
     partner.eta_registration_status = "pending"
-    record_audit_event(db, action="einvoice.partner_verify_requested", entity_type="commerce_partner", entity_id=partner.id, user_id=current_user.id, tenant_id=current_user.tenant_id, company_id=company_id, metadata={"verification_status": "pending"})
+    record_audit_event(db, action="einvoice.partner_verify_requested", entity_type="commerce_partner", entity_id=partner.id, user_id=current_user.id, tenant_id=get_effective_tenant_id(current_user), company_id=company_id, metadata={"verification_status": "pending"})
     db.commit()
     db.refresh(partner)
     return {"id": partner.id, "tax_number": partner.tax_number, "commercial_registration_number": partner.commercial_registration_number, "eta_party_id": partner.eta_party_id, "eta_registration_status": partner.eta_registration_status, "eta_last_verified_at": partner.eta_last_verified_at}
@@ -60,7 +62,7 @@ def verify_partner_tax_identity(partner_id: int, company_id: int = Query(..., gt
 @router.get("/documents", dependencies=[Depends(require_permission(EINVOICE_ACCESS))])
 def list_documents(company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
-    return list(db.scalars(select(EgyptianEInvoiceDocument).where(EgyptianEInvoiceDocument.tenant_id == current_user.tenant_id, EgyptianEInvoiceDocument.company_id == company_id).order_by(EgyptianEInvoiceDocument.id.desc()).limit(200)).all())
+    return list(db.scalars(select(EgyptianEInvoiceDocument).where(EgyptianEInvoiceDocument.tenant_id == get_effective_tenant_id(current_user), EgyptianEInvoiceDocument.company_id == company_id).order_by(EgyptianEInvoiceDocument.id.desc()).limit(200)).all())
 
 
 @router.post("/documents", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission(EINVOICE_WRITE))])
@@ -72,8 +74,8 @@ def create_eta_document(payload: dict, current_user: User = Depends(get_current_
     if missing:
         raise HTTPException(422, f"Missing required fields: {', '.join(missing)}")
     try:
-        obj = create_document(db, tenant_id=current_user.tenant_id, company_id=company_id, source_type=str(payload["source_type"]), source_id=int(payload["source_id"]), document_type=str(payload["document_type"]), internal_number=str(payload["internal_number"]), signed_payload=str(payload["signed_payload"]))
-        record_audit_event(db, action="einvoice.create", entity_type="egyptian_einvoice", entity_id=obj.id, user_id=current_user.id, tenant_id=current_user.tenant_id, company_id=company_id, metadata={"source_type": obj.source_type, "source_id": obj.source_id, "document_type": obj.document_type})
+        obj = create_document(db, tenant_id=get_effective_tenant_id(current_user), company_id=company_id, source_type=str(payload["source_type"]), source_id=int(payload["source_id"]), document_type=str(payload["document_type"]), internal_number=str(payload["internal_number"]), signed_payload=str(payload["signed_payload"]))
+        record_audit_event(db, action="einvoice.create", entity_type="egyptian_einvoice", entity_id=obj.id, user_id=current_user.id, tenant_id=get_effective_tenant_id(current_user), company_id=company_id, metadata={"source_type": obj.source_type, "source_id": obj.source_id, "document_type": obj.document_type})
         db.commit()
         db.refresh(obj)
         return obj
@@ -85,11 +87,11 @@ def create_eta_document(payload: dict, current_user: User = Depends(get_current_
 @router.post("/documents/{document_id}/submit", dependencies=[Depends(require_permission(EINVOICE_POST))])
 def submit_eta_document(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
-    obj = db.scalar(select(EgyptianEInvoiceDocument).where(EgyptianEInvoiceDocument.id == document_id, EgyptianEInvoiceDocument.tenant_id == current_user.tenant_id, EgyptianEInvoiceDocument.company_id == company_id).with_for_update())
+    obj = db.scalar(select(EgyptianEInvoiceDocument).where(EgyptianEInvoiceDocument.id == document_id, EgyptianEInvoiceDocument.tenant_id == get_effective_tenant_id(current_user), EgyptianEInvoiceDocument.company_id == company_id).with_for_update())
     if obj is None:
         raise HTTPException(404, "Egyptian e-invoice document not found")
     try:
-        submit_document(db, obj, user_id=current_user.id, tenant_id=current_user.tenant_id)
+        submit_document(db, obj, user_id=current_user.id, tenant_id=get_effective_tenant_id(current_user))
         db.commit()
         db.refresh(obj)
         return obj
@@ -101,11 +103,11 @@ def submit_eta_document(document_id: int, company_id: int = Query(..., gt=0), cu
 @router.post("/documents/{document_id}/sync", dependencies=[Depends(require_permission(EINVOICE_POST))])
 def sync_eta_document(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
-    obj = db.scalar(select(EgyptianEInvoiceDocument).where(EgyptianEInvoiceDocument.id == document_id, EgyptianEInvoiceDocument.tenant_id == current_user.tenant_id, EgyptianEInvoiceDocument.company_id == company_id).with_for_update())
+    obj = db.scalar(select(EgyptianEInvoiceDocument).where(EgyptianEInvoiceDocument.id == document_id, EgyptianEInvoiceDocument.tenant_id == get_effective_tenant_id(current_user), EgyptianEInvoiceDocument.company_id == company_id).with_for_update())
     if obj is None:
         raise HTTPException(404, "Egyptian e-invoice document not found")
     try:
-        sync_status(db, obj, user_id=current_user.id, tenant_id=current_user.tenant_id)
+        sync_status(db, obj, user_id=current_user.id, tenant_id=get_effective_tenant_id(current_user))
         db.commit()
         db.refresh(obj)
         return obj
