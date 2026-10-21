@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Save, ShieldCheck, FileText, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 
-import { getLegalDocument, updateLegalDocument, type LegalDocument, type LegalDocumentType } from "@/modules/legal/services/legal.service";
+import { getAdminLegalDocument, updateLegalDocument, type LegalDocument, type LegalDocumentType } from "@/modules/legal/services/legal.service";
 
 export default function LegalManagementPage() {
   const [type, setType] = useState<LegalDocumentType>("terms");
@@ -14,7 +14,7 @@ export default function LegalManagementPage() {
   const load = async (nextType: LegalDocumentType) => {
     setLoading(true);
     try {
-      const data = await getLegalDocument(nextType);
+      const data = await getAdminLegalDocument(nextType);
       setDocument(data);
       setForm({
         title_ar: data.title_ar,

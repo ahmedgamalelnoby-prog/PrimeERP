@@ -22,7 +22,9 @@ import {
   X,
 } from "lucide-react";
 
-import {
+
+
+import { useAuth } from "@/modules/identity/context/AuthContext";import {
   NavLink,
   useLocation,
 } from "react-router-dom";
@@ -236,6 +238,9 @@ export default function AppSidebar({
   onClose,
 }: AppSidebarProps) {
   const location = useLocation();
+  const { user } = useAuth();
+  const canManageLegal = Boolean(user?.is_platform_admin || user?.is_superuser);
+
 
   const [expandedMenus, setExpandedMenus] =
     useState<string[]>([]);
@@ -291,7 +296,7 @@ export default function AppSidebar({
       <aside
         className={[
           "fixed right-0 top-0 z-50 h-screen w-72",
-          "border-l bg-card shadow-xl",
+          "border-l border-slate-200 bg-white shadow-2xl shadow-slate-900/5",
           "transition-transform duration-300",
           open
             ? "translate-x-0"
@@ -299,7 +304,7 @@ export default function AppSidebar({
           "lg:translate-x-0",
         ].join(" ")}
       >
-        <div className="flex h-16 items-center justify-between border-b px-5">
+        <div className="flex h-20 items-center justify-between border-b border-slate-100 px-5">
           <div>
             <h1 className="text-xl font-bold">
               PrimeERP
@@ -320,8 +325,8 @@ export default function AppSidebar({
           </button>
         </div>
 
-        <nav className="h-[calc(100vh-4rem)] overflow-y-auto p-4">
-          <p className="mb-3 px-3 text-xs font-semibold text-muted-foreground">
+        <nav className="h-[calc(100vh-5rem)] overflow-y-auto p-3">
+          <p className="mb-3 px-3 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
             القائمة الرئيسية
           </p>
 
@@ -347,10 +352,10 @@ export default function AppSidebar({
                     }
                     className={[
                       "flex w-full items-center justify-between rounded-xl px-3 py-2.5",
-                      "text-sm font-medium transition-all duration-200",
+                      "text-sm font-semibold transition-all duration-200",
                       childActive
-                        ? "bg-primary/10 text-primary"
-                        : "text-foreground hover:bg-muted",
+                        ? "bg-blue-50 text-blue-700"
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-950",
                     ].join(" ")}
                   >
                     <div className="flex items-center gap-3">
@@ -395,8 +400,8 @@ export default function AppSidebar({
                                     "flex items-center gap-3 rounded-lg px-3 py-2",
                                     "text-sm transition-all duration-200",
                                     isActive
-                                      ? "bg-primary text-primary-foreground shadow-sm"
-                                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                                      ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20"
+                                      : "text-slate-500 hover:bg-slate-100 hover:text-slate-950",
                                   ].join(" ")
                                 }
                               >
@@ -415,6 +420,25 @@ export default function AppSidebar({
               );
             })}
           </div>
+          {canManageLegal && (
+            <NavLink
+              to="/settings/legal"
+              onClick={onClose}
+              className={({ isActive }) =>
+                [
+                  "mt-2 flex items-center gap-3 rounded-xl px-3 py-2.5",
+                  "text-sm font-semibold transition-all duration-200",
+                  isActive
+                    ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20"
+                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-950",
+                ].join(" ")
+              }
+            >
+              <FileText className="h-5 w-5" />
+              <span>المستندات القانونية</span>
+            </NavLink>
+          )}
+
         </nav>
       </aside>
     </>

@@ -1,4 +1,5 @@
-﻿import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
+import { useAuth } from "@/modules/identity/hooks/useAuth";
 
 import ProtectedRoute from "./ProtectedRoute";
 import PublicRoute from "./PublicRoute";
@@ -23,6 +24,13 @@ function ComingSoonPage({ title }: { title: string }) {
       </div>
     </div>
   );
+}
+
+function SuperAdminRoute() {
+  const { user, isLoading } = useAuth();
+  if (isLoading) return null;
+  if (!user || (!user.is_platform_admin && !user.is_superuser)) return <Navigate to="/dashboard" replace />;
+  return <LegalManagementPage />;
 }
 
 export default function AppRouter() {
@@ -51,7 +59,7 @@ export default function AppRouter() {
           <Route path="/identity/permissions" element={<Navigate to="/permissions" replace />} />
 
           {/* إدارة المستندات القانونية — صلاحية التعديل يتم فرضها من الـ API */}
-          <Route path="/settings/legal" element={<LegalManagementPage />} />
+          <Route path="/settings/legal" element={<SuperAdminRoute />} />
 
           <Route path="/companies" element={<ComingSoonPage title="قائمة الشركات" />} />
           <Route path="/companies/new" element={<ComingSoonPage title="إضافة شركة" />} />
