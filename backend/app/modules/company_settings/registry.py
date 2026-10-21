@@ -77,8 +77,8 @@ _RAW = [
     ("pos.allow_discount_without_approval","pos","Point of Sale","bool",False,"Allow cashier discounts without approval",None,"runtime"),
     ("pos.max_discount_pct_without_approval","pos","Point of Sale","number",0,"Maximum discount without approval",None,"runtime"),
     # Manufacturing / service / integrations
-    ("manufacturing.require_work_order","manufacturing","Manufacturing","bool",True,"Require work order for production",None,"catalog"),
-    ("manufacturing.allow_overproduction","manufacturing","Manufacturing","bool",False,"Allow production above planned quantity",None,"catalog"),
+    ("manufacturing.require_work_order","manufacturing","Manufacturing","bool",True,"Require work order for production",None,"runtime"),
+    ("manufacturing.allow_overproduction","manufacturing","Manufacturing","bool",False,"Allow production above planned quantity",None,"runtime"),
     ("crm.duplicate_customer_check","crm","CRM","bool",True,"Warn/block likely duplicate customers",None,"runtime"),
     ("integrations.auto_sync_enabled","integrations","Integrations","bool",False,"Enable automatic sync for configured integrations",None,"catalog"),
     ("integrations.retry_limit","integrations","Integrations","int",5,"Retry count for transient integration failures",None,"runtime"),
