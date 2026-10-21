@@ -51,7 +51,7 @@ _RAW = [
     ("purchasing.default_payment_terms_days","purchasing","Purchasing","int",30,"Default supplier payment term",None,"runtime"),
     # Inventory
     ("inventory.allow_negative_stock","inventory","Inventory","bool",False,"Allow stock to fall below zero where the valuation method supports it",None,"runtime"),
-    ("inventory.valuation_method","inventory","Inventory","enum","fifo","Inventory costing method for supported flows",["fifo","moving_average","standard_cost"],"catalog"),
+    ("inventory.valuation_method","inventory","Inventory","enum","fifo","Default costing method for new inventory items; existing items are unchanged",["fifo","moving_average","standard_cost"],"runtime"),
     ("inventory.require_warehouse","inventory","Inventory","bool",True,"Require warehouse on stock transactions",None,"runtime"),
     ("inventory.require_bin_location","inventory","Inventory","bool",False,"Require a storage/bin location",None,"runtime"),
     ("inventory.auto_reserve_sales_orders","inventory","Inventory","bool",False,"Reserve stock on sales order confirmation",None,"catalog"),
