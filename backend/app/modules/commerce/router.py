@@ -188,6 +188,20 @@ def confirm_purchase(document_id: int, company_id: int = Query(..., gt=0), curre
 
 
 
+
+
+@router.get("/sales/{document_id}/approval-events")
+def list_sales_order_approval_events(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company_for_user(db, company_id, current_user)
+    return _run(lambda: commerce_service.list_approval_events(db, company_id, document_id, "sale"))
+
+
+@router.get("/purchases/{document_id}/approval-events")
+def list_purchase_order_approval_events(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company_for_user(db, company_id, current_user)
+    return _run(lambda: commerce_service.list_approval_events(db, company_id, document_id, "purchase"))
+
+
 @router.post("/sales/{document_id}/approval-decision", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def decide_sales_order_approval(document_id: int, payload: CommerceApprovalDecision, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
