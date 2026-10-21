@@ -16,7 +16,7 @@ _RAW = [
     ("general.require_cost_center","general","General","bool",False,"Require cost center where supported",None,"runtime"),
     ("general.require_project","general","General","bool",False,"Require project dimension where supported",None,"catalog"),
     ("general.branch_required","general","General","bool",False,"Require branch on company transactions",None,"runtime"),
-    ("general.intercompany_enabled","general","General","bool",False,"Enable intercompany workflows",None,"catalog"),
+    ("general.intercompany_enabled","general","General","bool",False,"Enable intercompany workflows",None,"runtime"),
     # Accounting and tax
     ("accounting.period_lock_enabled","accounting","Accounting","bool",True,"Prevent posting into closed periods",None,"runtime"),
     ("accounting.allow_backdated_entries","accounting","Accounting","bool",False,"Allow backdated entries subject to period controls",None,"runtime"),
@@ -32,7 +32,7 @@ _RAW = [
     ("accounting.default_cash_account","accounting","Accounting","string","","Default cash account code",None,"runtime"),
     ("tax.default_tax_inclusive_pricing","taxes","Taxes","bool",False,"Sales prices include tax by default",None,"runtime"),
     ("tax.require_tax_code_on_invoice","taxes","Taxes","bool",True,"Require tax code on taxable invoices",None,"runtime"),
-    ("tax.einvoice_required_for_sales","egyptian-einvoice","Taxes","bool",False,"Require Egyptian e-invoice submission for eligible sales",None,"catalog"),
+    ("tax.einvoice_required_for_sales","egyptian-einvoice","Taxes","bool",False,"Require a valid Egyptian e-invoice before sales invoice confirmation",None,"runtime"),
     # Sales / customer credit
     ("sales.require_quote_approval","sales","Sales","bool",False,"Require quotation approval above configured limits",None,"catalog"),
     ("sales.require_order_approval","sales","Sales","bool",True,"Require sales order approval",None,"catalog"),
