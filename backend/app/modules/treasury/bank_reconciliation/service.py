@@ -3,6 +3,7 @@ from decimal import Decimal
 import hashlib
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
+from app.core.context import get_effective_tenant_id
 from app.modules.commerce.models import CommercePayment
 from app.modules.treasury.models import Cheque
 from .models import BankAccount, BankStatement, BankStatementLine, ReconciliationSession, ReconciliationMatch
@@ -13,9 +14,10 @@ def fingerprint_line(payload) -> str:
 
 def ensure_company(db, company_id, user):
     from app.modules.companies.models import Company
-    if user.tenant_id is None: raise ValueError("User is not assigned to a tenant")
-    if db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == user.tenant_id)) is None:
-        raise ValueError("Company is outside the current tenant")
+    tenant_id = get_effective_tenant_id(user)
+    if tenant_id is None: raise ValueError("User is not assigned to a tenant")
+    if db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == tenant_id, Company.is_active.is_(True))) is None:
+        raise ValueError("Company is outside the current tenant or inactive")
 
 def create_account(db, payload, user):
     ensure_company(db,payload.company_id,user)
