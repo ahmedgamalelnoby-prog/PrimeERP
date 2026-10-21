@@ -11,7 +11,7 @@ from app.modules.legal.models import LegalAcceptance, LegalDocument
 from app.modules.audit.models import AuditEvent
 from app.modules.egyptian_einvoice.models import EgyptianEInvoiceDocument
 from app.modules.reports.models import ReportDefinition, ReportDelivery, ReportDeliveryAttempt
-from app.modules.restaurant.models import Floor, OrderType, PreparationStation, RestaurantTable, PosOutlet, PosOutletStation, PosTerminal, PosTerminalMenu, PosMenuItemRoute, PosOrderLineRoute
+from app.modules.restaurant.models import Floor, OrderType, PreparationStation, RestaurantTable, PosOutlet, PosOutletStation, PosTerminal, PosTerminalMenu, PosMenuItemRoute, PosOrderLineRoute, PosCashierShift
 from app.modules.accounting.chart_of_accounts.models import AccountCombination, AccountingCostCenter, AccountingDepartment, AccountingSettings, NaturalAccount
 from app.modules.transactions.models import BusinessTransaction, NumberSequence, TransactionEvent
 from app.modules.accounting.fiscal_years.models import AccountingPeriod, FiscalYear
