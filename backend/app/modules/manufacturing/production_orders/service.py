@@ -42,6 +42,9 @@ class ManufacturingWorkOrderService:
         ).all()
 
     def create(self, db: Session, *, payload, user_id: int):
+        normalized_number = payload.number.strip()
+        if not normalized_number:
+            raise ValueError("Work order number cannot be blank")
         if payload.source_location_id == payload.destination_location_id:
             raise ValueError("Production source and destination locations must differ")
         recipe = db.scalar(select(Recipe).where(
@@ -91,7 +94,7 @@ class ManufacturingWorkOrderService:
 
         order = ManufacturingWorkOrder(
             company_id=payload.company_id,
-            number=payload.number.strip(),
+            number=normalized_number,
             recipe_id=recipe.id,
             recipe_version=recipe.version,
             output_item_id=recipe.product_id,
