@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -7,9 +8,12 @@ from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
+from app.modules.company_settings.service import get_company_setting
 from app.modules.catalog.service import catalog_service
 from app.modules.inventory.stock_moves.schemas import StockMoveCreate
 from app.modules.inventory.stock_moves.service import inventory_stock_move_service
+from app.modules.manufacturing.production_orders.schemas import WorkOrderComplete, WorkOrderCreate, WorkOrderResponse
+from app.modules.manufacturing.production_orders.service import manufacturing_work_order_service
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models.user import User
 from app.modules.saas.entitlements import require_module
@@ -83,6 +87,8 @@ def issue_material(
     db: Session = Depends(get_db),
 ):
     tenant_id = _company(db, payload.company_id, current_user)
+    if get_company_setting(db, payload.company_id, "manufacturing.require_work_order") is True:
+        raise HTTPException(409, "Company policy requires material consumption to be completed through a released work order")
     move = inventory_stock_move_service.create_draft(
         db,
         StockMoveCreate(
@@ -108,3 +114,117 @@ def issue_material(
     db.commit()
     db.refresh(move)
     return move
+
+
+def _commit_work_order(db: Session, action):
+    try:
+        result = action()
+        db.commit()
+        db.refresh(result)
+        return result
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc)) from exc
+    except Exception:
+        db.rollback()
+        raise
+
+
+@router.get("/work-orders", response_model=list[WorkOrderResponse])
+def list_work_orders(
+    company_id: int = Query(..., gt=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _company(db, company_id, current_user)
+    return manufacturing_work_order_service.list(db, company_id=company_id)
+
+
+@router.post(
+    "/work-orders",
+    response_model=WorkOrderResponse,
+    status_code=201,
+    dependencies=[Depends(require_permission("inventory.write"))],
+)
+def create_work_order(
+    payload: WorkOrderCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _company(db, payload.company_id, current_user)
+    return _commit_work_order(
+        db,
+        lambda: manufacturing_work_order_service.create(
+            db, payload=payload, user_id=current_user.id
+        ),
+    )
+
+
+@router.post(
+    "/work-orders/{work_order_id}/release",
+    response_model=WorkOrderResponse,
+    dependencies=[Depends(require_permission("inventory.write"))],
+)
+def release_work_order(
+    work_order_id: int,
+    company_id: int = Query(..., gt=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _company(db, company_id, current_user)
+    return _commit_work_order(
+        db,
+        lambda: manufacturing_work_order_service.release(
+            db, company_id=company_id, work_order_id=work_order_id, user_id=current_user.id
+        ),
+    )
+
+
+@router.post(
+    "/work-orders/{work_order_id}/complete",
+    response_model=WorkOrderResponse,
+    dependencies=[Depends(require_permission("inventory.post"))],
+)
+def complete_work_order(
+    work_order_id: int,
+    payload: WorkOrderComplete,
+    company_id: int = Query(..., gt=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    tenant_id = _company(db, company_id, current_user)
+    return _commit_work_order(
+        db,
+        lambda: manufacturing_work_order_service.complete(
+            db,
+            tenant_id=tenant_id,
+            company_id=company_id,
+            work_order_id=work_order_id,
+            produced_quantity=payload.produced_quantity,
+            user_id=current_user.id,
+        ),
+    )
+
+
+@router.post(
+    "/work-orders/{work_order_id}/cancel",
+    response_model=WorkOrderResponse,
+    dependencies=[Depends(require_permission("inventory.post"))],
+)
+def cancel_work_order(
+    work_order_id: int,
+    company_id: int = Query(..., gt=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    tenant_id = _company(db, company_id, current_user)
+    return _commit_work_order(
+        db,
+        lambda: manufacturing_work_order_service.cancel(
+            db,
+            tenant_id=tenant_id,
+            company_id=company_id,
+            work_order_id=work_order_id,
+            user_id=current_user.id,
+        ),
+    )
