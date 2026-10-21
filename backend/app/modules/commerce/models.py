@@ -196,3 +196,15 @@ class CommerceApprovalEvent(Base):
         CheckConstraint("action IN ('submitted','approved','rejected')", name="ck_commerce_approval_event_action"),
         Index("ix_commerce_approval_document_timeline", "company_id", "document_kind", "document_id", "id"),
     )
+
+
+class CommerceDocumentNumberSequence(Base):
+    __tablename__ = "commerce_document_number_sequences"
+    id = Column(Integer, primary_key=True)
+    scope_key = Column(String(180), nullable=False)
+    current_value = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default="CURRENT_TIMESTAMP")
+    __table_args__ = (
+        UniqueConstraint("scope_key", name="uq_commerce_document_sequence_scope"),
+        CheckConstraint("current_value >= 0", name="ck_commerce_document_sequence_value"),
+    )
