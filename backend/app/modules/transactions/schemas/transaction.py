@@ -42,6 +42,8 @@ class TransactionCreate(BaseModel):
         gt=0,
     )
 
+    project_id: Optional[int] = Field(default=None, gt=0)
+
     branch_id: int = Field(
         gt=0,
     )
@@ -104,6 +106,8 @@ class TransactionCreate(BaseModel):
 
 
 class TransactionUpdate(BaseModel):
+    project_id: Optional[int] = Field(default=None, gt=0)
+
     document_number: Optional[str] = Field(
         default=None,
         max_length=100,
@@ -177,6 +181,8 @@ class TransactionResponse(BaseModel):
     tenant_id: int
 
     company_id: int
+
+    project_id: Optional[int]
 
     branch_id: int
 
