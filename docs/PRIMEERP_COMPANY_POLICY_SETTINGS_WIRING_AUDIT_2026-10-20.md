@@ -61,8 +61,8 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 |---|---|---|---|
 | `sales.require_quote_approval` | bool | CATALOG ONLY | Require quotation approval above configured limits |
 | `sales.require_order_approval` | bool | CATALOG ONLY | Require sales order approval |
-| `sales.invoice_requires_delivery` | bool | CATALOG ONLY | Require delivery before invoicing stock items |
-| `sales.allow_overbilling` | bool | CATALOG ONLY | Allow billing above ordered quantity |
+| `sales.invoice_requires_delivery` | bool | **RUNTIME** | Require posted delivery for linked stock order lines before invoicing |
+| `sales.allow_overbilling` | bool | **RUNTIME** | Allow order-linked invoices above ordered quantities |
 | `sales.credit_limit_enforced` | bool | **RUNTIME** | Apply customer credit-limit checks when enabled |
 | `sales.allow_negative_customer_balance` | bool | **RUNTIME** | Permit an invoice overpayment to create a customer credit balance |
 | `sales.default_payment_terms_days` | int | **RUNTIME** | Default due-date terms for sales invoices when partner terms are unset |
