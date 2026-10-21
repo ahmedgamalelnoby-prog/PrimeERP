@@ -271,6 +271,9 @@ class HRLeaveService:
         db.add(correction)
         db.flush()
         if not requires_approval:
+            self._assert_overtime_fits(
+                db, company_id=company_id, record=record, check_in=check_in, check_out=check_out
+            )
             record.check_in_at = check_in
             record.check_out_at = check_out
             correction.decided_by_user_id = actor_user_id
@@ -297,6 +300,13 @@ class HRLeaveService:
         if record is None:
             raise LookupError("Attendance record not found")
         if decision == "approve":
+            self._assert_overtime_fits(
+                db,
+                company_id=company_id,
+                record=record,
+                check_in=correction.proposed_check_in_at,
+                check_out=correction.proposed_check_out_at,
+            )
             record.check_in_at = correction.proposed_check_in_at
             record.check_out_at = correction.proposed_check_out_at
             correction.status = "approved"
@@ -323,6 +333,18 @@ class HRLeaveService:
         total_hours = Decimal(str((check_out - check_in).total_seconds())) / Decimal("3600")
         standard_hours = Decimal(str(get_company_setting(db, company_id, "hr.default_work_hours_per_day")))
         return max(total_hours - standard_hours, Decimal("0")).quantize(Decimal("0.01"))
+
+    @classmethod
+    def _assert_overtime_fits(cls, db: Session, *, company_id: int, record: HRAttendanceRecord, check_in: datetime, check_out: datetime | None) -> None:
+        previous_in, previous_out = record.check_in_at, record.check_out_at
+        record.check_in_at, record.check_out_at = check_in, check_out
+        try:
+            capacity = cls._overtime_capacity(db, company_id=company_id, record=record)
+            reserved = cls._reserved_overtime(db, company_id=company_id, attendance_record_id=record.id)
+        finally:
+            record.check_in_at, record.check_out_at = previous_in, previous_out
+        if reserved > capacity:
+            raise ValueError("Attendance correction would reduce recorded hours below already requested or approved overtime")
 
     @staticmethod
     def _reserved_overtime(db: Session, *, company_id: int, attendance_record_id: int, excluding_request_id: int | None = None) -> Decimal:
