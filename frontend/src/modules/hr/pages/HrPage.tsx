@@ -46,14 +46,13 @@ export default function HrPage() {
     }
     setError("");
     try {
-      const [employeeResponse, requestResponse, balanceResponse, workforceResponse, attendanceResponse, correctionResponse, settingsResponse] = await Promise.all([
+      const [employeeResponse, requestResponse, balanceResponse, workforceResponse, attendanceResponse, correctionResponse] = await Promise.all([
         client.get("/enterprise/employees", { params: { company_id: companyId } }),
         client.get("/hr/leave-requests", { params: { company_id: companyId } }),
         client.get("/hr/leave-balances", { params: { company_id: companyId } }),
         client.get("/hr/workforce", { params: { company_id: companyId } }),
         client.get("/hr/attendance", { params: { company_id: companyId } }),
         client.get("/hr/attendance-corrections", { params: { company_id: companyId } }),
-        client.get("/company-settings", { params: { company_id: companyId } }),
       ]);
       setEmployees(Array.isArray(employeeResponse.data) ? employeeResponse.data : []);
       setRequests(Array.isArray(requestResponse.data) ? requestResponse.data : []);
@@ -61,8 +60,13 @@ export default function HrPage() {
       setWorkforce(Array.isArray(workforceResponse.data) ? workforceResponse.data : []);
       setAttendance(Array.isArray(attendanceResponse.data) ? attendanceResponse.data : []);
       setCorrections(Array.isArray(correctionResponse.data) ? correctionResponse.data : []);
-      const configuredTimezone = settingsResponse.data?.settings?.find((setting: { key?: string }) => setting.key === "general.timezone")?.value;
-      setCompanyTimezone(typeof configuredTimezone === "string" && configuredTimezone ? configuredTimezone : "Africa/Cairo");
+      try {
+        const settingsResponse = await client.get("/company-settings", { params: { company_id: companyId } });
+        const configuredTimezone = settingsResponse.data?.settings?.find((setting: { key?: string }) => setting.key === "general.timezone")?.value;
+        setCompanyTimezone(typeof configuredTimezone === "string" && configuredTimezone ? configuredTimezone : "Africa/Cairo");
+      } catch {
+        setCompanyTimezone("Africa/Cairo");
+      }
     } catch (e: any) {
       setError(e?.response?.data?.detail || "تعذر تحميل بيانات الموارد البشرية.");
     }
@@ -254,6 +258,7 @@ export default function HrPage() {
 
     <form onSubmit={submitAttendance} className="grid gap-3 rounded-2xl border bg-card p-5 md:grid-cols-6">
       <h2 className="font-semibold md:col-span-6">تسجيل حضور يدوي</h2>
+      <p className="text-xs text-muted-foreground md:col-span-6">الإدخال اليدوي متاح عندما يكون مصدر الحضور في إعدادات الشركة «يدوي». موصلات البصمة والموبايل لم تُربط بعد.</p>
       <select required value={attendanceForm.employee_id} onChange={e => setAttendanceForm({ ...attendanceForm, employee_id: e.target.value })} className={fieldClass}>
         <option value="">الموظف</option>{employees.map(employee => <option key={employee.id} value={employee.id}>{employee.employee_no} · {employee.name}</option>)}
       </select>
