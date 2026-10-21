@@ -18,6 +18,8 @@ export type Document = {
   lines?: Array<{ id: number; item_id: number; variant_id?: number | null; quantity: string | number; source_sales_line_id?: number | null; source_purchase_line_id?: number | null }>;
 };
 
+export type Warehouse = { id: number; company_id: number; code: string; name: string; is_active: boolean };
+
 export type Partner = {
   id: number;
   company_id: number;
@@ -45,7 +47,7 @@ export type DocumentCreate = {
   document_type: string;
   source_order_id?: number;
   receipt_ids?: number[];
-  number: string;
+  number?: string;
   document_date: string;
   warehouse_id?: number;
   notes?: string;
@@ -81,8 +83,10 @@ const newPaymentIdempotencyKey = () => crypto.randomUUID();
 export const salesApi = {
   list: () => client.get<Document[]>("/commerce/sales/documents", { params: { company_id: company() } }).then(r => r.data),
   partners: () => client.get<Partner[]>("/commerce/partners", { params: { company_id: company(), partner_type: "customer" } }).then(r => r.data),
+  warehouses: () => client.get<Warehouse[]>("/inventory/warehouses", { params: { company_id: company(), include_central: true } }).then(r => r.data.filter(w => w.is_active)),
   create: (payload: Omit<DocumentCreate, "company_id">) => client.post<Document>("/commerce/sales/documents", { ...payload, company_id: company() }).then(r => r.data),
   confirm: (id: number) => client.post<Document>(`/commerce/sales/${id}/confirm`, null, { params: { company_id: company() } }).then(r => r.data),
+  cancel: (id: number) => client.post<Document>(`/commerce/sales/${id}/cancel`, null, { params: { company_id: company() } }).then(r => r.data),
   decideApproval: (id: number, decision: "approve" | "reject") => client.post<Document>(`/commerce/sales/${id}/approval-decision`, { decision }, { params: { company_id: company() } }).then(r => r.data),
   postInventory: (id: number) => client.post<Document>(`/commerce/sales/${id}/post-inventory`, null, { params: { company_id: company() } }).then(r => r.data),
   pay: (id: number, amount: number, method: string, idempotencyKey = newPaymentIdempotencyKey()) => client.post<Document>(`/commerce/sales/${id}/payments`, { company_id: company(), document_id: id, payment_date: today(), amount, method, auto_wht: true, idempotency_key: idempotencyKey }).then(r => r.data),
