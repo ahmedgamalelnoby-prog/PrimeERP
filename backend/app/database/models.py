@@ -30,6 +30,7 @@ from app.modules.commerce.models import BusinessPartner, SalesDocument, SalesLin
 from app.modules.commerce.sales_return_models import SalesReturnAllocation
 from app.modules.commerce.accounting_models import CommerceAccountingSettings
 from app.modules.enterprise.models import FixedAsset, Budget, BudgetLine, Employee, PayrollRun, PayrollLine, Project, ProjectContract
+from app.modules.hr.models import HRLeaveBalance, HRLeaveRequest
 from app.modules.shipping.models import ShippingCarrier, ShippingMethod, Shipment
 from app.modules.shipping.settlement_models import ShippingSettlementBatch, ShippingShipmentSettlement
 from app.modules.shipping.pricing_models import ShippingPricingProfile, ShippingPricingRule
