@@ -366,8 +366,24 @@ class CommerceService:
     def confirm(self, db, company_id, document_id, kind, user_id: int | None = None):
         model = SalesDocument if kind == "sale" else PurchaseDocument; obj = db.scalar(select(model).where(model.id == document_id, model.company_id == company_id).with_for_update())
         if not obj: raise ValueError("Document not found")
-        if obj.status != "draft": raise ValueError("Only draft documents can be confirmed")
+        if obj.status not in {"draft", "approved"}: raise ValueError("Only draft or approved documents can be confirmed")
         if not obj.lines: raise ValueError("A document must contain at least one line before confirmation")
+        approval_setting = None
+        if kind == "sale" and obj.document_type == "order":
+            approval_setting = "sales.require_order_approval"
+        elif kind == "purchase" and obj.document_type == "order":
+            approval_setting = "purchasing.require_purchase_approval"
+        if obj.status == "draft" and approval_setting and get_company_setting(db, company_id, approval_setting) is True:
+            obj.status = "pending_approval"
+            db.add(CommerceApprovalEvent(
+                company_id=company_id,
+                document_kind=kind,
+                document_id=obj.id,
+                action="submitted",
+                actor_id=user_id,
+            ))
+            db.flush()
+            return obj
         if kind == "sale":
             self.enforce_credit_limit(db, company_id, obj)
             if obj.document_type in {"invoice", "credit_note"} and get_company_setting(
@@ -389,6 +405,41 @@ class CommerceService:
             if kind == "purchase":
                 if obj.document_type == "bill": commerce_accounting_service.post_purchase_bill(db, obj, user_id)
                 elif obj.document_type == "debit_note": commerce_accounting_service.post_purchase_debit_note(db, obj, user_id)
+        return obj
+
+    def decide_approval(self, db, company_id: int, document_id: int, kind: str, decision: str, user_id: int, reason: str | None = None):
+        if kind not in {"sale", "purchase"} or decision not in {"approve", "reject"}:
+            raise ValueError("Invalid approval decision")
+        model = SalesDocument if kind == "sale" else PurchaseDocument
+        obj = db.scalar(select(model).where(
+            model.id == document_id,
+            model.company_id == company_id,
+        ).with_for_update())
+        if obj is None:
+            raise ValueError("Document not found")
+        if obj.status != "pending_approval":
+            raise ValueError("Only documents pending approval can be decided")
+        submission = db.scalar(select(CommerceApprovalEvent).where(
+            CommerceApprovalEvent.company_id == company_id,
+            CommerceApprovalEvent.document_kind == kind,
+            CommerceApprovalEvent.document_id == document_id,
+            CommerceApprovalEvent.action == "submitted",
+        ).order_by(CommerceApprovalEvent.id.desc()).limit(1))
+        if submission and submission.actor_id == user_id and get_company_setting(
+            db, company_id, "workflow.allow_self_approval"
+        ) is not True:
+            raise ValueError("Company policy does not allow the requester to approve their own document")
+        approved = decision == "approve"
+        obj.status = "approved" if approved else "rejected"
+        db.add(CommerceApprovalEvent(
+            company_id=company_id,
+            document_kind=kind,
+            document_id=document_id,
+            action="approved" if approved else "rejected",
+            actor_id=user_id,
+            reason=reason,
+        ))
+        db.flush()
         return obj
 
     def post_inventory(self, db, company_id, document_id, kind, user_id: int | None = None):
