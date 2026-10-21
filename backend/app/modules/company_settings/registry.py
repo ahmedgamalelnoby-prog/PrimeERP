@@ -73,7 +73,7 @@ _RAW = [
     ("workflow.allow_self_approval","approvals","Approvals","bool",False,"Allow requester to approve their own request",None,"runtime"),
     ("workflow.escalation_after_hours","approvals","Approvals","int",24,"Escalate pending approvals after hours",None,"catalog"),
     ("pos.allow_open_cash_drawer","pos","Point of Sale","bool",False,"Allow cash drawer opening without a transaction",None,"catalog"),
-    ("pos.require_shift_close","pos","Point of Sale","bool",True,"Require cashier shift closing and reconciliation",None,"catalog"),
+    ("pos.require_shift_close","pos","Point of Sale","bool",True,"Require cashier shift closing and reconciliation",None,"runtime"),
     ("pos.allow_discount_without_approval","pos","Point of Sale","bool",False,"Allow cashier discounts without approval",None,"runtime"),
     ("pos.max_discount_pct_without_approval","pos","Point of Sale","number",0,"Maximum discount without approval",None,"runtime"),
     # Manufacturing / service / integrations
