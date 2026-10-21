@@ -82,13 +82,14 @@ def depreciate(asset_id: int, company_id: int = Query(..., gt=0), months: int = 
         raise HTTPException(404, "Asset not found")
     if o.status != "active":
         raise HTTPException(409, "Only active assets can be depreciated")
-    monthly = max(Decimal("0"), (Decimal(o.cost) - Decimal(o.residual_value)) / Decimal(o.useful_life_months))
-    remaining = max(Decimal("0"), Decimal(o.cost) - Decimal(o.residual_value) - Decimal(o.accumulated_depreciation))
-    o.accumulated_depreciation += min(monthly * months, remaining)
-    db.commit()
-    db.refresh(o)
-    return o
-
+    # Updating the asset subledger without a balanced general-ledger journal would
+    # make the asset register disagree with the financial statements. The current
+    # model has no depreciation expense/accumulated depreciation account mapping
+    # or depreciation posting history, so fail closed until that workflow exists.
+    raise HTTPException(
+        409,
+        "Depreciation posting is unavailable until asset accounts and a general-ledger journal workflow are configured",
+    )
 
 @router.post("/employees", response_model=EmployeeResponse, status_code=201, dependencies=[Depends(require_permission("enterprise.write"))])
 def employee(p: EmployeeCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
