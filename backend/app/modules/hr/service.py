@@ -135,8 +135,8 @@ class HRLeaveService:
             raise LookupError("Leave request not found")
         if request.status != "pending":
             raise ValueError("Only pending leave requests can be decided")
-        if request.submitted_by_user_id == actor_user_id:
-            raise ValueError("The requester cannot approve or reject their own leave request")
+        if request.submitted_by_user_id == actor_user_id and get_company_setting(db, company_id, "workflow.allow_self_approval") is not True:
+            raise ValueError("The requester cannot approve or reject their own leave request under company policy")
         if decision == "approve":
             self._employee(db, company_id=company_id, employee_id=request.employee_id, lock=True)
             self._consume_balance(
@@ -288,8 +288,8 @@ class HRLeaveService:
             raise LookupError("Attendance correction not found")
         if correction.status != "pending":
             raise ValueError("Only pending attendance corrections can be decided")
-        if correction.submitted_by_user_id == actor_user_id:
-            raise ValueError("The requester cannot decide their own attendance correction")
+        if correction.submitted_by_user_id == actor_user_id and get_company_setting(db, company_id, "workflow.allow_self_approval") is not True:
+            raise ValueError("The requester cannot decide their own attendance correction under company policy")
         record = db.scalar(select(HRAttendanceRecord).where(
             HRAttendanceRecord.id == correction.attendance_record_id,
             HRAttendanceRecord.company_id == company_id,
