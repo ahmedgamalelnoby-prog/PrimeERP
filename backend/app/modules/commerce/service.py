@@ -1,6 +1,8 @@
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from app.modules.accounting.models import TaxRate
@@ -11,7 +13,7 @@ from app.modules.egyptian_einvoice.models import EgyptianEInvoiceDocument
 from app.modules.accounting.tax_engine import calculate_taxes
 from app.modules.commerce.accounting_service import commerce_accounting_service
 from app.modules.catalog.models import ProductVariant, Recipe
-from app.modules.commerce.models import BusinessPartner, CommerceApprovalEvent, CommercePayment, CommercePaymentAllocation, PurchaseBillReceiptLink, PurchaseDocument, PurchaseLine, SalesDocument, SalesLine
+from app.modules.commerce.models import BusinessPartner, CommerceApprovalEvent, CommercePayment, CommercePaymentAllocation, PurchaseBillReceiptLink, PurchaseDocument, PurchaseLine, SalesDocument, SalesLine, CommerceDocumentNumberSequence
 from app.modules.commerce.payment_workflow import post_payment, reverse_payment
 from app.modules.inventory.items.models import InventoryItem
 from app.modules.inventory.locations.models import InventoryLocation
@@ -34,6 +36,51 @@ def resolve_due_date(document_type: str, document_date, explicit_due_date, payme
     return None
 
 class CommerceService:
+    @staticmethod
+    def _next_sales_document_number(db: Session, *, company_id: int, document_type: str, document_year: int) -> str:
+        policy = get_company_setting(db, company_id, "sales.document_numbering")
+        if policy == "global":
+            scope_key = "global"
+        elif policy == "per_company":
+            scope_key = f"company:{company_id}"
+        elif policy == "per_company_year":
+            scope_key = f"company:{company_id}:year:{document_year}"
+        else:
+            raise ValueError("Unsupported sales document numbering policy")
+        table = CommerceDocumentNumberSequence.__table__
+        insert_factory = sqlite_insert if db.get_bind().dialect.name == "sqlite" else pg_insert
+        statement = insert_factory(table).values(
+            scope_key=scope_key,
+            current_value=1,
+        ).on_conflict_do_update(
+            index_elements=[table.c.scope_key],
+            set_={"current_value": table.c.current_value + 1},
+        ).returning(table.c.current_value)
+        sequence_value = int(db.scalar(statement))
+        prefixes = {
+            "quotation": "QUO",
+            "order": "SO",
+            "delivery": "DEL",
+            "invoice": "INV",
+            "credit_note": "CN",
+        }
+        prefix = prefixes[document_type]
+        year_part = f"-{document_year}" if policy == "per_company_year" else ""
+        for _ in range(1000):
+            candidate = f"{prefix}{year_part}-{sequence_value:06d}"
+            existing_query = select(SalesDocument.id).where(SalesDocument.number == candidate)
+            if policy != "global":
+                existing_query = existing_query.where(SalesDocument.company_id == company_id)
+            if db.scalar(existing_query.limit(1)) is None:
+                return candidate
+            sequence_value = int(db.scalar(
+                update(CommerceDocumentNumberSequence)
+                .where(CommerceDocumentNumberSequence.scope_key == scope_key)
+                .values(current_value=CommerceDocumentNumberSequence.current_value + 1)
+                .returning(CommerceDocumentNumberSequence.current_value)
+            ))
+        raise ValueError("Unable to allocate a unique sales document number")
+
     def create_partner(self, db: Session, payload):
         if db.scalar(select(BusinessPartner).where(BusinessPartner.company_id == payload.company_id, BusinessPartner.code == payload.code)):
             raise ValueError("Partner code already exists")
@@ -124,7 +171,17 @@ class CommerceService:
         if not is_sale and partner.partner_type not in ("vendor", "both"): raise ValueError("Partner is not a vendor")
         if payload.warehouse_id is not None and db.scalar(select(InventoryWarehouse).where(InventoryWarehouse.id == payload.warehouse_id, InventoryWarehouse.company_id == payload.company_id, InventoryWarehouse.is_active.is_(True))) is None: raise ValueError("Warehouse does not belong to the company or is inactive")
         model = SalesDocument if is_sale else PurchaseDocument; line_model = SalesLine if is_sale else PurchaseLine
-        if db.scalar(select(model).where(model.company_id == payload.company_id, model.number == payload.number)): raise ValueError("Document number already exists")
+        document_number = payload.number
+        if is_sale:
+            document_number = self._next_sales_document_number(
+                db,
+                company_id=payload.company_id,
+                document_type=payload.document_type,
+                document_year=payload.document_date.year,
+            )
+        if not document_number:
+            raise ValueError("Document number is required")
+        if db.scalar(select(model).where(model.company_id == payload.company_id, model.number == document_number)): raise ValueError("Document number already exists")
         receipt_docs = []
         if payload.receipt_ids:
             receipt_docs = list(db.scalars(select(PurchaseDocument).where(PurchaseDocument.id.in_(payload.receipt_ids), PurchaseDocument.company_id == payload.company_id, PurchaseDocument.partner_id == payload.partner_id, PurchaseDocument.document_type == "receipt", PurchaseDocument.status.in_(["received", "partially_received"]))).all()); found = {r.id for r in receipt_docs}; missing = [r for r in payload.receipt_ids if r not in found]
@@ -248,7 +305,7 @@ class CommerceService:
                         raise ValueError("Company policy requires enough posted delivery quantity before invoicing")
         payment_terms_key = "sales.default_payment_terms_days" if is_sale else "purchasing.default_payment_terms_days"
         payment_terms_days = partner.payment_terms_days or int(get_company_setting(db, payload.company_id, payment_terms_key))
-        obj = model(company_id=payload.company_id, partner_id=payload.partner_id, document_type=payload.document_type, number=payload.number, document_date=payload.document_date, warehouse_id=payload.warehouse_id, due_date=resolve_due_date(payload.document_type, payload.document_date, payload.due_date, payment_terms_days), notes=payload.notes)
+        obj = model(company_id=payload.company_id, partner_id=payload.partner_id, document_type=payload.document_type, number=document_number, document_date=payload.document_date, warehouse_id=payload.warehouse_id, due_date=resolve_due_date(payload.document_type, payload.document_date, payload.due_date, payment_terms_days), notes=payload.notes)
         obj.source_order_id = payload.source_order_id
         subtotal = Decimal("0"); tax = Decimal("0"); discount = Decimal("0")
         for p in payload.lines:
