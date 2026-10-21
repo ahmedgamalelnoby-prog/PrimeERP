@@ -715,8 +715,16 @@ class CommerceService:
                 raise ValueError("Linked sales order is unavailable during inventory posting")
             if source_order.status == "cancelled":
                 raise ValueError("A delivery linked to a cancelled sales order cannot post inventory")
-            if auto_reserve and source_order.warehouse_id != obj.warehouse_id:
-                raise ValueError("A delivery using automatic order reservations must use the sales order warehouse")
+            order_line_ids = list(db.scalars(select(SalesLine.id).where(SalesLine.document_id == source_order.id)).all())
+            has_active_reservation = db.scalar(select(InventoryReservation.id).where(
+                InventoryReservation.company_id == company_id,
+                InventoryReservation.source_module == "commerce",
+                InventoryReservation.source_entity == "sales_order_line",
+                InventoryReservation.source_id.in_([str(line_id) for line_id in order_line_ids] or ["-1"]),
+                InventoryReservation.status == "active",
+            ).limit(1)) is not None
+            if (auto_reserve or has_active_reservation) and source_order.warehouse_id != obj.warehouse_id:
+                raise ValueError("A delivery using order reservations must use the sales order warehouse")
 
         for line in obj.lines:
             if kind == "sale":
