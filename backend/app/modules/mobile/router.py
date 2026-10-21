@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.identity.dependencies import get_current_user
@@ -15,8 +16,10 @@ router=APIRouter(prefix="/mobile",tags=["Mobile Execution"])
 
 def company_ok(db,company_id,user):
     from app.modules.companies.models import Company
-    if not user.tenant_id: raise HTTPException(403,"User is not assigned to a tenant")
-    if not db.scalar(select(Company.id).where(Company.id==company_id,Company.tenant_id==user.tenant_id)): raise HTTPException(404,"Company not found")
+    tenant_id = get_effective_tenant_id(user)
+    if tenant_id is None: raise HTTPException(403,"User is not assigned to a tenant")
+    if not db.scalar(select(Company.id).where(Company.id==company_id,Company.tenant_id==tenant_id,Company.is_active.is_(True))): raise HTTPException(404,"Company not found")
+    return tenant_id
 
 @router.post("/devices",response_model=DeviceResponse,dependencies=[Depends(require_permission("mobile.write"))])
 def devices(p:DeviceRegister,db:Session=Depends(get_db),user:User=Depends(get_current_user)): company_ok(db,p.company_id,user);return register_device(db,user,p)
@@ -53,7 +56,8 @@ def tasks(company_id:int=Query(...,gt=0),status:str|None=None,db:Session=Depends
 @router.post("/tasks",response_model=TaskResponse,status_code=201,dependencies=[Depends(require_permission("mobile.write"))])
 def create_task(p:TaskCreate,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     company_ok(db,p.company_id,user)
-    if p.assigned_user_id and not db.scalar(select(User.id).where(User.id==p.assigned_user_id,User.tenant_id==user.tenant_id)): raise HTTPException(422,"Assigned user is outside the tenant")
+    tenant_id = get_effective_tenant_id(user)
+    if p.assigned_user_id and not db.scalar(select(User.id).where(User.id==p.assigned_user_id,User.tenant_id==tenant_id,User.is_deleted.is_(False))): raise HTTPException(422,"Assigned user is outside the tenant")
     t=MobileTask(**p.model_dump());db.add(t);db.commit();db.refresh(t);return t
 
 @router.post("/tasks/{task_id}/complete",response_model=TaskResponse,dependencies=[Depends(require_permission("mobile.write"))])
