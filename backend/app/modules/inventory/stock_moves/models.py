@@ -63,7 +63,7 @@ class InventoryStockMove(Base):
     __table_args__ = (
         CheckConstraint("quantity > 0", name="ck_inventory_stock_move_quantity"),
         CheckConstraint("unit_cost >= 0", name="ck_inventory_stock_move_unit_cost"),
-        CheckConstraint("movement_type IN ('receipt','issue','transfer','adjustment','opening','return')", name="ck_inventory_stock_move_type"),
+        CheckConstraint("movement_type IN ('receipt','issue','transfer','adjustment','opening','return','production_issue','production_receipt')", name="ck_inventory_stock_move_type"),
         CheckConstraint("status IN ('draft','posted','cancelled','reversed')", name="ck_inventory_stock_move_status"),
         CheckConstraint("source_location_id IS NOT NULL OR destination_location_id IS NOT NULL", name="ck_inventory_stock_move_endpoint"),
         CheckConstraint("source_location_id IS NULL OR destination_location_id IS NULL OR source_location_id <> destination_location_id", name="ck_inventory_stock_move_distinct_endpoints"),
