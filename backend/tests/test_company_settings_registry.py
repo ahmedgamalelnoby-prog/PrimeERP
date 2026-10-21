@@ -65,6 +65,8 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
         "general.require_project",
         "purchasing.require_purchase_order",
         "purchasing.require_purchase_approval",
+        "hr.leave_requires_approval",
+        "hr.allow_negative_leave_balance",
     }
 
 
