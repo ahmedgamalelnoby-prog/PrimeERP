@@ -577,6 +577,11 @@ class CommerceService:
                 ).with_for_update())
                 if eta_document is None or eta_document.status != "valid":
                     raise ValueError("A valid Egyptian e-invoice is required before confirming this sales document")
+        if kind == "sale" and obj.document_type == "order" and get_company_setting(
+            db, company_id, "inventory.auto_reserve_sales_orders"
+        ) is True:
+            for order_line in obj.lines:
+                self._reserve_sales_line(db, order=obj, line=order_line, quantity=Decimal(order_line.quantity))
         obj.status = "confirmed"; db.flush()
         if user_id is not None:
             if kind == "sale":
@@ -586,6 +591,24 @@ class CommerceService:
                 if obj.document_type == "bill": commerce_accounting_service.post_purchase_bill(db, obj, user_id)
                 elif obj.document_type == "debit_note": commerce_accounting_service.post_purchase_debit_note(db, obj, user_id)
         return obj
+
+    def cancel_sales_order(self, db, *, company_id: int, document_id: int):
+        order = db.scalar(select(SalesDocument).where(
+            SalesDocument.id == document_id,
+            SalesDocument.company_id == company_id,
+        ).with_for_update())
+        if order is None:
+            raise ValueError("Sales document not found")
+        if order.document_type != "order":
+            raise ValueError("Only sales orders can be cancelled through this workflow")
+        if order.status == "cancelled":
+            return order
+        if order.status not in {"draft", "pending_approval", "approved", "confirmed", "partially_fulfilled"}:
+            raise ValueError("Sales order cannot be cancelled from its current state")
+        self._release_sales_order_reservations(db, order=order)
+        order.status = "cancelled"
+        db.flush()
+        return order
 
     def decide_approval(self, db, company_id: int, document_id: int, kind: str, decision: str, user_id: int, reason: str | None = None):
         if kind not in {"sale", "purchase"} or decision not in {"approve", "reject"}:
