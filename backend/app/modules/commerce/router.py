@@ -160,6 +160,13 @@ def purchases(
         raise HTTPException(400, "Invalid purchase document type")
     return commerce_service.list_documents(db, company_id, "purchase", document_type)
 
+@router.post("/sales/{document_id}/cancel", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
+def cancel_sales_order(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company_for_user(db, company_id, current_user)
+    order = _run(lambda: commerce_service.cancel_sales_order(db, company_id=company_id, document_id=document_id))
+    db.commit(); db.refresh(order); return order
+
+
 @router.post("/sales/{document_id}/confirm", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def confirm_sale(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
