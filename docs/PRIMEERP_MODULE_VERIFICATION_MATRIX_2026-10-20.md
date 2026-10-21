@@ -32,3 +32,16 @@ The HR workforce profile endpoint previously accepted profile updates without an
 
 ## Exit criteria
 Every module must have UI/API/service/model/migration/permission/test mapping; main and failure/retry paths; tenant isolation tests; audit and idempotency; cross-module ledger/stock assertions; clean migration tests; and explicit configuration/runtime status for external integrations.
+
+
+## Follow-up hardening (2026-10-22)
+
+Source review on the working branch made these additional corrections:
+
+- Replaced direct authenticated-user tenant lookups with the request's effective tenant across accounting, commerce, commissions, inventory adjustments/costing/locations/reservations/stock moves/transfers/warehouses, integrations, jurisdiction, developer APIs, POS, branches and HR. Active-company checks are now enforced in these company-scoped helpers.
+- Applied the same effective-tenant and active-company rule to treasury reconciliation, shipping settlements and Egyptian e-invoicing operations.
+- Restricted manufacturing BOM access to inventory access plus manufacturing and inventory entitlements; material issue posting additionally requires inventory write and post permissions.
+- Restricted AI financial advice to users with accounting access and the accounting entitlement.
+- The fixed-asset depreciation endpoint now fails closed because the current asset model has no depreciation account mapping, posting history or GL journal workflow. It no longer changes accumulated depreciation without a corresponding ledger entry.
+
+These are source-level corrections only. Automated tests, database migrations, frontend checks and provider/device runtime journeys have not been run or confirmed. The broader module-completion and E2E criteria above remain open.
