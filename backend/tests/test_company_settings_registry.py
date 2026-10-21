@@ -68,6 +68,8 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
         "hr.leave_requires_approval",
         "hr.allow_negative_leave_balance",
         "hr.require_attendance_approval",
+        "hr.overtime_requires_approval",
+        "hr.default_work_hours_per_day",
     }
 
 
