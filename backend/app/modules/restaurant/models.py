@@ -3,6 +3,8 @@ from sqlalchemy import (
     Column,
     ForeignKey,
     Integer,
+    Index,
+    CheckConstraint,
     Numeric,
     String,
     Text,
@@ -10,7 +12,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
+from sqlalchemy.sql import func, text
 
 from app.database.base import Base
 
@@ -506,3 +508,38 @@ class PosOrderLineRoute(Base):
     created_at = Column(TIMESTAMP, server_default=func.now(), nullable=False)
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now(), nullable=False)
     __table_args__ = (UniqueConstraint("sales_line_id", name="uq_pos_order_line_route"),)
+
+
+class PosCashierShift(Base):
+    """Cashier shift with company-scoped cash reconciliation."""
+
+    __tablename__ = "pos_cashier_shifts"
+
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    branch_id = Column(Integer, ForeignKey("branches.id", ondelete="CASCADE"), nullable=False, index=True)
+    terminal_id = Column(Integer, ForeignKey("pos_terminals.id", ondelete="RESTRICT"), nullable=False, index=True)
+    opened_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    closed_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=True)
+    opening_cash = Column(Numeric(18, 4), nullable=False, default=0)
+    expected_cash = Column(Numeric(18, 4), nullable=True)
+    counted_cash = Column(Numeric(18, 4), nullable=True)
+    variance = Column(Numeric(18, 4), nullable=True)
+    status = Column(String(20), nullable=False, default="open")
+    opened_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+    closed_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    __table_args__ = (
+        CheckConstraint("opening_cash >= 0", name="ck_pos_cashier_shift_opening_cash"),
+        CheckConstraint("status IN ('open','closed')", name="ck_pos_cashier_shift_status"),
+        CheckConstraint(
+            "(status = 'open' AND closed_at IS NULL AND expected_cash IS NULL AND counted_cash IS NULL AND variance IS NULL) OR "
+            "(status = 'closed' AND closed_at IS NOT NULL AND expected_cash IS NOT NULL AND counted_cash IS NOT NULL AND variance IS NOT NULL)",
+            name="ck_pos_cashier_shift_close_values",
+        ),
+        Index(
+            "uq_pos_cashier_shift_open_terminal",
+            "terminal_id",
+            unique=True,
+            postgresql_where=text("status = 'open'"),
+        ),
+    )
