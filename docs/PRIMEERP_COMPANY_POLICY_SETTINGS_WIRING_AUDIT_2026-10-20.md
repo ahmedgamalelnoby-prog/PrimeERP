@@ -458,4 +458,4 @@ These remaining 11 settings stay at `catalog` until their named workflows and co
 ## Below-cost sales control — 2026-10-22
 - Promoted `inventory.allow_below_cost_sale` to runtime. Delivery posting compares each line's net revenue after discount and before tax against the actual posted outbound inventory moves (which carry the inventory valuation cost).
 - Below-cost deliveries are blocked by default. When the company enables the policy, posting still requires the active `commerce.below_cost_override` role permission; the override records delivery, revenue, cost, and loss in the audit log in the same transaction.
-- No tests, builds, or migrations were run; this is a source-level review. A platform administrator must add the named permission in Roles & Permissions and assign it to authorized roles before anyone can use the override.
+- Added an idempotent migration that makes `commerce.below_cost_override` available in Roles & Permissions. A platform administrator still needs to assign it to authorized roles. The migration has not been executed, and no tests or builds were run; this remains a source-level review.
