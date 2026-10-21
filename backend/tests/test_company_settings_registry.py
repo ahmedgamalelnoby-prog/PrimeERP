@@ -19,6 +19,7 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
     runtime_keys = {item["key"] for item in CATALOG if item["status"] == "runtime"}
     assert runtime_keys == {
         "inventory.allow_negative_stock",
+        "inventory.auto_reserve_sales_orders",
         "accounting.require_journal_approval",
         "general.default_language",
         "general.timezone",
@@ -80,7 +81,6 @@ def test_policies_without_a_safe_workflow_consumer_remain_catalog_only():
     # These policies still lack complete owning workflows. Do not advertise them as enforced.
     catalog_only_keys = {
         "general.date_format",
-        "inventory.auto_reserve_sales_orders",
         "inventory.allow_below_cost_sale",
         "inventory.expiry_tracking_required",
         "inventory.serial_tracking_default",
