@@ -1,4 +1,5 @@
 from typing import Literal
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
@@ -14,8 +15,8 @@ from app.core.permissions import require_permission
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models.user import User
 from app.modules.saas.entitlements import require_module
-from app.modules.hr.models import HRLeaveBalance, HRLeaveRequest
-from app.modules.hr.schemas import LeaveBalanceResponse, LeaveBalanceUpdate, LeaveDecision, LeaveRequestCreate, LeaveRequestResponse
+from app.modules.hr.models import HRLeaveBalance, HRLeaveRequest, HRAttendanceRecord, HRAttendanceCorrection
+from app.modules.hr.schemas import AttendanceCreate, AttendanceCorrectionCreate, AttendanceCorrectionDecision, AttendanceCorrectionResponse, AttendanceResponse, LeaveBalanceResponse, LeaveBalanceUpdate, LeaveDecision, LeaveRequestCreate, LeaveRequestResponse
 from app.modules.hr.service import hr_leave_service
 
 router = APIRouter(
@@ -364,6 +365,153 @@ def cancel_leave_request(
         db.commit()
         db.refresh(request)
         return request
+    except LookupError as exc:
+        db.rollback()
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc)) from exc
+
+
+def _attendance_audit(db: Session, *, action: str, entity_id: int, user: User, tenant_id: int, company_id: int, status: str) -> None:
+    record_audit_event(
+        db,
+        action=action,
+        entity_type="hr_attendance_correction" if "correction" in action else "hr_attendance",
+        entity_id=entity_id,
+        user_id=user.id,
+        tenant_id=tenant_id,
+        company_id=company_id,
+        metadata={"status": status},
+    )
+
+
+@router.get(
+    "/attendance",
+    response_model=list[AttendanceResponse],
+    dependencies=[Depends(require_permission("enterprise.access"))],
+)
+def list_attendance(
+    company_id: int = Query(..., gt=0),
+    attendance_date: date | None = Query(default=None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    tenant_id = _tenant(current_user)
+    _company_for_tenant(db, company_id, tenant_id)
+    return hr_leave_service.list_attendance(db, company_id=company_id, attendance_date=attendance_date)
+
+
+@router.post(
+    "/attendance",
+    response_model=AttendanceResponse,
+    status_code=201,
+    dependencies=[Depends(require_permission("enterprise.write"))],
+)
+def create_attendance(
+    payload: AttendanceCreate,
+    company_id: int = Query(..., gt=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    tenant_id = _tenant(current_user)
+    _company_for_tenant(db, company_id, tenant_id)
+    try:
+        record = hr_leave_service.create_attendance(
+            db, company_id=company_id, payload=payload, actor_user_id=current_user.id
+        )
+        _attendance_audit(
+            db, action="hr.attendance_recorded", entity_id=record.id, user=current_user,
+            tenant_id=tenant_id, company_id=company_id, status="recorded",
+        )
+        db.commit()
+        db.refresh(record)
+        return record
+    except LookupError as exc:
+        db.rollback()
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc)) from exc
+
+
+@router.post(
+    "/attendance/{record_id}/corrections",
+    response_model=AttendanceCorrectionResponse,
+    status_code=201,
+    dependencies=[Depends(require_permission("enterprise.write"))],
+)
+def create_attendance_correction(
+    record_id: int,
+    payload: AttendanceCorrectionCreate,
+    company_id: int = Query(..., gt=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    tenant_id = _tenant(current_user)
+    _company_for_tenant(db, company_id, tenant_id)
+    try:
+        correction = hr_leave_service.create_correction(
+            db, company_id=company_id, record_id=record_id,
+            payload=payload, actor_user_id=current_user.id,
+        )
+        _attendance_audit(
+            db, action="hr.attendance_correction_submitted", entity_id=correction.id,
+            user=current_user, tenant_id=tenant_id, company_id=company_id, status=correction.status,
+        )
+        db.commit()
+        db.refresh(correction)
+        return correction
+    except LookupError as exc:
+        db.rollback()
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc)) from exc
+
+
+@router.get(
+    "/attendance-corrections",
+    response_model=list[AttendanceCorrectionResponse],
+    dependencies=[Depends(require_permission("enterprise.access"))],
+)
+def list_attendance_corrections(
+    company_id: int = Query(..., gt=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    tenant_id = _tenant(current_user)
+    _company_for_tenant(db, company_id, tenant_id)
+    return hr_leave_service.list_corrections(db, company_id=company_id)
+
+
+@router.post(
+    "/attendance-corrections/{correction_id}/decision",
+    response_model=AttendanceCorrectionResponse,
+    dependencies=[Depends(require_permission("enterprise.post"))],
+)
+def decide_attendance_correction(
+    correction_id: int,
+    payload: AttendanceCorrectionDecision,
+    company_id: int = Query(..., gt=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    tenant_id = _tenant(current_user)
+    _company_for_tenant(db, company_id, tenant_id)
+    try:
+        correction = hr_leave_service.decide_correction(
+            db, company_id=company_id, correction_id=correction_id,
+            actor_user_id=current_user.id, decision=payload.decision, reason=payload.reason,
+        )
+        action = "hr.attendance_correction_approved" if payload.decision == "approve" else "hr.attendance_correction_rejected"
+        _attendance_audit(
+            db, action=action, entity_id=correction.id, user=current_user,
+            tenant_id=tenant_id, company_id=company_id, status=correction.status,
+        )
+        db.commit()
+        db.refresh(correction)
+        return correction
     except LookupError as exc:
         db.rollback()
         raise HTTPException(404, str(exc)) from exc
