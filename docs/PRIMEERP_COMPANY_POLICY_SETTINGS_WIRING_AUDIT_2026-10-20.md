@@ -426,7 +426,7 @@ The following **15** policies remain catalog-only after POS shift wiring. They w
 - `workflow.approval_mode`: existing approvals are single-decision flows; there are no assigned approver chains or parallel/any-one decision semantics.
 - `workflow.escalation_after_hours`: pending approvals have no reliable scheduler or escalation recipient model.
 - `pos.allow_open_cash_drawer`: cashier shifts now reconcile cash sales, but the system has no authenticated drawer event or hardware command integration.
-- `manufacturing.require_work_order`, `manufacturing.allow_overproduction`: no production order, material consumption, output receipt, or production-cost ledger workflow exists.
+- `manufacturing.require_work_order`, `manufacturing.allow_overproduction`: production-order module files are empty. The generic inventory issue movement posts to COGS and receipt credits clearing, so it cannot be reused for manufacturing without a WIP/production clearing flow that transfers consumed component cost to finished goods; implementing only order status would not enforce inventory or cost integrity.
 - `integrations.auto_sync_enabled`: integrations support manual event retries, but no scheduled synchronization lifecycle exists.
 
 These are implementation dependencies, not reasons to treat the settings as active. The registry and contract keep all 15 at `catalog` until the named workflow and its company-isolation/positive/negative verification are in place. No tests, builds, or migrations were run for this review.
