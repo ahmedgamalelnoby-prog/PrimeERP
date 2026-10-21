@@ -3,6 +3,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
+from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
@@ -13,6 +14,9 @@ from app.core.permissions import require_permission
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models.user import User
 from app.modules.saas.entitlements import require_module
+from app.modules.hr.models import HRLeaveBalance, HRLeaveRequest
+from app.modules.hr.schemas import LeaveBalanceResponse, LeaveBalanceUpdate, LeaveDecision, LeaveRequestCreate, LeaveRequestResponse
+from app.modules.hr.service import hr_leave_service
 
 router = APIRouter(
     prefix="/hr",
@@ -137,3 +141,232 @@ def update_workforce(
         "address": obj.address,
         "preferred_language": obj.preferred_language,
     }
+
+
+def _leave_audit(db: Session, *, action: str, request_id: int, user: User, tenant_id: int, company_id: int, leave_type: str, status: str, days: Decimal) -> None:
+    record_audit_event(
+        db,
+        action=action,
+        entity_type="hr_leave_request",
+        entity_id=request_id,
+        user_id=user.id,
+        tenant_id=tenant_id,
+        company_id=company_id,
+        metadata={"leave_type": leave_type, "status": status, "requested_days": str(days)},
+    )
+
+
+@router.put(
+    "/leave-balances",
+    response_model=LeaveBalanceResponse,
+    dependencies=[Depends(require_permission("enterprise.write"))],
+)
+def update_leave_balance(
+    payload: LeaveBalanceUpdate,
+    company_id: int = Query(..., gt=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    tenant_id = _tenant(current_user)
+    _company_for_tenant(db, company_id, tenant_id)
+    try:
+        balance = hr_leave_service.update_balance(
+            db,
+            company_id=company_id,
+            employee_id=payload.employee_id,
+            leave_type=payload.leave_type,
+            entitled_days=payload.entitled_days,
+        )
+        db.commit()
+        db.refresh(balance)
+        return LeaveBalanceResponse(
+            id=balance.id,
+            company_id=balance.company_id,
+            employee_id=balance.employee_id,
+            leave_type=balance.leave_type,
+            entitled_days=balance.entitled_days,
+            consumed_days=balance.consumed_days,
+            available_days=Decimal(balance.entitled_days) - Decimal(balance.consumed_days),
+        )
+    except LookupError as exc:
+        db.rollback()
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc)) from exc
+
+
+@router.get(
+    "/leave-balances",
+    response_model=list[LeaveBalanceResponse],
+    dependencies=[Depends(require_permission("enterprise.access"))],
+)
+def list_leave_balances(
+    company_id: int = Query(..., gt=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    tenant_id = _tenant(current_user)
+    _company_for_tenant(db, company_id, tenant_id)
+    balances = hr_leave_service.list_balances(db, company_id=company_id)
+    return [
+        LeaveBalanceResponse(
+            id=row.id,
+            company_id=row.company_id,
+            employee_id=row.employee_id,
+            leave_type=row.leave_type,
+            entitled_days=row.entitled_days,
+            consumed_days=row.consumed_days,
+            available_days=Decimal(row.entitled_days) - Decimal(row.consumed_days),
+        )
+        for row in balances
+    ]
+
+
+@router.post(
+    "/leave-requests",
+    response_model=LeaveRequestResponse,
+    status_code=201,
+    dependencies=[Depends(require_permission("enterprise.write"))],
+)
+def create_leave_request(
+    payload: LeaveRequestCreate,
+    company_id: int = Query(..., gt=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    tenant_id = _tenant(current_user)
+    _company_for_tenant(db, company_id, tenant_id)
+    try:
+        request = hr_leave_service.create_request(
+            db,
+            company_id=company_id,
+            payload=payload,
+            submitted_by_user_id=current_user.id,
+        )
+        _leave_audit(
+            db,
+            action="hr.leave_request_submitted",
+            request_id=request.id,
+            user=current_user,
+            tenant_id=tenant_id,
+            company_id=company_id,
+            leave_type=request.leave_type,
+            status=request.status,
+            days=Decimal(request.requested_days),
+        )
+        db.commit()
+        db.refresh(request)
+        return request
+    except LookupError as exc:
+        db.rollback()
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc)) from exc
+
+
+@router.get(
+    "/leave-requests",
+    response_model=list[LeaveRequestResponse],
+    dependencies=[Depends(require_permission("enterprise.access"))],
+)
+def list_leave_requests(
+    company_id: int = Query(..., gt=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    tenant_id = _tenant(current_user)
+    _company_for_tenant(db, company_id, tenant_id)
+    return list(db.scalars(
+        select(HRLeaveRequest)
+        .where(HRLeaveRequest.company_id == company_id)
+        .order_by(HRLeaveRequest.created_at.desc(), HRLeaveRequest.id.desc())
+    ).all())
+
+
+@router.post(
+    "/leave-requests/{request_id}/decision",
+    response_model=LeaveRequestResponse,
+    dependencies=[Depends(require_permission("enterprise.post"))],
+)
+def decide_leave_request(
+    request_id: int,
+    payload: LeaveDecision,
+    company_id: int = Query(..., gt=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    tenant_id = _tenant(current_user)
+    _company_for_tenant(db, company_id, tenant_id)
+    try:
+        request = hr_leave_service.decide_request(
+            db,
+            company_id=company_id,
+            request_id=request_id,
+            actor_user_id=current_user.id,
+            decision=payload.decision,
+            reason=payload.reason,
+        )
+        _leave_audit(
+            db,
+            action=f"hr.leave_request_{payload.decision}d",
+            request_id=request.id,
+            user=current_user,
+            tenant_id=tenant_id,
+            company_id=company_id,
+            leave_type=request.leave_type,
+            status=request.status,
+            days=Decimal(request.requested_days),
+        )
+        db.commit()
+        db.refresh(request)
+        return request
+    except LookupError as exc:
+        db.rollback()
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc)) from exc
+
+
+@router.post(
+    "/leave-requests/{request_id}/cancel",
+    response_model=LeaveRequestResponse,
+    dependencies=[Depends(require_permission("enterprise.write"))],
+)
+def cancel_leave_request(
+    request_id: int,
+    company_id: int = Query(..., gt=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    tenant_id = _tenant(current_user)
+    _company_for_tenant(db, company_id, tenant_id)
+    try:
+        request = hr_leave_service.cancel_request(
+            db,
+            company_id=company_id,
+            request_id=request_id,
+            actor_user_id=current_user.id,
+        )
+        _leave_audit(
+            db,
+            action="hr.leave_request_cancelled",
+            request_id=request.id,
+            user=current_user,
+            tenant_id=tenant_id,
+            company_id=company_id,
+            leave_type=request.leave_type,
+            status=request.status,
+            days=Decimal(request.requested_days),
+        )
+        db.commit()
+        db.refresh(request)
+        return request
+    except LookupError as exc:
+        db.rollback()
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc)) from exc
