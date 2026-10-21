@@ -212,7 +212,7 @@ class CommerceService:
             Recipe.product_id == line.item_id,
             Recipe.is_active.is_(True),
         )) is None:
-            return
+            return False
         if not order.warehouse_id:
             raise ValueError("A warehouse is required to reserve a sales order")
         locations = list(db.scalars(select(InventoryLocation).where(
@@ -278,6 +278,7 @@ class CommerceService:
                 raise ValueError(
                     f"Insufficient available stock to reserve sales order line {line.id}, item {item_id}; short by {needed}"
                 )
+        return True
 
     @staticmethod
     def _release_sales_order_reservations(db, *, order: SalesDocument):
@@ -719,11 +720,9 @@ class CommerceService:
 
         for line in obj.lines:
             if kind == "sale":
-                components = self._expand_sales_components(
-                    db, company_id=company_id, product_id=line.item_id,
-                    variant_id=line.variant_id, quantity=Decimal(line.quantity),
-                )
                 order_line = None
+                active_reservations = []
+                reserved_for_delivery_only = False
                 if source_order is not None and line.source_sales_line_id is not None:
                     order_line = db.scalar(select(SalesLine).where(
                         SalesLine.id == line.source_sales_line_id,
@@ -731,53 +730,55 @@ class CommerceService:
                     ))
                     if order_line is None:
                         raise ValueError("Delivery line does not belong to the linked sales order")
-                    line_reservations = db.scalars(select(InventoryReservation).where(
+                    active_reservations = db.scalars(select(InventoryReservation).where(
                         InventoryReservation.company_id == company_id,
                         InventoryReservation.source_module == "commerce",
                         InventoryReservation.source_entity == "sales_order_line",
                         InventoryReservation.source_id == str(order_line.id),
                         InventoryReservation.status == "active",
-                    ).with_for_update()).all()
-                    if auto_reserve and not line_reservations:
-                        self._reserve_sales_line(db, order=source_order, line=order_line, quantity=Decimal(line.quantity))
-
-                for component_index, (component_item_id, component_variant_id, raw_component_qty) in enumerate(components, start=1):
-                    component_item = db.scalar(select(InventoryItem).where(
-                        InventoryItem.id == component_item_id,
-                        InventoryItem.company_id == company_id,
-                        InventoryItem.is_active.is_(True),
-                    ))
-                    if component_item is None:
-                        raise ValueError("Sales delivery component is unavailable")
-                    if component_item.item_type not in {"stockable", "consumable"}:
-                        continue
-                    component_qty = Decimal(raw_component_qty).quantize(Decimal("0.0001"), rounding=ROUND_CEILING)
-                    if component_qty <= 0:
-                        raise ValueError("Sales delivery component quantity must be positive")
-                    active_reservations = []
-                    if order_line is not None:
+                    ).order_by(InventoryReservation.item_id, InventoryReservation.variant_id, InventoryReservation.location_id, InventoryReservation.id).with_for_update()).all()
+                    if auto_reserve and not active_reservations:
+                        reserved_for_delivery_only = self._reserve_sales_line(
+                            db, order=source_order, line=order_line, quantity=Decimal(line.quantity)
+                        )
                         active_reservations = db.scalars(select(InventoryReservation).where(
                             InventoryReservation.company_id == company_id,
                             InventoryReservation.source_module == "commerce",
                             InventoryReservation.source_entity == "sales_order_line",
                             InventoryReservation.source_id == str(order_line.id),
-                            InventoryReservation.item_id == component_item_id,
-                            InventoryReservation.variant_id == component_variant_id,
                             InventoryReservation.status == "active",
-                        ).order_by(InventoryReservation.location_id, InventoryReservation.id).with_for_update()).all()
-                    reserved_quantity = sum((Decimal(row.quantity) for row in active_reservations), Decimal("0"))
-                    if active_reservations and reserved_quantity < component_qty:
-                        raise ValueError(
-                            f"Reserved stock for sales order line {order_line.id}, item {component_item_id} is insufficient"
-                        )
-                    if auto_reserve and order_line is not None and not active_reservations:
-                        raise ValueError(
-                            f"No matching stock reservation exists for sales order line {order_line.id}, item {component_item_id}"
-                        )
+                        ).order_by(InventoryReservation.item_id, InventoryReservation.variant_id, InventoryReservation.location_id, InventoryReservation.id).with_for_update()).all()
 
-                    if active_reservations:
-                        remaining = component_qty
-                        for reservation in active_reservations:
+                if active_reservations:
+                    if reserved_for_delivery_only:
+                        remaining_order_quantity = Decimal(line.quantity)
+                    else:
+                        already_delivered = self._linked_sales_quantities(
+                            db,
+                            company_id=company_id,
+                            order_id=source_order.id,
+                            source_line_ids={order_line.id},
+                            document_types={"delivery"},
+                            statuses={"fulfilled", "posted"},
+                        ).get(order_line.id, Decimal("0"))
+                        remaining_order_quantity = Decimal(order_line.quantity) - already_delivered
+                        if remaining_order_quantity <= 0 or Decimal(line.quantity) > remaining_order_quantity:
+                            raise ValueError("Delivery quantity exceeds the remaining sales order quantity")
+                    groups = {}
+                    for reservation in active_reservations:
+                        key = (reservation.item_id, reservation.variant_id)
+                        groups.setdefault(key, []).append(reservation)
+                    for component_index, ((component_item_id, component_variant_id), reservations) in enumerate(sorted(groups.items(), key=lambda entry: (entry[0][0], entry[0][1] or 0)), start=1):
+                        total_reserved = sum((Decimal(row.quantity) for row in reservations), Decimal("0"))
+                        if reserved_for_delivery_only or Decimal(line.quantity) >= remaining_order_quantity:
+                            required_quantity = total_reserved
+                        else:
+                            required_quantity = (total_reserved * Decimal(line.quantity) / remaining_order_quantity).quantize(
+                                Decimal("0.0001"), rounding=ROUND_CEILING
+                            )
+                            required_quantity = min(required_quantity, total_reserved)
+                        remaining = required_quantity
+                        for reservation in reservations:
                             take = min(remaining, Decimal(reservation.quantity))
                             if take <= 0:
                                 continue
@@ -804,7 +805,24 @@ class CommerceService:
                             remaining -= take
                         if remaining > 0:
                             raise ValueError("Active reservations could not cover the sales delivery quantity")
-                    else:
+                else:
+                    components = self._expand_sales_components(
+                        db, company_id=company_id, product_id=line.item_id,
+                        variant_id=line.variant_id, quantity=Decimal(line.quantity),
+                    )
+                    for component_index, (component_item_id, component_variant_id, raw_component_qty) in enumerate(components, start=1):
+                        component_item = db.scalar(select(InventoryItem).where(
+                            InventoryItem.id == component_item_id,
+                            InventoryItem.company_id == company_id,
+                            InventoryItem.is_active.is_(True),
+                        ))
+                        if component_item is None:
+                            raise ValueError("Sales delivery component is unavailable")
+                        if component_item.item_type not in {"stockable", "consumable"}:
+                            continue
+                        component_qty = Decimal(raw_component_qty).quantize(Decimal("0.0001"), rounding=ROUND_CEILING)
+                        if component_qty <= 0:
+                            raise ValueError("Sales delivery component quantity must be positive")
                         source_id = f"{obj.id}:{line.id}:component:{component_index}:{component_item_id}:{component_variant_id or 0}"
                         existing = db.scalar(select(InventoryStockMove).where(
                             InventoryStockMove.company_id == company_id,
