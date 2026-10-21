@@ -10,6 +10,9 @@ type Recipe = {
   lines?: unknown[];
 };
 
+type Warehouse = { id: number; code: string; name: string; is_active: boolean };
+type Location = { id: number; code: string; name: string; is_active: boolean; is_virtual: boolean };
+
 type WorkOrder = {
   id: number;
   number: string;
@@ -34,8 +37,13 @@ const statusLabels: Record<string, string> = {
 export default function ManufacturingPage() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [orders, setOrders] = useState<WorkOrder[]>([]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [sourceLocations, setSourceLocations] = useState<Location[]>([]);
+  const [destinationLocations, setDestinationLocations] = useState<Location[]>([]);
   const [recipeId, setRecipeId] = useState("");
   const [number, setNumber] = useState("");
+  const [sourceWarehouseId, setSourceWarehouseId] = useState("");
+  const [destinationWarehouseId, setDestinationWarehouseId] = useState("");
   const [sourceLocationId, setSourceLocationId] = useState("");
   const [destinationLocationId, setDestinationLocationId] = useState("");
   const [plannedQuantity, setPlannedQuantity] = useState("");
@@ -48,12 +56,14 @@ export default function ManufacturingPage() {
   const load = useCallback(async () => {
     if (!company) return;
     try {
-      const [recipeResponse, orderResponse] = await Promise.all([
+      const [recipeResponse, orderResponse, warehouseResponse] = await Promise.all([
         client.get("/manufacturing/bom", { params: { company_id: company } }),
         client.get("/manufacturing/work-orders", { params: { company_id: company } }),
+        client.get("/inventory/warehouses", { params: { company_id: company, include_central: true } }),
       ]);
       setRecipes(recipeResponse.data);
       setOrders(orderResponse.data);
+      setWarehouses(warehouseResponse.data.filter((warehouse: Warehouse) => warehouse.is_active));
       setError("");
     } catch (e: any) {
       setError(e?.response?.data?.detail || "تعذر تحميل بيانات التصنيع");
@@ -63,6 +73,22 @@ export default function ManufacturingPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!company || !sourceWarehouseId) { setSourceLocations([]); setSourceLocationId(""); return; }
+    client.get("/inventory/locations", { params: { company_id: company, warehouse_id: Number(sourceWarehouseId) } })
+      .then((response) => setSourceLocations(response.data.filter((location: Location) => location.is_active && !location.is_virtual)))
+      .catch((e: any) => setError(e?.response?.data?.detail || "تعذر تحميل مواقع صرف الخامات"));
+    setSourceLocationId("");
+  }, [company, sourceWarehouseId]);
+
+  useEffect(() => {
+    if (!company || !destinationWarehouseId) { setDestinationLocations([]); setDestinationLocationId(""); return; }
+    client.get("/inventory/locations", { params: { company_id: company, warehouse_id: Number(destinationWarehouseId) } })
+      .then((response) => setDestinationLocations(response.data.filter((location: Location) => location.is_active && !location.is_virtual)))
+      .catch((e: any) => setError(e?.response?.data?.detail || "تعذر تحميل مواقع استلام المنتج"));
+    setDestinationLocationId("");
+  }, [company, destinationWarehouseId]);
 
   async function createOrder(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -155,12 +181,20 @@ export default function ManufacturingPage() {
           <input required min="0.0001" step="0.0001" type="number" value={plannedQuantity} onChange={(event) => setPlannedQuantity(event.target.value)} className="w-full rounded border bg-background px-3 py-2" />
         </label>
         <label className="space-y-1 text-sm">
-          <span>مخزن/موقع صرف الخامات (ID)</span>
-          <input required min="1" type="number" value={sourceLocationId} onChange={(event) => setSourceLocationId(event.target.value)} className="w-full rounded border bg-background px-3 py-2" />
+          <span>مخزن صرف الخامات</span>
+          <select required value={sourceWarehouseId} onChange={(event) => setSourceWarehouseId(event.target.value)} className="w-full rounded border bg-background px-3 py-2"><option value="">اختر مخزن الصرف</option>{warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.name} ({warehouse.code})</option>)}</select>
         </label>
         <label className="space-y-1 text-sm">
-          <span>مخزن/موقع استلام المنتج التام (ID)</span>
-          <input required min="1" type="number" value={destinationLocationId} onChange={(event) => setDestinationLocationId(event.target.value)} className="w-full rounded border bg-background px-3 py-2" />
+          <span>موقع صرف الخامات</span>
+          <select required value={sourceLocationId} onChange={(event) => setSourceLocationId(event.target.value)} className="w-full rounded border bg-background px-3 py-2" disabled={!sourceWarehouseId}><option value="">اختر موقع الصرف</option>{sourceLocations.map((location) => <option key={location.id} value={location.id}>{location.name} ({location.code})</option>)}</select>
+        </label>
+        <label className="space-y-1 text-sm">
+          <span>مخزن استلام المنتج التام</span>
+          <select required value={destinationWarehouseId} onChange={(event) => setDestinationWarehouseId(event.target.value)} className="w-full rounded border bg-background px-3 py-2"><option value="">اختر مخزن الاستلام</option>{warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.name} ({warehouse.code})</option>)}</select>
+        </label>
+        <label className="space-y-1 text-sm">
+          <span>موقع استلام المنتج التام</span>
+          <select required value={destinationLocationId} onChange={(event) => setDestinationLocationId(event.target.value)} className="w-full rounded border bg-background px-3 py-2" disabled={!destinationWarehouseId}><option value="">اختر موقع الاستلام</option>{destinationLocations.map((location) => <option key={location.id} value={location.id}>{location.name} ({location.code})</option>)}</select>
         </label>
         <button disabled={!company || saving} className="self-end rounded bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50">
           {saving ? "جارٍ الحفظ…" : "إنشاء أمر تشغيل"}
