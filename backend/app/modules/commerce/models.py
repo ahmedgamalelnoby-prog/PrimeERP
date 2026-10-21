@@ -79,6 +79,7 @@ class PurchaseDocument(Base):
     due_date = Column(Date, nullable=True)
     status = Column(String(20), nullable=False, default="draft")
     warehouse_id = Column(Integer, ForeignKey("inventory_warehouses.id", ondelete="RESTRICT"), nullable=True)
+    source_order_id = Column(Integer, ForeignKey("purchase_documents.id", ondelete="RESTRICT"), nullable=True, index=True)
     notes = Column(Text, nullable=True)
     subtotal = Column(Numeric(18, 4), nullable=False, default=0)
     tax_total = Column(Numeric(18, 4), nullable=False, default=0)
@@ -107,6 +108,7 @@ class PurchaseLine(Base):
     discount_percent = Column(Numeric(8, 4), nullable=False, default=0)
     tax_percent = Column(Numeric(8, 4), nullable=False, default=0)
     line_total = Column(Numeric(18, 4), nullable=False, default=0)
+    source_purchase_line_id = Column(Integer, ForeignKey("purchase_lines.id", ondelete="RESTRICT"), nullable=True, index=True)
     document = relationship("PurchaseDocument", back_populates="lines")
 
 
