@@ -218,3 +218,8 @@ class PartnerStatement(BaseModel):
     opening_balance: Decimal
     closing_balance: Decimal
     rows: list[StatementRow]
+
+
+class CommerceApprovalDecision(BaseModel):
+    decision: Literal["approve", "reject"]
+    reason: str | None = Field(default=None, max_length=1000)
