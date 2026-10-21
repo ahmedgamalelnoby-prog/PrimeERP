@@ -14,7 +14,7 @@ _RAW = [
     ("general.base_currency","general","General","string","EGP","Functional currency code",None,"runtime"),
     ("general.allow_multi_currency","general","General","bool",True,"Allow foreign-currency transactions",None,"runtime"),
     ("general.require_cost_center","general","General","bool",False,"Require cost center where supported",None,"runtime"),
-    ("general.require_project","general","General","bool",False,"Require project dimension where supported",None,"catalog"),
+    ("general.require_project","general","General","bool",False,"Require a same-company project on generic business transactions",None,"runtime"),
     ("general.branch_required","general","General","bool",False,"Require branch on company transactions",None,"runtime"),
     ("general.intercompany_enabled","general","General","bool",False,"Enable intercompany workflows",None,"runtime"),
     # Accounting and tax
