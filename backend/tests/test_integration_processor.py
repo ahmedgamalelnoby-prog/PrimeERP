@@ -1,4 +1,3 @@
-from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from app.modules.integrations.processor import _retry_delay, claim_next_event
@@ -18,11 +17,10 @@ def test_claim_next_event_marks_event_processing():
         def scalar(self, _stmt):
             return self.event
 
-    event = SimpleNamespace(
-        status="received",
-        attempts=0,
-        next_attempt_at=None,
-    )
+        def flush(self):
+            return None
+
+    event = SimpleNamespace(status="received", attempts=0, next_attempt_at=None)
     db = FakeScalar(event)
     claimed = claim_next_event(db)
     assert claimed is event

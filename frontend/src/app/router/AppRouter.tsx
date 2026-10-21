@@ -1,4 +1,5 @@
-﻿import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
+import { useAuth } from "@/modules/identity/hooks/useAuth";
 
 import ProtectedRoute from "./ProtectedRoute";
 import PublicRoute from "./PublicRoute";
@@ -13,6 +14,12 @@ import UsersPage from "@/modules/users/pages/UsersPage";
 import RolesPage from "@/modules/roles/pages/RolesPage";
 import LegalDocumentPage from "@/modules/legal/pages/LegalDocumentPage";
 import LegalManagementPage from "@/modules/legal/pages/LegalManagementPage";
+import CustomersPage from "@/modules/customers/pages/CustomersPage";
+import ProductsPage from "@/modules/products/pages/ProductsPage";
+import InventoryPage from "@/modules/inventory/pages/InventoryPage";
+import CompaniesPage from "@/modules/companies/pages/CompaniesPage";
+import BranchesPage from "@/modules/branches/pages/BranchesPage";
+import SalesOrdersPage from "@/modules/sales/pages/SalesOrdersPage";
 
 function ComingSoonPage({ title }: { title: string }) {
   return (
@@ -23,6 +30,13 @@ function ComingSoonPage({ title }: { title: string }) {
       </div>
     </div>
   );
+}
+
+function SuperAdminRoute() {
+  const { user, isLoading } = useAuth();
+  if (isLoading) return null;
+  if (!user || (!user.is_platform_admin && !user.is_superuser)) return <Navigate to="/dashboard" replace />;
+  return <LegalManagementPage />;
 }
 
 export default function AppRouter() {
@@ -51,34 +65,34 @@ export default function AppRouter() {
           <Route path="/identity/permissions" element={<Navigate to="/permissions" replace />} />
 
           {/* إدارة المستندات القانونية — صلاحية التعديل يتم فرضها من الـ API */}
-          <Route path="/settings/legal" element={<LegalManagementPage />} />
+          <Route path="/settings/legal" element={<SuperAdminRoute />} />
 
-          <Route path="/companies" element={<ComingSoonPage title="قائمة الشركات" />} />
-          <Route path="/companies/new" element={<ComingSoonPage title="إضافة شركة" />} />
-          <Route path="/companies/settings" element={<ComingSoonPage title="إعدادات الشركات" />} />
-          <Route path="/branches" element={<ComingSoonPage title="الفروع" />} />
+          <Route path="/companies" element={<CompaniesPage />} />
+          <Route path="/companies/new" element={<CompaniesPage createOnly />} />
+          <Route path="/companies/settings" element={<CompaniesPage />} />
+          <Route path="/branches" element={<BranchesPage />} />
 
-          <Route path="/customers" element={<ComingSoonPage title="قائمة العملاء" />} />
-          <Route path="/customers/new" element={<ComingSoonPage title="إضافة عميل" />} />
+          <Route path="/customers" element={<CustomersPage />} />
+          <Route path="/customers/new" element={<CustomersPage createOnly />} />
           <Route path="/customers/reports" element={<ComingSoonPage title="تقارير العملاء" />} />
 
-          <Route path="/products" element={<ComingSoonPage title="قائمة المنتجات" />} />
-          <Route path="/products/new" element={<ComingSoonPage title="إضافة منتج" />} />
-          <Route path="/products/categories" element={<ComingSoonPage title="تصنيفات المنتجات" />} />
-          <Route path="/products/units" element={<ComingSoonPage title="وحدات القياس" />} />
+          <Route path="/products" element={<ProductsPage />} />
+          <Route path="/products/new" element={<ProductsPage mode="new" />} />
+          <Route path="/products/categories" element={<ProductsPage mode="categories" />} />
+          <Route path="/products/units" element={<ProductsPage mode="units" />} />
 
-          <Route path="/inventory" element={<ComingSoonPage title="نظرة عامة على المخزون" />} />
-          <Route path="/inventory/warehouses" element={<ComingSoonPage title="المخازن" />} />
-          <Route path="/inventory/movements" element={<ComingSoonPage title="حركات المخزون" />} />
-          <Route path="/inventory/reports" element={<ComingSoonPage title="تقارير المخزون" />} />
+          <Route path="/inventory" element={<InventoryPage />} />
+          <Route path="/inventory/warehouses" element={<InventoryPage mode="warehouses" />} />
+          <Route path="/inventory/movements" element={<InventoryPage mode="movements" />} />
+          <Route path="/inventory/reports" element={<InventoryPage mode="reports" />} />
 
           <Route path="/accounting" element={<ComingSoonPage title="نظرة عامة على الحسابات" />} />
           <Route path="/accounting/chart-of-accounts" element={<ComingSoonPage title="دليل الحسابات" />} />
           <Route path="/accounting/journal-entries" element={<ComingSoonPage title="القيود اليومية" />} />
           <Route path="/accounting/reports" element={<ComingSoonPage title="التقارير المالية" />} />
 
-          <Route path="/sales/orders" element={<ComingSoonPage title="طلبات المبيعات" />} />
-          <Route path="/sales/orders/new" element={<ComingSoonPage title="إضافة طلب" />} />
+          <Route path="/sales/orders" element={<SalesOrdersPage />} />
+          <Route path="/sales/orders/new" element={<SalesOrdersPage createOnly />} />
           <Route path="/sales/reports" element={<ComingSoonPage title="تقارير المبيعات" />} />
 
           <Route path="*" element={<ComingSoonPage title="الصفحة غير موجودة" />} />

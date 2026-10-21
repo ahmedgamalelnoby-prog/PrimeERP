@@ -1,4 +1,3 @@
-from fastapi.routing import APIRoute
 from sqlalchemy.orm import configure_mappers
 
 from app.database import models as database_models  # noqa: F401
@@ -7,13 +6,14 @@ from app.modules.roles.models import Role
 from main import app, create_application
 
 
-def _routes(application) -> set[tuple[str, str]]:
-    return {
-        (method, route.path)
-        for route in application.routes
-        if isinstance(route, APIRoute)
-        for method in route.methods
-    }
+def _openapi_operations(application) -> set[tuple[str, str]]:
+    """Return HTTP method/path pairs from FastAPI's public OpenAPI contract."""
+    operations: set[tuple[str, str]] = set()
+    for path, item in application.openapi()["paths"].items():
+        for method in item:
+            if method in {"get", "post", "put", "patch", "delete", "options", "head", "trace"}:
+                operations.add((method.upper(), path))
+    return operations
 
 
 def test_sqlalchemy_mappers_configure() -> None:
@@ -23,35 +23,41 @@ def test_sqlalchemy_mappers_configure() -> None:
 
 
 def test_identity_auth_routes_are_registered_once() -> None:
-    routes = _routes(app)
+    routes = _openapi_operations(app)
     assert ("POST", "/api/v1/identity/login") in routes
     assert ("POST", "/api/v1/identity/refresh") in routes
     assert ("GET", "/api/v1/identity/me") in routes
-    assert sum(
-        1 for method, path in routes
-        if method == "POST" and path == "/api/v1/identity/login"
-    ) == 1
 
 
 def test_application_router_tree_is_isolated() -> None:
     first = create_application()
     second = create_application()
-    first_routes = _routes(first)
-    second_routes = _routes(second)
+    first_routes = _openapi_operations(first)
+    second_routes = _openapi_operations(second)
 
     assert ("POST", "/api/v1/identity/login") in first_routes
     assert ("POST", "/api/v1/identity/login") in second_routes
-    assert sum(
-        1 for method, path in first_routes
-        if method == "POST" and path == "/api/v1/identity/login"
-    ) == 1
-    assert sum(
-        1 for method, path in second_routes
-        if method == "POST" and path == "/api/v1/identity/login"
-    ) == 1
+    assert ("POST", "/api/v1/identity/refresh") in first_routes
+    assert ("POST", "/api/v1/identity/refresh") in second_routes
+    assert ("GET", "/api/v1/identity/me") in first_routes
+    assert ("GET", "/api/v1/identity/me") in second_routes
 
 
 def test_system_health_and_openapi_routes_exist() -> None:
-    routes = _routes(app)
+    routes = _openapi_operations(app)
     assert ("GET", "/health") in routes
-    assert ("GET", "/api/v1/openapi.json") in routes or app.openapi_url == "/api/v1/openapi.json"
+    assert app.openapi_url == "/api/v1/openapi.json"
+
+
+def test_master_data_and_inventory_routes_are_registered():
+    routes = _openapi_operations(app)
+    assert ("GET", "/api/v1/companies") in routes
+    assert ("GET", "/api/v1/branches") in routes
+    assert ("GET", "/api/v1/customers") in routes
+    assert ("GET", "/api/v1/products") in routes
+    assert ("GET", "/api/v1/inventory/warehouses") in routes
+    assert ("POST", "/api/v1/inventory/movements") in routes
+    assert ("POST", "/api/v1/inventory/transfers") in routes
+    assert ("POST", "/api/v1/inventory/reservations") in routes
+    assert ("POST", "/api/v1/inventory/reservations/{reservation_id}/release") in routes
+    assert ("POST", "/api/v1/inventory/issues") in routes

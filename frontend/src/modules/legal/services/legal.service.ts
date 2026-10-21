@@ -28,6 +28,11 @@ export async function getLegalDocument(type: LegalDocumentType) {
   return response.data.data;
 }
 
+export async function getAdminLegalDocument(type: LegalDocumentType) {
+  const response = await client.get<{ success: boolean; data: LegalDocument }>(`/legal/admin/${type}`, authConfig());
+  return response.data.data;
+}
+
 export async function updateLegalDocument(
   type: LegalDocumentType,
   payload: Pick<LegalDocument, "title_ar" | "title_en" | "content_ar" | "content_en" | "is_published">,
@@ -50,6 +55,7 @@ export async function acceptLegalDocument(type: LegalDocumentType, version: numb
 
 export const legalService = {
   getLegalDocument,
+  getAdminLegalDocument,
   updateLegalDocument,
   acceptLegalDocument,
 };

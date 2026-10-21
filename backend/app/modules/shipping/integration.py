@@ -1,17 +1,20 @@
 """Provider-neutral shipping integration primitives.
 
-A commerce adapter supplies an external carrier identity; this module maps it
-to the single PrimeERP ShippingCarrier. The provider name is deliberately not
-encoded into the core entity type.
+The shipping module is currently a boundary adapter. Provider-specific shipping
+models are imported lazily so the integration package remains import-safe while
+the shipping domain is being completed independently.
 """
 from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.modules.integrations.models import IntegrationMapping
-from app.modules.shipping.models import ShippingCarrier
 
+if TYPE_CHECKING:
+    from app.modules.shipping.models import ShippingCarrier
 
 CARRIER_MAPPING_ENTITY = "shipping_carrier"
 
@@ -22,9 +25,11 @@ def find_mapped_carrier(
     company_id: int,
     connection_id: int,
     external_carrier_id: str | None,
-) -> ShippingCarrier | None:
+) -> "ShippingCarrier | None":
     if not external_carrier_id:
         return None
+    from app.modules.shipping.models import ShippingCarrier
+
     mapping = db.scalar(select(IntegrationMapping).where(
         IntegrationMapping.company_id == company_id,
         IntegrationMapping.connection_id == connection_id,
