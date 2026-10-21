@@ -98,6 +98,16 @@ class DocumentCreate(BaseModel):
         return self
 
 
+class DocumentLineResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    item_id: int
+    variant_id: int | None
+    quantity: Decimal
+    source_sales_line_id: int | None = None
+    source_purchase_line_id: int | None = None
+
+
 class DocumentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -105,6 +115,7 @@ class DocumentResponse(BaseModel):
     partner_id: int
     document_type: str
     source_order_id: int | None = None
+    lines: list[DocumentLineResponse] = Field(default_factory=list)
     number: str
     document_date: date
     due_date: date | None
