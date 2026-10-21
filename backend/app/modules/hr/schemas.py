@@ -65,3 +65,63 @@ class LeaveRequestResponse(BaseModel):
     decided_by_user_id: int | None
     decision_reason: str | None
     decided_at: datetime | None
+
+
+class AttendanceCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    employee_id: int = Field(gt=0)
+    attendance_date: date
+    check_in_time: datetime
+    check_out_time: datetime | None = None
+
+    @model_validator(mode="after")
+    def validate_time_order(self):
+        if self.check_out_time is not None and self.check_out_time == self.check_in_time:
+            raise ValueError("Check-out must differ from check-in")
+        return self
+
+
+class AttendanceCorrectionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    check_in_time: datetime
+    check_out_time: datetime | None = None
+    reason: str = Field(min_length=1, max_length=2000)
+
+    @model_validator(mode="after")
+    def validate_time_order(self):
+        if self.check_out_time is not None and self.check_out_time == self.check_in_time:
+            raise ValueError("Corrected check-out must differ from check-in")
+        return self
+
+
+class AttendanceCorrectionDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    decision: Literal["approve", "reject"]
+    reason: str | None = Field(default=None, max_length=2000)
+
+
+class AttendanceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    company_id: int
+    employee_id: int
+    attendance_date: date
+    source: str
+    check_in_at: datetime
+    check_out_at: datetime | None
+    recorded_by_user_id: int
+
+
+class AttendanceCorrectionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    company_id: int
+    attendance_record_id: int
+    proposed_check_in_at: datetime
+    proposed_check_out_at: datetime | None
+    reason: str
+    status: str
+    submitted_by_user_id: int
+    decided_by_user_id: int | None
+    decision_reason: str | None
+    decided_at: datetime | None
