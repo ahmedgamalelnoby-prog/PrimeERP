@@ -6,7 +6,8 @@ const errorText = (e: any) => e?.response?.data?.detail || e?.message || "حدث
 
 export default function SalesPage() {
   const [docs, setDocs] = useState<Document[]>([]);
-  const [partners, setPartners] = useState<Partner[]>([]);\n  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [partners, setPartners] = useState<Partner[]>([]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
