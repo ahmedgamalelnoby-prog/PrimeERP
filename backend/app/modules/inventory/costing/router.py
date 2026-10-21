@@ -21,7 +21,7 @@ router = APIRouter(
 def _company_for_user(db: Session, company_id: int, user: User) -> Company:
     if get_effective_tenant_id(user) is None:
         raise HTTPException(status_code=403, detail="User is not assigned to a tenant")
-    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == get_effective_tenant_id(user)))
+    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == get_effective_tenant_id(user), Company.is_active.is_(True)))
     if company is None:
         raise HTTPException(status_code=403, detail="Company is outside the current tenant")
     return company
