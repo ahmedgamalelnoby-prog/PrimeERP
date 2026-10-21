@@ -42,6 +42,7 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
         "crm.duplicate_customer_check",
         "pos.allow_discount_without_approval",
         "pos.max_discount_pct_without_approval",
+        "pos.require_shift_close",
         "inventory.require_warehouse",
         "tax.require_tax_code_on_invoice",
         "accounting.auto_post_sales_invoice",
@@ -77,6 +78,20 @@ def test_policies_without_a_safe_workflow_consumer_remain_catalog_only():
     # These policies require data relationships or a scheduler that the current
     # implementation does not provide. Do not advertise them as enforced.
     catalog_only_keys = {
+        "general.date_format",
+        "inventory.auto_reserve_sales_orders",
+        "inventory.allow_below_cost_sale",
+        "inventory.expiry_tracking_required",
+        "inventory.serial_tracking_default",
+        "inventory.batch_tracking_default",
+        "hr.attendance_source",
+        "hr.payroll_requires_approval",
+        "hr.biometric_sync_interval_minutes",
+        "workflow.approval_mode",
+        "workflow.escalation_after_hours",
+        "pos.allow_open_cash_drawer",
+        "manufacturing.require_work_order",
+        "manufacturing.allow_overproduction",
         "integrations.auto_sync_enabled",
     }
     assert all(BY_KEY[key]["status"] == "catalog" for key in catalog_only_keys)
