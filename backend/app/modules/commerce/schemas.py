@@ -66,7 +66,7 @@ class DocumentCreate(BaseModel):
     partner_id: int = Field(gt=0)
     document_type: SaleType | PurchaseType
     source_order_id: int | None = Field(default=None, gt=0)
-    number: str = Field(min_length=1, max_length=60)
+    number: str | None = Field(default=None, min_length=1, max_length=60)
     document_date: date
     due_date: date | None = None
     warehouse_id: int | None = Field(default=None, gt=0)
@@ -76,6 +76,8 @@ class DocumentCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_receipt_links(self):
+        if self.document_type in {"requisition", "rfq", "order", "receipt", "bill", "debit_note"} and not self.number:
+            raise ValueError("Purchase document number is required")
         sales_source_ids = [line.source_sales_line_id for line in self.lines]
         purchase_source_ids = [line.source_purchase_line_id for line in self.lines]
         if self.source_order_id is not None:
