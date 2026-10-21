@@ -56,6 +56,7 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
         "general.intercompany_enabled",
         "tax.einvoice_required_for_sales",
         "inventory.valuation_method",
+        "sales.allow_negative_customer_balance",
     }
 
 
