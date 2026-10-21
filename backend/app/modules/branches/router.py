@@ -23,7 +23,7 @@ def _tenant_id(user: User) -> int:
 
 
 def _company(db: Session, company_id: int, user: User) -> Company:
-    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == _tenant_id(user)))
+    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == _tenant_id(user), Company.is_active.is_(True)))
     if company is None:
         raise HTTPException(status_code=404, detail="Company not found")
     return company
