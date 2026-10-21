@@ -310,7 +310,7 @@ def decide_leave_request(
         )
         _leave_audit(
             db,
-            action=f"hr.leave_request_{payload.decision}d",
+            action="hr.leave_request_approved" if payload.decision == "approve" else "hr.leave_request_rejected",
             request_id=request.id,
             user=current_user,
             tenant_id=tenant_id,
