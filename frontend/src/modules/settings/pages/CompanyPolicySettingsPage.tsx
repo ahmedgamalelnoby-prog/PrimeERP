@@ -54,9 +54,7 @@ export default function CompanyPolicySettingsPage() {
         setValues(Object.fromEntries(data.settings.map(s=>[s.key,s.value])));
         const companyDateFormat = data.settings.find(s=>s.key==="general.date_format")?.value;
         setCompanyDateFormat(companyId, companyDateFormat);
-        const companyDateFormat = data.settings.find(s=>s.key==="general.date_format")?.value;
-      setCompanyDateFormat(companyId, companyDateFormat);
-      const companyLanguage = data.settings.find(s=>s.key==="general.default_language")?.value;
+        const companyLanguage = data.settings.find(s=>s.key==="general.default_language")?.value;
         if (companyLanguage === "ar" || companyLanguage === "en") void i18n.changeLanguage(companyLanguage);
         if (!data.categories.includes(activeCategory)) setActiveCategory(data.categories[0] || "General");
       })
@@ -77,6 +75,8 @@ export default function CompanyPolicySettingsPage() {
       const {data}=await client.get<Payload>("/company-settings",{params:{company_id:companyId}});
       setPayload(data);
       setValues(Object.fromEntries(data.settings.map(s=>[s.key,s.value])));
+      const companyDateFormat = data.settings.find(s=>s.key==="general.date_format")?.value;
+      setCompanyDateFormat(companyId, companyDateFormat);
       const companyLanguage = data.settings.find(s=>s.key==="general.default_language")?.value;
       if (companyLanguage === "ar" || companyLanguage === "en") await i18n.changeLanguage(companyLanguage);
       toast.success("تم حفظ سياسات الشركة");
