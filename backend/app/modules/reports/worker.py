@@ -6,6 +6,7 @@ fake "report" when its report type has no registered provider.
 """
 from __future__ import annotations
 
+import calendar
 import json
 import os
 import smtplib
@@ -35,6 +36,17 @@ class ReportProviderError(RuntimeError):
 def _next_daily(now: datetime, hour: int, minute: int) -> datetime:
     candidate = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
     return candidate if candidate > now else candidate + timedelta(days=1)
+
+
+def _month_after(year: int, month: int, months: int) -> tuple[int, int]:
+    month_index = year * 12 + month - 1 + months
+    next_year, zero_based_month = divmod(month_index, 12)
+    return next_year, zero_based_month + 1
+
+
+def _monthly_occurrence(year: int, month: int, day: int, hour: int, minute: int) -> datetime:
+    actual_day = min(day, calendar.monthrange(year, month)[1])
+    return datetime(year, month, actual_day, hour, minute, tzinfo=timezone.utc)
 
 
 def calculate_next_run(schedule: str, now: datetime | None = None) -> datetime:
@@ -74,19 +86,15 @@ def calculate_next_run(schedule: str, now: datetime | None = None) -> datetime:
             raise ValueError("Schedule day must be between 1 and 31")
         if quarterly:
             quarter_start_month = ((now.month - 1) // 3) * 3 + 1
-            candidate = now.replace(month=quarter_start_month, day=min(day, 28), hour=hour, minute=minute, second=0, microsecond=0)
+            candidate = _monthly_occurrence(now.year, quarter_start_month, day, hour, minute)
             if candidate <= now:
-                month = quarter_start_month + 3
-                year = now.year + (month - 1) // 12
-                month = (month - 1) % 12 + 1
-                candidate = candidate.replace(year=year, month=month)
+                year, month = _month_after(now.year, quarter_start_month, 3)
+                candidate = _monthly_occurrence(year, month, day, hour, minute)
             return candidate
-        candidate = now.replace(day=min(day, 28), hour=hour, minute=minute, second=0, microsecond=0)
+        candidate = _monthly_occurrence(now.year, now.month, day, hour, minute)
         if candidate <= now:
-            month = now.month + 1
-            year = now.year + (month - 1) // 12
-            month = (month - 1) % 12 + 1
-            candidate = candidate.replace(year=year, month=month)
+            year, month = _month_after(now.year, now.month, 1)
+            candidate = _monthly_occurrence(year, month, day, hour, minute)
         return candidate
     raise ValueError("Unsupported schedule. Use every, daily, weekly, monthly or quarterly grammar")
 
