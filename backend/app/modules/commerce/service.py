@@ -7,6 +7,7 @@ from app.modules.accounting.models import TaxRate
 from app.modules.companies.models import Company
 from app.modules.company_settings.service import get_company_setting
 from app.modules.identity.models import User
+from app.modules.egyptian_einvoice.models import EgyptianEInvoiceDocument
 from app.modules.accounting.tax_engine import calculate_taxes
 from app.modules.commerce.accounting_service import commerce_accounting_service
 from app.modules.catalog.models import ProductVariant, Recipe
@@ -227,6 +228,17 @@ class CommerceService:
         if not obj.lines: raise ValueError("A document must contain at least one line before confirmation")
         if kind == "sale":
             self.enforce_credit_limit(db, company_id, obj)
+            if obj.document_type in {"invoice", "credit_note"} and get_company_setting(
+                db, company_id, "tax.einvoice_required_for_sales"
+            ) is True:
+                eta_document = db.scalar(select(EgyptianEInvoiceDocument).where(
+                    EgyptianEInvoiceDocument.company_id == company_id,
+                    EgyptianEInvoiceDocument.source_type == "sales_document",
+                    EgyptianEInvoiceDocument.source_id == obj.id,
+                    EgyptianEInvoiceDocument.document_type == obj.document_type,
+                ).with_for_update())
+                if eta_document is None or eta_document.status != "valid":
+                    raise ValueError("A valid Egyptian e-invoice is required before confirming this sales document")
         obj.status = "confirmed"; db.flush()
         if user_id is not None:
             if kind == "sale":
