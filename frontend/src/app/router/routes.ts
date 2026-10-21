@@ -1,11 +1,4 @@
 export const ROUTES = {
-  HOME: "/",
-  LOGIN: "/login",
-  REGISTER: "/register",
-  PRICING: "/pricing",
-  TRIAL_EXPIRED: "/trial-expired",
-  DASHBOARD: "/dashboard",
-  PROFILE: "/profile",
-  USERS: "/users",
-  ROLES: "/roles",
+  HOME: "/", LOGIN: "/login", REGISTER: "/register", PRICING: "/pricing", TRIAL_EXPIRED: "/trial-expired",
+  DASHBOARD: "/dashboard", PROFILE: "/profile", USERS: "/users", ROLES: "/roles", SHIPPING: "/shipping",
 } as const;
