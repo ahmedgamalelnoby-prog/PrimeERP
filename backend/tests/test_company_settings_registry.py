@@ -59,6 +59,7 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
         "sales.allow_negative_customer_balance",
         "sales.invoice_requires_delivery",
         "sales.allow_overbilling",
+        "purchasing.require_purchase_order",
     }
 
 
@@ -67,7 +68,6 @@ def test_policies_without_a_safe_workflow_consumer_remain_catalog_only():
     # implementation does not provide. Do not advertise them as enforced.
     catalog_only_keys = {
         "sales.require_order_approval",
-        "purchasing.require_purchase_order",
         "purchasing.require_purchase_approval",
         "integrations.auto_sync_enabled",
         "general.require_project",
