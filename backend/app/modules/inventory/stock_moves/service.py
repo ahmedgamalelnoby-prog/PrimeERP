@@ -238,11 +238,13 @@ class InventoryStockMoveService:
         db.flush()
         return move
 
-    def reverse(self, db: Session, *, tenant_id: int, company_id: int, move_id: int, user_id: int, reversal_date: date | None = None):
+    def reverse(self, db: Session, *, tenant_id: int, company_id: int, move_id: int, user_id: int, reversal_date: date | None = None, allow_production: bool = False):
         """Reverse a posted inventory movement atomically, including physical stock and its GL entry."""
         move = db.scalar(select(InventoryStockMove).where(InventoryStockMove.id == move_id, InventoryStockMove.company_id == company_id).with_for_update())
         if move is None:
             raise ValueError("Stock move not found")
+        if move.movement_type in {"production_issue", "production_receipt"} and not allow_production:
+            raise ValueError("Production movements must be reversed through work-order cancellation")
         if move.status == "reversed":
             return move
         if move.status != "posted":
