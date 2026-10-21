@@ -19,6 +19,7 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
     runtime_keys = {item["key"] for item in CATALOG if item["status"] == "runtime"}
     assert runtime_keys == {
         "inventory.allow_negative_stock",
+        "inventory.allow_below_cost_sale",
         "inventory.auto_reserve_sales_orders",
         "accounting.require_journal_approval",
         "general.default_language",
@@ -81,7 +82,6 @@ def test_policies_without_a_safe_workflow_consumer_remain_catalog_only():
     # These policies still lack complete owning workflows. Do not advertise them as enforced.
     catalog_only_keys = {
         "general.date_format",
-        "inventory.allow_below_cost_sale",
         "inventory.expiry_tracking_required",
         "inventory.serial_tracking_default",
         "inventory.batch_tracking_default",
@@ -94,6 +94,12 @@ def test_policies_without_a_safe_workflow_consumer_remain_catalog_only():
         "integrations.auto_sync_enabled",
     }
     assert all(BY_KEY[key]["status"] == "catalog" for key in catalog_only_keys)
+
+
+def test_below_cost_sale_policy_is_runtime_and_disabled_by_default():
+    assert BY_KEY["inventory.allow_below_cost_sale"]["default"] is False
+    assert BY_KEY["inventory.allow_below_cost_sale"]["status"] == "runtime"
+    assert validate_value("inventory.allow_below_cost_sale", True) is True
 
 
 def test_negative_stock_policy_is_company_setting_and_disabled_by_default():
