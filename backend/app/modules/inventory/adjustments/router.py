@@ -25,6 +25,7 @@ def _company_for_user(db: Session, company_id: int, user: User) -> Company:
         select(Company).where(
             Company.id == company_id,
             Company.tenant_id == get_effective_tenant_id(user),
+            Company.is_active.is_(True),
         )
     )
     if company is None:
