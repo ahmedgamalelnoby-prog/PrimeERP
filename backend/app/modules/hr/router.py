@@ -386,6 +386,20 @@ def _attendance_audit(db: Session, *, action: str, entity_id: int, user: User, t
     )
 
 
+def _overtime_audit(db: Session, *, action: str, request_id: int, user: User, tenant_id: int, company_id: int, status: str, hours: Decimal) -> None:
+    record_audit_event(
+        db,
+        action=action,
+        entity_type="hr_overtime_request",
+        entity_id=request_id,
+        user_id=user.id,
+        tenant_id=tenant_id,
+        company_id=company_id,
+        metadata={"status": status, "requested_hours": str(hours)},
+    )
+
+
+
 @router.get(
     "/attendance",
     response_model=list[AttendanceResponse],
@@ -553,16 +567,15 @@ def create_overtime_request(
         request = hr_leave_service.create_overtime_request(
             db, company_id=company_id, payload=payload, actor_user_id=current_user.id
         )
-        _leave_audit(
+        _overtime_audit(
             db,
             action="hr.overtime_request_submitted",
             request_id=request.id,
             user=current_user,
             tenant_id=tenant_id,
             company_id=company_id,
-            leave_type="overtime",
             status=request.status,
-            days=Decimal(request.requested_hours),
+            hours=Decimal(request.requested_hours),
         )
         db.commit()
         db.refresh(request)
@@ -598,16 +611,15 @@ def decide_overtime_request(
             decision=payload.decision,
             reason=payload.reason,
         )
-        _leave_audit(
+        _overtime_audit(
             db,
             action="hr.overtime_request_approved" if payload.decision == "approve" else "hr.overtime_request_rejected",
             request_id=request.id,
             user=current_user,
             tenant_id=tenant_id,
             company_id=company_id,
-            leave_type="overtime",
             status=request.status,
-            days=Decimal(request.requested_hours),
+            hours=Decimal(request.requested_hours),
         )
         db.commit()
         db.refresh(request)
