@@ -7,6 +7,8 @@ type LeaveRequest = {
   requested_days: string | number; reason?: string | null; status: string;
   submitted_by_user_id: number; decision_reason?: string | null;
 };
+type Attendance = { id: number; employee_id: number; attendance_date: string; source: string; check_in_at: string; check_out_at?: string | null };
+type AttendanceCorrection = { id: number; attendance_record_id: number; proposed_check_in_at: string; proposed_check_out_at?: string | null; reason: string; status: string };
 type LeaveBalance = {
   id: number; employee_id: number; leave_type: string;
   entitled_days: string | number; consumed_days: string | number; available_days: string | number;
@@ -22,6 +24,12 @@ export default function HrPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
   const [balances, setBalances] = useState<LeaveBalance[]>([]);
+  const [attendance, setAttendance] = useState<Attendance[]>([]);
+  const [corrections, setCorrections] = useState<AttendanceCorrection[]>([]);
+  const [companyTimezone, setCompanyTimezone] = useState("Africa/Cairo");
+  const [correctionTarget, setCorrectionTarget] = useState<number | null>(null);
+  const [correctionForm, setCorrectionForm] = useState({ check_in_time: "", check_out_time: "", reason: "" });
+  const [attendanceForm, setAttendanceForm] = useState({ employee_id: "", attendance_date: today(), check_in_time: today() + "T09:00", check_out_time: today() + "T17:00" });
   const [workforce, setWorkforce] = useState<any[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -38,22 +46,83 @@ export default function HrPage() {
     }
     setError("");
     try {
-      const [employeeResponse, requestResponse, balanceResponse, workforceResponse] = await Promise.all([
+      const [employeeResponse, requestResponse, balanceResponse, workforceResponse, attendanceResponse, correctionResponse, settingsResponse] = await Promise.all([
         client.get("/enterprise/employees", { params: { company_id: companyId } }),
         client.get("/hr/leave-requests", { params: { company_id: companyId } }),
         client.get("/hr/leave-balances", { params: { company_id: companyId } }),
         client.get("/hr/workforce", { params: { company_id: companyId } }),
+        client.get("/hr/attendance", { params: { company_id: companyId } }),
+        client.get("/hr/attendance-corrections", { params: { company_id: companyId } }),
+        client.get("/company-settings", { params: { company_id: companyId } }),
       ]);
       setEmployees(Array.isArray(employeeResponse.data) ? employeeResponse.data : []);
       setRequests(Array.isArray(requestResponse.data) ? requestResponse.data : []);
       setBalances(Array.isArray(balanceResponse.data) ? balanceResponse.data : []);
       setWorkforce(Array.isArray(workforceResponse.data) ? workforceResponse.data : []);
+      setAttendance(Array.isArray(attendanceResponse.data) ? attendanceResponse.data : []);
+      setCorrections(Array.isArray(correctionResponse.data) ? correctionResponse.data : []);
+      const configuredTimezone = settingsResponse.data?.settings?.find((setting: { key?: string }) => setting.key === "general.timezone")?.value;
+      setCompanyTimezone(typeof configuredTimezone === "string" && configuredTimezone ? configuredTimezone : "Africa/Cairo");
     } catch (e: any) {
       setError(e?.response?.data?.detail || "تعذر تحميل بيانات الموارد البشرية.");
     }
   }, [companyId]);
 
   useEffect(() => { void load(); }, [load]);
+
+  function displayDateTime(value?: string | null) {
+    if (!value) return "—";
+    try { return new Intl.DateTimeFormat("ar-EG", { timeZone: companyTimezone, dateStyle: "short", timeStyle: "short" }).format(new Date(value)); }
+    catch { return value; }
+  }
+
+  async function submitAttendance(e: FormEvent) {
+    e.preventDefault();
+    if (!companyId) return;
+    setBusy(true); setError("");
+    try {
+      await client.post("/hr/attendance", {
+        employee_id: Number(attendanceForm.employee_id),
+        attendance_date: attendanceForm.attendance_date,
+        check_in_time: attendanceForm.check_in_time,
+        check_out_time: attendanceForm.check_out_time || null,
+      }, { params: { company_id: companyId } });
+      await load();
+    } catch (e: any) { setError(e?.response?.data?.detail || "تعذر تسجيل الحضور."); }
+    finally { setBusy(false); }
+  }
+
+  function editCorrection(record: Attendance) {
+    const localValue = (value?: string | null) => value ? new Date(new Date(value).getTime() - new Date(value).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : "";
+    setCorrectionTarget(record.id);
+    setCorrectionForm({ check_in_time: localValue(record.check_in_at), check_out_time: localValue(record.check_out_at), reason: "" });
+  }
+
+  async function submitCorrection(e: FormEvent) {
+    e.preventDefault();
+    if (!companyId || correctionTarget === null) return;
+    setBusy(true); setError("");
+    try {
+      await client.post(`/hr/attendance/${correctionTarget}/corrections`, {
+        check_in_time: correctionForm.check_in_time,
+        check_out_time: correctionForm.check_out_time || null,
+        reason: correctionForm.reason,
+      }, { params: { company_id: companyId } });
+      setCorrectionTarget(null);
+      await load();
+    } catch (e: any) { setError(e?.response?.data?.detail || "تعذر إرسال تصحيح الحضور."); }
+    finally { setBusy(false); }
+  }
+
+  async function decideCorrection(id: number, decision: "approve" | "reject") {
+    if (!companyId) return;
+    setBusy(true); setError("");
+    try {
+      await client.post(`/hr/attendance-corrections/${id}/decision`, { decision }, { params: { company_id: companyId } });
+      await load();
+    } catch (e: any) { setError(e?.response?.data?.detail || "تعذر اعتماد تصحيح الحضور."); }
+    finally { setBusy(false); }
+  }
 
   async function saveWorkforce(user: any) {
     if (!companyId) return;
@@ -174,6 +243,34 @@ export default function HrPage() {
         <button disabled={busy || !companyId || !employees.length} className="w-full rounded-lg bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50">إرسال الطلب</button>
       </form>
     </div>
+
+    <form onSubmit={submitAttendance} className="grid gap-3 rounded-2xl border bg-card p-5 md:grid-cols-6">
+      <h2 className="font-semibold md:col-span-6">تسجيل حضور يدوي</h2>
+      <select required value={attendanceForm.employee_id} onChange={e => setAttendanceForm({ ...attendanceForm, employee_id: e.target.value })} className={fieldClass}>
+        <option value="">الموظف</option>{employees.map(employee => <option key={employee.id} value={employee.id}>{employee.employee_no} · {employee.name}</option>)}
+      </select>
+      <input required type="date" value={attendanceForm.attendance_date} onChange={e => setAttendanceForm({ ...attendanceForm, attendance_date: e.target.value })} className={fieldClass} />
+      <label className="text-xs">حضور<input required type="datetime-local" value={attendanceForm.check_in_time} onChange={e => setAttendanceForm({ ...attendanceForm, check_in_time: e.target.value })} className={fieldClass} /></label>
+      <label className="text-xs">انصراف<input type="datetime-local" value={attendanceForm.check_out_time} onChange={e => setAttendanceForm({ ...attendanceForm, check_out_time: e.target.value })} className={fieldClass} /></label>
+      <button disabled={busy || !companyId || !employees.length} className="rounded-lg bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50">تسجيل</button>
+    </form>
+
+    <section className="space-y-3 rounded-2xl border bg-card p-5">
+      <h2 className="font-semibold">سجل الحضور</h2>
+      {attendance.length === 0 ? <p className="text-sm text-muted-foreground">لا توجد سجلات حضور.</p> : <div className="overflow-auto"><table className="w-full text-sm"><thead><tr className="border-b"><th className="p-2 text-right">الموظف</th><th className="p-2 text-right">التاريخ</th><th className="p-2 text-right">الحضور</th><th className="p-2 text-right">الانصراف</th><th className="p-2 text-right">المصدر</th><th className="p-2 text-right">إجراء</th></tr></thead><tbody>{attendance.map(record => <tr key={record.id} className="border-b"><td className="p-2">{employeeName(record.employee_id)}</td><td className="p-2">{record.attendance_date}</td><td className="p-2">{displayDateTime(record.check_in_at)}</td><td className="p-2">{displayDateTime(record.check_out_at)}</td><td className="p-2">{record.source}</td><td className="p-2"><button type="button" onClick={() => editCorrection(record)} className="rounded border px-2 py-1">طلب تصحيح</button></td></tr>)}</tbody></table></div>}
+      {correctionTarget !== null && <form onSubmit={submitCorrection} className="grid gap-3 rounded-xl border p-4 md:grid-cols-4">
+        <h3 className="font-medium md:col-span-4">تصحيح السجل #{correctionTarget}</h3>
+        <label className="text-xs">وقت الحضور<input required type="datetime-local" value={correctionForm.check_in_time} onChange={e => setCorrectionForm({ ...correctionForm, check_in_time: e.target.value })} className={fieldClass} /></label>
+        <label className="text-xs">وقت الانصراف<input type="datetime-local" value={correctionForm.check_out_time} onChange={e => setCorrectionForm({ ...correctionForm, check_out_time: e.target.value })} className={fieldClass} /></label>
+        <input required value={correctionForm.reason} onChange={e => setCorrectionForm({ ...correctionForm, reason: e.target.value })} placeholder="سبب التصحيح" className={fieldClass} />
+        <div className="flex gap-2"><button disabled={busy} className="rounded bg-primary px-3 py-2 text-primary-foreground">إرسال</button><button type="button" onClick={() => setCorrectionTarget(null)} className="rounded border px-3 py-2">إلغاء</button></div>
+      </form>}
+    </section>
+
+    <section className="space-y-3 rounded-2xl border bg-card p-5">
+      <h2 className="font-semibold">طلبات تصحيح الحضور</h2>
+      {corrections.length === 0 ? <p className="text-sm text-muted-foreground">لا توجد طلبات تصحيح.</p> : <div className="overflow-auto"><table className="w-full text-sm"><thead><tr className="border-b"><th className="p-2 text-right">السجل</th><th className="p-2 text-right">الحضور المقترح</th><th className="p-2 text-right">الانصراف المقترح</th><th className="p-2 text-right">السبب</th><th className="p-2 text-right">الحالة</th><th className="p-2 text-right">قرار</th></tr></thead><tbody>{corrections.map(item => <tr key={item.id} className="border-b"><td className="p-2">#{item.attendance_record_id}</td><td className="p-2">{displayDateTime(item.proposed_check_in_at)}</td><td className="p-2">{displayDateTime(item.proposed_check_out_at)}</td><td className="p-2">{item.reason}</td><td className="p-2">{item.status}</td><td className="p-2">{item.status === "pending" ? <div className="flex gap-2"><button type="button" disabled={busy} onClick={() => void decideCorrection(item.id, "approve")} className="rounded border px-2 py-1">موافقة</button><button type="button" disabled={busy} onClick={() => void decideCorrection(item.id, "reject")} className="rounded border px-2 py-1 text-destructive">رفض</button></div> : "—"}</td></tr>)}</tbody></table></div>}
+    </section>
 
     <section className="space-y-3 rounded-2xl border bg-card p-5">
       <h2 className="font-semibold">أرصدة الإجازات</h2>
