@@ -8,6 +8,7 @@ type LeaveRequest = {
   submitted_by_user_id: number; decision_reason?: string | null;
 };
 type Attendance = { id: number; employee_id: number; attendance_date: string; source: string; check_in_at: string; check_out_at?: string | null };
+type OvertimeRequest = { id: number; attendance_record_id: number; requested_hours: string | number; reason: string; status: string };
 type AttendanceCorrection = { id: number; attendance_record_id: number; proposed_check_in_at: string; proposed_check_out_at?: string | null; reason: string; status: string };
 type LeaveBalance = {
   id: number; employee_id: number; leave_type: string;
@@ -26,6 +27,8 @@ export default function HrPage() {
   const [balances, setBalances] = useState<LeaveBalance[]>([]);
   const [attendance, setAttendance] = useState<Attendance[]>([]);
   const [corrections, setCorrections] = useState<AttendanceCorrection[]>([]);
+  const [overtimeRequests, setOvertimeRequests] = useState<OvertimeRequest[]>([]);
+  const [overtimeForm, setOvertimeForm] = useState({ attendance_record_id: "", requested_hours: "1", reason: "" });
   const [companyTimezone, setCompanyTimezone] = useState("Africa/Cairo");
   const [correctionTarget, setCorrectionTarget] = useState<number | null>(null);
   const [correctionForm, setCorrectionForm] = useState({ check_in_time: "", check_out_time: "", reason: "" });
@@ -46,13 +49,14 @@ export default function HrPage() {
     }
     setError("");
     try {
-      const [employeeResponse, requestResponse, balanceResponse, workforceResponse, attendanceResponse, correctionResponse] = await Promise.all([
+      const [employeeResponse, requestResponse, balanceResponse, workforceResponse, attendanceResponse, correctionResponse, overtimeResponse] = await Promise.all([
         client.get("/enterprise/employees", { params: { company_id: companyId } }),
         client.get("/hr/leave-requests", { params: { company_id: companyId } }),
         client.get("/hr/leave-balances", { params: { company_id: companyId } }),
         client.get("/hr/workforce", { params: { company_id: companyId } }),
         client.get("/hr/attendance", { params: { company_id: companyId } }),
         client.get("/hr/attendance-corrections", { params: { company_id: companyId } }),
+        client.get("/hr/overtime-requests", { params: { company_id: companyId } }),
       ]);
       setEmployees(Array.isArray(employeeResponse.data) ? employeeResponse.data : []);
       setRequests(Array.isArray(requestResponse.data) ? requestResponse.data : []);
@@ -60,6 +64,7 @@ export default function HrPage() {
       setWorkforce(Array.isArray(workforceResponse.data) ? workforceResponse.data : []);
       setAttendance(Array.isArray(attendanceResponse.data) ? attendanceResponse.data : []);
       setCorrections(Array.isArray(correctionResponse.data) ? correctionResponse.data : []);
+      setOvertimeRequests(Array.isArray(overtimeResponse.data) ? overtimeResponse.data : []);
       try {
         const settingsResponse = await client.get("/company-settings", { params: { company_id: companyId } });
         const configuredTimezone = settingsResponse.data?.settings?.find((setting: { key?: string }) => setting.key === "general.timezone")?.value;
@@ -123,6 +128,32 @@ export default function HrPage() {
       setCorrectionTarget(null);
       await load();
     } catch (e: any) { setError(e?.response?.data?.detail || "تعذر إرسال تصحيح الحضور."); }
+    finally { setBusy(false); }
+  }
+
+  async function submitOvertime(e: FormEvent) {
+    e.preventDefault();
+    if (!companyId) return;
+    setBusy(true); setError("");
+    try {
+      await client.post("/hr/overtime-requests", {
+        attendance_record_id: Number(overtimeForm.attendance_record_id),
+        requested_hours: Number(overtimeForm.requested_hours),
+        reason: overtimeForm.reason,
+      }, { params: { company_id: companyId } });
+      setOvertimeForm({ ...overtimeForm, reason: "" });
+      await load();
+    } catch (e: any) { setError(e?.response?.data?.detail || "تعذر إرسال طلب الساعات الإضافية."); }
+    finally { setBusy(false); }
+  }
+
+  async function decideOvertime(id: number, decision: "approve" | "reject") {
+    if (!companyId) return;
+    setBusy(true); setError("");
+    try {
+      await client.post(`/hr/overtime-requests/${id}/decision`, { decision }, { params: { company_id: companyId } });
+      await load();
+    } catch (e: any) { setError(e?.response?.data?.detail || "تعذر اتخاذ قرار الساعات الإضافية."); }
     finally { setBusy(false); }
   }
 
@@ -283,6 +314,22 @@ export default function HrPage() {
     <section className="space-y-3 rounded-2xl border bg-card p-5">
       <h2 className="font-semibold">طلبات تصحيح الحضور</h2>
       {corrections.length === 0 ? <p className="text-sm text-muted-foreground">لا توجد طلبات تصحيح.</p> : <div className="overflow-auto"><table className="w-full text-sm"><thead><tr className="border-b"><th className="p-2 text-right">السجل</th><th className="p-2 text-right">الحضور المقترح</th><th className="p-2 text-right">الانصراف المقترح</th><th className="p-2 text-right">السبب</th><th className="p-2 text-right">الحالة</th><th className="p-2 text-right">قرار</th></tr></thead><tbody>{corrections.map(item => <tr key={item.id} className="border-b"><td className="p-2">#{item.attendance_record_id}</td><td className="p-2">{displayDateTime(item.proposed_check_in_at)}</td><td className="p-2">{displayDateTime(item.proposed_check_out_at)}</td><td className="p-2">{item.reason}</td><td className="p-2">{item.status}</td><td className="p-2">{item.status === "pending" ? <div className="flex gap-2"><button type="button" disabled={busy} onClick={() => void decideCorrection(item.id, "approve")} className="rounded border px-2 py-1">موافقة</button><button type="button" disabled={busy} onClick={() => void decideCorrection(item.id, "reject")} className="rounded border px-2 py-1 text-destructive">رفض</button></div> : "—"}</td></tr>)}</tbody></table></div>}
+    </section>
+
+    <form onSubmit={submitOvertime} className="grid gap-3 rounded-2xl border bg-card p-5 md:grid-cols-4">
+      <h2 className="font-semibold md:col-span-4">طلب ساعات إضافية</h2>
+      <p className="text-xs text-muted-foreground md:col-span-4">الحد المتاح يُحسب من وقت الحضور والانصراف مطروحًا منه ساعات العمل اليومية في إعدادات الشركة. الطلبات المنتظرة تُحجز حتى لا تتجاوز الطلبات إجمالي الساعات المسجلة.</p>
+      <select required value={overtimeForm.attendance_record_id} onChange={e => setOvertimeForm({ ...overtimeForm, attendance_record_id: e.target.value })} className={fieldClass}>
+        <option value="">سجل الحضور</option>{attendance.filter(record => record.check_out_at).map(record => <option key={record.id} value={record.id}>{employeeName(record.employee_id)} · {record.attendance_date}</option>)}
+      </select>
+      <input required type="number" min="0.01" step="0.01" value={overtimeForm.requested_hours} onChange={e => setOvertimeForm({ ...overtimeForm, requested_hours: e.target.value })} placeholder="الساعات" className={fieldClass} />
+      <input required value={overtimeForm.reason} onChange={e => setOvertimeForm({ ...overtimeForm, reason: e.target.value })} placeholder="سبب العمل الإضافي" className={fieldClass} />
+      <button disabled={busy || !companyId || !attendance.some(record => record.check_out_at)} className="rounded-lg bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50">إرسال الطلب</button>
+    </form>
+
+    <section className="space-y-3 rounded-2xl border bg-card p-5">
+      <h2 className="font-semibold">طلبات الساعات الإضافية</h2>
+      {overtimeRequests.length === 0 ? <p className="text-sm text-muted-foreground">لا توجد طلبات.</p> : <div className="overflow-auto"><table className="w-full text-sm"><thead><tr className="border-b"><th className="p-2 text-right">الموظف</th><th className="p-2 text-right">التاريخ</th><th className="p-2 text-right">الساعات</th><th className="p-2 text-right">السبب</th><th className="p-2 text-right">الحالة</th><th className="p-2 text-right">القرار</th></tr></thead><tbody>{overtimeRequests.map(request => { const record = attendance.find(item => item.id === request.attendance_record_id); return <tr key={request.id} className="border-b"><td className="p-2">{record ? employeeName(record.employee_id) : "—"}</td><td className="p-2">{record?.attendance_date || "—"}</td><td className="p-2">{request.requested_hours}</td><td className="p-2">{request.reason}</td><td className="p-2">{request.status}</td><td className="p-2">{request.status === "pending" ? <div className="flex gap-2"><button type="button" disabled={busy} onClick={() => void decideOvertime(request.id, "approve")} className="rounded border px-2 py-1">موافقة</button><button type="button" disabled={busy} onClick={() => void decideOvertime(request.id, "reject")} className="rounded border px-2 py-1 text-destructive">رفض</button></div> : "—"}</td></tr>; })}</tbody></table></div>}
     </section>
 
     <section className="space-y-3 rounded-2xl border bg-card p-5">
