@@ -67,6 +67,7 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
         "purchasing.require_purchase_approval",
         "hr.leave_requires_approval",
         "hr.allow_negative_leave_balance",
+        "hr.require_attendance_approval",
     }
 
 
