@@ -5,9 +5,11 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
+from app.modules.commerce.models import BusinessPartner
 from app.modules.enterprise.models import FixedAsset, Budget, BudgetLine, Employee, PayrollRun, PayrollLine, Project, ProjectContract
 from app.modules.enterprise.schemas import AssetCreate, AssetResponse, EmployeeCreate, EmployeeResponse, PayrollRunCreate, PayrollResponse, BudgetCreate, BudgetLineCreate, BudgetResponse, ProjectCreate, ProjectResponse, ContractCreate, ContractResponse
 from app.modules.identity.dependencies import get_current_user
@@ -18,12 +20,32 @@ router = APIRouter(prefix="/enterprise", tags=["Enterprise"])
 
 
 def company_for_user(db: Session, company_id: int, user: User) -> Company:
-    if user.tenant_id is None:
-        raise HTTPException(403, "User is not assigned to a tenant")
-    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == user.tenant_id))
+    tenant_id = get_effective_tenant_id(user)
+    company = db.scalar(
+        select(Company).where(
+            Company.id == company_id,
+            Company.tenant_id == tenant_id,
+            Company.is_active.is_(True),
+        )
+    )
     if company is None:
         raise HTTPException(404, "Company not found")
     return company
+
+
+def validate_company_customer(db: Session, company_id: int, customer_id: int | None) -> None:
+    if customer_id is None:
+        return
+    customer = db.scalar(
+        select(BusinessPartner.id).where(
+            BusinessPartner.id == customer_id,
+            BusinessPartner.company_id == company_id,
+            BusinessPartner.partner_type.in_(("customer", "both")),
+            BusinessPartner.is_active.is_(True),
+        )
+    )
+    if customer is None:
+        raise HTTPException(404, "Customer not found for this company")
 
 
 def rollback_integrity(db: Session, message: str) -> None:
@@ -178,6 +200,7 @@ def approve_budget(budget_id: int, company_id: int = Query(..., gt=0), db: Sessi
 @router.post("/projects", response_model=ProjectResponse, status_code=201, dependencies=[Depends(require_permission("enterprise.write"))])
 def project(p: ProjectCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     company_for_user(db, p.company_id, current_user)
+    validate_company_customer(db, p.company_id, p.customer_id)
     if p.end_date and p.start_date and p.end_date < p.start_date:
         raise HTTPException(422, "Project end date cannot precede start date")
     o = Project(**p.model_dump())
@@ -199,6 +222,7 @@ def projects(company_id: int = Query(..., gt=0), db: Session = Depends(get_db), 
 @router.post("/contracts", response_model=ContractResponse, status_code=201, dependencies=[Depends(require_permission("enterprise.write"))])
 def contract(p: ContractCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     company_for_user(db, p.company_id, current_user)
+    validate_company_customer(db, p.company_id, p.customer_id)
     if p.end_date and p.start_date and p.end_date < p.start_date:
         raise HTTPException(422, "Contract end date cannot precede start date")
     if not db.scalar(select(Project).where(Project.id == p.project_id, Project.company_id == p.company_id)):
