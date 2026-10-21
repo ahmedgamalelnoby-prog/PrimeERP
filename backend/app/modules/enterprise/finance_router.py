@@ -3,6 +3,7 @@ from datetime import date
 from fastapi import APIRouter,Depends,HTTPException
 from sqlalchemy import select,func
 from sqlalchemy.orm import Session
+from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.identity.dependencies import get_current_user
@@ -14,8 +15,16 @@ from app.modules.accounting.journals.models.journal_entry import JournalEntry
 from app.modules.accounting.journals.models.journal_entry_line import JournalEntryLine
 from app.modules.accounting.chart_of_accounts.models import AccountCombination
 router=APIRouter(prefix="/enterprise/finance",tags=["Enterprise Finance"])
-def company_ok(db,cid,user):
-    if not user.tenant_id or not db.scalar(select(Company.id).where(Company.id==cid,Company.tenant_id==user.tenant_id)): raise HTTPException(404,"Company not found")
+def company_ok(db, cid, user):
+    tenant_id = get_effective_tenant_id(user)
+    if tenant_id is None or not db.scalar(
+        select(Company.id).where(
+            Company.id == cid,
+            Company.tenant_id == tenant_id,
+            Company.is_active.is_(True),
+        )
+    ):
+        raise HTTPException(404, "Company not found")
 @router.post("/entities",response_model=EntityResponse,status_code=201,dependencies=[Depends(require_permission("enterprise.finance.write"))])
 def entity(p:EntityCreate,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     company_ok(db,p.company_id,user);o=FinanceEntity(**p.model_dump());db.add(o);db.commit();db.refresh(o);return o
@@ -30,11 +39,32 @@ def member(group_id:int,p:MemberCreate,db:Session=Depends(get_db),user:User=Depe
     g=db.get(ConsolidationGroup,group_id);e=db.get(FinanceEntity,p.entity_id)
     if not g or not e:raise HTTPException(404,"Group/entity not found")
     company_ok(db,g.company_id,user);company_ok(db,e.company_id,user);o=ConsolidationMember(group_id=group_id,**p.model_dump());db.add(o);db.commit();db.refresh(o);return {"id":o.id}
-@router.post("/intercompany",dependencies=[Depends(require_permission("enterprise.finance.write"))])
-def intercompany(p:IntercompanyCreate,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
-    company_ok(db,p.company_id,user)
-    if p.from_entity_id==p.to_entity_id:raise HTTPException(422,"Intercompany parties must differ")
-    o=IntercompanyTransaction(**p.model_dump());db.add(o);db.commit();db.refresh(o);return {"id":o.id,"status":o.status}
+@router.post("/intercompany", dependencies=[Depends(require_permission("enterprise.finance.write"))])
+def intercompany(p: IntercompanyCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    company_ok(db, p.company_id, user)
+    if p.from_entity_id == p.to_entity_id:
+        raise HTTPException(422, "Intercompany parties must differ")
+
+    tenant_id = get_effective_tenant_id(user)
+    party_ids = {p.from_entity_id, p.to_entity_id}
+    tenant_entities = set(db.scalars(
+        select(FinanceEntity.id)
+        .join(Company, Company.id == FinanceEntity.company_id)
+        .where(
+            FinanceEntity.id.in_(party_ids),
+            FinanceEntity.is_active.is_(True),
+            Company.tenant_id == tenant_id,
+            Company.is_active.is_(True),
+        )
+    ).all())
+    if tenant_entities != party_ids:
+        raise HTTPException(404, "Intercompany entity not found")
+
+    transaction = IntercompanyTransaction(**p.model_dump())
+    db.add(transaction)
+    db.commit()
+    db.refresh(transaction)
+    return {"id": transaction.id, "status": transaction.status}
 @router.get("/intercompany",dependencies=[Depends(require_permission("enterprise.finance.access"))])
 def intercompanies(company_id:int,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     company_ok(db,company_id,user);q=select(IntercompanyTransaction).where(IntercompanyTransaction.company_id==company_id).order_by(IntercompanyTransaction.id.desc())
