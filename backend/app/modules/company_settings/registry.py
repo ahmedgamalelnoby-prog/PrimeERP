@@ -41,7 +41,7 @@ _RAW = [
     ("sales.credit_limit_enforced","sales","Sales","bool",True,"Block orders beyond customer credit limit",None,"runtime"),
     ("sales.allow_negative_customer_balance","sales","Sales","bool",False,"Allow customer invoice overpayments to create a customer credit balance",None,"runtime"),
     ("sales.default_payment_terms_days","sales","Sales","int",30,"Default customer payment term",None,"runtime"),
-    ("sales.document_numbering","sales","Sales","enum","per_company_year","Sales document numbering policy",["per_company_year","per_company","global"],"catalog"),
+    ("sales.document_numbering","sales","Sales","enum","per_company_year","Generate unique sales document numbers by company/year, company, or globally",["per_company_year","per_company","global"],"runtime"),
     # Procurement / suppliers
     ("purchasing.require_purchase_order","purchasing","Purchasing","bool",True,"Require a confirmed, linked purchase order before supplier billing",None,"runtime"),
     ("purchasing.require_purchase_approval","purchasing","Purchasing","bool",True,"Require approval before confirming purchase orders",None,"runtime"),
