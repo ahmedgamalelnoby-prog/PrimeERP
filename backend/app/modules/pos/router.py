@@ -176,8 +176,7 @@ def current_shift(
     return db.scalar(select(PosCashierShift).where(
         PosCashierShift.company_id == company_id,
         PosCashierShift.terminal_id == terminal_id,
-        PosCashierShift.status == "open",
-    ))
+    ).order_by(PosCashierShift.id.desc()).limit(1))
 
 
 @router.post("/shifts/open", status_code=201, dependencies=[Depends(require_permission("commerce.write"))])
