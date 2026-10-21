@@ -12,7 +12,7 @@ from app.modules.accounting.journals.models import AccountingJournal
 from app.modules.branches.models import Branch
 from app.modules.commerce.accounting_models import CommerceAccountingSettings
 from app.modules.commerce.accounting_schemas import CommerceAccountingSettingsCreate
-from app.modules.commerce.models import CommerceApprovalEvent, CommercePayment, SalesDocument, PurchaseDocument
+from app.modules.commerce.models import CommercePayment, SalesDocument, PurchaseDocument
 from app.modules.commerce.schemas import PartnerCreate, PartnerResponse, DocumentCreate, DocumentResponse, PaymentCreate, PaymentResponse, PaymentReverse, AgingSummary, PartnerStatement, CommerceApprovalDecision
 from app.modules.commerce.sales_return_schemas import SalesReturnCreate
 from app.modules.commerce.sales_return_service import sales_return_service
