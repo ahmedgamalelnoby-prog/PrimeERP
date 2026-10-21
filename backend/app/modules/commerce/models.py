@@ -36,6 +36,7 @@ class SalesDocument(Base):
     status = Column(String(20), nullable=False, default="draft")
     warehouse_id = Column(Integer, ForeignKey("inventory_warehouses.id", ondelete="RESTRICT"), nullable=True)
     source_order_id = Column(Integer, ForeignKey("sales_documents.id", ondelete="RESTRICT"), nullable=True, index=True)
+    pos_shift_id = Column(Integer, ForeignKey("pos_cashier_shifts.id", ondelete="RESTRICT"), nullable=True, index=True)
     notes = Column(Text, nullable=True)
     subtotal = Column(Numeric(18, 4), nullable=False, default=0)
     tax_total = Column(Numeric(18, 4), nullable=False, default=0)
