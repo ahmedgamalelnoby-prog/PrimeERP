@@ -1,5 +1,5 @@
 from datetime import datetime, timezone, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_CEILING
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
@@ -17,6 +17,9 @@ from app.modules.commerce.models import BusinessPartner, CommerceApprovalEvent, 
 from app.modules.commerce.payment_workflow import post_payment, reverse_payment
 from app.modules.inventory.items.models import InventoryItem
 from app.modules.inventory.locations.models import InventoryLocation
+from app.modules.inventory.reservations.models import InventoryReservation
+from app.modules.inventory.reservations.schemas import ReservationCreate
+from app.modules.inventory.reservations.service import inventory_reservation_service
 from app.modules.inventory.stock_moves.models import InventoryStockMove
 from app.modules.inventory.stock_moves.schemas import StockMoveCreate
 from app.modules.inventory.stock_moves.service import inventory_stock_move_service
@@ -161,6 +164,124 @@ class CommerceService:
             .group_by(SalesLine.source_sales_line_id)
         ).all()
         return {int(line_id): Decimal(quantity or 0) for line_id, quantity in rows}
+
+    @staticmethod
+    def _expand_sales_components(db, *, company_id: int, product_id: int, variant_id: int | None, quantity: Decimal, visited=None):
+        recipes = list(db.scalars(select(Recipe).where(
+            Recipe.company_id == company_id,
+            Recipe.product_id == product_id,
+            Recipe.is_active.is_(True),
+        ).order_by(Recipe.version.desc())).all())
+        recipe = next((row for row in recipes if row.variant_id == variant_id), None) if variant_id is not None else None
+        if recipe is None:
+            recipe = next((row for row in recipes if row.variant_id is None), None)
+        if recipe is None:
+            return [(product_id, variant_id, quantity)]
+        key = (product_id, variant_id)
+        visited = set(visited or ())
+        if key in visited:
+            raise ValueError(f"Recipe cycle detected while processing item {product_id}")
+        visited.add(key)
+        multiplier = quantity / Decimal(recipe.yield_quantity)
+        multiplier *= Decimal("1") + Decimal(recipe.waste_percentage or 0) / Decimal("100")
+        result = []
+        for recipe_line in recipe.lines:
+            line_quantity = multiplier * Decimal(recipe_line.quantity)
+            line_quantity *= Decimal("1") + Decimal(recipe_line.waste_percentage or 0) / Decimal("100")
+            result.extend(CommerceService._expand_sales_components(
+                db,
+                company_id=company_id,
+                product_id=recipe_line.ingredient_product_id,
+                variant_id=None,
+                quantity=line_quantity,
+                visited=visited,
+            ))
+        return result
+
+    @staticmethod
+    def _reserve_sales_line(db, *, order: SalesDocument, line: SalesLine, quantity: Decimal):
+        if not order.warehouse_id:
+            raise ValueError("A warehouse is required to reserve a sales order")
+        locations = list(db.scalars(select(InventoryLocation).where(
+            InventoryLocation.company_id == order.company_id,
+            InventoryLocation.warehouse_id == order.warehouse_id,
+            InventoryLocation.is_active.is_(True),
+            InventoryLocation.is_virtual.is_(False),
+        ).order_by(InventoryLocation.id)).all())
+        if not locations:
+            raise ValueError("The sales order warehouse has no active physical stock locations")
+
+        for item_id, variant_id, raw_quantity in CommerceService._expand_sales_components(
+            db,
+            company_id=order.company_id,
+            product_id=line.item_id,
+            variant_id=line.variant_id,
+            quantity=quantity,
+        ):
+            item = db.scalar(select(InventoryItem).where(
+                InventoryItem.id == item_id,
+                InventoryItem.company_id == order.company_id,
+                InventoryItem.is_active.is_(True),
+            ))
+            if item is None:
+                raise ValueError("A sales order component is unavailable in the selected company")
+            if item.item_type not in {"stockable", "consumable"}:
+                continue
+            needed = Decimal(raw_quantity).quantize(Decimal("0.0001"), rounding=ROUND_CEILING)
+            if needed <= 0:
+                continue
+            for location in locations:
+                if get_company_setting(db, order.company_id, "inventory.require_bin_location") is True and location.parent_id is None:
+                    continue
+                balance = inventory_reservation_service._locked_balance(
+                    db, order.company_id, item_id, variant_id, location.id
+                )
+                warehouse_stock = inventory_reservation_service._locked_warehouse_stock(
+                    db, order.company_id, item_id, variant_id, location.warehouse_id
+                )
+                available = min(
+                    Decimal(balance.quantity_on_hand or 0) - Decimal(balance.quantity_reserved or 0),
+                    Decimal(warehouse_stock.quantity_on_hand or 0) - Decimal(warehouse_stock.quantity_reserved or 0),
+                )
+                allocated = min(needed, max(available, Decimal("0")))
+                if allocated <= 0:
+                    continue
+                inventory_reservation_service.reserve(db, ReservationCreate(
+                    company_id=order.company_id,
+                    item_id=item_id,
+                    variant_id=variant_id,
+                    location_id=location.id,
+                    quantity=allocated,
+                    source_module="commerce",
+                    source_entity="sales_order_line",
+                    source_id=str(line.id),
+                    reference=order.number,
+                    notes=f"Sales order {order.id}, line {line.id}",
+                ))
+                needed -= allocated
+                if needed <= 0:
+                    break
+            if needed > 0:
+                raise ValueError(
+                    f"Insufficient available stock to reserve sales order line {line.id}, item {item_id}; short by {needed}"
+                )
+
+    @staticmethod
+    def _release_sales_order_reservations(db, *, order: SalesDocument):
+        source_ids = [str(line.id) for line in order.lines]
+        if not source_ids:
+            return
+        reservations = db.scalars(select(InventoryReservation).where(
+            InventoryReservation.company_id == order.company_id,
+            InventoryReservation.source_module == "commerce",
+            InventoryReservation.source_entity == "sales_order_line",
+            InventoryReservation.source_id.in_(source_ids),
+            InventoryReservation.status == "active",
+        ).order_by(InventoryReservation.id).with_for_update()).all()
+        for reservation in reservations:
+            inventory_reservation_service.release(
+                db, company_id=order.company_id, reservation_id=reservation.id
+            )
 
     def create_document(self, db, payload):
         is_sale = payload.document_type in SALE_TYPES
