@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.modules.commerce.models import CommercePayment, CommercePaymentAllocation, PurchaseDocument, SalesDocument
+from app.modules.company_settings.service import get_company_setting
 from app.modules.jurisdiction.models import TaxSnapshot
 from app.modules.jurisdiction.tax_posting_guard import validate_payment_wht
 
@@ -133,7 +134,12 @@ def post_payment(
             return document, existing
 
     balance = Decimal(document.total or 0) - Decimal(document.paid_total or 0)
-    if update_document_paid_total and amount > balance:
+    allow_customer_credit = (
+        document_kind == "sale"
+        and document.document_type == "invoice"
+        and get_company_setting(db, company_id, "sales.allow_negative_customer_balance") is True
+    )
+    if update_document_paid_total and amount > balance and not allow_customer_credit:
         raise ValueError("Payment exceeds outstanding balance")
 
     candidate = CommercePayment(
