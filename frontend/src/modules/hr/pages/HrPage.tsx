@@ -93,7 +93,15 @@ export default function HrPage() {
   }
 
   function editCorrection(record: Attendance) {
-    const localValue = (value?: string | null) => value ? new Date(new Date(value).getTime() - new Date(value).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : "";
+    const localValue = (value?: string | null) => {
+      if (!value) return "";
+      const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: companyTimezone, year: "numeric", month: "2-digit", day: "2-digit",
+        hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+      }).formatToParts(new Date(value));
+      const part = (type: string) => parts.find(item => item.type === type)?.value || "";
+      return `${part("year")}-${part("month")}-${part("day")}T${part("hour")}:${part("minute")}`;
+    };
     setCorrectionTarget(record.id);
     setCorrectionForm({ check_in_time: localValue(record.check_in_at), check_out_time: localValue(record.check_out_at), reason: "" });
   }
