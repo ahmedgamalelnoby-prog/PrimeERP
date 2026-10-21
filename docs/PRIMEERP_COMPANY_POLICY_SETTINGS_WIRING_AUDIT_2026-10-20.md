@@ -251,7 +251,7 @@ The 29 catalog-only settings below are the remaining candidates for workflow wir
 ### B. Sales and customer rules (5)
 - `sales.require_quote_approval`, `sales.require_order_approval`: add explicit draft → pending approval → approved/rejected transitions, approver permissions, audit history and tests.
 - `sales.invoice_requires_delivery`, `sales.allow_overbilling`: introduce reliable order-line ↔ delivery-line ↔ invoice-line allocation and quantity accounting; do not infer relationships by customer alone.
-- `sales.document_numbering`: implement company/year sequence generation with transaction-safe allocation and uniqueness constraints/migration.
+- `sales.document_numbering`: keep catalog-only until sales has its own transaction-safe numbering sequence and migration. Current `DocumentCreate.number` is caller-required; the generic sequence requires a branch and is scoped by tenant/company/branch, while this policy also offers global numbering. Existing uniqueness is only `(company_id, document_type, number)`, so reusing that sequence would not faithfully enforce all three choices.
 
 ### C. Purchasing and supplier controls (2)
 - `purchasing.require_purchase_order`, `purchasing.require_purchase_approval`: persist purchase-order source links and approval lifecycle before enforcing supplier-bill restrictions.
@@ -350,3 +350,8 @@ Regression tests cover a configured override, an unset fallback, and invalid-cod
 
 
 - `sales.allow_negative_customer_balance` now permits a customer payment to exceed the outstanding total on a sales invoice when enabled, recording the excess as customer credit. The default false setting continues to reject overpayment, and purchase/vendor payments remain subject to the outstanding-balance limit.
+
+
+## Sales document numbering review (2026-10-22)
+
+The generic transaction numbering service was inspected as a possible consumer for `sales.document_numbering`. It cannot safely implement this policy as-is: commerce document creation requires the client to submit a number, sales documents do not carry a branch, the generic sequence requires a tenant/company/branch scope, and its reset periods do not provide a global sequence. Commerce's current uniqueness constraint is company + document type + number. A dedicated sales sequence model/transactional allocator and migration are required before promoting the option to runtime. No behavior or data schema was changed in this review.
