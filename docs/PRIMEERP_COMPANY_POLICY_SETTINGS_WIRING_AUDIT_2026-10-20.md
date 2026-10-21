@@ -179,7 +179,7 @@ A setting should be promoted from CATALOG ONLY to RUNTIME only after the consume
 - Company policies remain grouped by category in registry order. Within a category, runtime-enforced entries are listed before catalog-only entries, then labels are alphabetically sorted using Arabic locale rules.
 - The page now searches by display label, canonical setting key, module, and translated category/module names; a status filter narrows results to runtime or catalog-only entries.
 - The page shows total/runtime/catalog/unsaved-change counters, a result count, a reset control, an empty-result message, and disables Save when no values differ from the loaded values.
-- These UX changes improve navigation. The current source audit records **55 runtime / 13 catalog-only** after wiring sales numbering, approval lifecycles, project dimensions, linked sales/purchase workflows, and POS cashier shifts. Migrations and tests have not been executed in this environment.
+- These UX changes improve navigation. The current source audit records **56 runtime / 12 catalog-only** after wiring sales numbering, approval lifecycles, project dimensions, linked sales/purchase workflows, and POS cashier shifts. Migrations and tests have not been executed in this environment.
 
 
 ## Follow-up regression coverage (2026-10-20)
@@ -415,10 +415,10 @@ Regression tests cover a configured override, an unset fallback, and invalid-cod
 
 
 ## Remaining catalog-only review — 2026-10-22
-The following **13** policies remain catalog-only after manufacturing work-order wiring. They were reviewed against the current branch; each needs its owning workflow before it can be promoted.
+The following **12** policies remain catalog-only after manufacturing and sales-order reservation wiring. They were reviewed against the current branch; each needs its owning workflow before it can be promoted.
 
 - `general.date_format`: the preference and formatter exist, but most date-bearing screens and exports still render dates independently. Migrate all app display/export paths before promotion.
-- `inventory.auto_reserve_sales_orders`: reservations support whole-reservation actions, while sales delivery supports partial fulfillment. Add per-line allocation, partial consumption/release, edit/cancel cleanup, and idempotent order-confirmation handling.
+- `inventory.auto_reserve_sales_orders` is now wired to sales-order confirmation, per-line/component reservations, partial delivery consumption, and order cancellation cleanup.
 - `inventory.allow_below_cost_sale`: compare against the authoritative outbound valuation for the selected warehouse and quantity (including FIFO layers), and enforce an explicit permission plus audit record.
 - `inventory.expiry_tracking_required`, `inventory.serial_tracking_default`, `inventory.batch_tracking_default`: the item and stock movement lifecycle has no linked lot/serial identity across receipts, transfers, issues, returns, and adjustments. Add that traceability model and validate it end to end; defaults must affect new items only.
 - `hr.attendance_source`, `hr.biometric_sync_interval_minutes`: manual attendance exists, but there is no authenticated biometric/mobile connector or sync worker. Keep non-manual options visibly catalog-only until ingestion exists.
@@ -445,3 +445,12 @@ These are implementation dependencies, not reasons to treat the settings as acti
 - Cancellation reverses the output receipt first and then the component issues. The inventory service blocks direct reversals of production movements so work-order state and WIP accounting cannot be bypassed.
 - The manufacturing page now exposes work-order creation, release, completion, and cancellation. Components with active variants are rejected until recipe lines carry a component variant. Production costing also fails closed if the consumed value cannot be represented exactly at the current four-decimal inventory cost precision.
 - Both policies are promoted to runtime and added to the registry contract. The migration and application verification have not been run in this environment; this is a source-level review only.
+
+
+## Sales order stock reservation workflow — 2026-10-22
+
+- When `inventory.auto_reserve_sales_orders` is enabled, confirming a sales order reserves its stock components across active physical locations in the order warehouse. Recipe expansion, variant, bin-location policy, and available stock are checked while locking location and warehouse balances.
+- Linked partial deliveries consume the order-line reservation in the same transaction as each inventory issue. Partial consumption splits the consumed quantity from the still-active reservation, so subsequent deliveries retain the remaining reserved balance. The saved component reservations are the source of truth during delivery; later recipe edits do not change the confirmed order's material requirements.
+- Cancelling an eligible sales order releases its remaining active reservations. Delivery posting rejects documents whose source order was cancelled. The sales screen exposes the warehouse on sales orders, copies it to linked deliveries, and offers order cancellation with a confirmation prompt.
+- Orders created before the policy is enabled can reserve the quantity needed by a linked delivery at posting time. If the policy is disabled after reservations exist, linked deliveries still consume those reservations.
+- The policy is promoted to runtime and included in the registry contract. No database schema change was needed because the existing reservation model supports source links and the existing stock move supports reservation IDs. No test suite or application build was run; this remains a source-level review.
