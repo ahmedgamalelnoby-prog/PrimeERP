@@ -13,7 +13,7 @@ export default function SalesPage() {
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<Document | null>(null);
   const [form, setForm] = useState({ partner_id:"", item_id:"", quantity:"1", unit_price:"0", number:"", document_date:today(), document_type:"order", source_order_id:"", source_line_id:"", warehouse_id:"" });
-  const load = async () => { setLoading(true); setError(""); try { const [d,p,w] = await Promise.all([salesApi.list(), salesApi.partners(), salesApi.warehouses()]); setDocs(d); setPartners(p); setWarehouses(w); } catch(e) { setError(errorText(e)); } finally { setLoading(false); } };
+  const load = async () => { setLoading(true); setError(""); try { const [d,p,w] = await Promise.all([salesApi.list(), salesApi.partners(), salesApi.warehouses().catch(() => [] as Warehouse[])]); setDocs(d); setPartners(p); setWarehouses(w); } catch(e) { setError(errorText(e)); } finally { setLoading(false); } };
   useEffect(() => { void load(); }, []);
   const create = async (e: FormEvent) => { e.preventDefault(); setBusy(true); setError(""); try {
     await salesApi.create({ partner_id:Number(form.partner_id), document_type:form.document_type, ...(form.number.trim() ? { number:form.number.trim() } : {}), document_date:form.document_date, ...(form.warehouse_id ? { warehouse_id:Number(form.warehouse_id) } : {}), ...(form.source_order_id ? { source_order_id:Number(form.source_order_id) } : {}), lines:[{ item_id:Number(form.item_id), quantity:Number(form.quantity), unit_price:Number(form.unit_price), discount_percent:0, tax_percent:0, ...(form.source_line_id ? { source_sales_line_id:Number(form.source_line_id) } : {}) }] });
