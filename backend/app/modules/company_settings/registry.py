@@ -39,7 +39,7 @@ _RAW = [
     ("sales.invoice_requires_delivery","sales","Sales","bool",False,"Require delivery before invoicing stock items",None,"catalog"),
     ("sales.allow_overbilling","sales","Sales","bool",False,"Allow billing above ordered quantity",None,"catalog"),
     ("sales.credit_limit_enforced","sales","Sales","bool",True,"Block orders beyond customer credit limit",None,"runtime"),
-    ("sales.allow_negative_customer_balance","sales","Sales","bool",False,"Allow defined customer balance exceptions",None,"catalog"),
+    ("sales.allow_negative_customer_balance","sales","Sales","bool",False,"Allow customer invoice overpayments to create a customer credit balance",None,"runtime"),
     ("sales.default_payment_terms_days","sales","Sales","int",30,"Default customer payment term",None,"runtime"),
     ("sales.document_numbering","sales","Sales","enum","per_company_year","Sales document numbering policy",["per_company_year","per_company","global"],"catalog"),
     # Procurement / suppliers
