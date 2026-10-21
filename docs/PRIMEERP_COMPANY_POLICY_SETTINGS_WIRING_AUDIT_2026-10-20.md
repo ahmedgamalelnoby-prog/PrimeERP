@@ -119,7 +119,7 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 | Option key | Type | Current status | Purpose |
 |---|---|---|---|
 | `pos.allow_open_cash_drawer` | bool | CATALOG ONLY | Allow cash drawer opening without a transaction |
-| `pos.require_shift_close` | bool | CATALOG ONLY | Require cashier shift closing and reconciliation |
+| `pos.require_shift_close` | bool | **RUNTIME** | Require an open terminal shift before checkout and save expected cash, counted cash, and variance when the cashier closes the shift |
 | `pos.allow_discount_without_approval` | bool | **RUNTIME** | Permit discounts above the no-approval threshold when enabled |
 | `pos.max_discount_pct_without_approval` | number | **RUNTIME** | Enforce maximum POS discount percentage when approval-free discounts are disabled |
 
@@ -179,7 +179,7 @@ A setting should be promoted from CATALOG ONLY to RUNTIME only after the consume
 - Company policies remain grouped by category in registry order. Within a category, runtime-enforced entries are listed before catalog-only entries, then labels are alphabetically sorted using Arabic locale rules.
 - The page now searches by display label, canonical setting key, module, and translated category/module names; a status filter narrows results to runtime or catalog-only entries.
 - The page shows total/runtime/catalog/unsaved-change counters, a result count, a reset control, an empty-result message, and disables Save when no values differ from the loaded values.
-- These UX changes improve navigation. The current source audit records **52 runtime / 16 catalog-only** after wiring sales numbering, approval lifecycles, project dimensions, and linked sales/purchase document workflows. Migrations and tests have not been executed in this environment.
+- These UX changes improve navigation. The current source audit records **53 runtime / 15 catalog-only** after wiring sales numbering, approval lifecycles, project dimensions, linked sales/purchase workflows, and POS cashier shifts. Migrations and tests have not been executed in this environment.
 
 
 ## Follow-up regression coverage (2026-10-20)
@@ -411,3 +411,11 @@ Regression tests cover a configured override, an unset fallback, and invalid-cod
 - Added a nullable project foreign key to generic business transactions and an optional project ID to create/update/response schemas. The transaction service validates that a supplied project belongs to the transaction company; when `general.require_project` is enabled it also rejects creates and updates that leave the transaction without a project.
 - Added the project-dimension migration and promoted `general.require_project` to runtime for the generic transaction engine. This does not claim project support on commerce documents or accounting journal lines that do not expose the dimension.
 - Registry contract updated. Migration/tests have not been executed, so this is not runtime-verified.
+
+
+## POS cashier shift foundation — 2026-10-29
+- Added company/branch/terminal-scoped cashier shifts with one open shift per terminal, opening float, opener/closer, and close reconciliation fields.
+- POS checkout now requires an active terminal shift while `pos.require_shift_close` is enabled and links each POS invoice to the shift. The offline POS page prevents closing while locally queued checkouts remain.
+- Shift close calculates expected cash from the opening float plus posted cash payments linked to that shift, then records counted cash and variance. Card, bank, and wallet tenders remain outside the cash drawer total.
+- The migration is committed but has not been executed. No tests or frontend build were run, so this remains a source-level implementation review.
+- `pos.allow_open_cash_drawer` remains catalog-only: there is no authenticated cash-drawer hardware integration or drawer event workflow to enforce it.
