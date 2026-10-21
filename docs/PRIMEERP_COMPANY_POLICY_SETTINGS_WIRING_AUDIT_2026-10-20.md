@@ -6,9 +6,9 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 ## Result
 
 - Catalog entries audited individually: **68**.
-- Confirmed workflow consumers in this change: **38**.
-- Visible/persisted options not yet enforced by their owning workflows: **30**.
-- Confirmed runtime consumers: `inventory.allow_negative_stock` (stock-movement posting), `accounting.require_journal_approval` (journal posting), `general.timezone`, `general.base_currency`, `general.allow_multi_currency`, `general.require_cost_center` and `accounting.allow_backdated_entries` (journal creation), plus `integrations.retry_limit` and `integrations.webhook_signature_required` (integration retry and Salla webhook intake), `accounting.fiscal_year_start_month` (fiscal-year creation), `accounting.rounding_method` and `tax.default_tax_inclusive_pricing` (tax calculation), `workflow.allow_self_approval` (generic transaction approval), `inventory.require_bin_location` (stock movement creation), `general.branch_required` (generic transaction creation), and `accounting.period_lock_enabled` (journal posting), `sales.credit_limit_enforced` (customer credit exposure check), `purchasing.require_goods_receipt` (supplier-bill creation), `sales.default_payment_terms_days` / `purchasing.default_payment_terms_days` (sales invoices and supplier bills when partner terms are unset), `crm.duplicate_customer_check` (customer creation by email/tax number), `pos.allow_discount_without_approval` / `pos.max_discount_pct_without_approval` (POS checkout discounts), `inventory.require_warehouse` (stockable/consumable commerce documents), `tax.require_tax_code_on_invoice` (taxable sales/purchase invoice lines), and `accounting.auto_post_sales_invoice` / `accounting.auto_post_purchase_invoice` (company-gated accounting auto-post), and the five `accounting.default_*_account` code settings (company-scoped active posting-account overrides for commerce AR, AP, sales, purchase expense, and payment/cash lines), and `purchasing.allow_invoice_price_variance` / `purchasing.price_variance_tolerance_pct` (supplier bill vs linked receipt valuation comparison at bill accounting posting), `general.intercompany_enabled` (new intercompany transaction creation), and `tax.einvoice_required_for_sales` (sales invoices and credit notes require ETA status `valid` before confirmation), and `inventory.valuation_method` (default costing method for newly created items when no item-specific choice is submitted). FIFO negative issues remain blocked for valuation safety, and reserved quantities remain protected.
+- Confirmed workflow consumers in this change: **39**.
+- Visible/persisted options not yet enforced by their owning workflows: **29**.
+- Confirmed runtime consumers: `inventory.allow_negative_stock` (stock-movement posting), `accounting.require_journal_approval` (journal posting), `general.timezone`, `general.base_currency`, `general.allow_multi_currency`, `general.require_cost_center` and `accounting.allow_backdated_entries` (journal creation), plus `integrations.retry_limit` and `integrations.webhook_signature_required` (integration retry and Salla webhook intake), `accounting.fiscal_year_start_month` (fiscal-year creation), `accounting.rounding_method` and `tax.default_tax_inclusive_pricing` (tax calculation), `workflow.allow_self_approval` (generic transaction approval), `inventory.require_bin_location` (stock movement creation), `general.branch_required` (generic transaction creation), and `accounting.period_lock_enabled` (journal posting), `sales.credit_limit_enforced` (customer credit exposure check), `purchasing.require_goods_receipt` (supplier-bill creation), `sales.default_payment_terms_days` / `purchasing.default_payment_terms_days` (sales invoices and supplier bills when partner terms are unset), `crm.duplicate_customer_check` (customer creation by email/tax number), `pos.allow_discount_without_approval` / `pos.max_discount_pct_without_approval` (POS checkout discounts), `inventory.require_warehouse` (stockable/consumable commerce documents), `tax.require_tax_code_on_invoice` (taxable sales/purchase invoice lines), and `accounting.auto_post_sales_invoice` / `accounting.auto_post_purchase_invoice` (company-gated accounting auto-post), and the five `accounting.default_*_account` code settings (company-scoped active posting-account overrides for commerce AR, AP, sales, purchase expense, and payment/cash lines), and `purchasing.allow_invoice_price_variance` / `purchasing.price_variance_tolerance_pct` (supplier bill vs linked receipt valuation comparison at bill accounting posting), `general.intercompany_enabled` (new intercompany transaction creation), and `tax.einvoice_required_for_sales` (sales invoices and credit notes require ETA status `valid` before confirmation), and `inventory.valuation_method` (default costing method for newly created items when no item-specific choice is submitted), and `sales.allow_negative_customer_balance` (explicitly permits overpayment of a sales invoice to create customer credit). FIFO negative issues remain blocked for valuation safety, and reserved quantities remain protected.
 - This is a source-level audit, not a successful runtime test. Docker is unavailable/offline for the user, and the GitHub self-hosted Release Gate is queued; no test-pass claim is made.
 
 ## Status definitions
@@ -64,7 +64,7 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 | `sales.invoice_requires_delivery` | bool | CATALOG ONLY | Require delivery before invoicing stock items |
 | `sales.allow_overbilling` | bool | CATALOG ONLY | Allow billing above ordered quantity |
 | `sales.credit_limit_enforced` | bool | **RUNTIME** | Apply customer credit-limit checks when enabled |
-| `sales.allow_negative_customer_balance` | bool | CATALOG ONLY | Allow defined customer balance exceptions |
+| `sales.allow_negative_customer_balance` | bool | **RUNTIME** | Permit an invoice overpayment to create a customer credit balance |
 | `sales.default_payment_terms_days` | int | **RUNTIME** | Default due-date terms for sales invoices when partner terms are unset |
 | `sales.document_numbering` | enum | CATALOG ONLY | Sales document numbering policy |
 
@@ -176,7 +176,7 @@ A setting should be promoted from CATALOG ONLY to RUNTIME only after the consume
 - Company policies remain grouped by category in registry order. Within a category, runtime-enforced entries are listed before catalog-only entries, then labels are alphabetically sorted using Arabic locale rules.
 - The page now searches by display label, canonical setting key, module, and translated category/module names; a status filter narrows results to runtime or catalog-only entries.
 - The page shows total/runtime/catalog/unsaved-change counters, a result count, a reset control, an empty-result message, and disables Save when no values differ from the loaded values.
-- These UX changes improve navigation. The current source audit records **38 runtime / 30 catalog-only** after adding transaction branch requirements, journal period-lock policy, customer credit-limit enforcement, supplier receipt requirements, company payment-term defaults, duplicate-customer checks, POS discount policy enforcement, warehouse requirements, taxable invoice tax-code enforcement, and accounting auto-post gates; tests still need to run.
+- These UX changes improve navigation. The current source audit records **39 runtime / 29 catalog-only** after adding transaction branch requirements, journal period-lock policy, customer credit-limit enforcement, supplier receipt requirements, company payment-term defaults, duplicate-customer checks, POS discount policy enforcement, warehouse requirements, taxable invoice tax-code enforcement, and accounting auto-post gates; tests still need to run.
 
 
 ## Follow-up regression coverage (2026-10-20)
@@ -242,16 +242,15 @@ Added a public-webhook endpoint regression test that sets `integrations.webhook_
 
 ## Remaining catalog-only backlog — grouped implementation plan (2026-10-20)
 
-The 30 catalog-only settings below are the remaining candidates for workflow wiring. Grouping is by the primary workflow needed; it is not a claim that the work is already implemented.
+The 29 catalog-only settings below are the remaining candidates for workflow wiring. Grouping is by the primary workflow needed; it is not a claim that the work is already implemented.
 
 ### A. Company defaults and accounting configuration (2)
 - `general.date_format`: apply the selected format consistently through shared frontend date-formatting utilities; display-wide wiring is still incomplete.
 - `general.require_project`: add project dimension to the supported document schemas and persistence first.
 
-### B. Sales and customer rules (6)
+### B. Sales and customer rules (5)
 - `sales.require_quote_approval`, `sales.require_order_approval`: add explicit draft → pending approval → approved/rejected transitions, approver permissions, audit history and tests.
 - `sales.invoice_requires_delivery`, `sales.allow_overbilling`: introduce reliable order-line ↔ delivery-line ↔ invoice-line allocation and quantity accounting; do not infer relationships by customer alone.
-- `sales.allow_negative_customer_balance`: define which transaction types and permissions may create negative balances, then enforce in the credit/balance service.
 - `sales.document_numbering`: implement company/year sequence generation with transaction-safe allocation and uniqueness constraints/migration.
 
 ### C. Purchasing and supplier controls (2)
@@ -348,3 +347,6 @@ Regression tests cover a configured override, an unset fallback, and invalid-cod
 
 
 - `inventory.valuation_method` is now the default costing method for new items only when the request did not explicitly provide an item-specific method. Existing item costing is not rewritten; the per-item accounting valuation continues to use each item's stored method.
+
+
+- `sales.allow_negative_customer_balance` now permits a customer payment to exceed the outstanding total on a sales invoice when enabled, recording the excess as customer credit. The default false setting continues to reject overpayment, and purchase/vendor payments remain subject to the outstanding-balance limit.
