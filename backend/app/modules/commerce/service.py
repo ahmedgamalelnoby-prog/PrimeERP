@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from app.modules.accounting.models import TaxRate
 from app.modules.companies.models import Company
 from app.modules.company_settings.service import get_company_setting
+from app.core.permissions.checker import user_has_permission
+from app.modules.audit.service import record_audit_event
 from app.modules.identity.models import User
 from app.modules.egyptian_einvoice.models import EgyptianEInvoiceDocument
 from app.modules.accounting.tax_engine import calculate_taxes
@@ -683,6 +685,7 @@ class CommerceService:
         } for event in events]
 
     def post_inventory(self, db, company_id, document_id, kind, user_id: int | None = None):
+        actor_user_id = user_id
         model = SalesDocument if kind == "sale" else PurchaseDocument; obj = db.scalar(select(model).where(model.id == document_id, model.company_id == company_id).with_for_update())
         if not obj: raise ValueError("Document not found")
         allowed = {"delivery"} if kind == "sale" else {"receipt"}
@@ -704,6 +707,7 @@ class CommerceService:
         if not locations: raise ValueError("Warehouse has no active location")
         loc = locations[0]; source_entity = "sales_delivery" if kind == "sale" else "purchase_receipt"
         auto_reserve = get_company_setting(db, company_id, "inventory.auto_reserve_sales_orders") is True
+        allow_below_cost = get_company_setting(db, company_id, "inventory.allow_below_cost_sale") is True
         source_order = None
         if kind == "sale" and obj.source_order_id is not None:
             source_order = db.scalar(select(SalesDocument).where(
@@ -849,6 +853,52 @@ class CommerceService:
                             source_id=source_id, notes=f"Sales delivery component for line {line.id}",
                         ))
                         inventory_stock_move_service.post(db, tenant_id=tenant_id, company_id=company_id, move_id=move.id, user_id=user_id)
+            line_moves = list(db.scalars(select(InventoryStockMove).where(
+                InventoryStockMove.company_id == company_id,
+                InventoryStockMove.source_module == "commerce",
+                InventoryStockMove.source_entity == "sales_delivery",
+                InventoryStockMove.source_id.like(f"{obj.id}:{line.id}:%"),
+                InventoryStockMove.status == "posted",
+            )).all())
+            actual_cost = sum(
+                (Decimal(move.quantity) * Decimal(move.unit_cost or 0) for move in line_moves),
+                Decimal("0"),
+            ).quantize(Decimal("0.0001"))
+            net_revenue = (
+                Decimal(line.quantity)
+                * Decimal(line.unit_price)
+                * (Decimal("100") - Decimal(line.discount_percent or 0))
+                / Decimal("100")
+            ).quantize(Decimal("0.0001"))
+            if actual_cost > net_revenue:
+                if not allow_below_cost:
+                    raise ValueError(
+                        f"Sales delivery line {line.id} is below inventory cost; "
+                        "enable inventory.allow_below_cost_sale and assign commerce.below_cost_override to an authorized role to continue"
+                    )
+                actor = db.scalar(select(User).where(User.id == actor_user_id)) if actor_user_id is not None else None
+                if actor is None or not actor.is_active or getattr(actor, "is_deleted", False) or not user_has_permission(
+                    actor, "commerce.below_cost_override", db
+                ):
+                    raise ValueError(
+                        "Posting a below-cost sales delivery requires the active commerce.below_cost_override permission"
+                    )
+                record_audit_event(
+                    db,
+                    action="sales.below_cost_override",
+                    entity_type="sales_delivery_line",
+                    entity_id=line.id,
+                    user_id=actor.id,
+                    tenant_id=tenant_id,
+                    company_id=company_id,
+                    metadata={
+                        "document_id": obj.id,
+                        "document_number": obj.number,
+                        "net_revenue": str(net_revenue),
+                        "inventory_cost": str(actual_cost),
+                        "loss_amount": str(actual_cost - net_revenue),
+                    },
+                )
             else:
                 source_id = f"{obj.id}:{line.id}"
                 existing = db.scalar(select(InventoryStockMove).where(
