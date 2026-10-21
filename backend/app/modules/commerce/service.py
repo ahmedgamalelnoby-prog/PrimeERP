@@ -546,9 +546,11 @@ class CommerceService:
     def enforce_credit_limit(self, db, company_id: int, document):
         if document.document_type != "invoice":
             return
-        partner = db.scalar(select(BusinessPartner).where(BusinessPartner.id == document.partner_id, BusinessPartner.company_id == company_id).with_for_update())
+        # Read the policy before touching partner data: disabled enforcement
+        # must not perform unnecessary lookups or lock a customer row.
         if get_company_setting(db, company_id, "sales.credit_limit_enforced") is not True:
             return
+        partner = db.scalar(select(BusinessPartner).where(BusinessPartner.id == document.partner_id, BusinessPartner.company_id == company_id).with_for_update())
         limit = Decimal(partner.credit_limit or 0) if partner else Decimal("0")
         if limit <= 0:
             return
