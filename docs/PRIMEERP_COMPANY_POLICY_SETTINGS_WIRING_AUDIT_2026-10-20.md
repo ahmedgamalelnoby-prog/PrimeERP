@@ -161,13 +161,16 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 3. The UI distinguishes runtime-enabled settings from catalog-only settings, so saving a value does not falsely imply that a business workflow uses it.
 4. Company settings writes are tenant-scoped, permission-protected, and audited by changed key names without recording values or credentials.
 
-## Recommended order for full wiring
+## Recommended order for remaining wiring
 
-1. Accounting controls: backdated journal creation, base currency, foreign-currency allowance, required cost centers, journal approval, fiscal-year start month, tax rounding and default tax-inclusive pricing are now enforced. Closed-period controls remain authoritative; default accounts and auto-posting still require workflow wiring.
-2. Sales and procurement: approval rules, delivery/receipt requirements, customer credit limits, overbilling and price variance tolerances. Generic transaction creation now enforces `general.branch_required` when enabled. Journal posting consumes `accounting.period_lock_enabled` to control closed-period status/allow-posting enforcement. Commerce workflows now honor `sales.credit_limit_enforced` and `purchasing.require_goods_receipt`; tax calculation uses the company tax-inclusive default and stores the extracted taxable base correctly. Sales and supplier documents also apply company default payment terms when the partner has no explicit terms, sales document numbers use the selected atomic sequence scope, and CRM partner creation blocks likely duplicate active customers when the duplicate-check policy is enabled. Sales and purchase quotation/order approval policies use the commerce decision lifecycle and event history; `workflow.allow_self_approval` governs requester separation. Generic transactions enforce the same-company project requirement when enabled. POS checkout blocks discounts when approval is required (no approval-capture flow exists) and enforces the maximum discount percentage when approval-free discounts are enabled. Commerce documents reject stockable/consumable lines without a warehouse when the company requires one, and taxable invoice lines cannot explicitly omit their configured tax codes when the policy is enabled.
-3. Inventory: warehouse/bin requirements, reservation behavior, below-cost sales, serial/batch/expiry, and valuation method consistency.
-4. HR: biometric device ingestion, attendance correction/overtime/leave/payroll approvals, leave balances and work schedules.
-5. POS, manufacturing, CRM and integrations: cashier shift close, discount limits, work orders, duplicate checks, retry policy and signed webhooks.
+1. Finish domain foundations before linking their settings: attendance/leave/payroll records and approvals in HR; cashier shift and drawer reconciliation in POS; work-order issue/production/close lifecycle in manufacturing.
+2. Inventory traceability: define batch, serial and expiry records and connect them to receiving, transfers, sales delivery and returns. Keep automatic order reservation catalog-only until partial delivery can consume reservations safely.
+3. Approval engine: extend the commerce single-decision flow with configurable approver chains and a reliable escalation scheduler before enabling `workflow.approval_mode` or `workflow.escalation_after_hours`.
+4. Integrations: add a durable scheduler/worker for automatic sync before enabling `integrations.auto_sync_enabled`.
+5. Broaden company date-format display across all relevant tables, forms, exports and reports before changing `general.date_format` from catalog-only.
+6. Review the remaining inventory policy controls (below-cost authorization and cost-layer checks) after cost and permission checks are consistently exposed to the sales workflow.
+
+The current code has sources for generic transaction dimensions and sales/purchase commerce workflows, but the HR, POS shift, manufacturing and scheduled integration foundations are incomplete. A catalog entry must stay catalog-only until its owner workflow exists and is wired. This document is a source-level audit; migrations and tests were not executed in this environment.
 
 A setting should be promoted from CATALOG ONLY to RUNTIME only after the consumer is wired, company-isolation tests pass, and positive/negative workflow tests prove the behavior.
 
@@ -176,7 +179,7 @@ A setting should be promoted from CATALOG ONLY to RUNTIME only after the consume
 - Company policies remain grouped by category in registry order. Within a category, runtime-enforced entries are listed before catalog-only entries, then labels are alphabetically sorted using Arabic locale rules.
 - The page now searches by display label, canonical setting key, module, and translated category/module names; a status filter narrows results to runtime or catalog-only entries.
 - The page shows total/runtime/catalog/unsaved-change counters, a result count, a reset control, an empty-result message, and disables Save when no values differ from the loaded values.
-- These UX changes improve navigation. The current source audit records **39 runtime / 29 catalog-only** after adding transaction branch requirements, journal period-lock policy, customer credit-limit enforcement, supplier receipt requirements, company payment-term defaults, duplicate-customer checks, POS discount policy enforcement, warehouse requirements, taxable invoice tax-code enforcement, and accounting auto-post gates; tests still need to run.
+- These UX changes improve navigation. The current source audit records **47 runtime / 21 catalog-only** after wiring sales numbering, approval lifecycles, project dimensions, and linked sales/purchase document workflows. Migrations and tests have not been executed in this environment.
 
 
 ## Follow-up regression coverage (2026-10-20)
@@ -346,10 +349,11 @@ Regression tests cover a configured override, an unset fallback, and invalid-cod
 - `sales.allow_negative_customer_balance` now permits a customer payment to exceed the outstanding total on a sales invoice when enabled, recording the excess as customer credit. The default false setting continues to reject overpayment, and purchase/vendor payments remain subject to the outstanding-balance limit.
 
 
-## Sales document numbering review (2026-10-22)
+## Sales document numbering workflow (2026-10-22)
 
-The generic transaction numbering service was inspected as a possible consumer for `sales.document_numbering`. It cannot safely implement this policy as-is: commerce document creation requires the client to submit a number, sales documents do not carry a branch, the generic sequence requires a tenant/company/branch scope, and its reset periods do not provide a global sequence. Commerce's current uniqueness constraint is company + document type + number. A dedicated sales sequence model/transactional allocator and migration are required before promoting the option to runtime. No behavior or data schema was changed in this review.
-
+- Added an atomic sequence table and allocator for sales quotations, orders, deliveries, invoices, and credit notes. Supported scopes are per company and fiscal/calendar document year, per company, or global; the default is per company/year.
+- Sales numbers are generated by the backend, and any caller-supplied sales number is ignored. The sales UI now explains the generated numbering; purchase document numbers remain required from the purchasing workflow.
+- The registry and its expected runtime contract now mark `sales.document_numbering` as runtime. Migration and tests have not been executed in this environment; this is a source-level wiring review, not a runtime-pass claim.
 
 ## Sales order delivery/invoice quantity controls (2026-10-22)
 
