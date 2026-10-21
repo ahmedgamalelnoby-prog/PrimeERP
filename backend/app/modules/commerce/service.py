@@ -11,7 +11,7 @@ from app.modules.egyptian_einvoice.models import EgyptianEInvoiceDocument
 from app.modules.accounting.tax_engine import calculate_taxes
 from app.modules.commerce.accounting_service import commerce_accounting_service
 from app.modules.catalog.models import ProductVariant, Recipe
-from app.modules.commerce.models import BusinessPartner, CommercePayment, CommercePaymentAllocation, PurchaseBillReceiptLink, PurchaseDocument, PurchaseLine, SalesDocument, SalesLine
+from app.modules.commerce.models import BusinessPartner, CommerceApprovalEvent, CommercePayment, CommercePaymentAllocation, PurchaseBillReceiptLink, PurchaseDocument, PurchaseLine, SalesDocument, SalesLine
 from app.modules.commerce.payment_workflow import post_payment, reverse_payment
 from app.modules.inventory.items.models import InventoryItem
 from app.modules.inventory.locations.models import InventoryLocation
