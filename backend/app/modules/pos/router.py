@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, and_
 from sqlalchemy.orm import Session
 
+from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.catalog.models import Menu, MenuItem, ProductPrice
@@ -118,11 +119,11 @@ def _validate_discount_policy(db: Session, company_id: int, discount_percent: De
 
 
 def _company(db: Session, company_id: int, user: User) -> Company:
-    if user.tenant_id is None:
+    if get_effective_tenant_id(user) is None:
         raise HTTPException(403, "User is not assigned to a tenant")
     company = db.scalar(select(Company).where(
         Company.id == company_id,
-        Company.tenant_id == user.tenant_id,
+        Company.tenant_id == get_effective_tenant_id(user),
         Company.is_active.is_(True),
     ))
     if company is None:
