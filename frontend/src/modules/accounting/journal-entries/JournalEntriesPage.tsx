@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import client from "@/shared/api/client";
 import PageHeader from "@/components/layout/PageHeader";
+import { formatCompanyDate, useCompanyDateFormat } from "@/utils/format-date";
 
 
 
@@ -25,6 +26,7 @@ const statusLabels: Record<string, string> = {
 
 export default function JournalEntriesPage() {
   const [companyId, setCompanyId] = useState(() => Number(localStorage.getItem("company_id")) || 0);
+  const dateFormat = useCompanyDateFormat(companyId);
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [journals, setJournals] = useState<JournalOption[]>([]);
   const [accounts, setAccounts] = useState<AccountOption[]>([]);
@@ -167,7 +169,7 @@ export default function JournalEntriesPage() {
             <tbody>
               {filtered.map((entry) => (
                 <tr key={entry.id} className="border-b last:border-0">
-                  <td className="p-3 font-medium">{entry.entry_number}</td><td className="p-3">{entry.entry_date}</td><td className="p-3">{entry.description}</td>
+                  <td className="p-3 font-medium">{entry.entry_number}</td><td className="p-3">{formatCompanyDate(entry.entry_date, dateFormat)}</td><td className="p-3">{entry.description}</td>
                   <td className="p-3">{Number(entry.total_debit).toLocaleString("ar-EG")}</td><td className="p-3">{Number(entry.total_credit).toLocaleString("ar-EG")}</td><td className="p-3">{statusLabels[entry.status] ?? entry.status}</td>
                   <td className="flex flex-wrap gap-2 p-3">
                     <button className="rounded-lg border px-2 py-1" disabled={detailsLoading} onClick={() => void openDetails(entry.id)}>{detailsLoading ? "تحميل..." : "عرض"}</button>
@@ -221,7 +223,7 @@ export default function JournalEntriesPage() {
       {details && (
         <section className="rounded-2xl border bg-card p-5 shadow-sm">
           <div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-semibold">تفاصيل القيد {details.entry_number}</h2><button className="rounded-lg border px-3 py-1" onClick={() => setDetails(null)}>إغلاق</button></div>
-          <div className="grid gap-3 text-sm sm:grid-cols-2"><div>التاريخ: {details.entry_date}</div><div>الحالة: {statusLabels[details.status] ?? details.status}</div><div>الفرع: {details.branch_id}</div><div>الفترة: {details.period_id}</div><div>العملة: {details.currency_code ?? "EGP"}</div><div>مرجع: {details.reference || "—"}</div></div>
+          <div className="grid gap-3 text-sm sm:grid-cols-2"><div>التاريخ: {formatCompanyDate(details.entry_date, dateFormat)}</div><div>الحالة: {statusLabels[details.status] ?? details.status}</div><div>الفرع: {details.branch_id}</div><div>الفترة: {details.period_id}</div><div>العملة: {details.currency_code ?? "EGP"}</div><div>مرجع: {details.reference || "—"}</div></div>
           <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[850px] text-sm"><thead><tr className="border-b text-right text-muted-foreground"><th className="p-3">السطر</th><th className="p-3">الحساب</th><th className="p-3">الوصف</th><th className="p-3">مدين</th><th className="p-3">دائن</th></tr></thead><tbody>
             {(details.lines ?? []).map(line => <tr key={line.id} className="border-b last:border-0"><td className="p-3">{line.line_number}</td><td className="p-3">{accountName(line.account_combination_id)}</td><td className="p-3">{line.description || "—"}</td><td className="p-3">{Number(line.debit).toLocaleString("ar-EG")}</td><td className="p-3">{Number(line.credit).toLocaleString("ar-EG")}</td></tr>)}
           </tbody></table></div>
