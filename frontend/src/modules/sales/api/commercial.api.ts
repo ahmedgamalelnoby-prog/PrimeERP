@@ -5,6 +5,7 @@ export type Document = {
   company_id: number;
   partner_id: number;
   document_type: string;
+  source_order_id?: number | null;
   number: string;
   document_date: string;
   status: string;
@@ -26,6 +27,8 @@ export type Partner = {
 
 export type DocumentLine = {
   item_id: number;
+  source_sales_line_id?: number;
+  source_purchase_line_id?: number;
   variant_id?: number;
   tax_rate_id?: number;
   description?: string;
@@ -39,6 +42,8 @@ export type DocumentCreate = {
   company_id: number;
   partner_id: number;
   document_type: string;
+  source_order_id?: number;
+  receipt_ids?: number[];
   number: string;
   document_date: string;
   warehouse_id?: number;
@@ -77,6 +82,7 @@ export const salesApi = {
   partners: () => client.get<Partner[]>("/commerce/partners", { params: { company_id: company(), partner_type: "customer" } }).then(r => r.data),
   create: (payload: Omit<DocumentCreate, "company_id">) => client.post<Document>("/commerce/sales/documents", { ...payload, company_id: company() }).then(r => r.data),
   confirm: (id: number) => client.post<Document>(`/commerce/sales/${id}/confirm`, null, { params: { company_id: company() } }).then(r => r.data),
+  decideApproval: (id: number, decision: "approve" | "reject") => client.post<Document>(`/commerce/sales/${id}/approval-decision`, { decision }, { params: { company_id: company() } }).then(r => r.data),
   postInventory: (id: number) => client.post<Document>(`/commerce/sales/${id}/post-inventory`, null, { params: { company_id: company() } }).then(r => r.data),
   pay: (id: number, amount: number, method: string, idempotencyKey = newPaymentIdempotencyKey()) => client.post<Document>(`/commerce/sales/${id}/payments`, { company_id: company(), document_id: id, payment_date: today(), amount, method, auto_wht: true, idempotency_key: idempotencyKey }).then(r => r.data),
   payments: (id?: number) => client.get("/commerce/payments", { params: { company_id: company(), document_kind: "sale", ...(id ? { document_id: id } : {}) } }).then(r => r.data),
@@ -88,6 +94,7 @@ export const purchasingApi = {
   partners: () => client.get<Partner[]>("/commerce/partners", { params: { company_id: company(), partner_type: "vendor" } }).then(r => r.data),
   create: (payload: Omit<DocumentCreate, "company_id">) => client.post<Document>("/commerce/purchases/documents", { ...payload, company_id: company() }).then(r => r.data),
   confirm: (id: number) => client.post<Document>(`/commerce/purchases/${id}/confirm`, null, { params: { company_id: company() } }).then(r => r.data),
+  decideApproval: (id: number, decision: "approve" | "reject") => client.post<Document>(`/commerce/purchases/${id}/approval-decision`, { decision }, { params: { company_id: company() } }).then(r => r.data),
   receive: (id: number) => client.post<Document>(`/commerce/purchases/${id}/receive`, null, { params: { company_id: company() } }).then(r => r.data),
   pay: (id: number, amount: number, method: string, idempotencyKey = newPaymentIdempotencyKey()) => client.post<Document>(`/commerce/purchases/${id}/payments`, { company_id: company(), document_id: id, payment_date: today(), amount, method, auto_wht: true, idempotency_key: idempotencyKey }).then(r => r.data),
   payments: (id?: number) => client.get("/commerce/payments", { params: { company_id: company(), document_kind: "purchase", ...(id ? { document_id: id } : {}) } }).then(r => r.data),
