@@ -1,8 +1,8 @@
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 from sqlalchemy.orm import Session
 
 from app.core.context import get_effective_tenant_id
@@ -12,7 +12,7 @@ from app.modules.catalog.models import Menu, MenuItem, ProductPrice
 from app.modules.companies.models import Company
 from app.modules.company_settings.service import get_company_setting
 from app.modules.branches.models import Branch
-from app.modules.commerce.models import SalesDocument, SalesLine
+from app.modules.commerce.models import CommercePayment, SalesDocument, SalesLine
 from app.modules.commerce.schemas import DocumentCreate, DocumentLineCreate, PaymentCreate
 from app.modules.commerce.service import commerce_service
 from app.modules.identity.dependencies import get_current_user
@@ -23,6 +23,7 @@ from app.modules.inventory.warehouses.models import InventoryWarehouse
 from app.modules.jurisdiction.commerce_guard import capture_document_tax_snapshot, validate_document_tax_snapshot
 from app.modules.restaurant.models import (
     PreparationStation,
+    PosCashierShift,
     PosMenuItemRoute,
     PosOrderLineRoute,
     PosOutlet,
@@ -105,6 +106,16 @@ class RouteStatusUpdate(BaseModel):
     notes: str | None = None
 
 
+class ShiftOpen(BaseModel):
+    company_id: int = Field(gt=0)
+    terminal_id: int = Field(gt=0)
+    opening_cash: Decimal = Field(default=Decimal("0"), ge=0)
+
+
+class ShiftClose(BaseModel):
+    counted_cash: Decimal = Field(ge=0)
+
+
 
 
 def _validate_discount_policy(db: Session, company_id: int, discount_percent: Decimal) -> None:
@@ -151,6 +162,98 @@ def _terminal(db: Session, company_id: int, terminal_id: int) -> PosTerminal:
     if terminal is None:
         raise HTTPException(422, "POS terminal does not belong to the company or is inactive")
     return terminal
+
+
+@router.get("/shifts/current")
+def current_shift(
+    company_id: int = Query(..., gt=0),
+    terminal_id: int = Query(..., gt=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _company(db, company_id, current_user)
+    _terminal(db, company_id, terminal_id)
+    return db.scalar(select(PosCashierShift).where(
+        PosCashierShift.company_id == company_id,
+        PosCashierShift.terminal_id == terminal_id,
+        PosCashierShift.status == "open",
+    ))
+
+
+@router.post("/shifts/open", status_code=201, dependencies=[Depends(require_permission("commerce.write"))])
+def open_shift(payload: ShiftOpen, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company(db, payload.company_id, current_user)
+    terminal = db.scalar(select(PosTerminal).where(
+        PosTerminal.id == payload.terminal_id,
+        PosTerminal.company_id == payload.company_id,
+        PosTerminal.is_active.is_(True),
+    ).with_for_update())
+    if terminal is None:
+        raise HTTPException(404, "Active POS terminal not found")
+    existing = db.scalar(select(PosCashierShift).where(
+        PosCashierShift.terminal_id == terminal.id,
+        PosCashierShift.status == "open",
+    ))
+    if existing is not None:
+        raise HTTPException(409, "This terminal already has an open cashier shift")
+    shift = PosCashierShift(
+        company_id=payload.company_id,
+        branch_id=terminal.branch_id,
+        terminal_id=terminal.id,
+        opened_by_user_id=current_user.id,
+        opening_cash=payload.opening_cash,
+        status="open",
+    )
+    db.add(shift)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(409, "A cashier shift was opened concurrently for this terminal")
+    db.refresh(shift)
+    return shift
+
+
+@router.post("/shifts/{shift_id}/close", dependencies=[Depends(require_permission("commerce.post"))])
+def close_shift(
+    shift_id: int,
+    payload: ShiftClose,
+    company_id: int = Query(..., gt=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _company(db, company_id, current_user)
+    shift = db.scalar(select(PosCashierShift).where(
+        PosCashierShift.id == shift_id,
+        PosCashierShift.company_id == company_id,
+        PosCashierShift.status == "open",
+    ).with_for_update())
+    if shift is None:
+        raise HTTPException(404, "Open cashier shift not found")
+    cash_sales = db.scalar(select(func.coalesce(func.sum(CommercePayment.amount), 0)).join(
+        SalesDocument,
+        and_(
+            SalesDocument.id == CommercePayment.document_id,
+            SalesDocument.company_id == CommercePayment.company_id,
+        ),
+    ).where(
+        CommercePayment.company_id == company_id,
+        CommercePayment.document_kind == "sale",
+        CommercePayment.status == "posted",
+        func.lower(CommercePayment.method) == "cash",
+        SalesDocument.document_type == "invoice",
+        SalesDocument.pos_shift_id == shift.id,
+    )) or Decimal("0")
+    expected_cash = Decimal(str(shift.opening_cash)) + Decimal(str(cash_sales))
+    shift.expected_cash = expected_cash
+    shift.counted_cash = payload.counted_cash
+    shift.variance = payload.counted_cash - expected_cash
+    shift.closed_by_user_id = current_user.id
+    shift.closed_at = datetime.now(timezone.utc)
+    shift.status = "closed"
+    db.commit()
+    db.refresh(shift)
+    return shift
 
 
 @router.get("/sales")
@@ -395,7 +498,19 @@ def checkout(payload: Checkout, current_user: User = Depends(get_current_user), 
     if existing is not None:
         return existing
 
+    require_shift_close = get_company_setting(db, payload.company_id, "pos.require_shift_close") is True
+    if require_shift_close and payload.terminal_id is None:
+        raise HTTPException(422, "terminal_id is required while cashier shift control is enabled")
     terminal = _terminal(db, payload.company_id, payload.terminal_id) if payload.terminal_id else None
+    shift = None
+    if terminal is not None:
+        shift = db.scalar(select(PosCashierShift).where(
+            PosCashierShift.company_id == payload.company_id,
+            PosCashierShift.terminal_id == terminal.id,
+            PosCashierShift.status == "open",
+        ).with_for_update())
+        if require_shift_close and shift is None:
+            raise HTTPException(409, "Open a cashier shift on this terminal before checkout")
     if terminal is not None:
         outlet = db.get(PosOutlet, terminal.outlet_id)
         if outlet is None or outlet.warehouse_id is None:
@@ -460,6 +575,8 @@ def checkout(payload: Checkout, current_user: User = Depends(get_current_user), 
         warehouse_id=payload.warehouse_id,
         lines=lines,
     ))
+    if shift is not None:
+        doc.pos_shift_id = shift.id
     # POS checkout is a sell + immediate fulfillment: the invoice handles revenue/AR,
     # while a paired delivery performs the physical issue from the outlet warehouse.
     delivery = commerce_service.create_document(db, DocumentCreate(
