@@ -125,3 +125,24 @@ class AttendanceCorrectionResponse(BaseModel):
     decided_by_user_id: int | None
     decision_reason: str | None
     decided_at: datetime | None
+
+
+class OvertimeRequestCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    attendance_record_id: int = Field(gt=0)
+    requested_hours: Decimal = Field(gt=0, max_digits=8, decimal_places=2)
+    reason: str = Field(min_length=1, max_length=2000)
+
+
+class OvertimeRequestResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    company_id: int
+    attendance_record_id: int
+    requested_hours: Decimal
+    reason: str
+    status: str
+    submitted_by_user_id: int
+    decided_by_user_id: int | None
+    decision_reason: str | None
+    decided_at: datetime | None
