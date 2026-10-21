@@ -10,6 +10,7 @@ from app.database.session import get_db
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.companies.models import Company
+from app.modules.company_settings.service import get_company_setting
 from app.modules.enterprise.finance_models import FinanceEntity,ConsolidationGroup,ConsolidationMember,IntercompanyTransaction,ConsolidationRun,ConsolidationLine,ConsolidationElimination,FinanceFxRate,FinanceRevaluation
 from app.modules.enterprise.finance_schemas import *
 from app.modules.accounting.journals.models.journal_entry import JournalEntry
@@ -59,6 +60,8 @@ def member(group_id:int,p:MemberCreate,db:Session=Depends(get_db),user:User=Depe
 @router.post("/intercompany", dependencies=[Depends(require_permission("enterprise.finance.write"))])
 def intercompany(p: IntercompanyCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     company_ok(db, p.company_id, user)
+    if get_company_setting(db, p.company_id, "general.intercompany_enabled") is not True:
+        raise HTTPException(409, "Company policy disables intercompany transactions")
     if p.from_entity_id == p.to_entity_id:
         raise HTTPException(422, "Intercompany parties must differ")
 
