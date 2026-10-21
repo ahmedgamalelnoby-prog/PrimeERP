@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
@@ -27,8 +28,8 @@ router = APIRouter(prefix="/integrations", tags=["Integrations"], dependencies=[
 public_router = APIRouter(prefix="/integrations", tags=["Integrations Webhooks"])
 
 def _company_for_user(db: Session, company_id: int, user: User):
-    if user.tenant_id is None: raise HTTPException(403, "User is not assigned to a tenant")
-    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == user.tenant_id))
+    if get_effective_tenant_id(user) is None: raise HTTPException(403, "User is not assigned to a tenant")
+    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == get_effective_tenant_id(user)))
     if company is None: raise HTTPException(403, "Company is outside the current tenant")
     return company
 
@@ -148,7 +149,7 @@ async def receive_salla_webhook_public(connection_id: int, request: Request, x_s
 
 @router.post("/salla/{connection_id}/webhook", status_code=202, dependencies=[Depends(require_permission("integrations.post"))])
 def receive_salla_webhook(connection_id: int, payload: WebhookEventCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    connection = db.scalar(select(IntegrationConnection).join(Company, Company.id == IntegrationConnection.company_id).where(IntegrationConnection.id == connection_id, IntegrationConnection.provider == "salla", IntegrationConnection.is_active.is_(True), Company.tenant_id == current_user.tenant_id))
+    connection = db.scalar(select(IntegrationConnection).join(Company, Company.id == IntegrationConnection.company_id).where(IntegrationConnection.id == connection_id, IntegrationConnection.provider == "salla", IntegrationConnection.is_active.is_(True), Company.tenant_id == get_effective_tenant_id(current_user)))
     if not connection: raise HTTPException(404, "Salla connection not found")
     existing = db.scalar(select(IntegrationEvent).where(IntegrationEvent.connection_id == connection_id, IntegrationEvent.external_event_id == payload.external_event_id))
     if existing: return {"accepted": True, "duplicate": True, "event_id": existing.id, "status": existing.status}
