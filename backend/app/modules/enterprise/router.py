@@ -115,7 +115,8 @@ def payroll(p: PayrollRunCreate, db: Session = Depends(get_db), current_user: Us
     r.total_gross = gross_total
     r.total_deductions = ded_total
     r.total_net = net_total
-    r.status = "posted"
+    # This endpoint calculates a payroll preview only; no approval or GL posting exists yet.
+    r.status = "draft"
     try:
         db.commit()
     except IntegrityError:
