@@ -141,8 +141,8 @@ class InventoryStockMoveService:
                 raise ValueError("Only active reservations can be consumed by a stock movement")
             if reservation.item_id != move.item_id or reservation.variant_id != move.variant_id or reservation.location_id != move.source_location_id:
                 raise ValueError("Reservation does not match the stock movement item, variant, or source location")
-            if Decimal(reservation.quantity) != Decimal(move.quantity):
-                raise ValueError("Reservation quantity must exactly match the stock movement quantity")
+            if Decimal(reservation.quantity) < Decimal(move.quantity):
+                raise ValueError("Reservation quantity is less than the stock movement quantity")
             if move.movement_type not in {"issue", "transfer", "return"}:
                 raise ValueError("Reservations can only be consumed by issue, transfer, or return movements")
         item = db.scalar(select(InventoryItem).where(InventoryItem.id == move.item_id, InventoryItem.company_id == company_id, InventoryItem.is_active.is_(True)))
@@ -212,6 +212,23 @@ class InventoryStockMoveService:
                     raise ValueError("Warehouse reserved stock is insufficient for the linked reservation")
                 source_balance.quantity_reserved -= quantity
                 warehouse_source.quantity_reserved -= quantity
+                reserved_quantity = Decimal(reservation.quantity)
+                remaining_quantity = reserved_quantity - quantity
+                if remaining_quantity > 0:
+                    db.add(InventoryReservation(
+                        company_id=reservation.company_id,
+                        item_id=reservation.item_id,
+                        variant_id=reservation.variant_id,
+                        location_id=reservation.location_id,
+                        quantity=remaining_quantity,
+                        status="active",
+                        source_module=reservation.source_module,
+                        source_entity=reservation.source_entity,
+                        source_id=reservation.source_id,
+                        reference=reservation.reference,
+                        notes=reservation.notes,
+                    ))
+                    reservation.quantity = quantity
                 reservation.status = "consumed"
 
         if destination_balance:
