@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
@@ -18,9 +19,9 @@ router = APIRouter(
 
 
 def _company_for_user(db: Session, company_id: int, user: User) -> Company:
-    if user.tenant_id is None:
+    if get_effective_tenant_id(user) is None:
         raise HTTPException(status_code=403, detail="User is not assigned to a tenant")
-    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == user.tenant_id))
+    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == get_effective_tenant_id(user)))
     if company is None:
         raise HTTPException(status_code=403, detail="Company is outside the current tenant")
     return company
@@ -90,7 +91,7 @@ def approve_transfer(transfer_id: int, company_id: int = Query(..., gt=0), db: S
 def ship_transfer(transfer_id: int, company_id: int = Query(..., gt=0), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _company_for_user(db, company_id, current_user)
     try:
-        return inventory_transfer_service.ship(db, company_id=company_id, transfer_id=transfer_id, tenant_id=current_user.tenant_id, user_id=current_user.id)
+        return inventory_transfer_service.ship(db, company_id=company_id, transfer_id=transfer_id, tenant_id=get_effective_tenant_id(current_user), user_id=current_user.id)
     except ValueError as exc:
         _error(exc)
 
@@ -99,7 +100,7 @@ def ship_transfer(transfer_id: int, company_id: int = Query(..., gt=0), db: Sess
 def receive_transfer(transfer_id: int, company_id: int = Query(..., gt=0), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _company_for_user(db, company_id, current_user)
     try:
-        return inventory_transfer_service.receive(db, company_id=company_id, transfer_id=transfer_id, tenant_id=current_user.tenant_id, user_id=current_user.id)
+        return inventory_transfer_service.receive(db, company_id=company_id, transfer_id=transfer_id, tenant_id=get_effective_tenant_id(current_user), user_id=current_user.id)
     except ValueError as exc:
         _error(exc)
 
