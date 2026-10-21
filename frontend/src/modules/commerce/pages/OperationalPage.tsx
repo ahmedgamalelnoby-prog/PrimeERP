@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import client from "@/shared/api/client";
 import "@/shared/api/interceptors";
-import { formatCompanyDate, isCompanyDateFormat, type CompanyDateFormat } from "@/utils/format-date";
+import { formatCompanyDate, getCompanyDateFormat, isCompanyDateFormat, setCompanyDateFormat, type CompanyDateFormat } from "@/utils/format-date";
 
 type Row = Record<string, unknown>;
 type RouteConfig = { title: string; endpoint: string; kind: "partners" | "documents" | "shipping"; partnerType?: "customer" | "vendor"; documentKind?: "sale" | "purchase"; documentType?: string };
@@ -44,7 +44,7 @@ export default function OperationalPage() {
   const [chequeBank, setChequeBank] = useState("");
   const [chequeDueDate, setChequeDueDate] = useState(new Date().toISOString().slice(0, 10));
   const [payments, setPayments] = useState<Row[]>([]);
-  const [dateFormat, setDateFormat] = useState<CompanyDateFormat>("DD/MM/YYYY");
+  const [dateFormat, setDateFormat] = useState<CompanyDateFormat>(() => getCompanyDateFormat(companyId));
   const companyId = selectedCompanyId();
   const query = useMemo(() => companyId ? `?company_id=${companyId}` : "", [companyId]);
   const isSale = meta.endpoint === "/commerce/sales/documents";
@@ -75,10 +75,13 @@ export default function OperationalPage() {
     try {
       const response = await client.get("/company-settings", { params: { company_id: companyId } });
       const value = response.data?.settings?.find((setting: { key?: string }) => setting.key === "general.date_format")?.value;
-      setDateFormat(isCompanyDateFormat(value) ? value : "DD/MM/YYYY");
+      const resolved = isCompanyDateFormat(value) ? value : "DD/MM/YYYY";
+      setDateFormat(resolved);
+      setCompanyDateFormat(companyId, resolved);
     } catch {
       // A policy-settings outage must not block document operations.
       setDateFormat("DD/MM/YYYY");
+      setCompanyDateFormat(companyId, "DD/MM/YYYY");
     }
   }
 
