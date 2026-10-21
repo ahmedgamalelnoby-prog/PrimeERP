@@ -61,6 +61,7 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
         "sales.allow_overbilling",
         "sales.require_order_approval",
         "sales.require_quote_approval",
+        "general.require_project",
         "purchasing.require_purchase_order",
         "purchasing.require_purchase_approval",
     }
@@ -71,7 +72,6 @@ def test_policies_without_a_safe_workflow_consumer_remain_catalog_only():
     # implementation does not provide. Do not advertise them as enforced.
     catalog_only_keys = {
         "integrations.auto_sync_enabled",
-        "general.require_project",
     }
     assert all(BY_KEY[key]["status"] == "catalog" for key in catalog_only_keys)
 
