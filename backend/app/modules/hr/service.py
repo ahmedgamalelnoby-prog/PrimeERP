@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo
 from decimal import Decimal
 
 from sqlalchemy import and_, select
@@ -7,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.company_settings.service import get_company_setting
 from app.modules.enterprise.models import Employee
-from app.modules.hr.models import HRLeaveBalance, HRLeaveRequest
+from app.modules.hr.models import HRLeaveBalance, HRLeaveRequest, HRAttendanceRecord, HRAttendanceCorrection
 
 
 PAID_LEAVE_TYPES = {"annual", "sick", "other"}
@@ -185,6 +186,129 @@ class HRLeaveService:
         request.decision_reason = "Cancelled by requester"
         db.flush()
         return request
+
+
+    @staticmethod
+    def _local_datetime(value: datetime, timezone_name: str) -> datetime:
+        zone = ZoneInfo(timezone_name)
+        return value.replace(tzinfo=zone) if value.tzinfo is None else value.astimezone(zone)
+
+    def list_attendance(self, db: Session, *, company_id: int, attendance_date=None) -> list[HRAttendanceRecord]:
+        query = select(HRAttendanceRecord).where(HRAttendanceRecord.company_id == company_id)
+        if attendance_date is not None:
+            query = query.where(HRAttendanceRecord.attendance_date == attendance_date)
+        return list(db.scalars(query.order_by(HRAttendanceRecord.attendance_date.desc(), HRAttendanceRecord.employee_id)).all())
+
+    def create_attendance(self, db: Session, *, company_id: int, payload, actor_user_id: int) -> HRAttendanceRecord:
+        source = get_company_setting(db, company_id, "hr.attendance_source")
+        if source != "manual":
+            raise ValueError(f"Manual attendance entry is disabled because the configured source is '{source}'; its connector is not available")
+        self._employee(db, company_id=company_id, employee_id=payload.employee_id, lock=True)
+        timezone_name = get_company_setting(db, company_id, "general.timezone")
+        check_in = self._local_datetime(payload.check_in_time, timezone_name)
+        if check_in.date() != payload.attendance_date:
+            raise ValueError("Check-in timestamp must fall on the selected attendance date in the company timezone")
+        check_out = self._local_datetime(payload.check_out_time, timezone_name) if payload.check_out_time else None
+        if check_out is not None and check_out <= check_in:
+            raise ValueError("Check-out must be later than check-in")
+        existing = db.scalar(select(HRAttendanceRecord.id).where(
+            HRAttendanceRecord.company_id == company_id,
+            HRAttendanceRecord.employee_id == payload.employee_id,
+            HRAttendanceRecord.attendance_date == payload.attendance_date,
+        ).limit(1))
+        if existing is not None:
+            raise ValueError("Attendance is already recorded for this employee and date")
+        record = HRAttendanceRecord(
+            company_id=company_id,
+            employee_id=payload.employee_id,
+            attendance_date=payload.attendance_date,
+            source="manual",
+            check_in_at=check_in,
+            check_out_at=check_out,
+            recorded_by_user_id=actor_user_id,
+        )
+        db.add(record)
+        db.flush()
+        return record
+
+    def list_corrections(self, db: Session, *, company_id: int) -> list[HRAttendanceCorrection]:
+        return list(db.scalars(
+            select(HRAttendanceCorrection)
+            .where(HRAttendanceCorrection.company_id == company_id)
+            .order_by(HRAttendanceCorrection.created_at.desc(), HRAttendanceCorrection.id.desc())
+        ).all())
+
+    def create_correction(self, db: Session, *, company_id: int, record_id: int, payload, actor_user_id: int) -> HRAttendanceCorrection:
+        record = db.scalar(select(HRAttendanceRecord).where(
+            HRAttendanceRecord.id == record_id,
+            HRAttendanceRecord.company_id == company_id,
+        ).with_for_update())
+        if record is None:
+            raise LookupError("Attendance record not found")
+        timezone_name = get_company_setting(db, company_id, "general.timezone")
+        check_in = self._local_datetime(payload.check_in_time, timezone_name)
+        if check_in.date() != record.attendance_date:
+            raise ValueError("Corrected check-in must fall on the attendance date in the company timezone")
+        check_out = self._local_datetime(payload.check_out_time, timezone_name) if payload.check_out_time else None
+        if check_out is not None and check_out <= check_in:
+            raise ValueError("Corrected check-out must be later than check-in")
+        pending = db.scalar(select(HRAttendanceCorrection.id).where(
+            HRAttendanceCorrection.company_id == company_id,
+            HRAttendanceCorrection.attendance_record_id == record.id,
+            HRAttendanceCorrection.status == "pending",
+        ).limit(1))
+        if pending is not None:
+            raise ValueError("An attendance correction is already awaiting a decision")
+        requires_approval = get_company_setting(db, company_id, "hr.require_attendance_approval") is True
+        correction = HRAttendanceCorrection(
+            company_id=company_id,
+            attendance_record_id=record.id,
+            proposed_check_in_at=check_in,
+            proposed_check_out_at=check_out,
+            reason=payload.reason,
+            status="pending" if requires_approval else "approved",
+            submitted_by_user_id=actor_user_id,
+        )
+        db.add(correction)
+        db.flush()
+        if not requires_approval:
+            record.check_in_at = check_in
+            record.check_out_at = check_out
+            correction.decided_by_user_id = actor_user_id
+            correction.decided_at = datetime.now(timezone.utc)
+            correction.decision_reason = "Automatically applied by company policy"
+        db.flush()
+        return correction
+
+    def decide_correction(self, db: Session, *, company_id: int, correction_id: int, actor_user_id: int, decision: str, reason: str | None) -> HRAttendanceCorrection:
+        correction = db.scalar(select(HRAttendanceCorrection).where(
+            HRAttendanceCorrection.id == correction_id,
+            HRAttendanceCorrection.company_id == company_id,
+        ).with_for_update())
+        if correction is None:
+            raise LookupError("Attendance correction not found")
+        if correction.status != "pending":
+            raise ValueError("Only pending attendance corrections can be decided")
+        if correction.submitted_by_user_id == actor_user_id:
+            raise ValueError("The requester cannot decide their own attendance correction")
+        record = db.scalar(select(HRAttendanceRecord).where(
+            HRAttendanceRecord.id == correction.attendance_record_id,
+            HRAttendanceRecord.company_id == company_id,
+        ).with_for_update())
+        if record is None:
+            raise LookupError("Attendance record not found")
+        if decision == "approve":
+            record.check_in_at = correction.proposed_check_in_at
+            record.check_out_at = correction.proposed_check_out_at
+            correction.status = "approved"
+        else:
+            correction.status = "rejected"
+        correction.decided_by_user_id = actor_user_id
+        correction.decided_at = datetime.now(timezone.utc)
+        correction.decision_reason = reason
+        db.flush()
+        return correction
+
 
 
 hr_leave_service = HRLeaveService()
