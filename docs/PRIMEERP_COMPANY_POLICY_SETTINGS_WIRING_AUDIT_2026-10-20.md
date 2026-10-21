@@ -6,9 +6,9 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 ## Result
 
 - Catalog entries audited individually: **68**.
-- Confirmed workflow consumers in this change: **35**.
-- Visible/persisted options not yet enforced by their owning workflows: **33**.
-- Confirmed runtime consumers: `inventory.allow_negative_stock` (stock-movement posting), `accounting.require_journal_approval` (journal posting), `general.timezone`, `general.base_currency`, `general.allow_multi_currency`, `general.require_cost_center` and `accounting.allow_backdated_entries` (journal creation), plus `integrations.retry_limit` and `integrations.webhook_signature_required` (integration retry and Salla webhook intake), `accounting.fiscal_year_start_month` (fiscal-year creation), `accounting.rounding_method` and `tax.default_tax_inclusive_pricing` (tax calculation), `workflow.allow_self_approval` (generic transaction approval), `inventory.require_bin_location` (stock movement creation), `general.branch_required` (generic transaction creation), and `accounting.period_lock_enabled` (journal posting), `sales.credit_limit_enforced` (customer credit exposure check), `purchasing.require_goods_receipt` (supplier-bill creation), `sales.default_payment_terms_days` / `purchasing.default_payment_terms_days` (sales invoices and supplier bills when partner terms are unset), `crm.duplicate_customer_check` (customer creation by email/tax number), `pos.allow_discount_without_approval` / `pos.max_discount_pct_without_approval` (POS checkout discounts), `inventory.require_warehouse` (stockable/consumable commerce documents), `tax.require_tax_code_on_invoice` (taxable sales/purchase invoice lines), and `accounting.auto_post_sales_invoice` / `accounting.auto_post_purchase_invoice` (company-gated accounting auto-post), and the five `accounting.default_*_account` code settings (company-scoped active posting-account overrides for commerce AR, AP, sales, purchase expense, and payment/cash lines), and `purchasing.allow_invoice_price_variance` / `purchasing.price_variance_tolerance_pct` (supplier bill vs linked receipt valuation comparison at bill accounting posting). FIFO negative issues remain blocked for valuation safety, and reserved quantities remain protected.
+- Confirmed workflow consumers in this change: **37**.
+- Visible/persisted options not yet enforced by their owning workflows: **31**.
+- Confirmed runtime consumers: `inventory.allow_negative_stock` (stock-movement posting), `accounting.require_journal_approval` (journal posting), `general.timezone`, `general.base_currency`, `general.allow_multi_currency`, `general.require_cost_center` and `accounting.allow_backdated_entries` (journal creation), plus `integrations.retry_limit` and `integrations.webhook_signature_required` (integration retry and Salla webhook intake), `accounting.fiscal_year_start_month` (fiscal-year creation), `accounting.rounding_method` and `tax.default_tax_inclusive_pricing` (tax calculation), `workflow.allow_self_approval` (generic transaction approval), `inventory.require_bin_location` (stock movement creation), `general.branch_required` (generic transaction creation), and `accounting.period_lock_enabled` (journal posting), `sales.credit_limit_enforced` (customer credit exposure check), `purchasing.require_goods_receipt` (supplier-bill creation), `sales.default_payment_terms_days` / `purchasing.default_payment_terms_days` (sales invoices and supplier bills when partner terms are unset), `crm.duplicate_customer_check` (customer creation by email/tax number), `pos.allow_discount_without_approval` / `pos.max_discount_pct_without_approval` (POS checkout discounts), `inventory.require_warehouse` (stockable/consumable commerce documents), `tax.require_tax_code_on_invoice` (taxable sales/purchase invoice lines), and `accounting.auto_post_sales_invoice` / `accounting.auto_post_purchase_invoice` (company-gated accounting auto-post), and the five `accounting.default_*_account` code settings (company-scoped active posting-account overrides for commerce AR, AP, sales, purchase expense, and payment/cash lines), and `purchasing.allow_invoice_price_variance` / `purchasing.price_variance_tolerance_pct` (supplier bill vs linked receipt valuation comparison at bill accounting posting), `general.intercompany_enabled` (new intercompany transaction creation), and `tax.einvoice_required_for_sales` (sales invoices and credit notes require ETA status `valid` before confirmation). FIFO negative issues remain blocked for valuation safety, and reserved quantities remain protected.
 - This is a source-level audit, not a successful runtime test. Docker is unavailable/offline for the user, and the GitHub self-hosted Release Gate is queued; no test-pass claim is made.
 
 ## Status definitions
@@ -28,7 +28,7 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 | `general.require_cost_center` | bool | **RUNTIME** | Require cost center on every journal line |
 | `general.require_project` | bool | CATALOG ONLY | Require project dimension where supported |
 | `general.branch_required` | bool | **RUNTIME** | Reject generic transaction creation without a branch when enabled |
-| `general.intercompany_enabled` | bool | CATALOG ONLY | Enable intercompany workflows |
+| `general.intercompany_enabled` | bool | **RUNTIME** | Block creation of intercompany transactions while disabled |
 
 ## Accounting (12)
 
@@ -53,7 +53,7 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 |---|---|---|---|
 | `tax.default_tax_inclusive_pricing` | bool | **RUNTIME** | Default tax-inclusive behavior when caller does not explicitly choose |
 | `tax.require_tax_code_on_invoice` | bool | **RUNTIME** | Require tax codes when an invoice line has configured item taxes |
-| `tax.einvoice_required_for_sales` | bool | CATALOG ONLY | Require Egyptian e-invoice submission for eligible sales |
+| `tax.einvoice_required_for_sales` | bool | **RUNTIME** | Require ETA status `valid` for the linked sales invoice/credit note before confirmation |
 
 ## Sales (8)
 
@@ -242,45 +242,41 @@ Added a public-webhook endpoint regression test that sets `integrations.webhook_
 
 ## Remaining catalog-only backlog — grouped implementation plan (2026-10-20)
 
-The 33 catalog-only settings below are the remaining candidates for workflow wiring. Grouping is by the primary workflow needed; it is not a claim that the work is already implemented.
+The 31 catalog-only settings below are the remaining candidates for workflow wiring. Grouping is by the primary workflow needed; it is not a claim that the work is already implemented.
 
-### A. Company defaults and accounting configuration (8)
-- `general.date_format`: apply the selected format consistently through shared frontend date-formatting utilities; enum validation is covered, but display-wide wiring is not yet complete.
+### A. Company defaults and accounting configuration (2)
+- `general.date_format`: apply the selected format consistently through shared frontend date-formatting utilities; display-wide wiring is still incomplete.
 - `general.require_project`: add project dimension to the supported document schemas and persistence first.
-- `general.intercompany_enabled`: implement intercompany transaction lifecycle, balancing, and cross-company permissions.
 
-### B. Tax and Egyptian e-invoice (1)
-- `tax.einvoice_required_for_sales`: enforce submission/acceptance requirements at the sales document finalization boundary; define failure/retry behavior and exemptions before blocking transactions.
-
-### C. Sales and customer rules (6)
+### B. Sales and customer rules (6)
 - `sales.require_quote_approval`, `sales.require_order_approval`: add explicit draft → pending approval → approved/rejected transitions, approver permissions, audit history and tests.
 - `sales.invoice_requires_delivery`, `sales.allow_overbilling`: introduce reliable order-line ↔ delivery-line ↔ invoice-line allocation and quantity accounting; do not infer relationships by customer alone.
 - `sales.allow_negative_customer_balance`: define which transaction types and permissions may create negative balances, then enforce in the credit/balance service.
 - `sales.document_numbering`: implement company/year sequence generation with transaction-safe allocation and uniqueness constraints/migration.
 
-### D. Purchasing and supplier controls (2)
+### C. Purchasing and supplier controls (2)
 - `purchasing.require_purchase_order`, `purchasing.require_purchase_approval`: persist purchase-order source links and approval lifecycle before enforcing supplier-bill restrictions.
 
-### E. Inventory and costing (6)
+### D. Inventory and costing (6)
 - `inventory.valuation_method`: verify all issue/receipt/return/adjustment paths share a consistent company costing strategy; requires migration/revaluation strategy if existing stock has balances.
 - `inventory.auto_reserve_sales_orders`: add atomic reservation records and release/expiry behavior on cancellation, edits and fulfillment.
 - `inventory.allow_below_cost_sale`: enforce using current valuation cost and explicit permission/audit behavior at sales-line validation.
 - `inventory.expiry_tracking_required`, `inventory.serial_tracking_default`, `inventory.batch_tracking_default`: connect item tracking flags to receipt, stock movement, lot/serial identity and issue validation; defaults should affect new items only unless a migration is deliberately approved.
 
-### F. HR (8)
+### E. HR (8)
 - `hr.attendance_source`, `hr.biometric_sync_interval_minutes`: add supported source adapters and a scheduler/worker with per-company configuration.
 - `hr.require_attendance_approval`, `hr.overtime_requires_approval`, `hr.leave_requires_approval`, `hr.payroll_requires_approval`: implement approval states and role checks in each corresponding HR lifecycle before marking runtime.
 - `hr.allow_negative_leave_balance`: enforce at leave request/approval and concurrent balance update.
 - `hr.default_work_hours_per_day`: use as a company fallback in schedules and overtime calculations where an employee-specific schedule is absent.
 
-### G. Approval engine and operations (2)
+### F. Approval engine and operations (2)
 - `workflow.approval_mode`, `workflow.escalation_after_hours`: complete the approval engine (sequential/parallel/any-one decisions, due-time tracking, escalation jobs and audit trail). Do not wire these to UI labels alone.
 
-### H. POS and manufacturing (4)
+### G. POS and manufacturing (4)
 - `pos.allow_open_cash_drawer`, `pos.require_shift_close`: add permission-checked cash-drawer events and enforced shift close/reconciliation before session finalization.
 - `manufacturing.require_work_order`, `manufacturing.allow_overproduction`: enforce work-order linkage and planned-vs-produced quantity at production completion, with stock/ledger consistency.
 
-### I. Integrations (1)
+### H. Integrations (1)
 - `integrations.auto_sync_enabled`: implement a per-company scheduled sync worker, locking/idempotency and failure handling. Keep manual sync available regardless of this setting; the toggle should control scheduled runs only.
 
 ### Recommended execution sequence
@@ -343,3 +339,10 @@ Regression tests cover a configured override, an unset fallback, and invalid-cod
 - The commerce operational list continues to read the authoritative setting from the API and keeps the company-scoped preference cache in sync. A reactive shared hook applies the cached preference to dashboard date, commerce operational lists, journal entries, AR aging, fiscal-year/period dates, partner statements, user last-login dates, bank reconciliation dates, treasury cheque due dates, and shipment/settlement dates.
 - This still does not make date display consistent across every module: several other screens and exports have not been migrated to the shared formatter. `general.date_format` correctly remains catalog-only until that migration is complete.
 - No frontend build or tests were run in this environment.
+
+
+## Newly connected company policy consumers (2026-10-22)
+
+- `general.intercompany_enabled` now gates creation of intercompany transactions in the enterprise finance API. Queries and consolidation workflows remain available for existing records; this switch controls creation of new intercompany entries.
+- `tax.einvoice_required_for_sales` now requires a linked Egyptian e-invoice with ETA status `valid` before a sales invoice or credit note can be confirmed. The draft commerce document must first be registered with ETA and reach valid status; missing, queued, submitted, rejected, or errored ETA documents block confirmation.
+- Both settings are marked runtime and included in the registry contract's expected consumer set. Tests have not been executed in this environment.
