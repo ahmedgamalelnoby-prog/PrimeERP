@@ -2,12 +2,12 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.modules.company_settings.service import get_company_setting
 from app.modules.enterprise.models import Employee
-from app.modules.hr.models import HRLeaveBalance, HRLeaveRequest, HRAttendanceRecord, HRAttendanceCorrection
+from app.modules.hr.models import HRLeaveBalance, HRLeaveRequest, HRAttendanceRecord, HRAttendanceCorrection, HROvertimeRequest
 
 
 PAID_LEAVE_TYPES = {"annual", "sick", "other"}
@@ -308,6 +308,101 @@ class HRLeaveService:
         db.flush()
         return correction
 
+
+
+    @staticmethod
+    def _overtime_capacity(db: Session, *, company_id: int, record: HRAttendanceRecord) -> Decimal:
+        if record.check_out_at is None:
+            return Decimal("0")
+        check_in = record.check_in_at
+        check_out = record.check_out_at
+        if check_in.tzinfo is None and check_out.tzinfo is not None:
+            check_in = check_in.replace(tzinfo=check_out.tzinfo)
+        elif check_out.tzinfo is None and check_in.tzinfo is not None:
+            check_out = check_out.replace(tzinfo=check_in.tzinfo)
+        total_hours = Decimal(str((check_out - check_in).total_seconds())) / Decimal("3600")
+        standard_hours = Decimal(str(get_company_setting(db, company_id, "hr.default_work_hours_per_day")))
+        return max(total_hours - standard_hours, Decimal("0")).quantize(Decimal("0.01"))
+
+    @staticmethod
+    def _reserved_overtime(db: Session, *, company_id: int, attendance_record_id: int, excluding_request_id: int | None = None) -> Decimal:
+        query = select(func.coalesce(func.sum(HROvertimeRequest.requested_hours), 0)).where(
+            HROvertimeRequest.company_id == company_id,
+            HROvertimeRequest.attendance_record_id == attendance_record_id,
+            HROvertimeRequest.status.in_({"pending", "approved"}),
+        )
+        if excluding_request_id is not None:
+            query = query.where(HROvertimeRequest.id != excluding_request_id)
+        return Decimal(db.scalar(query) or 0)
+
+    def list_overtime_requests(self, db: Session, *, company_id: int) -> list[HROvertimeRequest]:
+        return list(db.scalars(
+            select(HROvertimeRequest)
+            .where(HROvertimeRequest.company_id == company_id)
+            .order_by(HROvertimeRequest.created_at.desc(), HROvertimeRequest.id.desc())
+        ).all())
+
+    def create_overtime_request(self, db: Session, *, company_id: int, payload, actor_user_id: int) -> HROvertimeRequest:
+        record = db.scalar(select(HRAttendanceRecord).where(
+            HRAttendanceRecord.id == payload.attendance_record_id,
+            HRAttendanceRecord.company_id == company_id,
+        ).with_for_update())
+        if record is None:
+            raise LookupError("Attendance record not found")
+        self._employee(db, company_id=company_id, employee_id=record.employee_id, lock=True)
+        capacity = self._overtime_capacity(db, company_id=company_id, record=record)
+        reserved = self._reserved_overtime(db, company_id=company_id, attendance_record_id=record.id)
+        if Decimal(payload.requested_hours) > capacity - reserved:
+            raise ValueError("Requested overtime exceeds the recorded hours above the configured daily work hours")
+        requires_approval = get_company_setting(db, company_id, "hr.overtime_requires_approval") is True
+        request = HROvertimeRequest(
+            company_id=company_id,
+            attendance_record_id=record.id,
+            requested_hours=payload.requested_hours,
+            reason=payload.reason,
+            status="pending" if requires_approval else "approved",
+            submitted_by_user_id=actor_user_id,
+        )
+        db.add(request)
+        db.flush()
+        if not requires_approval:
+            request.decided_by_user_id = actor_user_id
+            request.decided_at = datetime.now(timezone.utc)
+            request.decision_reason = "Automatically approved by company policy"
+        return request
+
+    def decide_overtime_request(self, db: Session, *, company_id: int, request_id: int, actor_user_id: int, decision: str, reason: str | None) -> HROvertimeRequest:
+        request = db.scalar(select(HROvertimeRequest).where(
+            HROvertimeRequest.id == request_id,
+            HROvertimeRequest.company_id == company_id,
+        ).with_for_update())
+        if request is None:
+            raise LookupError("Overtime request not found")
+        if request.status != "pending":
+            raise ValueError("Only pending overtime requests can be decided")
+        if request.submitted_by_user_id == actor_user_id and get_company_setting(db, company_id, "workflow.allow_self_approval") is not True:
+            raise ValueError("The requester cannot decide their own overtime request under company policy")
+        record = db.scalar(select(HRAttendanceRecord).where(
+            HRAttendanceRecord.id == request.attendance_record_id,
+            HRAttendanceRecord.company_id == company_id,
+        ).with_for_update())
+        if record is None:
+            raise LookupError("Attendance record not found")
+        if decision == "approve":
+            capacity = self._overtime_capacity(db, company_id=company_id, record=record)
+            other_reserved = self._reserved_overtime(
+                db, company_id=company_id, attendance_record_id=record.id, excluding_request_id=request.id
+            )
+            if Decimal(request.requested_hours) > capacity - other_reserved:
+                raise ValueError("This overtime request no longer fits the available recorded overtime")
+            request.status = "approved"
+        else:
+            request.status = "rejected"
+        request.decided_by_user_id = actor_user_id
+        request.decided_at = datetime.now(timezone.utc)
+        request.decision_reason = reason
+        db.flush()
+        return request
 
 
 hr_leave_service = HRLeaveService()
