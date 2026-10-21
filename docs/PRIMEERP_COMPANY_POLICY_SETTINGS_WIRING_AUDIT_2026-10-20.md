@@ -87,7 +87,7 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 | `inventory.valuation_method` | enum | **RUNTIME** | Default for new inventory items when no item-level costing method was explicitly submitted; existing items do not change |
 | `inventory.require_warehouse` | bool | **RUNTIME** | Require a warehouse for stockable/consumable commerce document lines |
 | `inventory.require_bin_location` | bool | **RUNTIME** | Require child/bin locations for stock movement endpoints |
-| `inventory.auto_reserve_sales_orders` | bool | CATALOG ONLY | Reserve stock on sales order confirmation |
+| `inventory.auto_reserve_sales_orders` | bool | **RUNTIME** | Reserve stock on sales order confirmation |
 | `inventory.allow_below_cost_sale` | bool | CATALOG ONLY | Allow sale below cost subject to permission |
 | `inventory.expiry_tracking_required` | bool | CATALOG ONLY | Require expiry dates for perishable/batch items |
 | `inventory.serial_tracking_default` | bool | CATALOG ONLY | Default serial tracking for eligible items |
@@ -254,7 +254,7 @@ The 29 catalog-only settings below are the remaining candidates for workflow wir
 - `sales.document_numbering`: keep catalog-only until sales has its own transaction-safe numbering sequence and migration. Current `DocumentCreate.number` is caller-required; the generic sequence requires a branch and is scoped by tenant/company/branch, while this policy also offers global numbering. Existing uniqueness is only `(company_id, document_type, number)`, so reusing that sequence would not faithfully enforce all three choices.
 
 ### D. Inventory and costing (5)
-- `inventory.auto_reserve_sales_orders`: add atomic reservation records and release/expiry behavior on cancellation, edits and fulfillment.
+- `inventory.auto_reserve_sales_orders` is now runtime: order confirmation reserves per-line recipe components, deliveries consume reservations partially, and order cancellation releases the remaining reservation.
 - `inventory.allow_below_cost_sale`: enforce using current valuation cost and explicit permission/audit behavior at sales-line validation.
 - `inventory.expiry_tracking_required`, `inventory.serial_tracking_default`, `inventory.batch_tracking_default`: connect item tracking flags to receipt, stock movement, lot/serial identity and issue validation; defaults should affect new items only unless a migration is deliberately approved.
 
@@ -418,7 +418,6 @@ Regression tests cover a configured override, an unset fallback, and invalid-cod
 The following **12** policies remain catalog-only after manufacturing and sales-order reservation wiring. They were reviewed against the current branch; each needs its owning workflow before it can be promoted.
 
 - `general.date_format`: the preference and formatter exist, but most date-bearing screens and exports still render dates independently. Migrate all app display/export paths before promotion.
-- `inventory.auto_reserve_sales_orders` is now wired to sales-order confirmation, per-line/component reservations, partial delivery consumption, and order cancellation cleanup.
 - `inventory.allow_below_cost_sale`: compare against the authoritative outbound valuation for the selected warehouse and quantity (including FIFO layers), and enforce an explicit permission plus audit record.
 - `inventory.expiry_tracking_required`, `inventory.serial_tracking_default`, `inventory.batch_tracking_default`: the item and stock movement lifecycle has no linked lot/serial identity across receipts, transfers, issues, returns, and adjustments. Add that traceability model and validate it end to end; defaults must affect new items only.
 - `hr.attendance_source`, `hr.biometric_sync_interval_minutes`: manual attendance exists, but there is no authenticated biometric/mobile connector or sync worker. Keep non-manual options visibly catalog-only until ingestion exists.
@@ -428,7 +427,7 @@ The following **12** policies remain catalog-only after manufacturing and sales-
 - `pos.allow_open_cash_drawer`: cashier shifts now reconcile cash sales, but the system has no authenticated drawer event or hardware command integration.
 - `integrations.auto_sync_enabled`: integrations support manual event retries, but no scheduled synchronization lifecycle exists.
 
-These are implementation dependencies, not reasons to treat the settings as active. The registry and contract keep all 15 at `catalog` until the named workflow and its company-isolation/positive/negative verification are in place. No tests, builds, or migrations were run for this review.
+These remaining 12 settings stay at `catalog` until their named workflows and company-isolation controls are implemented. The sales reservation policy is runtime. No tests, builds, or migrations were run for this review.
 
 ## POS cashier shift foundation — 2026-10-22
 - Added company/branch/terminal-scoped cashier shifts with one open shift per terminal, opening float, opener/closer, and close reconciliation fields.
