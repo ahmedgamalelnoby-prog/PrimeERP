@@ -71,12 +71,13 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
         "hr.require_attendance_approval",
         "hr.overtime_requires_approval",
         "hr.default_work_hours_per_day",
+        "manufacturing.require_work_order",
+        "manufacturing.allow_overproduction",
     }
 
 
 def test_policies_without_a_safe_workflow_consumer_remain_catalog_only():
-    # These policies require data relationships or a scheduler that the current
-    # implementation does not provide. Do not advertise them as enforced.
+    # These policies still lack complete owning workflows. Do not advertise them as enforced.
     catalog_only_keys = {
         "general.date_format",
         "inventory.auto_reserve_sales_orders",
@@ -90,8 +91,6 @@ def test_policies_without_a_safe_workflow_consumer_remain_catalog_only():
         "workflow.approval_mode",
         "workflow.escalation_after_hours",
         "pos.allow_open_cash_drawer",
-        "manufacturing.require_work_order",
-        "manufacturing.allow_overproduction",
         "integrations.auto_sync_enabled",
     }
     assert all(BY_KEY[key]["status"] == "catalog" for key in catalog_only_keys)
