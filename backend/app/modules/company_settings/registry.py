@@ -36,8 +36,8 @@ _RAW = [
     # Sales / customer credit
     ("sales.require_quote_approval","sales","Sales","bool",False,"Require quotation approval above configured limits",None,"catalog"),
     ("sales.require_order_approval","sales","Sales","bool",True,"Require sales order approval",None,"catalog"),
-    ("sales.invoice_requires_delivery","sales","Sales","bool",False,"Require delivery before invoicing stock items",None,"catalog"),
-    ("sales.allow_overbilling","sales","Sales","bool",False,"Allow billing above ordered quantity",None,"catalog"),
+    ("sales.invoice_requires_delivery","sales","Sales","bool",False,"Require posted delivery quantity before invoicing linked stock order lines",None,"runtime"),
+    ("sales.allow_overbilling","sales","Sales","bool",False,"Allow order-linked sales invoices to exceed the ordered quantity",None,"runtime"),
     ("sales.credit_limit_enforced","sales","Sales","bool",True,"Block orders beyond customer credit limit",None,"runtime"),
     ("sales.allow_negative_customer_balance","sales","Sales","bool",False,"Allow customer invoice overpayments to create a customer credit balance",None,"runtime"),
     ("sales.default_payment_terms_days","sales","Sales","int",30,"Default customer payment term",None,"runtime"),
