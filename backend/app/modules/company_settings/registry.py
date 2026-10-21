@@ -61,7 +61,7 @@ _RAW = [
     ("inventory.batch_tracking_default","inventory","Inventory","bool",False,"Default batch/lot tracking for eligible items",None,"catalog"),
     # HR
     ("hr.attendance_source","hr","Human Resources","enum","manual","Attendance source",["manual","biometric","mobile","integration"],"catalog"),
-    ("hr.require_attendance_approval","hr","Human Resources","bool",True,"Require attendance corrections approval",None,"catalog"),
+    ("hr.require_attendance_approval","hr","Human Resources","bool",True,"Require a separate decision before applying attendance corrections",None,"runtime"),
     ("hr.overtime_requires_approval","hr","Human Resources","bool",True,"Require overtime approval",None,"catalog"),
     ("hr.leave_requires_approval","hr","Human Resources","bool",True,"Require a separate approval before leave is confirmed and deducted from balance",None,"runtime"),
     ("hr.payroll_requires_approval","hr","Human Resources","bool",True,"Require payroll approval before posting",None,"catalog"),
