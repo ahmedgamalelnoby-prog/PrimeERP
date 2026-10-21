@@ -197,12 +197,12 @@ export default function OperationalPage() {
     <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
       <form onSubmit={submit} className="space-y-4 rounded-2xl border bg-card p-5 shadow-sm">
         <h2 className="font-semibold">إضافة سجل</h2>
-        <input required value={code} onChange={e => setCode(e.target.value)} placeholder={meta.kind === "documents" ? "اختصار/مرجع" : "الكود"} className="w-full rounded-lg border bg-background px-3 py-2" />
+        {meta.kind !== "documents" && <input required value={code} onChange={e => setCode(e.target.value)} placeholder="الكود" className="w-full rounded-lg border bg-background px-3 py-2" />}
         <input required value={name} onChange={e => setName(e.target.value)} placeholder="الاسم / الوصف" className="w-full rounded-lg border bg-background px-3 py-2" />
         {meta.kind === "documents" && <>
           <input required type="number" min="1" value={partnerId} onChange={e => setPartnerId(e.target.value)} placeholder="Partner ID" className="w-full rounded-lg border bg-background px-3 py-2" />
           <input required type="number" min="1" value={itemId} onChange={e => setItemId(e.target.value)} placeholder="Item ID" className="w-full rounded-lg border bg-background px-3 py-2" />
-          <input required value={number} onChange={e => setNumber(e.target.value)} placeholder="رقم المستند" className="w-full rounded-lg border bg-background px-3 py-2" />
+          {isPurchase ? <input required value={number} onChange={e => setNumber(e.target.value)} placeholder="رقم مستند المشتريات" className="w-full rounded-lg border bg-background px-3 py-2" /> : <p className="rounded-lg border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">رقم مستند المبيعات بيتولد تلقائيًا حسب إعدادات الشركة.</p>}
           <select value={type} onChange={e => setType(e.target.value)} className="w-full rounded-lg border bg-background px-3 py-2">
             {allowedDocumentTypes.map(value => <option key={value} value={value}>{value}</option>)}
           </select>
