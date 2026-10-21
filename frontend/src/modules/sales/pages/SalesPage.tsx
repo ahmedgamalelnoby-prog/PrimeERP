@@ -16,7 +16,7 @@ export default function SalesPage() {
   useEffect(() => { void load(); }, []);
   const create = async (e: FormEvent) => { e.preventDefault(); setBusy(true); setError(""); try {
     await salesApi.create({ partner_id:Number(form.partner_id), document_type:form.document_type, number:form.number.trim(), document_date:form.document_date, ...(form.source_order_id ? { source_order_id:Number(form.source_order_id) } : {}), lines:[{ item_id:Number(form.item_id), quantity:Number(form.quantity), unit_price:Number(form.unit_price), discount_percent:0, tax_percent:0, ...(form.source_line_id ? { source_sales_line_id:Number(form.source_line_id) } : {}) }] });
-    setForm({...form, number:"", item_id:"", quantity:"1", unit_price:"0"}); await load();
+    setForm({...form, number:"", item_id:"", quantity:"1", unit_price:"0", source_order_id:"", source_line_id:""}); await load();
   } catch(e) { setError(errorText(e)); } finally { setBusy(false); } };
   const action = async (id:number, fn:(id:number)=>Promise<Document>) => { setBusy(true); setError(""); try { const updated=await fn(id); setSelected(updated); await load(); } catch(e) { setError(errorText(e)); } finally { setBusy(false); } };
   return <section className="space-y-5 p-6" dir="rtl">
