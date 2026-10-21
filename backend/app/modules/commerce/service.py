@@ -371,6 +371,8 @@ class CommerceService:
         approval_setting = None
         if kind == "sale" and obj.document_type == "order":
             approval_setting = "sales.require_order_approval"
+        elif kind == "sale" and obj.document_type == "quotation":
+            approval_setting = "sales.require_quote_approval"
         elif kind == "purchase" and obj.document_type == "order":
             approval_setting = "purchasing.require_purchase_approval"
         if obj.status == "draft" and approval_setting and get_company_setting(db, company_id, approval_setting) is True:
