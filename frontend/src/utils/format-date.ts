@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 export type CompanyDateFormat = "DD/MM/YYYY" | "MM/DD/YYYY" | "YYYY-MM-DD";
 
 const ALLOWED_FORMATS: readonly CompanyDateFormat[] = [
@@ -8,14 +10,30 @@ const ALLOWED_FORMATS: readonly CompanyDateFormat[] = [
 
 const DEFAULT_FORMAT: CompanyDateFormat = "DD/MM/YYYY";
 const COMPANY_DATE_FORMAT_PREFIX = "primeerp_company_date_format:";
+const FORMAT_CHANGED_EVENT = "primeerp:company-date-format-changed";
 
 export function setCompanyDateFormat(companyId: number, value: unknown): void {
   if (!Number.isInteger(companyId) || companyId <= 0 || !isCompanyDateFormat(value)) return;
   try {
     localStorage.setItem(`${COMPANY_DATE_FORMAT_PREFIX}${companyId}`, value);
+    window.dispatchEvent(new Event(FORMAT_CHANGED_EVENT));
   } catch {
     // Storage can be unavailable in private or restricted browser contexts.
   }
+}
+
+export function useCompanyDateFormat(companyId?: number | null): CompanyDateFormat {
+  const [format, setFormat] = useState(() => getCompanyDateFormat(companyId));
+  useEffect(() => {
+    const refresh = () => setFormat(getCompanyDateFormat(companyId));
+    window.addEventListener(FORMAT_CHANGED_EVENT, refresh);
+    window.addEventListener("storage", refresh);
+    return () => {
+      window.removeEventListener(FORMAT_CHANGED_EVENT, refresh);
+      window.removeEventListener("storage", refresh);
+    };
+  }, [companyId]);
+  return format;
 }
 
 export function getCompanyDateFormat(companyId?: number | null): CompanyDateFormat {
