@@ -200,6 +200,19 @@ class CommerceService:
 
     @staticmethod
     def _reserve_sales_line(db, *, order: SalesDocument, line: SalesLine, quantity: Decimal):
+        output_item = db.scalar(select(InventoryItem).where(
+            InventoryItem.id == line.item_id,
+            InventoryItem.company_id == order.company_id,
+            InventoryItem.is_active.is_(True),
+        ))
+        if output_item is None:
+            raise ValueError("Sales order item is unavailable")
+        if output_item.item_type not in {"stockable", "consumable"} and db.scalar(select(Recipe.id).where(
+            Recipe.company_id == order.company_id,
+            Recipe.product_id == line.item_id,
+            Recipe.is_active.is_(True),
+        )) is None:
+            return
         if not order.warehouse_id:
             raise ValueError("A warehouse is required to reserve a sales order")
         locations = list(db.scalars(select(InventoryLocation).where(
@@ -699,6 +712,8 @@ class CommerceService:
             ).with_for_update())
             if source_order is None:
                 raise ValueError("Linked sales order is unavailable during inventory posting")
+            if source_order.status == "cancelled":
+                raise ValueError("A delivery linked to a cancelled sales order cannot post inventory")
             if auto_reserve and source_order.warehouse_id != obj.warehouse_id:
                 raise ValueError("A delivery using automatic order reservations must use the sales order warehouse")
 
