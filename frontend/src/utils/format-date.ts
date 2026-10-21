@@ -6,8 +6,32 @@ const ALLOWED_FORMATS: readonly CompanyDateFormat[] = [
   "YYYY-MM-DD",
 ];
 
+const DEFAULT_FORMAT: CompanyDateFormat = "DD/MM/YYYY";
+const COMPANY_DATE_FORMAT_PREFIX = "primeerp_company_date_format:";
+
+export function setCompanyDateFormat(companyId: number, value: unknown): void {
+  if (!Number.isInteger(companyId) || companyId <= 0 || !isCompanyDateFormat(value)) return;
+  try {
+    localStorage.setItem(`${COMPANY_DATE_FORMAT_PREFIX}${companyId}`, value);
+  } catch {
+    // Storage can be unavailable in private or restricted browser contexts.
+  }
+}
+
+export function getCompanyDateFormat(companyId?: number | null): CompanyDateFormat {
+  if (typeof localStorage === "undefined") return DEFAULT_FORMAT;
+  const selectedId = companyId ?? Number(localStorage.getItem("company_id"));
+  if (!Number.isInteger(selectedId) || selectedId <= 0) return DEFAULT_FORMAT;
+  try {
+    const saved = localStorage.getItem(`${COMPANY_DATE_FORMAT_PREFIX}${selectedId}`);
+    return isCompanyDateFormat(saved) ? saved : DEFAULT_FORMAT;
+  } catch {
+    return DEFAULT_FORMAT;
+  }
+}
+
 /** Format ISO calendar dates without timezone conversion or changing timestamp values. */
-export function formatCompanyDate(value: string, format: CompanyDateFormat): string {
+export function formatCompanyDate(value: string, format: CompanyDateFormat = getCompanyDateFormat()): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})(?=$|T|\s)(.*)$/.exec(value);
   if (!match) return value;
 
