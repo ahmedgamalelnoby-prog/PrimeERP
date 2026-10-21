@@ -62,11 +62,11 @@ _RAW = [
     # HR
     ("hr.attendance_source","hr","Human Resources","enum","manual","Attendance source",["manual","biometric","mobile","integration"],"catalog"),
     ("hr.require_attendance_approval","hr","Human Resources","bool",True,"Require a separate decision before applying attendance corrections",None,"runtime"),
-    ("hr.overtime_requires_approval","hr","Human Resources","bool",True,"Require overtime approval",None,"catalog"),
+    ("hr.overtime_requires_approval","hr","Human Resources","bool",True,"Require a separate decision for overtime hours recorded above standard daily hours",None,"runtime"),
     ("hr.leave_requires_approval","hr","Human Resources","bool",True,"Require a separate approval before leave is confirmed and deducted from balance",None,"runtime"),
     ("hr.payroll_requires_approval","hr","Human Resources","bool",True,"Require payroll approval before posting",None,"catalog"),
     ("hr.allow_negative_leave_balance","hr","Human Resources","bool",False,"Allow approved paid leave to consume more days than the configured balance",None,"runtime"),
-    ("hr.default_work_hours_per_day","hr","Human Resources","number",8,"Default scheduled hours per workday",None,"catalog"),
+    ("hr.default_work_hours_per_day","hr","Human Resources","number",8,"Daily standard hours deducted from recorded attendance when calculating eligible overtime",None,"runtime"),
     ("hr.biometric_sync_interval_minutes","hr","Human Resources","int",15,"Target sync interval for biometric integrations",None,"catalog"),
     # Approvals / operations / POS
     ("workflow.approval_mode","approvals","Approvals","enum","sequential","Approval chain mode",["sequential","parallel","any_one"],"catalog"),
