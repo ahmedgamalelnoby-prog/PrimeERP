@@ -43,7 +43,7 @@ _RAW = [
     ("sales.default_payment_terms_days","sales","Sales","int",30,"Default customer payment term",None,"runtime"),
     ("sales.document_numbering","sales","Sales","enum","per_company_year","Sales document numbering policy",["per_company_year","per_company","global"],"catalog"),
     # Procurement / suppliers
-    ("purchasing.require_purchase_order","purchasing","Purchasing","bool",True,"Require PO before supplier invoice",None,"catalog"),
+    ("purchasing.require_purchase_order","purchasing","Purchasing","bool",True,"Require a confirmed, linked purchase order before supplier billing",None,"runtime"),
     ("purchasing.require_purchase_approval","purchasing","Purchasing","bool",True,"Require purchase order approval",None,"catalog"),
     ("purchasing.require_goods_receipt","purchasing","Purchasing","bool",True,"Require receipt before supplier invoice",None,"runtime"),
     ("purchasing.allow_invoice_price_variance","purchasing","Purchasing","bool",False,"Allow invoice price variance beyond tolerance",None,"runtime"),
