@@ -26,6 +26,9 @@ def _entry():
     return SimpleNamespace(
         id=10,
         company_id=20,
+        currency_code="EGP",
+        exchange_rate=Decimal("1"),
+        approved_by=None,
         status="pending",
         journal=SimpleNamespace(requires_approval=False),
         period_id=30,
