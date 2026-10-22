@@ -6,7 +6,7 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 ## Result
 
 - Catalog entries audited individually: **71**.
-- Current registry classification: **62 runtime / 9 catalog-only**.
+- Current registry classification: **63 runtime / 8 catalog-only**.
 - This is a source-level classification, not proof that migrations, tests, or end-to-end workflows have passed. The catalog-only list below reflects the current registry; runtime claims still require CI and workflow verification.
 - Confirmed runtime consumers: `inventory.allow_negative_stock` (stock-movement posting), `inventory.allow_below_cost_sale` (delivery posting compares net line revenue with outbound stock valuation and requires the dedicated permission plus an audit event), `accounting.require_journal_approval` (journal posting), `general.timezone`, `general.base_currency`, `general.allow_multi_currency`, `general.require_cost_center`, `general.require_project`, `sales.document_numbering` (atomic company/year, company, or global numbering sequences), `hr.leave_requires_approval` / `hr.allow_negative_leave_balance` (leave request decisions and paid-leave balance checks), `hr.require_attendance_approval` (attendance correction decisions), `hr.default_work_hours_per_day` / `hr.overtime_requires_approval` (overtime eligibility and approval), and `accounting.allow_backdated_entries` (journal/generic transaction creation), plus `integrations.retry_limit` and `integrations.webhook_signature_required` (integration retry and Salla webhook intake), `accounting.fiscal_year_start_month` (fiscal-year creation), `accounting.rounding_method` and `tax.default_tax_inclusive_pricing` (tax calculation), `workflow.allow_self_approval` (generic transaction approval and HR leave/attendance decisions), `inventory.require_bin_location` (stock movement creation), `general.branch_required` (generic transaction creation), and `accounting.period_lock_enabled` (journal posting), `sales.credit_limit_enforced` (customer credit exposure check), `purchasing.require_goods_receipt` (supplier-bill creation), `sales.default_payment_terms_days` / `purchasing.default_payment_terms_days` (sales invoices and supplier bills when partner terms are unset), `crm.duplicate_customer_check` (customer creation by email/tax number), `pos.allow_discount_without_approval` / `pos.max_discount_pct_without_approval` (POS checkout discounts), `inventory.require_warehouse` (stockable/consumable commerce documents), `inventory.expiry_tracking_required`, `inventory.serial_tracking_default`, and `inventory.batch_tracking_default` (new inventory-item defaults consumed by item creation; serial/expiry imply batch tracking), `notifications.email_enabled`, `notifications.whatsapp_enabled`, and `notifications.retry_limit` (company-scoped delivery gates and bounded transient retries), `tax.require_tax_code_on_invoice` (taxable sales/purchase invoice lines), and `accounting.auto_post_sales_invoice` / `accounting.auto_post_purchase_invoice` (company-gated accounting auto-post), and the five `accounting.default_*_account` code settings (company-scoped active posting-account overrides for commerce AR, AP, sales, purchase expense, and payment/cash lines), and `purchasing.allow_invoice_price_variance` / `purchasing.price_variance_tolerance_pct` (supplier bill vs linked receipt valuation comparison at bill accounting posting), `purchasing.require_purchase_order` (bills must reference a confirmed company/vendor purchase order and line-matched receipts), `sales.require_quote_approval` / `sales.require_order_approval` / `purchasing.require_purchase_approval` (orders pause in pending approval, enforce requester separation and require an authorized separate decision before confirmation), `general.intercompany_enabled` (new intercompany transaction creation), and `tax.einvoice_required_for_sales` (sales invoices and credit notes require ETA status `valid` before confirmation), and `inventory.valuation_method` (default costing method for newly created items when no item-specific choice is submitted), and `sales.allow_negative_customer_balance` (explicitly permits overpayment of a sales invoice to create customer credit), and `sales.invoice_requires_delivery` / `sales.allow_overbilling` (order-linked stock invoice quantities are checked against posted delivery quantities and ordered quantities), plus `integrations.auto_sync_enabled` (the scheduled Salla integration worker checks the company policy before claiming due connections; manual sync remains available). FIFO negative issues remain blocked for valuation safety, and reserved quantities remain protected.
 - This is a source-level audit, not a successful runtime test. The GitHub Windows self-hosted Release Gate is currently queued; no test-pass claim is made until the run completes on the latest commit.
@@ -127,7 +127,7 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 
 | Option key | Type | Current status | Purpose |
 |---|---|---|---|
-| `manufacturing.require_work_order` | bool | CATALOG ONLY | Require work order for production |
+| `manufacturing.require_work_order` | bool | **RUNTIME** | Require production stock movements to match a released work order in the same company |
 | `manufacturing.allow_overproduction` | bool | **RUNTIME** | Block production above planned quantity when disabled; the completion service reads the company policy |
 
 ## CRM (1)
@@ -416,7 +416,7 @@ Regression tests cover a configured override, an unset fallback, and invalid-cod
 
 ## Remaining catalog-only review — updated 2026-10-22
 
-Seven policies remain catalog-only because their full owning workflows are not yet implemented or verified. The inventory lot/serial/expiry model and per-item movement allocation have since been added, so the three new-item tracking defaults are now marked runtime and covered by the registry contract test.
+Eight policies remain catalog-only because their full owning workflows are not yet implemented or verified. The inventory lot/serial/expiry model and per-item movement allocation have since been added, so the three new-item tracking defaults are now marked runtime and covered by the registry contract test.
 
 - `general.date_format`: a shared formatter exists, but date-bearing screens and exports are not yet consistently migrated. Finish the app-wide display/export migration before promotion.
 - `hr.attendance_source` and `hr.biometric_sync_interval_minutes`: manual attendance is enforced, but biometric/mobile ingestion has no authenticated connector or scheduled sync worker. Keep non-manual options catalog-only until ingestion is implemented.
@@ -434,6 +434,7 @@ Do not promote these eight settings until their owning workflows, tenant/company
 - Shift close calculates expected cash from the opening float plus posted cash payments linked to that shift, then records counted cash and variance. Card, bank, and wallet tenders remain outside the cash drawer total.
 - The migration is committed but has not been executed. No tests or frontend build were run, so this remains a source-level implementation review.
 - `pos.allow_open_cash_drawer` remains catalog-only: there is no authenticated cash-drawer hardware integration or drawer event workflow to enforce it.
+- `manufacturing.require_work_order` is now runtime: production issue/receipt movements are checked against a released work order in the same company; material item/source location and output item/variant/destination must match the referenced work order.
 
 
 ## Manufacturing work-order workflow — 2026-10-22
@@ -467,3 +468,10 @@ Do not promote these eight settings until their owning workflows, tenant/company
 - Reversal now applies the recorded per-lot allocation in reverse and blocks tracked reversals when the allocation audit is missing, rather than silently corrupting lot balances.
 - Migrations added: `20261102_inventory_lot_balances` and `20261103_inventory_lot_move_allocations`, following `20261101_inventory_lot_serial_expiry`.
 - Verification status: source and contract tests have been updated, but GitHub Actions is still pending/running at the time of this note. Do not mark this workflow production-verified until the latest run passes and the migrations are applied successfully in the target database.
+
+## Required work-order policy enforcement — 2026-10-22
+
+- Enabled the `manufacturing.require_work_order` runtime consumer at inventory stock-movement creation for production issues and production receipts.
+- When enabled, a production issue must reference an existing material line belonging to a released work order in the same company; item and source location are checked against that line/order.
+- When enabled, a production receipt must reference a released work order in the same company; output item, variant, and destination location must match the work order.
+- Added policy tests for unlinked production movements and nonexistent material-line references. These are source changes only; the self-hosted Release Gate must pass before the workflow is considered verified.
