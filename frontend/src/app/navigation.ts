@@ -60,7 +60,7 @@ export const navigationItems: NavigationItem[] = [
  {id:"company-policies",label:"Company Policies",labelAr:"سياسات الشركة",type:"item",path:"/settings/company-policies",icon:SlidersHorizontal,permission:"company.write",module:"settings",visible:true,order:16},
 ];
 
-const TENANT_CORE_NAVIGATION = new Set(["dashboard", "users", "companies", "branches", "settings", "company-policies", "helpdesk"]);
+const TENANT_CORE_NAVIGATION = new Set(["dashboard", "users", "companies", "branches", "settings", "company-policies", "helpdesk", "notifications"]);
 
 function isNavigationAllowed(item: NavigationItem, enabledModules: Set<string>, isPlatformAdmin: boolean): boolean {
   if (isPlatformAdmin) return true;
