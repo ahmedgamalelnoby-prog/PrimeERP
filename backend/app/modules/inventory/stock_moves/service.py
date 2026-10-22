@@ -69,12 +69,14 @@ class InventoryStockMoveService:
         return variant
 
     @staticmethod
-    def _validate_required_work_order(db: Session, payload) -> None:
+    def _validate_required_work_order(db: Session, payload, *, from_work_order: bool = False) -> None:
         """When enabled, accept production movements only when they match a released company work order."""
         if get_company_setting(db, payload.company_id, "manufacturing.require_work_order") is not True:
             return
         if payload.movement_type not in {"production_issue", "production_receipt"}:
             return
+        if not from_work_order:
+            raise ValueError("Production stock movements must be created by the work-order completion workflow")
         if payload.source_module != "manufacturing" or not payload.source_id:
             raise ValueError("A released manufacturing work order is required for production stock movements")
         try:
@@ -121,8 +123,8 @@ class InventoryStockMoveService:
             ):
                 raise ValueError("Production receipt item, variant, and destination must match the work order output")
 
-    def create_draft(self, db: Session, payload):
-        self._validate_required_work_order(db, payload)
+    def create_draft(self, db: Session, payload, *, from_work_order: bool = False):
+        self._validate_required_work_order(db, payload, from_work_order=from_work_order)
         if payload.source_module and payload.source_entity and payload.source_id:
             existing = db.scalar(select(InventoryStockMove).where(InventoryStockMove.company_id == payload.company_id, InventoryStockMove.source_module == payload.source_module, InventoryStockMove.source_entity == payload.source_entity, InventoryStockMove.source_id == payload.source_id).with_for_update())
             if existing is not None:
