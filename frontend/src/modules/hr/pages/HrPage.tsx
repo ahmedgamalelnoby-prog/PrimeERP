@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import client from "@/shared/api/client";
-import { formatCompanyDate, useCompanyDateFormat } from "@/utils/format-date";
+import { formatCompanyDate, getLocalISODate, useCompanyDateFormat } from "@/utils/format-date";
 
 type Employee = { id: number; employee_no: string; name: string; is_active: boolean };
 type LeaveRequest = {
@@ -16,10 +16,14 @@ type LeaveBalance = {
   entitled_days: string | number; consumed_days: string | number; available_days: string | number;
 };
 const selectedCompany = () => {
-  const id = Number(localStorage.getItem("company_id"));
-  return Number.isInteger(id) && id > 0 ? id : null;
+  try {
+    const id = Number(localStorage.getItem("company_id"));
+    return Number.isInteger(id) && id > 0 ? id : null;
+  } catch {
+    return null;
+  }
 };
-const today = () => new Date().toISOString().slice(0, 10);
+const today = getLocalISODate;
 
 export default function HrPage() {
   const companyId = selectedCompany();
