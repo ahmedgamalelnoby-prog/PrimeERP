@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import client from "@/shared/api/client";
-import { formatCompanyDate, useCompanyDateFormat } from "@/utils/format-date";
+import { formatCompanyDate, getLocalISODate, useCompanyDateFormat } from "@/utils/format-date";
 
 type Account={id:number;name:string;bank_name:string;currency:string;account_number?:string|null};
 type Statement={id:number;statement_number:string;period_start:string;period_end:string;closing_balance:string|number;status:string};
@@ -9,7 +9,7 @@ type Session={id:number;statement_id:number;book_balance:string|number;bank_bala
 type Candidate={source_type:"payment"|"cheque";source_id:number;amount:string|number;reference?:string|null;cheque_number?:string|null;transaction_date?:string|null};
 
 const company=()=>{const n=Number(localStorage.getItem("company_id"));return Number.isInteger(n)&&n>0?n:null};
-const today=()=>new Date().toISOString().slice(0,10);
+const today = getLocalISODate;
 
 export default function BankReconciliationPage(){
  const dateFormat=useCompanyDateFormat();
