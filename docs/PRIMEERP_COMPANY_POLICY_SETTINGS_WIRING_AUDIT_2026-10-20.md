@@ -483,3 +483,10 @@ Do not promote these seven settings until their owning workflows, tenant/company
 - Applied the same formatter to HR attendance dates, overtime dates, and leave-request date ranges. Attendance check-in/out timestamps remain formatted separately with the company timezone because they represent instants, not calendar-only dates.
 - This is incremental UI coverage only. Other modules, report layouts, and export formats have not all been migrated; therefore `general.date_format` remains catalog-only until the remaining consumers are covered and verified.
 - GitHub Actions for the latest source change is queued/pending. Frontend typecheck/build and automated tests have not been confirmed successful in this environment.
+
+
+## Company settings storage resilience — 2026-10-22
+
+- The Company Policy Settings page now reads the initial selected company ID through a guarded helper. If browser storage is unavailable or contains an invalid/non-positive ID, the page falls back to company selection instead of throwing during initial render.
+- This complements the guarded company date-format storage helper. It does not replace server-side company authorization; API permissions and company scoping remain the security boundary.
+- Validation status: source change committed; local typecheck/build and latest self-hosted CI have not yet been confirmed.
