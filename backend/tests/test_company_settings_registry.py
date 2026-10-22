@@ -78,7 +78,6 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
         "hr.require_attendance_approval",
         "hr.overtime_requires_approval",
         "hr.default_work_hours_per_day",
-        "manufacturing.require_work_order",
         "manufacturing.allow_overproduction",
         "integrations.auto_sync_enabled",
     }
