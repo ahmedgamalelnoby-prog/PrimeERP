@@ -6,7 +6,7 @@ from pydantic import ValidationError
 
 from app.modules.inventory.items.models import InventoryItem
 from app.modules.inventory.items.schemas import InventoryItemCreate, InventoryItemResponse, InventoryItemUpdate
-from app.modules.inventory.stock_moves.models import InventoryStockMove
+from app.modules.inventory.stock_moves.models import InventoryLotBalance, InventoryLotMoveAllocation, InventoryStockMove
 from app.modules.inventory.stock_moves.schemas import StockMoveCreate
 
 
@@ -46,3 +46,9 @@ def test_inventory_item_update_rejects_null_tracking_flags(field):
 def test_inventory_item_update_accepts_explicit_tracking_boolean():
     update = InventoryItemUpdate.model_validate({"batch_tracking": False})
     assert update.batch_tracking is False
+
+
+def test_lot_balances_and_movement_allocations_have_auditable_identity():
+    assert {"company_id", "item_id", "variant_id", "location_id", "lot_number", "serial_number", "expiry_date", "quantity_on_hand"} <= set(InventoryLotBalance.__table__.c.keys())
+    assert {"company_id", "stock_move_id", "lot_number", "serial_number", "expiry_date", "quantity"} <= set(InventoryLotMoveAllocation.__table__.c.keys())
+    assert "uq_inventory_lot_balance_identity" in {index.name for index in InventoryLotBalance.__table__.indexes}
