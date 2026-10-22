@@ -17,7 +17,7 @@ from app.modules.companies.models import Company
 from app.modules.inventory.items.models import InventoryItem, InventoryStock
 from app.modules.inventory.locations.models import InventoryLocation
 from app.modules.inventory.stock_moves.location_stock import InventoryLocationStock
-from app.modules.inventory.stock_moves.models import InventoryAccountingConfig, InventoryCostLayer, InventoryStockMove, InventoryValuationAllocation
+from app.modules.inventory.stock_moves.models import InventoryAccountingConfig, InventoryCostLayer, InventoryLotBalance, InventoryStockMove, InventoryValuationAllocation
 from app.modules.inventory.stock_moves.repository import inventory_stock_move_repository
 from app.modules.inventory.reservations.models import InventoryReservation
 from app.modules.company_settings.service import get_company_setting
@@ -228,6 +228,8 @@ class InventoryStockMoveService:
                 unit_cost = self._outbound_unit_cost(item, warehouse_source)
             if unit_cost <= 0:
                 raise ValueError("A positive inventory valuation is required before changing stock")
+            if item.batch_tracking or item.serial_tracking or item.expiry_tracking:
+                self._adjust_lot_balance(db, move=move, item=item, location_id=move.source_location_id, delta=-quantity)
             source_balance.quantity_on_hand -= quantity
             warehouse_source.quantity_on_hand -= quantity
             if reservation is not None:
@@ -267,6 +269,8 @@ class InventoryStockMoveService:
                 unit_cost = old_cost if old_qty > 0 else Decimal(item.standard_cost or item.purchase_price or 0)
             if unit_cost <= 0:
                 raise ValueError("A positive inventory valuation is required before changing stock")
+            if item.batch_tracking or item.serial_tracking or item.expiry_tracking:
+                self._adjust_lot_balance(db, move=move, item=item, location_id=move.destination_location_id, delta=quantity)
             destination_balance.quantity_on_hand += quantity
             warehouse_destination.quantity_on_hand += quantity
             new_qty = old_qty + quantity
@@ -438,6 +442,60 @@ class InventoryStockMoveService:
         else:
             raise ValueError("Unsupported inventory accounting movement")
         return [{"account_combination_id": debit, "debit": amount, "credit": Decimal("0"), "description": f"Inventory {move.movement_type}"}, {"account_combination_id": credit, "debit": Decimal("0"), "credit": amount, "description": f"Inventory {move.movement_type}"}]
+
+    @staticmethod
+    def _adjust_lot_balance(db, *, move, item, location_id: int, delta: Decimal):
+        """Apply a tracked movement to its exact lot/serial balance under row locks."""
+        if not move.lot_number and not move.serial_number:
+            raise ValueError("Tracked stock movement is missing its lot or serial identity")
+        stmt = select(InventoryLotBalance).where(
+            InventoryLotBalance.company_id == move.company_id,
+            InventoryLotBalance.item_id == move.item_id,
+            InventoryLotBalance.location_id == location_id,
+            InventoryLotBalance.lot_number == move.lot_number if move.lot_number is not None else InventoryLotBalance.lot_number.is_(None),
+            InventoryLotBalance.serial_number == move.serial_number if move.serial_number is not None else InventoryLotBalance.serial_number.is_(None),
+        )
+        stmt = stmt.where(InventoryLotBalance.variant_id == move.variant_id) if move.variant_id is not None else stmt.where(InventoryLotBalance.variant_id.is_(None))
+        balance = db.scalar(stmt.with_for_update())
+
+        if delta < 0:
+            if balance is None or Decimal(balance.quantity_on_hand or 0) < abs(delta):
+                raise ValueError("Insufficient quantity for the selected lot or serial at the source location")
+            if balance.expiry_date != move.expiry_date:
+                raise ValueError("The selected lot/serial expiry date does not match the source balance")
+            balance.quantity_on_hand = Decimal(balance.quantity_on_hand) + delta
+            return balance
+
+        if item.serial_tracking and move.serial_number:
+            duplicate_stmt = select(InventoryLotBalance.id).where(
+                InventoryLotBalance.company_id == move.company_id,
+                InventoryLotBalance.item_id == move.item_id,
+                InventoryLotBalance.serial_number == move.serial_number,
+                InventoryLotBalance.quantity_on_hand > 0,
+            )
+            duplicate_stmt = duplicate_stmt.where(InventoryLotBalance.id != balance.id) if balance is not None else duplicate_stmt
+            if db.scalar(duplicate_stmt.with_for_update()) is not None:
+                raise ValueError("This serial number already has on-hand stock at another location")
+
+        if balance is None:
+            balance = InventoryLotBalance(
+                company_id=move.company_id,
+                item_id=move.item_id,
+                variant_id=move.variant_id,
+                location_id=location_id,
+                lot_number=move.lot_number,
+                serial_number=move.serial_number,
+                expiry_date=move.expiry_date,
+                quantity_on_hand=delta,
+            )
+            db.add(balance)
+            db.flush()
+            return balance
+
+        if balance.expiry_date != move.expiry_date:
+            raise ValueError("A lot/serial identity cannot be reused with a different expiry date")
+        balance.quantity_on_hand = Decimal(balance.quantity_on_hand or 0) + delta
+        return balance
 
     @staticmethod
     def _location_balance(db: Session, company_id: int, item_id: int, variant_id: int | None, location_id: int, *, lock: bool):
