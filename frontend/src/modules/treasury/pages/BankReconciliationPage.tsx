@@ -8,7 +8,7 @@ type Line={id:number;transaction_date:string;description?:string|null;reference?
 type Session={id:number;statement_id:number;book_balance:string|number;bank_balance:string|number;difference:string|number;status:string};
 type Candidate={source_type:"payment"|"cheque";source_id:number;amount:string|number;reference?:string|null;cheque_number?:string|null;transaction_date?:string|null};
 
-const company=()=>{const n=Number(localStorage.getItem("company_id"));return Number.isInteger(n)&&n>0?n:null};
+const company=()=>{try{const n=Number(localStorage.getItem("company_id"));return Number.isSafeInteger(n)&&n>0?n:null}catch{return null}};
 
 export default function BankReconciliationPage(){
  const cid=company();
@@ -23,6 +23,7 @@ export default function BankReconciliationPage(){
  async function loadAccounts(){if(!cid){setError("اختر شركة فعالة أولاً.");return} try{const r=await client.get("/treasury/reconciliation/accounts",{params:{company_id:cid}});setAccounts(r.data||[])}catch(e:any){setError(e?.response?.data?.detail||"تعذر تحميل الحسابات البنكية")}}
  async function loadStatements(){if(!cid||!accountId)return;try{const r=await client.get("/treasury/reconciliation/statements",{params:{company_id:cid,bank_account_id:Number(accountId)}});setStatements(r.data||[])}catch(e:any){setError(e?.response?.data?.detail||"تعذر تحميل كشوف البنك")}}
  async function loadLines(){if(!statementId)return;try{const r=await client.get("/treasury/reconciliation/statements/"+statementId+"/lines");setLines(r.data||[])}catch(e:any){setError(e?.response?.data?.detail||"تعذر تحميل حركات الكشف")}}
+ useEffect(()=>{if(!companyToday)return;setStart(v=>v||companyToday);setEnd(v=>v||companyToday);setLineDate(v=>v||companyToday)},[companyToday]);
  useEffect(()=>{void loadAccounts()},[cid]);
  useEffect(()=>{if(companyDate){setStart(v=>v||companyDate);setEnd(v=>v||companyDate);setLineDate(v=>v||companyDate)}},[companyDate]); useEffect(()=>{setStatementId("");setLines([]);setSession(null);void loadStatements()},[accountId]); useEffect(()=>{setSession(null);setCandidates([]);void loadLines()},[statementId]);
  useEffect(()=>{setCandidates([]);setSourceId("");if(!session||!matchLine)return;void (async()=>{try{const r=await client.get("/treasury/reconciliation/sessions/"+session.id+"/candidates",{params:{line_id:Number(matchLine)}});setCandidates(r.data||[])}catch(e:any){setError(e?.response?.data?.detail||"تعذر تحميل العمليات المرشحة")}})()},[session?.id,matchLine]);
