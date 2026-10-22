@@ -77,7 +77,7 @@ class InventoryStockMoveService:
                     existing.source_location_id == payload.source_location_id,
                     existing.destination_location_id == payload.destination_location_id,
                     Decimal(str(existing.quantity)) == Decimal(str(payload.quantity)),
-                    Decimal(str(existing.unit_cost)) == Decimal(str(payload.unit_cost)),
+                    existing.status != "draft" or Decimal(str(existing.unit_cost)) == Decimal(str(payload.unit_cost)),
                     existing.movement_type == payload.movement_type,
                     existing.lot_number == payload.lot_number,
                     existing.serial_number == payload.serial_number,
