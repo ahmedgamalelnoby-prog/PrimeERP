@@ -21,6 +21,7 @@ from app.modules.inventory.stock_moves.models import InventoryAccountingConfig, 
 from app.modules.inventory.stock_moves.repository import inventory_stock_move_repository
 from app.modules.inventory.reservations.models import InventoryReservation
 from app.modules.company_settings.service import get_company_setting
+from app.modules.manufacturing.production_orders.models import ManufacturingWorkOrder, ManufacturingWorkOrderLine
 
 
 class InventoryStockMoveService:
@@ -67,7 +68,61 @@ class InventoryStockMoveService:
             raise ValueError("Variant does not belong to the item/company or is inactive")
         return variant
 
+    @staticmethod
+    def _validate_required_work_order(db: Session, payload) -> None:
+        """When enabled, accept production movements only when they match a released company work order."""
+        if get_company_setting(db, payload.company_id, "manufacturing.require_work_order") is not True:
+            return
+        if payload.movement_type not in {"production_issue", "production_receipt"}:
+            return
+        if payload.source_module != "manufacturing" or not payload.source_id:
+            raise ValueError("A released manufacturing work order is required for production stock movements")
+        try:
+            source_id = int(payload.source_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Production stock movement must reference a valid work order source") from exc
+
+        if payload.movement_type == "production_issue":
+            if payload.source_entity != "work_order_material":
+                raise ValueError("Production issue must reference a work-order material line")
+            row = db.execute(
+                select(ManufacturingWorkOrderLine, ManufacturingWorkOrder)
+                .join(ManufacturingWorkOrder, ManufacturingWorkOrder.id == ManufacturingWorkOrderLine.work_order_id)
+                .where(
+                    ManufacturingWorkOrderLine.id == source_id,
+                    ManufacturingWorkOrder.company_id == payload.company_id,
+                    ManufacturingWorkOrder.status == "released",
+                )
+                .with_for_update()
+            ).first()
+            if row is None:
+                raise ValueError("Production issue must reference a material line on a released company work order")
+            line, order = row
+            if line.ingredient_item_id != payload.item_id or order.source_location_id != payload.source_location_id:
+                raise ValueError("Production issue item and source location must match the work order material line")
+        else:
+            if payload.source_entity != "work_order_output":
+                raise ValueError("Production receipt must reference a work-order output")
+            order = db.scalar(
+                select(ManufacturingWorkOrder)
+                .where(
+                    ManufacturingWorkOrder.id == source_id,
+                    ManufacturingWorkOrder.company_id == payload.company_id,
+                    ManufacturingWorkOrder.status == "released",
+                )
+                .with_for_update()
+            )
+            if order is None:
+                raise ValueError("Production receipt must reference a released company work order")
+            if (
+                order.output_item_id != payload.item_id
+                or order.output_variant_id != payload.variant_id
+                or order.destination_location_id != payload.destination_location_id
+            ):
+                raise ValueError("Production receipt item, variant, and destination must match the work order output")
+
     def create_draft(self, db: Session, payload):
+        self._validate_required_work_order(db, payload)
         if payload.source_module and payload.source_entity and payload.source_id:
             existing = db.scalar(select(InventoryStockMove).where(InventoryStockMove.company_id == payload.company_id, InventoryStockMove.source_module == payload.source_module, InventoryStockMove.source_entity == payload.source_entity, InventoryStockMove.source_id == payload.source_id).with_for_update())
             if existing is not None:
