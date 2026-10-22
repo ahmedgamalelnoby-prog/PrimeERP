@@ -548,3 +548,10 @@ Do not promote these seven settings until their owning workflows, tenant/company
 - `frontend/src/modules/accounting/pages/FiscalYearsPage.tsx` now reads the cached active company through a guarded helper; blocked/unavailable browser storage and invalid IDs safely resolve to `0`.
 - Existing company guard blocks list loading and disables creating a fiscal year when no valid company is selected. Backend authorization and company scoping remain mandatory; this frontend guard is not a security boundary.
 - Validation status remains pending in GitHub Actions; this change has not been locally built or tested in this session.
+
+
+## Commerce operational dates and storage guard — 2026-10-22
+
+- `frontend/src/modules/commerce/pages/OperationalPage.tsx` now uses the shared local-calendar date helper for document creation, payment dates, payment reversals, and cheque due-date defaults; API date-only fields remain ISO `YYYY-MM-DD` values.
+- The active-company lookup is guarded against blocked/unavailable browser storage and returns no selected company rather than throwing. Existing page guards stop company-scoped operations when no valid company is selected.
+- This improves one shared commerce page used by sales/purchasing operations; it does not complete app-wide `general.date_format` coverage. CI and local tests remain unconfirmed.
