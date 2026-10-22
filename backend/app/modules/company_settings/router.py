@@ -119,6 +119,20 @@ def update_company_settings(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    # Never allow a company to select an attendance source that has no
+    # authenticated ingestion adapter: the manual endpoint intentionally rejects
+    # manual writes whenever another source is selected, which would otherwise
+    # leave attendance entry unavailable without a working replacement.
+    if validated.get("hr.attendance_source", "manual") != "manual":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Biometric, mobile, and integration attendance ingestion is not "
+                "configured yet. Keep hr.attendance_source='manual' until an "
+                "authenticated source adapter is installed."
+            ),
+        )
+
     changed = []
     for key, value in validated.items():
         row = db.scalar(select(CompanySetting).where(
