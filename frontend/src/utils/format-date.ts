@@ -70,6 +70,35 @@ export function useCompanyDateFormat(companyId?: number | null): CompanyDateForm
   return format;
 }
 
+/** Fetch the selected company's calendar date from the backend clock.
+ * Returns an empty string when the company or authoritative clock is unavailable;
+ * callers should not silently substitute the workstation clock for accounting dates.
+ */
+export function useCompanyToday(companyId?: number | null): string {
+  const [today, setToday] = useState("");
+  useEffect(() => {
+    let active = true;
+    setToday("");
+    if (!Number.isSafeInteger(companyId) || !companyId || companyId <= 0) {
+      return () => { active = false; };
+    }
+    void client.get<{ company_id: number; company_date: string }>(
+      "/company-settings/clock",
+      { params: { company_id: companyId } },
+    ).then(({ data }) => {
+      if (!active || data.company_id !== companyId || !/^\\d{4}-\\d{2}-\\d{2}$/.test(data.company_date)) return;
+      const [year, month, day] = data.company_date.split("-").map(Number);
+      const valid = new Date(Date.UTC(year, month - 1, day));
+      if (valid.getUTCFullYear() !== year || valid.getUTCMonth() !== month - 1 || valid.getUTCDate() !== day) return;
+      setToday(data.company_date);
+    }).catch(() => {
+      // No workstation-clock fallback: the form remains without an implicit date.
+    });
+    return () => { active = false; };
+  }, [companyId]);
+  return today;
+}
+
 export function getCompanyDateFormat(companyId?: number | null): CompanyDateFormat {
   try {
     // Access itself can throw in restricted browser contexts, so keep every
