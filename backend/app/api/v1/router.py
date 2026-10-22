@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+from app.modules.operations.approvals.router import router as approvals_router
 from app.modules.accounting.fiscal_years.api.router import router as fiscal_years_router
 from app.modules.accounting.journals.api.journal_entries import router as journal_entries_router
 from app.modules.accounting.reports.router import router as financial_reports_router
@@ -65,6 +66,7 @@ from app.modules.enterprise.finance_router import router as enterprise_finance_r
 def build_router() -> APIRouter:
     api_router = APIRouter()
     api_router.include_router(identity_router, prefix="/identity", tags=["identity"])
+    api_router.include_router(approvals_router)
     api_router.include_router(features_router)
     api_router.include_router(helpdesk_router)
     api_router.include_router(crm_router)
