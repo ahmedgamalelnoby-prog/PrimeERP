@@ -37,10 +37,12 @@ export function useCompanyDateFormat(companyId?: number | null): CompanyDateForm
 }
 
 export function getCompanyDateFormat(companyId?: number | null): CompanyDateFormat {
-  if (typeof localStorage === "undefined") return DEFAULT_FORMAT;
-  const selectedId = companyId ?? Number(localStorage.getItem("company_id"));
-  if (!Number.isInteger(selectedId) || selectedId <= 0) return DEFAULT_FORMAT;
   try {
+    // Access itself can throw in restricted browser contexts, so keep every
+    // storage read inside the guard (not only the company-specific lookup).
+    if (typeof localStorage === "undefined") return DEFAULT_FORMAT;
+    const selectedId = companyId ?? Number(localStorage.getItem("company_id"));
+    if (!Number.isInteger(selectedId) || selectedId <= 0) return DEFAULT_FORMAT;
     const saved = localStorage.getItem(`${COMPANY_DATE_FORMAT_PREFIX}${selectedId}`);
     return isCompanyDateFormat(saved) ? saved : DEFAULT_FORMAT;
   } catch {
