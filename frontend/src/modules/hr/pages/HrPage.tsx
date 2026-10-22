@@ -84,6 +84,7 @@ export default function HrPage() {
   }, [companyId]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => { if (clockError) setError(clockError); }, [clockError]);
   useEffect(() => {
     if (!companyDate) return;
     setAttendanceForm(current => ({ ...current, attendance_date: current.attendance_date || companyDate, check_in_time: current.check_in_time || `${companyDate}T09:00`, check_out_time: current.check_out_time || `${companyDate}T17:00` }));
