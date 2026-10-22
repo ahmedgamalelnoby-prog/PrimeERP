@@ -455,3 +455,42 @@ def test_scheduled_integration_sync_observes_interval_and_timezone(monkeypatch):
     assert policy_module.integration_sync_due(
         object(), 7, last_sync + timedelta(minutes=1), interval_minutes=15, now=now
     ) is False
+
+@pytest.mark.parametrize(
+    ("allow_overproduction", "expected_error"),
+    [
+        (False, "cannot exceed the planned quantity"),
+        (True, "positive inventory valuation"),
+    ],
+)
+def test_manufacturing_overproduction_policy_controls_work_order_completion(
+    monkeypatch, allow_overproduction, expected_error
+):
+    from app.modules.manufacturing.production_orders import service as manufacturing_service_module
+
+    service = manufacturing_service_module.manufacturing_work_order_service
+    order = SimpleNamespace(
+        id=9,
+        status="released",
+        planned_quantity=Decimal("5"),
+        lines=[],
+    )
+    monkeypatch.setattr(service, "get", lambda *_args, **_kwargs: order)
+    monkeypatch.setattr(
+        manufacturing_service_module,
+        "get_company_setting",
+        lambda _db, _company_id, key: (
+            allow_overproduction if key == "manufacturing.allow_overproduction" else None
+        ),
+    )
+
+    with pytest.raises(ValueError, match=expected_error):
+        service.complete(
+            db=object(),
+            tenant_id=3,
+            company_id=7,
+            work_order_id=9,
+            produced_quantity=Decimal("6"),
+            user_id=42,
+        )
+
