@@ -94,10 +94,10 @@ class InventoryStockMoveService:
         if item.item_type not in {"stockable", "consumable"}:
             raise ValueError("Only stockable or consumable items can have stock movements")
         self._validate_variant(db, company_id=payload.company_id, item=item, variant_id=payload.variant_id)
-        if item.batch_tracking and not payload.lot_number and not payload.serial_number:
+        if getattr(item, "batch_tracking", False) and not payload.lot_number and not payload.serial_number:
             if payload.source_location_id is None or payload.movement_type not in {"issue", "transfer", "adjustment", "production_issue"}:
                 raise ValueError("Batch-tracked inbound movements require an explicit lot/batch number; outbound movements may use FEFO allocation")
-        if item.serial_tracking:
+        if getattr(item, "serial_tracking", False):
             if not payload.serial_number:
                 raise ValueError("Serial-tracked items require a serial number on every stock movement")
             if Decimal(str(payload.quantity)) != Decimal("1"):
@@ -107,11 +107,11 @@ class InventoryStockMoveService:
         movement_date = payload.transaction_date or date.today()
         if payload.expiry_date is not None and payload.expiry_date < movement_date:
             raise ValueError("Expiry date cannot be earlier than the stock movement date")
-        if item.expiry_tracking and payload.expiry_date is None:
+        if getattr(item, "expiry_tracking", False) and payload.expiry_date is None:
             auto_fefo_outbound = payload.source_location_id is not None and payload.movement_type in {"issue", "transfer", "adjustment", "production_issue"} and not payload.serial_number
             if not auto_fefo_outbound:
                 raise ValueError("Expiry-tracked inbound movements require an expiry date; outbound batch movements may use FEFO allocation")
-        if get_company_setting(db, payload.company_id, "inventory.expiry_tracking_required") is True and item.batch_tracking and payload.movement_type in {"receipt", "opening", "return", "production_receipt"} and payload.expiry_date is None:
+        if get_company_setting(db, payload.company_id, "inventory.expiry_tracking_required") is True and getattr(item, "batch_tracking", False) and payload.movement_type in {"receipt", "opening", "return", "production_receipt"} and payload.expiry_date is None:
             raise ValueError("Company policy requires an expiry date for batch-tracked stock receipts")
         require_bin_location = get_company_setting(db, payload.company_id, "inventory.require_bin_location") is True
         locations = {}
@@ -207,7 +207,7 @@ class InventoryStockMoveService:
         unit_cost = Decimal(move.unit_cost or 0)
         fifo_allocations: list[tuple[InventoryCostLayer, Decimal, Decimal]] = []
         quantity = Decimal(move.quantity)
-        tracked_item = bool(item.batch_tracking or item.serial_tracking or item.expiry_tracking)
+        tracked_item = bool(getattr(item, "batch_tracking", False) or getattr(item, "serial_tracking", False) or getattr(item, "expiry_tracking", False))
         lot_allocations: list[tuple[str | None, str | None, date | None, Decimal]] = []
 
         if source_balance:
@@ -353,7 +353,7 @@ class InventoryStockMoveService:
                 InventoryLotMoveAllocation.stock_move_id == move.id,
             ).with_for_update()
         ).all()
-        if (item.batch_tracking or item.serial_tracking or item.expiry_tracking) and not lot_allocations:
+        if (getattr(item, "batch_tracking", False) or getattr(item, "serial_tracking", False) or getattr(item, "expiry_tracking", False)) and not lot_allocations:
             raise ValueError("Tracked movement is missing its lot-allocation audit; reversal is blocked to protect traceability")
         variant_id = move.variant_id
         quantity = Decimal(move.quantity)
@@ -367,7 +367,7 @@ class InventoryStockMoveService:
             raise ValueError("Cannot reverse movement: destination stock has already been consumed")
 
         if destination_balance is not None:
-            if item.batch_tracking or item.serial_tracking or item.expiry_tracking:
+            if getattr(item, "batch_tracking", False) or getattr(item, "serial_tracking", False) or getattr(item, "expiry_tracking", False):
                 for lot in lot_allocations:
                     self._adjust_lot_balance(
                         db, move=move, item=item, location_id=move.destination_location_id,
@@ -383,7 +383,7 @@ class InventoryStockMoveService:
             self._recalculate_average_cost(db, company_id, move.item_id, variant_id, destination_warehouse_id, item)
 
         if source_balance is not None:
-            if item.batch_tracking or item.serial_tracking or item.expiry_tracking:
+            if getattr(item, "batch_tracking", False) or getattr(item, "serial_tracking", False) or getattr(item, "expiry_tracking", False):
                 for lot in lot_allocations:
                     self._adjust_lot_balance(
                         db, move=move, item=item, location_id=move.source_location_id,
@@ -503,7 +503,7 @@ class InventoryStockMoveService:
     @staticmethod
     def _select_fefo_lots(db, *, move, item, quantity: Decimal):
         """Select source lots by earliest expiry, excluding expired stock."""
-        if item.serial_tracking:
+        if getattr(item, "serial_tracking", False):
             raise ValueError("Serial-tracked issues must identify the exact serial number")
         today = move.transaction_date or date.today()
         stmt = select(InventoryLotBalance).where(
@@ -515,7 +515,7 @@ class InventoryStockMoveService:
         stmt = stmt.where(InventoryLotBalance.variant_id == move.variant_id) if move.variant_id is not None else stmt.where(InventoryLotBalance.variant_id.is_(None))
         stmt = stmt.where(
             (InventoryLotBalance.expiry_date >= today)
-            if item.expiry_tracking
+            if getattr(item, "expiry_tracking", False)
             else ((InventoryLotBalance.expiry_date.is_(None)) | (InventoryLotBalance.expiry_date >= today))
         )
         lots = db.scalars(
@@ -565,7 +565,7 @@ class InventoryStockMoveService:
             balance.quantity_on_hand = Decimal(balance.quantity_on_hand) + delta
             return balance
 
-        if item.serial_tracking and serial_number:
+        if getattr(item, "serial_tracking", False) and serial_number:
             if balance is not None and Decimal(balance.quantity_on_hand or 0) > 0:
                 raise ValueError("This serial number is already on hand at the destination location")
             duplicate_stmt = select(InventoryLotBalance.id).where(
