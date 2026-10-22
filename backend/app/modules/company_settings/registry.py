@@ -77,7 +77,7 @@ _RAW = [
     ("pos.allow_discount_without_approval","pos","Point of Sale","bool",False,"Allow cashier discounts without approval",None,"runtime"),
     ("pos.max_discount_pct_without_approval","pos","Point of Sale","number",0,"Maximum discount without approval",None,"runtime"),
     # Manufacturing / service / integrations
-    ("manufacturing.require_work_order","manufacturing","Manufacturing","bool",True,"Require work order for production; enforcement at every production entry point is not yet verified",None,"catalog"),
+    ("manufacturing.require_work_order","manufacturing","Manufacturing","bool",True,"Require production stock movements to match a released company work order",None,"runtime"),
     ("manufacturing.allow_overproduction","manufacturing","Manufacturing","bool",False,"Allow production above planned quantity",None,"runtime"),
     ("crm.duplicate_customer_check","crm","CRM","bool",True,"Warn/block likely duplicate customers",None,"runtime"),
     ("integrations.auto_sync_enabled","integrations","Integrations","bool",False,"Enable automatic sync for configured Salla integrations; the scheduled integration worker gates automatic runs while manual sync remains available",None,"runtime"),
