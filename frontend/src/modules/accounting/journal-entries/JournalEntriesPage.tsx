@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import client from "@/shared/api/client";
 import PageHeader from "@/components/layout/PageHeader";
-import { formatCompanyDate, useCompanyDateFormat } from "@/utils/format-date";
+import { formatCompanyDate, getLocalISODate, useCompanyDateFormat } from "@/utils/format-date";
 
 
 
@@ -20,12 +20,21 @@ type JournalEntry = {
 type JournalOption = { id: number; code: string; name_ar: string; name_en: string; journal_type: string; allow_manual_entries: boolean; is_active: boolean };
 type AccountOption = { id: number; code: string; name_ar: string; name_en?: string | null; is_active: boolean };
 
+function getStoredCompanyId(): number {
+  try {
+    const value = Number(localStorage.getItem("company_id"));
+    return Number.isInteger(value) && value > 0 ? value : 0;
+  } catch {
+    return 0;
+  }
+}
+
 const statusLabels: Record<string, string> = {
   draft: "مسودة", pending: "بانتظار الاعتماد", approved: "معتمد", posted: "مرحّل", cancelled: "ملغي", reversed: "معكوس",
 };
 
 export default function JournalEntriesPage() {
-  const [companyId, setCompanyId] = useState(() => Number(localStorage.getItem("company_id")) || 0);
+  const [companyId, setCompanyId] = useState(getStoredCompanyId);
   const dateFormat = useCompanyDateFormat(companyId);
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [journals, setJournals] = useState<JournalOption[]>([]);
@@ -42,7 +51,7 @@ export default function JournalEntriesPage() {
   const [toDate, setToDate] = useState("");
   const [details, setDetails] = useState<JournalEntry | null>(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [createForm, setCreateForm] = useState({ branchId: "", journalId: "", fiscalYearId: "", periodId: "", entryNumber: "", entryDate: new Date().toISOString().slice(0, 10), description: "", debitAccountId: "", creditAccountId: "", amount: "" });
+  const [createForm, setCreateForm] = useState({ branchId: "", journalId: "", fiscalYearId: "", periodId: "", entryNumber: "", entryDate: getLocalISODate(), description: "", debitAccountId: "", creditAccountId: "", amount: "" });
   const [createBusy, setCreateBusy] = useState(false);
 
   const loadEntries = async () => {
