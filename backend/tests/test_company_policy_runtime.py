@@ -23,7 +23,7 @@ def test_requester_cannot_approve_own_transaction_when_company_policy_disables_i
     monkeypatch.setattr(
         transaction_service_module,
         "get_company_setting",
-        lambda _db, _company_id, key: key == "workflow.allow_self_approval",
+        lambda _db, _company_id, key: False if key == "workflow.allow_self_approval" else None,
     )
 
     with pytest.raises(HTTPException) as exc:
