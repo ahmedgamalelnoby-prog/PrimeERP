@@ -1,0 +1,80 @@
+from datetime import datetime, timedelta, timezone
+
+import pytest
+
+from app.modules.company_settings.consumers.approvals import approval_escalation_due, approval_plan
+from app.modules.company_settings.consumers.general import format_company_date
+from app.modules.company_settings.consumers.hr import attendance_source_allowed, biometric_sync_due
+from app.modules.company_settings.consumers.integrations import integration_sync_due
+from app.modules.company_settings.consumers.pos import cash_drawer_open_allowed
+
+
+class FakeDB:
+    def __init__(self, values):
+        self.values = values
+
+
+def _patch_policy(monkeypatch, module, values):
+    monkeypatch.setattr(module, "policy", lambda db, company_id, key: values[key])
+    monkeypatch.setattr(module, "require_policy_bool", lambda db, company_id, key: values[key])
+    monkeypatch.setattr(module, "require_policy_int", lambda db, company_id, key, minimum=0: values[key])
+
+
+def test_date_format_policy(monkeypatch):
+    from app.modules.company_settings.consumers import general
+    monkeypatch.setattr(general, "policy", lambda db, company_id, key: "YYYY-MM-DD")
+    assert format_company_date(FakeDB({}), 1, datetime(2026, 10, 22)) == "2026-10-22"
+
+
+def test_date_format_rejects_unknown_value(monkeypatch):
+    from app.modules.company_settings.consumers import general
+    monkeypatch.setattr(general, "policy", lambda db, company_id, key: "invalid")
+    with pytest.raises(ValueError):
+        format_company_date(FakeDB({}), 1, datetime(2026, 10, 22))
+
+
+def test_attendance_source_policy(monkeypatch):
+    from app.modules.company_settings.consumers import hr
+    monkeypatch.setattr(hr, "policy", lambda db, company_id, key: "biometric")
+    assert attendance_source_allowed(FakeDB({}), 1, "Biometric")
+    assert not attendance_source_allowed(FakeDB({}), 1, "manual")
+
+
+def test_biometric_sync_interval(monkeypatch):
+    from app.modules.company_settings.consumers import hr
+    monkeypatch.setattr(hr, "require_policy_int", lambda db, company_id, key, minimum=0: 15)
+    now = datetime(2026, 10, 22, 10, 15, tzinfo=timezone.utc)
+    assert biometric_sync_due(FakeDB({}), 1, now - timedelta(minutes=15), now=now)
+    assert not biometric_sync_due(FakeDB({}), 1, now - timedelta(minutes=14), now=now)
+    assert biometric_sync_due(FakeDB({}), 1, None, now=now)
+
+
+def test_approval_plan_modes():
+    assert approval_plan("sequential", [4, 5, 5]) == {
+        "mode": "sequential", "approver_ids": [4, 5], "required_approvals": 2, "sequential": True
+    }
+    assert approval_plan("parallel", [4, 5])["required_approvals"] == 2
+    assert approval_plan("any_one", [4, 5])["required_approvals"] == 1
+    with pytest.raises(ValueError):
+        approval_plan("unknown", [4])
+
+
+def test_approval_escalation_threshold(monkeypatch):
+    from app.modules.company_settings.consumers import approvals
+    monkeypatch.setattr(approvals, "require_policy_int", lambda db, company_id, key, minimum=0: 24)
+    created = datetime(2026, 10, 21, 10, tzinfo=timezone.utc)
+    assert approval_escalation_due(FakeDB({}), 1, created, now=created + timedelta(hours=24))
+    assert not approval_escalation_due(FakeDB({}), 1, created, now=created + timedelta(hours=23))
+
+
+def test_cash_drawer_policy(monkeypatch):
+    from app.modules.company_settings.consumers import pos
+    monkeypatch.setattr(pos, "require_policy_bool", lambda db, company_id, key: False)
+    assert cash_drawer_open_allowed(FakeDB({}), 1, linked_to_transaction=True)
+    assert not cash_drawer_open_allowed(FakeDB({}), 1, linked_to_transaction=False)
+
+
+def test_automatic_integration_sync_disabled(monkeypatch):
+    from app.modules.company_settings.consumers import integrations
+    monkeypatch.setattr(integrations, "require_policy_bool", lambda db, company_id, key: False)
+    assert not integration_sync_due(FakeDB({}), 1, None, interval_minutes=15)
