@@ -34,10 +34,35 @@ export function setCompanyDateFormat(companyId: number, value: unknown): void {
 export function useCompanyDateFormat(companyId?: number | null): CompanyDateFormat {
   const [format, setFormat] = useState(() => getCompanyDateFormat(companyId));
   useEffect(() => {
+    let active = true;
     const refresh = () => setFormat(getCompanyDateFormat(companyId));
     window.addEventListener(FORMAT_CHANGED_EVENT, refresh);
     window.addEventListener("storage", refresh);
+
+    let selectedId = companyId ?? null;
+    if (selectedId == null) {
+      try {
+        const raw = Number(localStorage.getItem("company_id"));
+        selectedId = Number.isSafeInteger(raw) && raw > 0 ? raw : null;
+      } catch {
+        selectedId = null;
+      }
+    }
+    if (selectedId && Number.isSafeInteger(selectedId) && selectedId > 0) {
+      void client.get<{ company_id: number; date_format: unknown }>(
+        "/company-settings/date-format",
+        { params: { company_id: selectedId } },
+      ).then(({ data }) => {
+        if (!active || data.company_id !== selectedId || !isCompanyDateFormat(data.date_format)) return;
+        setCompanyDateFormat(selectedId as number, data.date_format);
+        setFormat(data.date_format);
+      }).catch(() => {
+        // Keep the last validated cached preference if the server is temporarily unavailable.
+      });
+    }
+
     return () => {
+      active = false;
       window.removeEventListener(FORMAT_CHANGED_EVENT, refresh);
       window.removeEventListener("storage", refresh);
     };
