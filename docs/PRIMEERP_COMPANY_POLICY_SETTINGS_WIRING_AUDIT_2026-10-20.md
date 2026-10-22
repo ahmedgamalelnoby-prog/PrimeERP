@@ -498,3 +498,10 @@ Do not promote these seven settings until their owning workflows, tenant/company
 - Updated Sales and Purchasing document creation defaults to use the helper, preventing the initial document date from shifting to yesterday/tomorrow around timezone boundaries.
 - This is a date-input correctness fix; the company display format still applies to rendered list dates and does not alter the ISO date sent to the API.
 - Validation status: committed source changes; typecheck/build and automated tests remain unconfirmed until a current workflow completes.
+
+
+## Treasury local date-input defaults — 2026-10-22
+
+- Updated the treasury cheque form's cheque date and due date defaults to use the shared `getLocalISODate()` helper, avoiding UTC date rollover in local date inputs.
+- The cheque date values remain ISO calendar dates in the API payload; company display formatting is still used for the cheque due-date column.
+- Validation status: source committed; frontend typecheck/build and automated CI results remain unconfirmed.
