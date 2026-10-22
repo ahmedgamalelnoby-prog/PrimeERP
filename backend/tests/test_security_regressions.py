@@ -110,7 +110,15 @@ def test_stock_issue_rejects_reserved_quantity(monkeypatch):
         quantity=Decimal("8"),
         unit_cost=Decimal("0"),
     )
-    item = SimpleNamespace(item_type="stockable", costing_method="standard", standard_cost=Decimal("10"), purchase_price=Decimal("10"))
+    item = SimpleNamespace(
+        item_type="stockable",
+        costing_method="standard",
+        standard_cost=Decimal("10"),
+        purchase_price=Decimal("10"),
+        batch_tracking=False,
+        serial_tracking=False,
+        expiry_tracking=False,
+    )
     balance = SimpleNamespace(quantity_on_hand=Decimal("10"), quantity_reserved=Decimal("5"), location=SimpleNamespace(warehouse_id=2))
 
     monkeypatch.setattr(service, "_location_balance", lambda *args, **kwargs: balance)
