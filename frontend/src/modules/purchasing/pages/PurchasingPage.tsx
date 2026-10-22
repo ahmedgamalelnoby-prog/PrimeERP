@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { purchasingApi, type Document, type Partner } from "@/modules/sales/api/commercial.api";
-import { formatCompanyDate, useCompanyDateFormat } from "@/utils/format-date";
-const today=()=>new Date().toISOString().slice(0,10);
+import { formatCompanyDate, getLocalISODate, useCompanyDateFormat } from "@/utils/format-date";
+const today=getLocalISODate;
 const errorText=(e:any)=>e?.response?.data?.detail||e?.message||"حدث خطأ غير متوقع.";
 export default function PurchasingPage(){
  const dateFormat=useCompanyDateFormat();
