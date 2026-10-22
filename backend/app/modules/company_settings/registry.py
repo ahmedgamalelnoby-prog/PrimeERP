@@ -83,6 +83,9 @@ _RAW = [
     ("integrations.auto_sync_enabled","integrations","Integrations","bool",False,"Enable automatic sync for configured integrations",None,"catalog"),
     ("integrations.retry_limit","integrations","Integrations","int",5,"Retry count for transient integration failures",None,"runtime"),
     ("integrations.webhook_signature_required","integrations","Integrations","bool",True,"Require signatures for supported inbound webhooks",None,"runtime"),
+    ("notifications.email_enabled","notifications","Messaging & Notifications","bool",False,"Enable company email delivery when SMTP is configured",None,"runtime"),
+    ("notifications.whatsapp_enabled","notifications","Messaging & Notifications","bool",False,"Enable company WhatsApp delivery when provider credentials are configured",None,"runtime"),
+    ("notifications.retry_limit","notifications","Messaging & Notifications","int",3,"Retry count for transient outbound message failures",None,"runtime"),
     
 ]
 CATALOG: list[dict[str, Any]] = [
@@ -120,6 +123,8 @@ def validate_value(key: str, value: Any) -> Any:
         raise ValueError(f"{key} must be a 3-letter uppercase currency code")
     if key.endswith("fiscal_year_start_month") and not 1 <= value <= 12:
         raise ValueError(f"{key} must be between 1 and 12")
+    if key == "notifications.retry_limit" and not 0 <= value <= 5:
+        raise ValueError(f"{key} must be between 0 and 5")
     if key == "hr.default_work_hours_per_day" and not 0 < float(value) <= 24:
         raise ValueError(f"{key} must be greater than 0 and at most 24")
     if kind == "int" and ("days" in key or "hours" in key or "minutes" in key or "limit" in key) and not 0 <= value <= 10000:
