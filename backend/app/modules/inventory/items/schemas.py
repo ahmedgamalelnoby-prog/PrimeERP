@@ -24,6 +24,9 @@ class InventoryItemCreate(BaseModel):
     sales_price: Decimal = Field(default=0, ge=0)
     purchase_price: Decimal = Field(default=0, ge=0)
     reorder_level: Decimal = Field(default=0, ge=0)
+    batch_tracking: bool | None = None
+    serial_tracking: bool | None = None
+    expiry_tracking: bool | None = None
     description: Optional[str] = None
     @field_validator("sales_tax_ids", "purchase_tax_ids")
     @classmethod
@@ -51,6 +54,9 @@ class InventoryItemUpdate(BaseModel):
     sales_price: Optional[Decimal] = Field(default=None, ge=0)
     purchase_price: Optional[Decimal] = Field(default=None, ge=0)
     reorder_level: Optional[Decimal] = Field(default=None, ge=0)
+    batch_tracking: Optional[bool] = None
+    serial_tracking: Optional[bool] = None
+    expiry_tracking: Optional[bool] = None
     is_active: Optional[bool] = None
     description: Optional[str] = None
     @field_validator("sales_tax_ids", "purchase_tax_ids")
@@ -83,5 +89,8 @@ class InventoryItemResponse(BaseModel):
     sales_price: Decimal
     purchase_price: Decimal
     reorder_level: Decimal
+    batch_tracking: bool
+    serial_tracking: bool
+    expiry_tracking: bool
     is_active: bool
     description: Optional[str]
