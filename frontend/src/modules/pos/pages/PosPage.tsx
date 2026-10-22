@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { getLocalISODate } from "@/utils/format-date";
+import { useCompanyClockDate } from "@/utils/format-date";
 import client from "@/shared/api/client";
 import { cachePosData, enqueueCheckout, getDeviceId, installOfflineSync, listCheckoutQueue, readPosCache, type PosCheckoutPayload } from "../services/offlinePos";
 
@@ -8,6 +8,7 @@ const companyId = () => Number(localStorage.getItem("company_id")) || 0;
 
 export default function PosPage() {
   const cid = companyId();
+  const { companyDate, error: clockError } = useCompanyClockDate(cid);
   const [outlets, setOutlets] = useState<AnyRow[]>([]);
   const [stations, setStations] = useState<AnyRow[]>([]);
   const [terminals, setTerminals] = useState<AnyRow[]>([]);
@@ -143,12 +144,13 @@ export default function PosPage() {
   }
   async function checkout(e: any) {
     e.preventDefault();
+    if (!companyDate) return setError(clockError || "تعذر جلب تاريخ الشركة من الخادم؛ لا يمكن إتمام البيع بتاريخ الجهاز.");
     if (!activeMenuItem) return setError("اختر صنفًا من المنيو");
     try {
       const payload: PosCheckoutPayload = {
         company_id: cid, partner_id: Number(partnerId), warehouse_id: Number(warehouseId),
         number: `POS-${getDeviceId().slice(0, 8)}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        payment_date: getLocalISODate(), method, terminal_id: Number(selectedTerminal),
+        payment_date: companyDate, method, terminal_id: Number(selectedTerminal),
         lines: [{ menu_item_id: Number(selectedMenuItem), quantity: Number(qty) }],
       };
       if (!navigator.onLine) {
