@@ -29,7 +29,6 @@ const issuedStatuses = ["issued", "cleared"];
 export default function TreasuryPage() {
   const companyId = cid();
   const dateFormat = useCompanyDateFormat(companyId);
-  const { companyDate: companyToday } = useCompanyClockDate(companyId);
   const { companyDate, loading: clockLoading, error: clockError } = useCompanyClockDate(companyId);
   const [rows, setRows] = useState<Cheque[]>([]);
   const [withdrawableIds, setWithdrawableIds] = useState<Set<number>>(new Set());
@@ -76,11 +75,6 @@ export default function TreasuryPage() {
 
   useEffect(() => { void load(); }, [companyId]);
 
-  useEffect(() => {
-    if (!companyToday) return;
-    setDate((current) => current || companyToday);
-    setDue((current) => current || companyToday);
-  }, [companyToday]);
   useEffect(() => { if (companyDate) { setDate(current => current || companyDate); setDue(current => current || companyDate); } }, [companyDate]);
   useEffect(() => { if (clockError) setError(clockError); }, [clockError]);
 
