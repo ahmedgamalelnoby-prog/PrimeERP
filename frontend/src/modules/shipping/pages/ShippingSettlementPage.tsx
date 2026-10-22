@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, CheckCircle2, Save, Wallet } from "lucide-react";
 import client from "@/shared/api/client";
-import { formatCompanyDate, useCompanyDateFormat } from "@/utils/format-date";
+import { formatCompanyDate, getLocalISODate, useCompanyDateFormat } from "@/utils/format-date";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -18,7 +18,7 @@ export default function ShippingSettlementPage(){
  const dateFormat = useCompanyDateFormat();
  const companyId=Number(localStorage.getItem("company_id"))||0;
  const [carriers,setCarriers]=useState<Carrier[]>([]),[shipments,setShipments]=useState<Shipment[]>([]),[batches,setBatches]=useState<Batch[]>([]);
- const [carrierId,setCarrierId]=useState(0),[selected,setSelected]=useState<Record<number,Line>>({}),[reference,setReference]=useState(""),[settlementDate,setSettlementDate]=useState(new Date().toISOString().slice(0,10)),[error,setError]=useState(""),[saving,setSaving]=useState(false);
+ const [carrierId,setCarrierId]=useState(0),[selected,setSelected]=useState<Record<number,Line>>({}),[reference,setReference]=useState(""),[settlementDate,setSettlementDate]=useState(getLocalISODate),[error,setError]=useState(""),[saving,setSaving]=useState(false);
 
  const load=async()=>{
   if(!companyId)return;
