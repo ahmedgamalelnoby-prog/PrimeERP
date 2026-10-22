@@ -262,3 +262,32 @@ def test_company_clock_endpoint_uses_company_timezone_policy(monkeypatch):
         "company_timezone": "Asia/Tokyo",
         "company_date": "2026-10-22",
     }
+
+
+@pytest.mark.parametrize("configured_format", ["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"])
+def test_company_date_format_endpoint_returns_validated_policy(monkeypatch, configured_format):
+    from types import SimpleNamespace
+    from app.modules.company_settings import router as settings_router
+
+    company = SimpleNamespace(id=12, tenant_id=3, name="Test company")
+    monkeypatch.setattr(settings_router, "_company", lambda db, company_id, user: company)
+    monkeypatch.setattr(settings_router, "policy", lambda db, company_id, key: configured_format)
+
+    result = settings_router.get_company_date_format(company_id=12, db=object(), user=object())
+
+    assert result == {"company_id": 12, "date_format": configured_format}
+
+
+def test_company_date_format_endpoint_rejects_invalid_stored_policy(monkeypatch):
+    from types import SimpleNamespace
+    from fastapi import HTTPException
+    from app.modules.company_settings import router as settings_router
+
+    company = SimpleNamespace(id=12, tenant_id=3, name="Test company")
+    monkeypatch.setattr(settings_router, "_company", lambda db, company_id, user: company)
+    monkeypatch.setattr(settings_router, "policy", lambda db, company_id, key: "invalid")
+
+    with pytest.raises(HTTPException) as exc:
+        settings_router.get_company_date_format(company_id=12, db=object(), user=object())
+
+    assert exc.value.status_code == 500
