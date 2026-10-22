@@ -1,8 +1,8 @@
 """Company-policy-driven automatic integration sync worker.
 
-Only active Salla connections are polled. The connection row lock and a committed
-last_sync_at claim reduce duplicate claims by worker replicas within the
-configured interval. Manual sync requests remain independently callable. Manual sync endpoints remain independent of this policy.
+Only active Salla connections are polled. Each candidate is locked individually
+and its claim timestamp is committed before network I/O. Manual sync requests
+remain independently callable and are not serialized by this worker.
 """
 from __future__ import annotations
 
@@ -27,32 +27,50 @@ INTERVAL_MINUTES = max(1, int(os.getenv("PRIMEERP_INTEGRATION_SYNC_INTERVAL_MINU
 
 
 def claim_due_connection(db: Session, *, now: datetime | None = None) -> IntegrationConnection | None:
-    """Lock and claim one due active Salla connection, or return None."""
+    """Claim one due connection without locking unrelated rows while checking policy."""
     current = now or datetime.now(timezone.utc)
-    connections = db.scalars(
-        select(IntegrationConnection)
+    candidate_ids = db.scalars(
+        select(IntegrationConnection.id)
         .where(
             IntegrationConnection.provider == "salla",
             IntegrationConnection.is_active.is_(True),
         )
         .order_by(IntegrationConnection.id)
-        .with_for_update(skip_locked=True)
-        .limit(100)
     ).all()
-    for connection in connections:
-        if integration_sync_due(
+
+    for connection_id in candidate_ids:
+        # Lock exactly one candidate. SKIP LOCKED lets a peer worker claim a
+        # different row instead of waiting on a row already being processed.
+        connection = db.scalar(
+            select(IntegrationConnection)
+            .where(
+                IntegrationConnection.id == connection_id,
+                IntegrationConnection.provider == "salla",
+                IntegrationConnection.is_active.is_(True),
+            )
+            .with_for_update(skip_locked=True)
+        )
+        if connection is None:
+            db.rollback()
+            continue
+
+        if not integration_sync_due(
             db,
             connection.company_id,
             connection.last_sync_at,
             interval_minutes=INTERVAL_MINUTES,
             now=current,
         ):
-            # Commit this claim before network I/O; a second worker then sees
-            # the fresh timestamp and skips the same connection.
-            connection.last_sync_at = current
-            db.commit()
-            db.refresh(connection)
-            return connection
+            db.rollback()
+            continue
+
+        # Commit this claim before network I/O; a second worker then sees
+        # the fresh timestamp and skips the same connection for this interval.
+        connection.last_sync_at = current
+        db.commit()
+        db.refresh(connection)
+        return connection
+
     db.rollback()
     return None
 
