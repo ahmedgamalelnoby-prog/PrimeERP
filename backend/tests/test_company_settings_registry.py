@@ -46,6 +46,9 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
         "pos.max_discount_pct_without_approval",
         "pos.require_shift_close",
         "inventory.require_warehouse",
+        "inventory.expiry_tracking_required",
+        "inventory.serial_tracking_default",
+        "inventory.batch_tracking_default",
         "tax.require_tax_code_on_invoice",
         "accounting.auto_post_sales_invoice",
         "accounting.auto_post_purchase_invoice",
@@ -82,9 +85,6 @@ def test_policies_without_a_safe_workflow_consumer_remain_catalog_only():
     # These policies still lack complete owning workflows. Do not advertise them as enforced.
     catalog_only_keys = {
         "general.date_format",
-        "inventory.expiry_tracking_required",
-        "inventory.serial_tracking_default",
-        "inventory.batch_tracking_default",
         "hr.attendance_source",
         "hr.payroll_requires_approval",
         "hr.biometric_sync_interval_minutes",
