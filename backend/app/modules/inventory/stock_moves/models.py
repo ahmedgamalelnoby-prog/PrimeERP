@@ -75,6 +75,40 @@ class InventoryStockMove(Base):
     )
 
 
+class InventoryLotBalance(Base):
+    """Current on-hand quantity for one item/variant/lot/serial at a stock location."""
+
+    __tablename__ = "inventory_lot_balances"
+
+    id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    item_id = Column(Integer, ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False, index=True)
+    variant_id = Column(Integer, ForeignKey("product_variants.id", ondelete="RESTRICT"), nullable=True, index=True)
+    location_id = Column(Integer, ForeignKey("inventory_locations.id", ondelete="RESTRICT"), nullable=False, index=True)
+    lot_number = Column(String(100), nullable=True, index=True)
+    serial_number = Column(String(100), nullable=True, index=True)
+    expiry_date = Column(Date, nullable=True, index=True)
+    quantity_on_hand = Column(Numeric(18, 4), nullable=False, default=0)
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    location = relationship("InventoryLocation")
+    item = relationship("InventoryItem")
+    variant = relationship("ProductVariant")
+
+    __table_args__ = (
+        CheckConstraint("quantity_on_hand >= 0", name="ck_inventory_lot_balance_nonnegative"),
+        CheckConstraint("lot_number IS NOT NULL OR serial_number IS NOT NULL", name="ck_inventory_lot_balance_identity"),
+        Index(
+            "uq_inventory_lot_balance_identity",
+            "company_id", "item_id", "location_id",
+            func.coalesce(variant_id, 0),
+            func.coalesce(lot_number, ""),
+            func.coalesce(serial_number, ""),
+            unique=True,
+        ),
+    )
+
+
 class InventoryCostLayer(Base):
     __tablename__ = "inventory_cost_layers"
 
