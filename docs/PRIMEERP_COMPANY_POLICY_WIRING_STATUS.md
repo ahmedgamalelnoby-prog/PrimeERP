@@ -37,4 +37,4 @@ These policies have helper functions, but the owning workflow is not implemented
 
 ## CI status at review time
 
-The latest workflow run for the current branch was still queued/in progress when checked. The preceding completed run had two registry assertion failures because `integrations.auto_sync_enabled` had moved to runtime while the expectations still listed it as catalog-only. Those expectations have been corrected, but the subsequent CI result must be checked before claiming a green build.
+The latest workflow runs for the current branch are pending/queued as of this review; no green result is confirmed yet. A regression test was added for the manual-attendance source guard. The guard is not enough to claim the full attendance-source feature because biometric/mobile/integration ingestion is still absent, so `hr.attendance_source` remains catalog-only. Earlier workflow attempts were cancelled while newer commits were pushed; check the latest run before claiming a green build.
