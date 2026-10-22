@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import client from "@/shared/api/client";
 
 export type CompanyDateFormat = "DD/MM/YYYY" | "MM/DD/YYYY" | "YYYY-MM-DD";
 
@@ -84,4 +85,63 @@ export function formatCompanyDate(value: string, format: CompanyDateFormat = get
 
 export function isCompanyDateFormat(value: unknown): value is CompanyDateFormat {
   return typeof value === "string" && ALLOWED_FORMATS.includes(value as CompanyDateFormat);
+}
+
+
+export type CompanyClockDateState = {
+  companyDate: string;
+  loading: boolean;
+  error: string;
+};
+
+/**
+ * Resolve date-only defaults from the authenticated backend clock and the
+ * selected company's timezone. Never silently fall back to the device clock:
+ * if the server clock cannot be reached, the caller receives an empty date.
+ */
+export function useCompanyClockDate(companyId?: number | null): CompanyClockDateState {
+  const [state, setState] = useState<CompanyClockDateState>({
+    companyDate: "",
+    loading: true,
+    error: "",
+  });
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      let selectedId = companyId ?? null;
+      if (selectedId == null) {
+        try {
+          const raw = Number(localStorage.getItem("company_id"));
+          selectedId = Number.isInteger(raw) && raw > 0 ? raw : null;
+        } catch {
+          selectedId = null;
+        }
+      }
+      if (!selectedId || !Number.isInteger(selectedId) || selectedId <= 0) {
+        if (active) setState({ companyDate: "", loading: false, error: "اختر شركة فعالة أولاً." });
+        return;
+      }
+      if (active) setState({ companyDate: "", loading: true, error: "" });
+      try {
+        const response = await client.get<{ company_id: number; company_date: string }>(
+          "/company-settings/clock",
+          { params: { company_id: selectedId } },
+        );
+        const date = response.data?.company_date;
+        if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(date || "")) {
+          throw new Error("استجابة ساعة الشركة غير صالحة.");
+        }
+        if (active) setState({ companyDate: date, loading: false, error: "" });
+      } catch (error) {
+        const message = (error as { response?: { data?: { detail?: string } }; message?: string })
+          ?.response?.data?.detail || (error as { message?: string })?.message || "تعذر جلب تاريخ الشركة من الخادم.";
+        if (active) setState({ companyDate: "", loading: false, error: message });
+      }
+    };
+    void load();
+    return () => { active = false; };
+  }, [companyId]);
+
+  return state;
 }
