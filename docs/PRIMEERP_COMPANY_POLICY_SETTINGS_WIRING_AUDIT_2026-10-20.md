@@ -621,3 +621,10 @@ Do not promote these seven settings until their owning workflows, tenant/company
 - If the clock endpoint fails, the page surfaces the clock error and leaves defaults blank rather than silently trusting an incorrect device clock; users can still enter values manually.
 - The backend endpoint uses the application host's UTC clock, so reliable host NTP/time synchronization is still an operational prerequisite. This protects against a wrong client/device clock; it cannot correct a wrong server clock.
 - No local frontend build or runtime test was performed in this session; GitHub Actions is still pending/in progress at the time of this change.
+
+
+## Approval escalation worker implementation — 2026-10-22
+
+- Added `backend/app/jobs/approval_escalation.py`, a continuously polling worker that evaluates the company-specific `workflow.escalation_after_hours` policy for pending approval requests and queues one idempotent in-app reminder per still-pending approver/request.
+- Added `approval-escalation-worker` to `docker-compose.yml`; it waits for the migration service to complete and uses the existing database configuration. Poll interval is configurable via `APPROVAL_ESCALATION_POLL_SECONDS` (default 60 seconds, minimum 30).
+- The worker does not bypass approval authorization or decide requests. It only queues reminders; SMTP/WhatsApp escalation routing and manager/backup approver resolution are not claimed as implemented. The worker is not yet verified in a running Docker environment and no CI result has been confirmed.
