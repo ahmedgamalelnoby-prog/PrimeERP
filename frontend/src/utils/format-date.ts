@@ -129,7 +129,7 @@ export function useCompanyClockDate(companyId?: number | null): CompanyClockDate
           { params: { company_id: selectedId } },
         );
         const date = response.data?.company_date;
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(date || "")) {
+        if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
           throw new Error("استجابة ساعة الشركة غير صالحة.");
         }
         if (active) setState({ companyDate: date, loading: false, error: "" });
