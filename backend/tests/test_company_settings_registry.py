@@ -23,6 +23,7 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
         "inventory.auto_reserve_sales_orders",
         "accounting.require_journal_approval",
         "general.default_language",
+        "general.date_format",
         "general.timezone",
         "general.base_currency",
         "general.allow_multi_currency",
