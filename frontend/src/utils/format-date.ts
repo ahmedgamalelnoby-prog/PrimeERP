@@ -12,6 +12,14 @@ const DEFAULT_FORMAT: CompanyDateFormat = "DD/MM/YYYY";
 const COMPANY_DATE_FORMAT_PREFIX = "primeerp_company_date_format:";
 const FORMAT_CHANGED_EVENT = "primeerp:company-date-format-changed";
 
+/** Return today in the browser local timezone for date-input values. */
+export function getLocalISODate(now: Date = new Date()): string {
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export function setCompanyDateFormat(companyId: number, value: unknown): void {
   if (!Number.isInteger(companyId) || companyId <= 0 || !isCompanyDateFormat(value)) return;
   try {
