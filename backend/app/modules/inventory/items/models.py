@@ -26,6 +26,9 @@ class InventoryItem(Base):
     sales_price = Column(Numeric(18, 4), nullable=False, default=0)
     purchase_price = Column(Numeric(18, 4), nullable=False, default=0)
     reorder_level = Column(Numeric(18, 4), nullable=False, default=0)
+    batch_tracking = Column(Boolean, nullable=False, default=False)
+    serial_tracking = Column(Boolean, nullable=False, default=False)
+    expiry_tracking = Column(Boolean, nullable=False, default=False)
     is_active = Column(Boolean, nullable=False, default=True)
     description = Column(Text, nullable=True)
     __table_args__ = (
