@@ -141,7 +141,7 @@ async def receive_salla_webhook_public(connection_id: int, request: Request, x_s
     external_event_id, event_type = _event_identity(payload, x_salla_event, x_salla_event_id, raw_body)
     existing = db.scalar(select(IntegrationEvent).where(IntegrationEvent.connection_id == connection_id, IntegrationEvent.external_event_id == external_event_id))
     if existing: return {"accepted": True, "duplicate": True, "event_id": existing.id, "status": existing.status}
-    event = IntegrationEvent(company_id=connection.company_id, connection_id=connection_id, external_event_id=external_event_id, event_type=event_type, payload=json.dumps(payload, ensure_ascii=False), status="received", attempts=0); db.add(event); connection.last_sync_at = datetime.now(timezone.utc)
+    event = IntegrationEvent(company_id=connection.company_id, connection_id=connection_id, external_event_id=external_event_id, event_type=event_type, payload=json.dumps(payload, ensure_ascii=False), status="received", attempts=0); db.add(event)
     try: db.commit(); db.refresh(event)
     except IntegrityError: db.rollback(); return {"accepted": True, "duplicate": True}
     result = _process_event(db, event)
@@ -153,7 +153,7 @@ def receive_salla_webhook(connection_id: int, payload: WebhookEventCreate, curre
     if not connection: raise HTTPException(404, "Salla connection not found")
     existing = db.scalar(select(IntegrationEvent).where(IntegrationEvent.connection_id == connection_id, IntegrationEvent.external_event_id == payload.external_event_id))
     if existing: return {"accepted": True, "duplicate": True, "event_id": existing.id, "status": existing.status}
-    event = IntegrationEvent(company_id=connection.company_id, connection_id=connection_id, external_event_id=payload.external_event_id, event_type=payload.event_type, payload=json.dumps(payload.payload, ensure_ascii=False), status="received", attempts=0); db.add(event); connection.last_sync_at = datetime.now(timezone.utc)
+    event = IntegrationEvent(company_id=connection.company_id, connection_id=connection_id, external_event_id=payload.external_event_id, event_type=payload.event_type, payload=json.dumps(payload.payload, ensure_ascii=False), status="received", attempts=0); db.add(event)
     try: db.commit(); db.refresh(event)
     except IntegrityError: db.rollback(); return {"accepted": True, "duplicate": True}
     result = _process_event(db, event)
