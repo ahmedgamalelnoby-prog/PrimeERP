@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import client from "@/shared/api/client";
-import { formatCompanyDate, useCompanyDateFormat } from "@/utils/format-date";
+import { formatCompanyDate, useCompanyClockDate, useCompanyDateFormat } from "@/utils/format-date";
 
 function getStoredCompanyId(): number {
   try {
@@ -39,17 +39,18 @@ type FiscalYear = {
 export default function FiscalYearsPage() {
   const companyId = getStoredCompanyId();
   const dateFormat = useCompanyDateFormat(companyId);
+  const { companyDate, error: clockError } = useCompanyClockDate(companyId);
   const [rows, setRows] = useState<FiscalYear[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<number | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({
-    code: new Date().getFullYear().toString(),
-    name_ar: `السنة المالية ${new Date().getFullYear()}`,
-    name_en: `Fiscal Year ${new Date().getFullYear()}`,
-    start_date: `${new Date().getFullYear()}-01-01`,
-    end_date: `${new Date().getFullYear()}-12-31`,
+    code: "",
+    name_ar: "",
+    name_en: "",
+    start_date: "",
+    end_date: "",
     create_monthly_periods: true,
     adjustment_period: false,
   });
@@ -73,6 +74,20 @@ export default function FiscalYearsPage() {
   };
 
   useEffect(() => { void load(); }, [companyId]);
+
+  // Seed fiscal-year defaults from the company server clock, never the device clock.
+  useEffect(() => {
+    if (!companyDate) return;
+    const year = companyDate.slice(0, 4);
+    setForm(current => ({
+      ...current,
+      code: current.code || year,
+      name_ar: current.name_ar || `السنة المالية ${year}`,
+      name_en: current.name_en || `Fiscal Year ${year}`,
+      start_date: current.start_date || `${year}-01-01`,
+      end_date: current.end_date || `${year}-12-31`,
+    }));
+  }, [companyDate]);
 
   const action = async (path: string, id: number) => {
     setBusy(id);
