@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { getLocalISODate } from "@/utils/format-date";
 import client from "@/shared/api/client";
 import { cachePosData, enqueueCheckout, getDeviceId, installOfflineSync, listCheckoutQueue, readPosCache, type PosCheckoutPayload } from "../services/offlinePos";
 
@@ -147,7 +148,7 @@ export default function PosPage() {
       const payload: PosCheckoutPayload = {
         company_id: cid, partner_id: Number(partnerId), warehouse_id: Number(warehouseId),
         number: `POS-${getDeviceId().slice(0, 8)}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        payment_date: new Date().toISOString().slice(0, 10), method, terminal_id: Number(selectedTerminal),
+        payment_date: getLocalISODate(), method, terminal_id: Number(selectedTerminal),
         lines: [{ menu_item_id: Number(selectedMenuItem), quantity: Number(qty) }],
       };
       if (!navigator.onLine) {
