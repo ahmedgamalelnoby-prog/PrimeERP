@@ -166,7 +166,7 @@ export default function FiscalYearsPage() {
         </section>
       )}
 
-      {error && <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">{error}</div>}
+      {(error || clockError) && <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">{error || clockError}</div>}
 
       {loading ? <div className="rounded-xl border p-6">جاري التحميل...</div> : (
         <div className="space-y-4">
