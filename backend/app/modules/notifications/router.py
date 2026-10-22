@@ -125,7 +125,7 @@ def upsert_template(
     return {"id": row.id, "code": row.code, "channel": row.channel, "is_active": row.is_active}
 
 
-@router.get("/groups", dependencies=[Depends(require_permission("company.access"))])
+@router.get("/groups", dependencies=[Depends(require_permission("company.write"))])
 def list_groups(
     company_id: int = Query(..., gt=0),
     db: Session = Depends(get_db),
@@ -251,7 +251,7 @@ def send_notification(
 
     results = []
     for index, (destination, recipient_user_id) in enumerate(targets):
-        key = payload.idempotency_key if len(targets) == 1 else (f"{payload.idempotency_key}:{index}"[:120] if payload.idempotency_key else None)
+        key = payload.idempotency_key if len(targets) == 1 else (f"{payload.idempotency_key[:100]}:{index}" if payload.idempotency_key else None)
         row = NotificationDelivery(
             tenant_id=company.tenant_id, company_id=company.id, recipient_user_id=recipient_user_id,
             channel=payload.channel, destination=destination, title=title, body=body,
@@ -330,7 +330,7 @@ def mark_read(
     return {"id": row.id, "read": True, "read_at": row.read_at}
 
 
-@router.get("/deliveries", dependencies=[Depends(require_permission("company.access"))])
+@router.get("/deliveries", dependencies=[Depends(require_permission("company.write"))])
 def list_deliveries(
     company_id: int = Query(..., gt=0),
     limit: int = Query(default=100, ge=1, le=500),
