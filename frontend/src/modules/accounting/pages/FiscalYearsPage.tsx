@@ -2,6 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import client from "@/shared/api/client";
 import { formatCompanyDate, useCompanyDateFormat } from "@/utils/format-date";
 
+function getStoredCompanyId(): number {
+  try {
+    const value = Number(localStorage.getItem("company_id"));
+    return Number.isInteger(value) && value > 0 ? value : 0;
+  } catch {
+    return 0;
+  }
+}
+
 type Period = {
   id: number;
   fiscal_year_id: number;
@@ -28,7 +37,7 @@ type FiscalYear = {
 };
 
 export default function FiscalYearsPage() {
-  const companyId = Number(localStorage.getItem("company_id")) || 0;
+  const companyId = getStoredCompanyId();
   const dateFormat = useCompanyDateFormat(companyId);
   const [rows, setRows] = useState<FiscalYear[]>([]);
   const [error, setError] = useState("");
