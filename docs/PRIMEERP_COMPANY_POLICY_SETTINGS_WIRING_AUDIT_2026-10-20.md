@@ -490,3 +490,11 @@ Do not promote these seven settings until their owning workflows, tenant/company
 - The Company Policy Settings page now reads the initial selected company ID through a guarded helper. If browser storage is unavailable or contains an invalid/non-positive ID, the page falls back to company selection instead of throwing during initial render.
 - This complements the guarded company date-format storage helper. It does not replace server-side company authorization; API permissions and company scoping remain the security boundary.
 - Validation status: source change committed; local typecheck/build and latest self-hosted CI have not yet been confirmed.
+
+
+## Local date-input defaults — 2026-10-22
+
+- Added a shared `getLocalISODate()` helper so date inputs use the browser's local calendar date rather than slicing a UTC ISO timestamp.
+- Updated Sales and Purchasing document creation defaults to use the helper, preventing the initial document date from shifting to yesterday/tomorrow around timezone boundaries.
+- This is a date-input correctness fix; the company display format still applies to rendered list dates and does not alter the ISO date sent to the API.
+- Validation status: committed source changes; typecheck/build and automated tests remain unconfirmed until a current workflow completes.
