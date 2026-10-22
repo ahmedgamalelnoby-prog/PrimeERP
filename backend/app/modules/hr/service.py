@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.modules.company_settings.service import get_company_setting
+from app.modules.company_settings.consumers.hr import attendance_source_allowed
 from app.modules.enterprise.models import Employee
 from app.modules.hr.models import HRLeaveBalance, HRLeaveRequest, HRAttendanceRecord, HRAttendanceCorrection, HROvertimeRequest
 
@@ -200,7 +201,7 @@ class HRLeaveService:
 
     def create_attendance(self, db: Session, *, company_id: int, payload, actor_user_id: int) -> HRAttendanceRecord:
         source = get_company_setting(db, company_id, "hr.attendance_source")
-        if source != "manual":
+        if not attendance_source_allowed(db, company_id, "manual"):
             raise ValueError(f"Manual attendance entry is disabled because the configured source is '{source}'; its connector is not available")
         self._employee(db, company_id=company_id, employee_id=payload.employee_id, lock=True)
         timezone_name = get_company_setting(db, company_id, "general.timezone")
