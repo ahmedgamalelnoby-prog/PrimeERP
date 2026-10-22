@@ -75,6 +75,7 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
         "purchasing.require_purchase_order",
         "purchasing.require_purchase_approval",
         "hr.leave_requires_approval",
+        "hr.attendance_source",
         "hr.allow_negative_leave_balance",
         "hr.require_attendance_approval",
         "hr.overtime_requires_approval",
@@ -89,7 +90,6 @@ def test_policies_without_a_safe_workflow_consumer_remain_catalog_only():
     # These policies still lack complete owning workflows. Do not advertise them as enforced.
     catalog_only_keys = {
         "general.date_format",
-        "hr.attendance_source",
         "hr.payroll_requires_approval",
         "hr.biometric_sync_interval_minutes",
         "workflow.approval_mode",
