@@ -527,3 +527,10 @@ Do not promote these seven settings until their owning workflows, tenant/company
 - `frontend/src/modules/reports/pages/ReportsPage.tsx` now reads the cached company ID through a guarded helper. If browser storage is unavailable, blocked, malformed, or contains a non-positive/non-integer ID, the page starts with company ID `0` and existing explicit “choose an active company” guards remain in force.
 - This is a frontend resilience improvement only; it does not replace backend company authorization or tenant isolation.
 - Validation status: source change committed; automated CI and local tests remain unconfirmed.
+
+
+## Financial reports company-id storage resilience — 2026-10-22
+
+- `frontend/src/modules/accounting/reports/FinancialReportsPage.tsx` now uses a guarded company-ID reader. Unavailable browser storage and invalid/non-positive IDs resolve to `0`; the existing page guard then requests an explicit active company instead of allowing a storage exception to break initialization.
+- This client-side fallback is not an authorization boundary. Backend company scoping and permission checks remain mandatory.
+- Validation status: source change committed; CI is queued/pending and local tests have not been run in this session.
