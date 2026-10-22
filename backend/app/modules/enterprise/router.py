@@ -16,6 +16,9 @@ from app.modules.enterprise.schemas import AssetCreate, AssetResponse, EmployeeC
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.accounting.chart_of_accounts.models import AccountCombination
+from app.modules.accounting.journals.models import AccountingJournal, JournalEntry
+from app.modules.accounting.journals.services.journal_service import journal_service
+from app.modules.company_settings.service import get_company_setting
 from app.modules.audit.service import record_audit_event
 from app.modules.company_settings.consumers.approvals import payroll_approval_required
 from app.modules.operations.approvals.models import ApprovalRequest
@@ -23,6 +26,18 @@ from app.modules.operations.approvals.schemas import ApprovalDecision
 from app.modules.operations.approvals.service import create_approval_request, decide_approval
 
 router = APIRouter(prefix="/enterprise", tags=["Enterprise"])
+
+
+class PayrollPost(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    branch_id: int = Field(gt=0)
+    journal_id: int = Field(gt=0)
+    fiscal_year_id: int = Field(gt=0)
+    period_id: int = Field(gt=0)
+    entry_date: date
+    salary_expense_account_id: int = Field(gt=0)
+    deductions_payable_account_id: int = Field(gt=0)
+    net_payable_account_id: int = Field(gt=0)
 
 
 class PayrollSubmit(BaseModel):
@@ -310,6 +325,162 @@ def decide_payroll_run(
     except ValueError as exc:
         db.rollback()
         raise HTTPException(409, str(exc)) from exc
+    except Exception:
+        db.rollback()
+        raise
+
+
+@router.post(
+    "/payroll/runs/{run_id}/post",
+    dependencies=[Depends(require_permission("enterprise.post"))],
+)
+def post_payroll_run(
+    run_id: int,
+    payload: PayrollPost,
+    company_id: int = Query(..., gt=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    company = company_for_user(db, company_id, current_user)
+    run = db.scalar(select(PayrollRun).where(
+        PayrollRun.id == run_id,
+        PayrollRun.company_id == company_id,
+    ).with_for_update())
+    if run is None:
+        raise HTTPException(404, "Payroll run not found")
+    if run.status not in {"ready_to_post", "journal_pending"}:
+        raise HTTPException(409, "Payroll run must be approved and ready for posting")
+    if Decimal(str(run.total_gross or 0)) <= 0:
+        raise HTTPException(409, "A payroll run with zero gross salary cannot be posted")
+
+    # Idempotency: each payroll run may own only one generated journal entry.
+    entry = db.scalar(select(JournalEntry).where(
+        JournalEntry.tenant_id == company.tenant_id,
+        JournalEntry.company_id == company_id,
+        JournalEntry.source_module == "enterprise",
+        JournalEntry.source_entity == "payroll_run",
+        JournalEntry.source_id == run.id,
+    ).with_for_update())
+
+    try:
+        if entry is None:
+            accounting_journal = db.scalar(select(AccountingJournal).where(
+                AccountingJournal.id == payload.journal_id,
+                AccountingJournal.tenant_id == company.tenant_id,
+                AccountingJournal.company_id == company_id,
+                AccountingJournal.is_active.is_(True),
+            ))
+            if accounting_journal is None:
+                raise HTTPException(422, "Active accounting journal does not belong to this company")
+            if accounting_journal.requires_approval or get_company_setting(
+                db, company_id, "accounting.require_journal_approval"
+            ) is True:
+                approval_required = True
+            else:
+                approval_required = False
+
+            gross = Decimal(str(run.total_gross))
+            deductions = Decimal(str(run.total_deductions))
+            net = Decimal(str(run.total_net))
+            lines = [{
+                "account_combination_id": payload.salary_expense_account_id,
+                "debit": gross,
+                "credit": Decimal("0"),
+                "description": f"Gross payroll expense {run.period}",
+            }]
+            if deductions > 0:
+                lines.append({
+                    "account_combination_id": payload.deductions_payable_account_id,
+                    "debit": Decimal("0"),
+                    "credit": deductions,
+                    "description": f"Payroll deductions payable {run.period}",
+                })
+            if net > 0:
+                lines.append({
+                    "account_combination_id": payload.net_payable_account_id,
+                    "debit": Decimal("0"),
+                    "credit": net,
+                    "description": f"Net salaries payable {run.period}",
+                })
+            entry = journal_service.create_draft(
+                db,
+                tenant_id=company.tenant_id,
+                company_id=company_id,
+                branch_id=payload.branch_id,
+                journal_id=payload.journal_id,
+                fiscal_year_id=payload.fiscal_year_id,
+                period_id=payload.period_id,
+                entry_number=f"PAY-{run.period}-{run.id}",
+                entry_date=payload.entry_date,
+                description=f"Payroll accrual for {run.period}",
+                lines=lines,
+                user_id=current_user.id,
+                currency_code=str(get_company_setting(db, company_id, "general.base_currency")).upper(),
+                reference=f"PAYROLL:{run.id}",
+                source_module="enterprise",
+                source_entity="payroll_run",
+                source_id=run.id,
+                commit=False,
+            )
+            journal_service.submit(
+                db, tenant_id=company.tenant_id, entry_id=entry.id,
+                user_id=current_user.id, commit=False,
+            )
+        else:
+            approval_required = (
+                entry.status in {"draft", "pending"}
+                and (
+                    entry.journal.requires_approval
+                    or get_company_setting(db, company_id, "accounting.require_journal_approval") is True
+                )
+            )
+
+        if entry.status == "posted":
+            run.status = "posted"
+            db.commit()
+            return {"payroll_run_id": run.id, "status": run.status, "journal_entry_id": entry.id}
+
+        if entry.status == "approved":
+            journal_service.post(
+                db, tenant_id=company.tenant_id, entry_id=entry.id,
+                user_id=current_user.id, commit=False,
+            )
+        elif entry.status == "pending" and not approval_required:
+            journal_service.post(
+                db, tenant_id=company.tenant_id, entry_id=entry.id,
+                user_id=current_user.id, commit=False,
+            )
+        elif entry.status == "pending":
+            run.status = "journal_pending"
+            record_audit_event(
+                db,
+                action="enterprise.payroll_journal_pending_approval",
+                entity_type="payroll_run",
+                entity_id=run.id,
+                user_id=current_user.id,
+                tenant_id=company.tenant_id,
+                company_id=company_id,
+                metadata={"period": run.period, "journal_entry_id": entry.id},
+            )
+            db.commit()
+            return {"payroll_run_id": run.id, "status": run.status, "journal_entry_id": entry.id}
+
+        run.status = "posted"
+        record_audit_event(
+            db,
+            action="enterprise.payroll_posted_to_general_ledger",
+            entity_type="payroll_run",
+            entity_id=run.id,
+            user_id=current_user.id,
+            tenant_id=company.tenant_id,
+            company_id=company_id,
+            metadata={"period": run.period, "journal_entry_id": entry.id},
+        )
+        db.commit()
+        return {"payroll_run_id": run.id, "status": run.status, "journal_entry_id": entry.id}
+    except HTTPException:
+        db.rollback()
+        raise
     except Exception:
         db.rollback()
         raise
