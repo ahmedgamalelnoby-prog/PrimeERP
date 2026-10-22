@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import smtplib
+import time
 from datetime import datetime, timezone
 from email.message import EmailMessage
 
@@ -15,6 +16,7 @@ from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
+from app.modules.company_settings.service import get_company_setting
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.notifications.models import NotificationDelivery, NotificationGroup, NotificationGroupMember, NotificationTemplate
@@ -194,6 +196,11 @@ def send_notification(
     user: User = Depends(get_current_user),
 ):
     company = _company(db, payload.company_id, user)
+    if payload.channel == "email" and get_company_setting(db, company.id, "notifications.email_enabled") is not True:
+        raise HTTPException(409, "Email delivery is disabled in company settings")
+    if payload.channel == "whatsapp" and get_company_setting(db, company.id, "notifications.whatsapp_enabled") is not True:
+        raise HTTPException(409, "WhatsApp delivery is disabled in company settings")
+    retry_limit = int(get_company_setting(db, company.id, "notifications.retry_limit"))
     if payload.idempotency_key:
         existing = db.scalars(select(NotificationDelivery).where(
             NotificationDelivery.company_id == company.id,
@@ -262,14 +269,30 @@ def send_notification(
         provider_reference = None
         error_code = None
         try:
-            if payload.channel == "email":
-                if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", destination):
-                    raise ValueError("invalid_email_destination")
-                provider_reference = _send_email(destination, title, body)
-            elif payload.channel == "whatsapp":
-                provider_reference = _send_whatsapp(destination, body)
-            else:
+            if payload.channel == "in_app":
                 provider_reference = "in_app"
+            else:
+                for attempt in range(retry_limit + 1):
+                    try:
+                        if payload.channel == "email":
+                            if not re.fullmatch(r"[^\\s@]+@[^\\s@]+\\.[^\\s@]+", destination):
+                                raise ValueError("invalid_email_destination")
+                            provider_reference = _send_email(destination, title, body)
+                        else:
+                            provider_reference = _send_whatsapp(destination, body)
+                        break
+                    except (RuntimeError, ValueError, OSError, smtplib.SMTPException, requests.RequestException) as exc:
+                        error_text = str(exc)
+                        terminal = (
+                            isinstance(exc, ValueError)
+                            or "not_configured" in error_text
+                            or "invalid_" in error_text
+                            or re.search(r"provider_http_4\\d\\d", error_text) is not None
+                            or attempt >= retry_limit
+                        )
+                        if terminal:
+                            raise
+                        time.sleep(min(2 ** attempt, 4))
             row.status = "sent"
             row.provider_reference = provider_reference
             row.sent_at = datetime.now(timezone.utc)
