@@ -8,10 +8,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from enum import StrEnum
+from enum import Enum
 
 
-class ItemKind(StrEnum):
+class _StringEnum(str, Enum):
+    """Python 3.10-compatible equivalent of StrEnum's string behavior."""
+
+    def __str__(self) -> str:
+        return self.value
+
+
+class ItemKind(_StringEnum):
     RAW_MATERIAL = "raw_material"
     PACKAGING = "packaging"
     TRADED = "traded"
@@ -21,7 +28,7 @@ class ItemKind(StrEnum):
     SERVICE = "service"
 
 
-class ProductKind(StrEnum):
+class ProductKind(_StringEnum):
     MANUFACTURED = "manufactured"
     TRADED = "traded"
     ASSEMBLED = "assembled"
