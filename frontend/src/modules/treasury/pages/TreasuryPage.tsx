@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import client from "@/shared/api/client";
-import { formatCompanyDate, useCompanyDateFormat } from "@/utils/format-date";
+import { formatCompanyDate, getLocalISODate, useCompanyDateFormat } from "@/utils/format-date";
 
 type Cheque = {
   id: number;
@@ -33,8 +33,8 @@ export default function TreasuryPage() {
   const [partnerId, setPartnerId] = useState("");
   const [number, setNumber] = useState("");
   const [bank, setBank] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [due, setDue] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(getLocalISODate);
+  const [due, setDue] = useState(getLocalISODate);
   const [amount, setAmount] = useState("");
   const [saving, setSaving] = useState(false);
 
