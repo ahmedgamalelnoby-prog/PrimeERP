@@ -15,7 +15,7 @@ Company-specific business policies must be data/configuration, not customer-spec
 - This branch has not been runtime-tested locally; the user's Docker/local machine is offline. CI must validate migration graph, API tests and frontend build before pull.
 
 ## Catalog coverage
-The typed registry currently exposes 68 options across General, Accounting, Taxes, Sales, Purchasing, Inventory, HR, Approvals, POS, Manufacturing, CRM, Integrations, and Audit. Exact keys and defaults are in `backend/app/modules/company_settings/registry.py`.
+The typed registry currently exposes 71 options across General, Accounting, Taxes, Sales, Purchasing, Inventory, HR, Approvals, POS, Manufacturing, CRM, Integrations, and Audit. Exact keys and defaults are in `backend/app/modules/company_settings/registry.py`.
 
 ### General
 - Language, date format, timezone, functional currency, multi-currency, mandatory cost center/project, mandatory branch, intercompany transactions.
@@ -24,11 +24,15 @@ The typed registry currently exposes 68 options across General, Accounting, Taxe
 ### Sales and purchasing
 - Quotation/order approval, delivery-before-invoice, overbilling, credit-limit enforcement, payment terms, document numbering; PO/receipt requirements, purchase approvals, invoice price variance and tolerance.
 ### Inventory
+- Company-scoped lot/serial/expiry defaults for new items, plus the operational below-cost and negative-stock controls.
 - Negative stock, valuation method, warehouse/bin requirements, order reservations, below-cost sales, expiry, serial and batch tracking.
 ### HR
 - Attendance source (manual/biometric/mobile/integration), correction/overtime/leave/payroll approvals, negative leave balance, scheduled hours and biometric sync interval.
 ### Workflow, POS and operations
 - Approval mode, self-approval, escalation, POS cash drawer, shift close, discount approvals/limits, work orders, overproduction and duplicate customer checks.
+### Messaging & notifications
+- Company-level email/WhatsApp enablement and bounded retry count; SMTP and WhatsApp provider secrets remain server-side environment configuration. Notification templates, recipient distribution lists, delivery logs, and in-app inbox are handled by the notification module.
+
 ### Integrations
 - Automatic sync, retry count and webhook signature requirement. API keys, OAuth secrets, passwords, tokens and device credentials are deliberately excluded and must live in a separate encrypted integration credential store.
 
