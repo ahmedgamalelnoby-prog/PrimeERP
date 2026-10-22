@@ -29,7 +29,7 @@ const issuedStatuses = ["issued", "cleared"];
 export default function TreasuryPage() {
   const companyId = cid();
   const dateFormat = useCompanyDateFormat(companyId);
-  const companyToday = useCompanyToday(companyId);
+  const { companyDate: companyToday } = useCompanyClockDate(companyId);
   const { companyDate, loading: clockLoading, error: clockError } = useCompanyClockDate(companyId);
   const [rows, setRows] = useState<Cheque[]>([]);
   const [withdrawableIds, setWithdrawableIds] = useState<Set<number>>(new Set());
