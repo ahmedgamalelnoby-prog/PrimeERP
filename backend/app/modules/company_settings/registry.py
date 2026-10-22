@@ -80,7 +80,7 @@ _RAW = [
     ("manufacturing.require_work_order","manufacturing","Manufacturing","bool",True,"Require work order for production",None,"runtime"),
     ("manufacturing.allow_overproduction","manufacturing","Manufacturing","bool",False,"Allow production above planned quantity",None,"runtime"),
     ("crm.duplicate_customer_check","crm","CRM","bool",True,"Warn/block likely duplicate customers",None,"runtime"),
-    ("integrations.auto_sync_enabled","integrations","Integrations","bool",False,"Enable automatic sync for configured integrations; manual sync remains available, but no scheduled sync worker consumes this policy yet",None,"catalog"),
+    ("integrations.auto_sync_enabled","integrations","Integrations","bool",False,"Enable automatic sync for configured Salla integrations; the scheduled integration worker gates automatic runs while manual sync remains available",None,"runtime"),
     ("integrations.retry_limit","integrations","Integrations","int",5,"Retry count for transient integration failures",None,"runtime"),
     ("integrations.webhook_signature_required","integrations","Integrations","bool",True,"Require signatures for supported inbound webhooks",None,"runtime"),
     ("notifications.email_enabled","notifications","Messaging & Notifications","bool",False,"Enable company email delivery when SMTP is configured",None,"runtime"),
