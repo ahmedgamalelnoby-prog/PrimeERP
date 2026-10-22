@@ -3,6 +3,15 @@ import client from "@/shared/api/client";
 
 type Schedule = { id:number; report_definition_id:number; channel:string; destination:string; schedule:string; format:string; is_active:boolean; last_status?:string|null; next_run_at?:string|null };
 
+function getStoredCompanyId(): number {
+  try {
+    const value = Number(localStorage.getItem("company_id"));
+    return Number.isInteger(value) && value > 0 ? value : 0;
+  } catch {
+    return 0;
+  }
+}
+
 export default function ReportsPage(){
   const [question,setQuestion]=useState("");
   const [metrics,setMetrics]=useState('{"gross_margin_pct":20,"overdue_ratio_pct":10}');
@@ -16,7 +25,7 @@ export default function ReportsPage(){
   const [body,setBody]=useState("");
   const [schedule,setSchedule]=useState("daily:09:00");
   const [schedules,setSchedules]=useState<Schedule[]>([]);
-  const [companyId,setCompanyId]=useState(Number(localStorage.getItem("company_id"))||0);
+  const [companyId,setCompanyId]=useState(getStoredCompanyId);
   const [fromDate,setFromDate]=useState("");
   const [toDate,setToDate]=useState("");
 
