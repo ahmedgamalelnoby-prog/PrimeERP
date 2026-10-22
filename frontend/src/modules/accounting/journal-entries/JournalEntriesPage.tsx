@@ -37,6 +37,7 @@ export default function JournalEntriesPage() {
   const [companyId, setCompanyId] = useState(getStoredCompanyId);
   const dateFormat = useCompanyDateFormat(companyId);
   const { companyDate, error: clockError } = useCompanyClockDate(companyId);
+  useEffect(() => { if (clockError) setError(clockError); }, [clockError]);
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [journals, setJournals] = useState<JournalOption[]>([]);
   const [accounts, setAccounts] = useState<AccountOption[]>([]);
