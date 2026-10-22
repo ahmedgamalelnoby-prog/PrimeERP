@@ -436,6 +436,12 @@ def post_payroll_run(
                 )
             )
 
+        if entry.status == "draft":
+            journal_service.submit(
+                db, tenant_id=company.tenant_id, entry_id=entry.id,
+                user_id=current_user.id, commit=False,
+            )
+
         if entry.status == "posted":
             run.status = "posted"
             db.commit()
