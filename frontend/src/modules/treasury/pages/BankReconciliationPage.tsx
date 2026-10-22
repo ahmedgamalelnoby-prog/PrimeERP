@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import client from "@/shared/api/client";
-import { formatCompanyDate, getLocalISODate, useCompanyDateFormat } from "@/utils/format-date";
+import { formatCompanyDate, useCompanyClockDate, useCompanyDateFormat } from "@/utils/format-date";
 
 type Account={id:number;name:string;bank_name:string;currency:string;account_number?:string|null};
 type Statement={id:number;statement_number:string;period_start:string;period_end:string;closing_balance:string|number;status:string};
@@ -9,15 +9,15 @@ type Session={id:number;statement_id:number;book_balance:string|number;bank_bala
 type Candidate={source_type:"payment"|"cheque";source_id:number;amount:string|number;reference?:string|null;cheque_number?:string|null;transaction_date?:string|null};
 
 const company=()=>{const n=Number(localStorage.getItem("company_id"));return Number.isInteger(n)&&n>0?n:null};
-const today = getLocalISODate;
 
 export default function BankReconciliationPage(){
- const dateFormat=useCompanyDateFormat();
- const cid=company(); const [accounts,setAccounts]=useState<Account[]>([]); const [accountId,setAccountId]=useState(""); const [statements,setStatements]=useState<Statement[]>([]);
+ const cid=company();
+ const dateFormat=useCompanyDateFormat(cid);
+ const {companyDate,loading:clockLoading,error:clockError}=useCompanyClockDate(cid); const [accounts,setAccounts]=useState<Account[]>([]); const [accountId,setAccountId]=useState(""); const [statements,setStatements]=useState<Statement[]>([]);
  const [statementId,setStatementId]=useState(""); const [lines,setLines]=useState<Line[]>([]); const [session,setSession]=useState<Session|null>(null);
  const [error,setError]=useState(""); const [loading,setLoading]=useState(false); const [saving,setSaving]=useState(false);
  const [bankName,setBankName]=useState(""); const [accountName,setAccountName]=useState(""); const [accountNo,setAccountNo]=useState("");
- const [statementNo,setStatementNo]=useState(""); const [start,setStart]=useState(today()); const [end,setEnd]=useState(today()); const [opening,setOpening]=useState(""); const [closing,setClosing]=useState("");
+ const [statementNo,setStatementNo]=useState(""); const [start,setStart]=useState(""); const [end,setEnd]=useState(today()); const [opening,setOpening]=useState(""); const [closing,setClosing]=useState("");
  const [book,setBook]=useState(""); const [matchLine,setMatchLine]=useState(""); const [matchType,setMatchType]=useState<"payment"|"cheque">("payment"); const [sourceId,setSourceId]=useState(""); const [matchAmount,setMatchAmount]=useState(""); const [candidates,setCandidates]=useState<Candidate[]>([]); const [lineDate,setLineDate]=useState(today()); const [desc,setDesc]=useState(""); const [ref,setRef]=useState(""); const [cheque,setCheque]=useState(""); const [amount,setAmount]=useState(""); const [side,setSide]=useState<"credit"|"debit">("credit");
 
  async function loadAccounts(){if(!cid){setError("اختر شركة فعالة أولاً.");return} try{const r=await client.get("/treasury/reconciliation/accounts",{params:{company_id:cid}});setAccounts(r.data||[])}catch(e:any){setError(e?.response?.data?.detail||"تعذر تحميل الحسابات البنكية")}}
