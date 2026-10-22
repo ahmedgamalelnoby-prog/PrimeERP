@@ -250,6 +250,13 @@ def test_company_clock_endpoint_uses_company_timezone_policy(monkeypatch):
     monkeypatch.setattr(settings_router, "_company", lambda db, company_id, user: company)
     monkeypatch.setattr(settings_router, "policy", lambda db, company_id, key: "Asia/Tokyo")
     now = datetime(2026, 10, 21, 16, 30, tzinfo=timezone.utc)
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now if tz is None else now.astimezone(tz)
+
+    monkeypatch.setattr(settings_router, "datetime", FrozenDateTime)
     monkeypatch.setattr(settings_router, "company_clock_payload", lambda value, tz: {
         "server_time_utc": value.isoformat(), "company_timezone": tz, "company_date": "2026-10-22"
     })
