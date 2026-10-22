@@ -192,7 +192,7 @@ class ManufacturingWorkOrderService:
                 source_module="manufacturing",
                 source_entity="work_order_material",
                 source_id=str(line.id),
-            ))
+            ), from_work_order=True)
             line.issue_move_id = move.id
             db.flush()
             inventory_stock_move_service.post(
@@ -232,7 +232,7 @@ class ManufacturingWorkOrderService:
             source_module="manufacturing",
             source_entity="work_order_output",
             source_id=str(order.id),
-        ))
+        ), from_work_order=True)
         inventory_stock_move_service.post(
             db,
             tenant_id=tenant_id,
