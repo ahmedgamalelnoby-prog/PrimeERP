@@ -633,3 +633,18 @@ Do not promote these five settings until their owning workflows, tenant/company 
 - Treasury and bank reconciliation also block relevant submissions while the server clock is loading or unavailable, and surface the clock error rather than silently substituting the device date.
 - This reduces incorrect date defaults when the workstation clock is wrong, but it does not finish `general.date_format` display coverage across every screen, report, print view, and export. That policy remains catalog-only until the remaining consumers are migrated and verified.
 - Current registry count is **66 runtime / 5 catalog-only**, not the older seven-item count. The two workflow policies `workflow.approval_mode` and `workflow.escalation_after_hours` are no longer listed as catalog-only in the current registry. Static classification is not a claim that all end-to-end tests passed.
+
+
+## Company date-format coverage — report schedule timestamps — 2026-10-22
+
+- Added `formatCompanyDateTime` to `frontend/src/utils/format-date.ts`. It preserves timestamp interpretation in the browser's local timezone while applying the selected company's date ordering and a localized time display.
+- `frontend/src/modules/reports/pages/ReportsPage.tsx` now uses the company date-format preference for the report schedule's `next_run_at` display instead of always relying on the browser locale's default date order.
+- This is another consumer migration, not proof of complete coverage across all report/export/print surfaces. `general.date_format` remains catalog-only pending a systematic inventory and verification.
+
+## Remaining policy blockers and implementation boundary — 2026-10-22
+
+- Current registry has **5 catalog-only settings**, not 7: `general.date_format`, `hr.attendance_source`, `hr.payroll_requires_approval`, `hr.biometric_sync_interval_minutes`, and `pos.allow_open_cash_drawer`. The earlier `workflow.approval_mode` and `workflow.escalation_after_hours` settings were reclassified as runtime; approval request sequencing is implemented and an in-app escalation worker exists.
+- HR manual attendance is explicitly blocked when the selected source is biometric/mobile/integration. A real connector still requires a supported device/provider protocol, authenticated ingestion, replay/deduplication controls, and tenant/company employee mapping. The interval helper alone is not a connector or a sync worker.
+- Payroll package entry points/models/repository/schemas/router/tests are currently empty files in this branch. A real approval setting cannot be considered wired until a payroll run lifecycle, audited approval decisions, and safe accounting posting/reversal integration are implemented; a boolean helper alone is insufficient.
+- POS has a policy helper for standalone cash-drawer opens but no standalone endpoint/device bridge. Hardware make/model/protocol or a supported POS driver is needed to actually open a physical drawer. An audit-only API would not prove hardware actuation.
+- Source changes above are committed, but no frontend build, backend test suite, migration run, or live Docker verification has been completed in this session. Do not mark the remaining five as fully wired until implementation and tests substantiate it.
