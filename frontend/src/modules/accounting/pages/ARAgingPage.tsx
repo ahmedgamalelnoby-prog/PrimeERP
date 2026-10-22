@@ -8,8 +8,8 @@ export default function ARAgingPage(){
  const dateFormat=useCompanyDateFormat();
  const {companyDate,loading:clockLoading,error:clockError}=useCompanyClockDate();
  const [asOf,setAsOf]=useState(""); const [data,setData]=useState<AgingSummary|null>(null); const [loading,setLoading]=useState(false); const [error,setError]=useState("");
- async function load(){setLoading(true);setError("");try{setData((await arApApi.aging(asOf)).data)}catch(e:any){setError(e?.response?.data?.detail||e?.message||"تعذر تحميل أعمار الذمم")}finally{setLoading(false)}}
- useEffect(()=>{void load()},[]);
+ async function load(){if(!asOf)return;setLoading(true);setError("");try{setData((await arApApi.aging(asOf)).data)}catch(e:any){setError(e?.response?.data?.detail||e?.message||"تعذر تحميل أعمار الذمم")}finally{setLoading(false)}}
+ useEffect(()=>{if(asOf)void load()},[asOf]);
  useEffect(()=>{if(companyDate)setAsOf(current=>current||companyDate)},[companyDate]);
  const buckets=useMemo(()=>{const out:Record<string,{receivable:number;payable:number}>={};for(const b of bucketOrder)out[b]={receivable:0,payable:0};for(const r of data?.rows||[]){const b=out[r.bucket]||(out[r.bucket]={receivable:0,payable:0});b[r.direction==="receivable"?"receivable":"payable"]+=Number(r.outstanding)}return out},[data]);
  const rows=(data?.rows||[]) as AgingRow[];
