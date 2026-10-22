@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 _RAW = [
     # Company-wide defaults
     ("general.default_language","general","General","enum","ar","Interface language",["ar","en"],"runtime"),
-    ("general.date_format","general","General","enum","DD/MM/YYYY","Date display format",["DD/MM/YYYY","MM/DD/YYYY","YYYY-MM-DD"],"catalog"),
+    ("general.date_format","general","General","enum","DD/MM/YYYY","Date display format",["DD/MM/YYYY","MM/DD/YYYY","YYYY-MM-DD"],"runtime"),
     ("general.timezone","general","General","string","Africa/Cairo","Company timezone",None,"runtime"),
     ("general.base_currency","general","General","string","EGP","Functional currency code",None,"runtime"),
     ("general.allow_multi_currency","general","General","bool",True,"Allow foreign-currency transactions",None,"runtime"),
