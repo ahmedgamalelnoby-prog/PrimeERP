@@ -16,7 +16,7 @@ from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models.user import User
 from app.modules.saas.entitlements import require_module
 from app.modules.hr.models import HRLeaveBalance, HRLeaveRequest, HRAttendanceRecord, HRAttendanceCorrection, HROvertimeRequest
-from app.modules.hr.schemas import AttendanceCreate, AttendanceCorrectionCreate, AttendanceCorrectionDecision, AttendanceCorrectionResponse, AttendanceResponse, LeaveBalanceResponse, LeaveBalanceUpdate, LeaveDecision, LeaveRequestCreate, LeaveRequestResponse, OvertimeRequestCreate, OvertimeRequestResponse
+from app.modules.hr.schemas import AttendanceCheckOut, AttendanceCreate, AttendanceCorrectionCreate, AttendanceCorrectionDecision, AttendanceCorrectionResponse, AttendanceResponse, LeaveBalanceResponse, LeaveBalanceUpdate, LeaveDecision, LeaveRequestCreate, LeaveRequestResponse, OvertimeRequestCreate, OvertimeRequestResponse
 from app.modules.hr.service import hr_leave_service
 from app.modules.company_settings.consumers.hr import attendance_source_allowed
 
@@ -442,6 +442,47 @@ def create_attendance(
         _attendance_audit(
             db, action="hr.attendance_recorded", entity_id=record.id, user=current_user,
             tenant_id=tenant_id, company_id=company_id, status="recorded",
+        )
+        db.commit()
+        db.refresh(record)
+        return record
+    except LookupError as exc:
+        db.rollback()
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc)) from exc
+
+
+@router.post(
+    "/attendance/{record_id}/check-out",
+    response_model=AttendanceResponse,
+    dependencies=[Depends(require_permission("enterprise.write"))],
+)
+def check_out_attendance(
+    record_id: int,
+    payload: AttendanceCheckOut,
+    company_id: int = Query(..., gt=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    tenant_id = _tenant(current_user)
+    _company_for_tenant(db, company_id, tenant_id)
+    try:
+        record = hr_leave_service.check_out_attendance(
+            db,
+            company_id=company_id,
+            record_id=record_id,
+            check_out_time=payload.check_out_time,
+        )
+        _attendance_audit(
+            db,
+            action="hr.attendance_checked_out",
+            entity_id=record.id,
+            user=current_user,
+            tenant_id=tenant_id,
+            company_id=company_id,
+            status="checked_out",
         )
         db.commit()
         db.refresh(record)
