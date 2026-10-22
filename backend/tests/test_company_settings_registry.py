@@ -89,7 +89,6 @@ def test_policies_without_a_safe_workflow_consumer_remain_catalog_only():
     # These policies still lack complete owning workflows. Do not advertise them as enforced.
     catalog_only_keys = {
         "hr.attendance_source",
-        "general.date_format",
         "hr.payroll_requires_approval",
         "hr.biometric_sync_interval_minutes",
         "workflow.approval_mode",
