@@ -86,7 +86,7 @@ export function useCompanyToday(companyId?: number | null): string {
       "/company-settings/clock",
       { params: { company_id: companyId } },
     ).then(({ data }) => {
-      if (!active || data.company_id !== companyId || !/^\\d{4}-\\d{2}-\\d{2}$/.test(data.company_date)) return;
+      if (!active || data.company_id !== companyId || !/^\d{4}-\d{2}-\d{2}$/.test(data.company_date)) return;
       const [year, month, day] = data.company_date.split("-").map(Number);
       const valid = new Date(Date.UTC(year, month - 1, day));
       if (valid.getUTCFullYear() !== year || valid.getUTCMonth() !== month - 1 || valid.getUTCDate() !== day) return;
