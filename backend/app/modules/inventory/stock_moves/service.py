@@ -82,6 +82,19 @@ class InventoryStockMoveService:
         if item.item_type not in {"stockable", "consumable"}:
             raise ValueError("Only stockable or consumable items can have stock movements")
         self._validate_variant(db, company_id=payload.company_id, item=item, variant_id=payload.variant_id)
+        if item.batch_tracking and not payload.lot_number:
+            raise ValueError("Batch-tracked items require a lot/batch number on every stock movement")
+        if item.serial_tracking:
+            if not payload.serial_number:
+                raise ValueError("Serial-tracked items require a serial number on every stock movement")
+            if Decimal(str(payload.quantity)) != Decimal("1"):
+                raise ValueError("Serial-tracked stock movements must have quantity exactly 1 per serial number")
+        elif payload.serial_number:
+            raise ValueError("Serial number is only allowed for serial-tracked items")
+        if payload.expiry_date is not None and payload.transaction_date is not None and payload.expiry_date < payload.transaction_date:
+            raise ValueError("Expiry date cannot be earlier than the stock movement date")
+        if item.batch_tracking and get_company_setting(db, payload.company_id, "inventory.expiry_tracking_required") is True and payload.movement_type in {"receipt", "opening", "return", "production_receipt"} and payload.expiry_date is None:
+            raise ValueError("Company policy requires an expiry date for batch-tracked stock receipts")
         require_bin_location = get_company_setting(db, payload.company_id, "inventory.require_bin_location") is True
         locations = {}
         for location_id in (payload.source_location_id, payload.destination_location_id):
