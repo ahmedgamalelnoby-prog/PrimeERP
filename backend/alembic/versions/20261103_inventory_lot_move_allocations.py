@@ -26,11 +26,13 @@ def upgrade():
         sa.CheckConstraint("quantity > 0", name="ck_inventory_lot_move_allocation_quantity"),
         sa.CheckConstraint("lot_number IS NOT NULL OR serial_number IS NOT NULL", name="ck_inventory_lot_move_allocation_identity"),
     )
+    op.create_index("ix_inventory_lot_move_allocations_id", "inventory_lot_move_allocations", ["id"])
     op.create_index("ix_inventory_lot_move_allocations_company_id", "inventory_lot_move_allocations", ["company_id"])
     op.create_index("ix_inventory_lot_move_allocations_stock_move_id", "inventory_lot_move_allocations", ["stock_move_id"])
 
 
 def downgrade():
+    op.drop_index("ix_inventory_lot_move_allocations_id", table_name="inventory_lot_move_allocations")
     op.drop_index("ix_inventory_lot_move_allocations_stock_move_id", table_name="inventory_lot_move_allocations")
     op.drop_index("ix_inventory_lot_move_allocations_company_id", table_name="inventory_lot_move_allocations")
     op.drop_table("inventory_lot_move_allocations")
