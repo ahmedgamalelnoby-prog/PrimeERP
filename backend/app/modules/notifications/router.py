@@ -197,7 +197,7 @@ def send_notification(
     if payload.idempotency_key:
         existing = db.scalars(select(NotificationDelivery).where(
             NotificationDelivery.company_id == company.id,
-            NotificationDelivery.idempotency_key == payload.idempotency_key,
+            or_(NotificationDelivery.idempotency_key == payload.idempotency_key, NotificationDelivery.idempotency_key.like(payload.idempotency_key + ":%")),
         ).order_by(NotificationDelivery.id)).all()
         if existing:
             return {"status": "already_processed", "deliveries": [
@@ -273,7 +273,7 @@ def send_notification(
             row.status = "sent"
             row.provider_reference = provider_reference
             row.sent_at = datetime.now(timezone.utc)
-        except (RuntimeError, ValueError, smtplib.SMTPException, requests.RequestException) as exc:
+        except (RuntimeError, ValueError, OSError, smtplib.SMTPException, requests.RequestException) as exc:
             row.status = "failed"
             error_code = str(exc)[:80]
             row.error_code = error_code
