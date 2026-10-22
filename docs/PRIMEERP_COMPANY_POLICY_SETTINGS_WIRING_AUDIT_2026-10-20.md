@@ -603,3 +603,12 @@ Do not promote these seven settings until their owning workflows, tenant/company
 - Added a focused test for the company clock endpoint's timezone-policy wiring in `backend/tests/test_company_settings_consumers.py`.
 - Important limit: this protects against an incorrect device clock, not an incorrect application-server/host clock. The host/container clock must be synchronized with NTP; the endpoint reports application-server time and does not independently verify an external time source.
 - Automated test/build status has not yet been confirmed for this commit.
+
+
+## Company date-format policy is now server-backed — 2026-10-22
+
+- Added authenticated `GET /company-settings/date-format?company_id=...`, which validates active-company/tenant access and returns the validated `general.date_format` policy.
+- `frontend/src/utils/format-date.ts` now refreshes the company date-format preference from that endpoint when the hook mounts, then caches the validated result locally for resilience. This removes the requirement to visit the policy-settings page first for date-format preferences to take effect.
+- Added backend tests for the three supported formats and invalid stored values.
+- This improves the shared formatter consumers but does not claim every date-bearing page, report, export, or printed document has been migrated. Host/server clock accuracy still depends on NTP; browser device time is not used for migrated date-only defaults.
+- Build and automated test results are pending confirmation.
