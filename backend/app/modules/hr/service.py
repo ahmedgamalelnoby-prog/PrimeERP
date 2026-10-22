@@ -231,6 +231,44 @@ class HRLeaveService:
         db.flush()
         return record
 
+    def check_out_attendance(
+        self,
+        db: Session,
+        *,
+        company_id: int,
+        record_id: int,
+        check_out_time: datetime,
+    ) -> HRAttendanceRecord:
+        record = db.scalar(
+            select(HRAttendanceRecord)
+            .where(
+                HRAttendanceRecord.id == record_id,
+                HRAttendanceRecord.company_id == company_id,
+            )
+            .with_for_update()
+        )
+        if record is None:
+            raise LookupError("Attendance record not found")
+        if record.check_out_at is not None:
+            raise ValueError("Attendance already has a check-out time")
+        timezone_name = get_company_setting(db, company_id, "general.timezone")
+        check_out = self._local_datetime(check_out_time, timezone_name)
+        check_in = record.check_in_at
+        if check_in.tzinfo is None:
+            check_in = check_in.replace(tzinfo=ZoneInfo(timezone_name))
+        if check_out <= check_in:
+            raise ValueError("Check-out must be later than check-in")
+        self._assert_overtime_fits(
+            db,
+            company_id=company_id,
+            record=record,
+            check_in=record.check_in_at,
+            check_out=check_out,
+        )
+        record.check_out_at = check_out
+        db.flush()
+        return record
+
     def list_corrections(self, db: Session, *, company_id: int) -> list[HRAttendanceCorrection]:
         return list(db.scalars(
             select(HRAttendanceCorrection)
