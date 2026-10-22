@@ -50,6 +50,9 @@ class InventoryStockMove(Base):
     accounting_entry_id = Column(Integer, ForeignKey("journal_entries.id", ondelete="RESTRICT"), nullable=True, index=True)
     reversed_by_move_id = Column(Integer, ForeignKey("inventory_stock_moves.id", ondelete="RESTRICT"), nullable=True, index=True)
     reservation_id = Column(Integer, ForeignKey("inventory_reservations.id", ondelete="RESTRICT"), nullable=True, index=True)
+    lot_number = Column(String(100), nullable=True, index=True)
+    serial_number = Column(String(100), nullable=True, index=True)
+    expiry_date = Column(Date, nullable=True, index=True)
 
     item = relationship("InventoryItem")
     variant = relationship("ProductVariant")
@@ -68,6 +71,7 @@ class InventoryStockMove(Base):
         CheckConstraint("source_location_id IS NOT NULL OR destination_location_id IS NOT NULL", name="ck_inventory_stock_move_endpoint"),
         CheckConstraint("source_location_id IS NULL OR destination_location_id IS NULL OR source_location_id <> destination_location_id", name="ck_inventory_stock_move_distinct_endpoints"),
         CheckConstraint("status <> 'posted' OR movement_type = 'transfer' OR accounting_entry_id IS NOT NULL", name="ck_inventory_stock_move_posted_accounting"),
+        Index("uq_inventory_stock_move_serial_identity", "company_id", "item_id", "serial_number", unique=True, postgresql_where=serial_number.is_not(None)),
         Index("uq_inventory_stock_move_source_nonnull", "company_id", "source_module", "source_entity", "source_id", unique=True, postgresql_where=(source_module.is_not(None) & source_entity.is_not(None) & source_id.is_not(None))),
     )
 
