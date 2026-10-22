@@ -147,6 +147,30 @@ services:
     networks:
       - primeerp
 
+  integration-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: primeerp-integration-worker
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      DEBUG: ${DEBUG:-false}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-primeerp}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-primeerp}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set}
+      PRIMEERP_INTEGRATION_WORKER_ID: ${PRIMEERP_INTEGRATION_WORKER_ID:-integration-worker}
+      PRIMEERP_INTEGRATION_WORKER_POLL_SECONDS: ${PRIMEERP_INTEGRATION_WORKER_POLL_SECONDS:-60}
+      PRIMEERP_INTEGRATION_SYNC_INTERVAL_MINUTES: ${PRIMEERP_INTEGRATION_SYNC_INTERVAL_MINUTES:-15}
+    command: ["python", "-m", "scripts.run_integration_worker"]
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - primeerp
+
   frontend:
     build:
       context: ./frontend
