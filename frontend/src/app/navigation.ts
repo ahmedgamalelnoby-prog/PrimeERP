@@ -55,7 +55,7 @@ export const navigationItems: NavigationItem[] = [
   {id:"plans",label:"Plans & Entitlements",labelAr:"الباقات والاستحقاقات",type:"item",path:"/platform/plans",icon:BadgeDollarSign,permission:"plans.view",module:"saas",visible:true,order:2},
  ]},
  {id:"reports",label:"Reports",labelAr:"التقارير",type:"item",path:"/reports",icon:BarChart3,permission:"reports.view",module:"reports",visible:true,order:14},
- {id:"notifications",label:"Messages & Notifications",labelAr:"الرسائل والإشعارات",type:"item",path:"/notifications",icon:Bell,permission:"company.access",module:"settings",visible:true,order:14},
+ {id:"notifications",label:"Messages & Notifications",labelAr:"الرسائل والإشعارات",type:"item",path:"/notifications",icon:Bell,permission:"company.write",module:"settings",visible:true,order:14},
  {id:"settings",label:"Settings",labelAr:"الإعدادات",type:"item",path:"/settings",icon:Settings,permission:"settings.view",module:"settings",visible:true,order:15},
  {id:"company-policies",label:"Company Policies",labelAr:"سياسات الشركة",type:"item",path:"/settings/company-policies",icon:SlidersHorizontal,permission:"company.write",module:"settings",visible:true,order:16},
 ];
