@@ -36,6 +36,9 @@ export function useCompanyDateFormat(companyId?: number | null): CompanyDateForm
   useEffect(() => {
     let active = true;
     const refresh = () => setFormat(getCompanyDateFormat(companyId));
+    // A company switch must immediately show that company's cached preference;
+    // do not leave the previous company's date ordering on screen while the API loads.
+    refresh();
     window.addEventListener(FORMAT_CHANGED_EVENT, refresh);
     window.addEventListener("storage", refresh);
 
