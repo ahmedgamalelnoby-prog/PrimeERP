@@ -2,6 +2,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from app.modules.company_settings.registry import validate_value
+
 from app.modules.company_settings.consumers.approvals import approval_escalation_due, approval_plan
 from app.modules.company_settings.consumers.general import format_company_date
 from app.modules.company_settings.consumers.hr import attendance_source_allowed, biometric_sync_due
@@ -78,3 +80,27 @@ def test_automatic_integration_sync_disabled(monkeypatch):
     from app.modules.company_settings.consumers import integrations
     monkeypatch.setattr(integrations, "require_policy_bool", lambda db, company_id, key: False)
     assert not integration_sync_due(FakeDB({}), 1, None, interval_minutes=15)
+
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("hr.biometric_sync_interval_minutes", 0),
+        ("workflow.escalation_after_hours", 0),
+    ],
+)
+def test_company_policy_intervals_must_be_positive(key, value):
+    with pytest.raises(ValueError, match="must be at least 1"):
+        validate_value(key, value)
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("hr.biometric_sync_interval_minutes", 1),
+        ("workflow.escalation_after_hours", 1),
+    ],
+)
+def test_company_policy_intervals_accept_positive_values(key, value):
+    assert validate_value(key, value) == value
