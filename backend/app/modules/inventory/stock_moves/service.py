@@ -176,7 +176,10 @@ class InventoryStockMoveService:
                 raise ValueError("Reservation quantity is less than the stock movement quantity")
             if move.movement_type not in {"issue", "transfer", "return"}:
                 raise ValueError("Reservations can only be consumed by issue, transfer, or return movements")
-        item = db.scalar(select(InventoryItem).where(InventoryItem.id == move.item_id, InventoryItem.company_id == company_id, InventoryItem.is_active.is_(True)))
+        item_query = select(InventoryItem).where(InventoryItem.id == move.item_id, InventoryItem.company_id == company_id, InventoryItem.is_active.is_(True))
+        if item_query is not None:
+            item_query = item_query.with_for_update()
+        item = db.scalar(item_query)
         if item is None:
             raise ValueError("Item is unavailable for posting")
         self._validate_variant(db, company_id=company_id, item=item, variant_id=getattr(move, "variant_id", None))
@@ -541,6 +544,8 @@ class InventoryStockMoveService:
             return balance
 
         if item.serial_tracking and serial_number:
+            if balance is not None and Decimal(balance.quantity_on_hand or 0) > 0:
+                raise ValueError("This serial number is already on hand at the destination location")
             duplicate_stmt = select(InventoryLotBalance.id).where(
                 InventoryLotBalance.company_id == move.company_id,
                 InventoryLotBalance.item_id == move.item_id,
