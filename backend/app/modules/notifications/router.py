@@ -275,7 +275,7 @@ def send_notification(
                 for attempt in range(retry_limit + 1):
                     try:
                         if payload.channel == "email":
-                            if not re.fullmatch(r"[^\\s@]+@[^\\s@]+\\.[^\\s@]+", destination):
+                            if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", destination):
                                 raise ValueError("invalid_email_destination")
                             provider_reference = _send_email(destination, title, body)
                         else:
@@ -287,7 +287,7 @@ def send_notification(
                             isinstance(exc, ValueError)
                             or "not_configured" in error_text
                             or "invalid_" in error_text
-                            or re.search(r"provider_http_4\\d\\d", error_text) is not None
+                            or re.search(r"provider_http_4\d\d", error_text) is not None
                             or attempt >= retry_limit
                         )
                         if terminal:
