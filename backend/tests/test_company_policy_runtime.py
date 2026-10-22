@@ -521,7 +521,7 @@ def test_required_work_order_policy_blocks_unlinked_production_stock_moves(
         source_id=source_id,
     )
 
-    with pytest.raises(ValueError, match="released manufacturing work order"):
+    with pytest.raises(ValueError, match="work-order completion workflow"):
         stock_move_module.InventoryStockMoveService._validate_required_work_order(object(), payload)
 
 
@@ -546,4 +546,6 @@ def test_required_work_order_policy_rejects_nonexistent_work_order_material_line
     )
 
     with pytest.raises(ValueError, match="released company work order"):
-        stock_move_module.InventoryStockMoveService._validate_required_work_order(FakeDB(), payload)
+        stock_move_module.InventoryStockMoveService._validate_required_work_order(
+            FakeDB(), payload, from_work_order=True
+        )
