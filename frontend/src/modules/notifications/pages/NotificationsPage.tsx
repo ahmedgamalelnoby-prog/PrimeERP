@@ -1,4 +1,5 @@
-import { FormEvent, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import type { FormEvent } from "react";
 import toast from "react-hot-toast";
 import client from "@/shared/api/client";
 import { notificationsService } from "../services/notifications.service";
