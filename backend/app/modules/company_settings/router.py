@@ -1,3 +1,6 @@
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy import select
@@ -60,6 +63,33 @@ def get_company_settings(
             {**item, "value": stored.get(item["key"], item["default"])}
             for item in CATALOG
         ],
+    }
+
+
+@router.get("/clock", dependencies=[Depends(require_permission("company.access"))])
+def get_company_clock(
+    company_id: int = Query(..., gt=0),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Return the backend clock and the selected company's calendar date.
+
+    Date-only defaults must not depend on the browser/device clock. The host
+    clock still needs reliable NTP synchronization; this endpoint exposes the
+    authoritative application-server time, not a guarantee of external time.
+    """
+    company = _company(db, company_id, user)
+    configured_timezone = get_company_setting(db, company.id, "general.timezone")
+    try:
+        company_tz = ZoneInfo(configured_timezone)
+    except (ZoneInfoNotFoundError, TypeError):
+        raise HTTPException(status_code=500, detail="Invalid company timezone configuration")
+    now_utc = datetime.now(timezone.utc)
+    return {
+        "company_id": company.id,
+        "server_time_utc": now_utc.isoformat(),
+        "company_timezone": configured_timezone,
+        "company_date": now_utc.astimezone(company_tz).date().isoformat(),
     }
 
 
