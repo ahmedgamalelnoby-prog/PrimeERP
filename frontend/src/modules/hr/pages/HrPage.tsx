@@ -200,7 +200,7 @@ export default function HrPage() {
     setBusy(true); setError("");
     try {
       await client.post("/enterprise/employees", { ...employeeForm, company_id: companyId, basic_salary: Number(employeeForm.basic_salary) });
-      setEmployeeForm({ employee_no: "", name: "", hire_date: today(), basic_salary: "0" });
+      setEmployeeForm({ employee_no: "", name: "", hire_date: companyDate || "", basic_salary: "0" });
       await load();
     } catch (e: any) { setError(e?.response?.data?.detail || "تعذر إضافة الموظف."); }
     finally { setBusy(false); }
