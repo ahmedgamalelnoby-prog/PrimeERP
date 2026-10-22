@@ -66,6 +66,20 @@ def get_company_settings(
     }
 
 
+@router.get("/date-format", dependencies=[Depends(require_permission("company.access"))])
+def get_company_date_format(
+    company_id: int = Query(..., gt=0),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Return the active company's validated date display preference."""
+    company = _company(db, company_id, user)
+    value = policy(db, company.id, "general.date_format")
+    if value not in {"DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"}:
+        raise HTTPException(status_code=500, detail="Invalid company date format configuration")
+    return {"company_id": company.id, "date_format": value}
+
+
 @router.get("/clock", dependencies=[Depends(require_permission("company.access"))])
 def get_company_clock(
     company_id: int = Query(..., gt=0),
