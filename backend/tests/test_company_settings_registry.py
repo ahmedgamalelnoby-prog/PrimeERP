@@ -6,7 +6,7 @@ from app.modules.company_settings.registry import BY_KEY, CATALOG, validate_valu
 def test_company_policy_catalog_has_unique_keys_and_module_ownership():
     keys = [item["key"] for item in CATALOG]
     assert len(keys) == len(set(keys))
-    assert len(keys) == 68
+    assert len(keys) == 71
     assert all("." in item["key"] and item["module"] for item in CATALOG)
 
 
@@ -49,6 +49,9 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
         "inventory.expiry_tracking_required",
         "inventory.serial_tracking_default",
         "inventory.batch_tracking_default",
+        "notifications.email_enabled",
+        "notifications.whatsapp_enabled",
+        "notifications.retry_limit",
         "tax.require_tax_code_on_invoice",
         "accounting.auto_post_sales_invoice",
         "accounting.auto_post_purchase_invoice",
@@ -175,3 +178,16 @@ def test_company_date_format_accepts_declared_formats(valid_format):
 def test_purchase_price_variance_tolerance_rejects_out_of_range_values(bad_value):
     with pytest.raises(ValueError):
         validate_value("purchasing.price_variance_tolerance_pct", bad_value)
+
+
+@pytest.mark.parametrize("bad_limit", [-1, 6, True, 1.5])
+def test_notification_retry_limit_is_bounded(bad_limit):
+    with pytest.raises(ValueError):
+        validate_value("notifications.retry_limit", bad_limit)
+
+
+def test_notification_delivery_switches_default_to_disabled():
+    assert BY_KEY["notifications.email_enabled"]["default"] is False
+    assert BY_KEY["notifications.whatsapp_enabled"]["default"] is False
+    assert BY_KEY["notifications.email_enabled"]["status"] == "runtime"
+    assert BY_KEY["notifications.whatsapp_enabled"]["status"] == "runtime"
