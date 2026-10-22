@@ -15,11 +15,16 @@ This document distinguishes a setting being editable in the company settings scr
 These policies have helper functions, but the owning workflow is not implemented or not yet connected end-to-end. Do not present them as enforced:
 
 - `general.date_format`: the settings page stores a browser-local preference and a formatter exists, but repository search has not verified that business screens consistently use the formatter.
-- `hr.attendance_source`: attendance router/service/API files in the HR and mobile attendance modules are empty placeholders.
+- `hr.attendance_source`: the existing monolithic HR attendance service enforces the selected source by blocking manual writes unless the configured source is `manual`. The service now calls the shared company-policy consumer helper, and a focused regression test covers the non-manual values. Dedicated nested attendance files remain placeholders; biometric/mobile/integration ingestion is not implemented, so the setting remains catalog-only.
 - `hr.biometric_sync_interval_minutes`: no biometric-device polling worker or complete attendance ingestion workflow is present.
 - `hr.payroll_requires_approval`: HR payroll API/service/router files are empty placeholders.
 - `workflow.approval_mode` and `workflow.escalation_after_hours`: consumer helpers exist, but the operations approvals module's model/schema/service/router files are empty placeholders; there is no durable approval lifecycle consuming the plan or escalation deadline.
 - `pos.allow_open_cash_drawer`: a policy helper exists, but no standalone cash-drawer open endpoint/command is present. Opening a cashier shift and declaring opening float is not equivalent to opening the physical cash drawer, so this setting must not be applied to shift opening.
+
+## Verified HR policy wiring
+
+- `hr.require_attendance_approval` is consumed by the existing attendance-correction workflow: corrections remain pending until an authorized decision when enabled, and are applied immediately when disabled.
+- `hr.attendance_source` is consumed by the actual manual attendance creation service through the shared policy adapter. A regression test covers biometric/mobile/integration selections being unable to write through the manual endpoint. The non-manual connectors still need to be implemented before promoting the setting to runtime.
 
 ## Required implementation before promoting these settings
 
