@@ -128,7 +128,7 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 | Option key | Type | Current status | Purpose |
 |---|---|---|---|
 | `manufacturing.require_work_order` | bool | CATALOG ONLY | Require work order for production |
-| `manufacturing.allow_overproduction` | bool | CATALOG ONLY | Allow production above planned quantity |
+| `manufacturing.allow_overproduction` | bool | **RUNTIME** | Block production above planned quantity when disabled; the completion service reads the company policy |
 
 ## CRM (1)
 
