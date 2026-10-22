@@ -50,7 +50,7 @@ class SendNotificationRequest(BaseModel):
     title: str = Field(default="", max_length=255)
     body: str = Field(default="", max_length=10000)
     context: dict[str, str | int | float | bool | None] = Field(default_factory=dict, max_length=50)
-    idempotency_key: str | None = Field(default=None, min_length=8, max_length=120)
+    idempotency_key: str | None = Field(default=None, min_length=8, max_length=100)
 
     @field_validator("idempotency_key")
     @classmethod
