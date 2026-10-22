@@ -1,4 +1,5 @@
 from decimal import Decimal
+from datetime import datetime, timedelta, timezone
 import importlib
 from types import SimpleNamespace
 
@@ -424,3 +425,33 @@ def test_company_webhook_signature_policy_is_enforced_by_public_endpoint(monkeyp
 
     assert exc.value.status_code == 401
     assert "signature" in exc.value.detail.lower()
+
+
+
+def test_scheduled_integration_sync_respects_company_policy(monkeypatch):
+    from app.modules.company_settings.consumers import integrations as policy_module
+
+    monkeypatch.setattr(policy_module, "automatic_sync_enabled", lambda _db, company_id: company_id == 8)
+    now = datetime(2026, 10, 22, 9, 0, tzinfo=timezone.utc)
+
+    assert policy_module.integration_sync_due(
+        object(), 7, None, interval_minutes=15, now=now
+    ) is False
+    assert policy_module.integration_sync_due(
+        object(), 8, None, interval_minutes=15, now=now
+    ) is True
+
+
+def test_scheduled_integration_sync_observes_interval_and_timezone(monkeypatch):
+    from app.modules.company_settings.consumers import integrations as policy_module
+
+    monkeypatch.setattr(policy_module, "automatic_sync_enabled", lambda _db, _company_id: True)
+    now = datetime(2026, 10, 22, 9, 15, tzinfo=timezone.utc)
+    last_sync = datetime(2026, 10, 22, 9, 0, tzinfo=timezone.utc)
+
+    assert policy_module.integration_sync_due(
+        object(), 7, last_sync, interval_minutes=15, now=now
+    ) is True
+    assert policy_module.integration_sync_due(
+        object(), 7, last_sync + timedelta(minutes=1), interval_minutes=15, now=now
+    ) is False
