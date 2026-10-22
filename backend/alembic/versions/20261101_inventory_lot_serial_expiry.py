@@ -22,7 +22,6 @@ def upgrade():
     op.create_index("ix_inventory_stock_moves_lot_number", "inventory_stock_moves", ["lot_number"])
     op.create_index("ix_inventory_stock_moves_serial_number", "inventory_stock_moves", ["serial_number"])
     op.create_index("ix_inventory_stock_moves_expiry_date", "inventory_stock_moves", ["expiry_date"])
-    op.create_index("uq_inventory_stock_move_serial_identity", "inventory_stock_moves", ["company_id", "item_id", "serial_number"], unique=True, postgresql_where=sa.text("serial_number IS NOT NULL"))
 
 
 def downgrade():
