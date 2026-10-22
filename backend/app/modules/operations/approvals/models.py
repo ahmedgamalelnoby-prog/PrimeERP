@@ -1,4 +1,5 @@
 from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy.orm import relationship
 from app.database.base import Base
 
 
@@ -16,6 +17,7 @@ class ApprovalRequest(Base):
     status = Column(String(20), nullable=False, server_default="pending")
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     decided_at = Column(DateTime(timezone=True), nullable=True)
+    steps = relationship("ApprovalStep", back_populates="request", cascade="all, delete-orphan", order_by="ApprovalStep.sequence_no")
 
     __table_args__ = (
         CheckConstraint("mode IN ('sequential','parallel','any_one')", name="ck_approval_requests_mode"),
@@ -34,6 +36,7 @@ class ApprovalStep(Base):
     decided_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=True)
     reason = Column(Text, nullable=True)
     decided_at = Column(DateTime(timezone=True), nullable=True)
+    request = relationship("ApprovalRequest", back_populates="steps")
 
     __table_args__ = (
         UniqueConstraint("request_id", "approver_user_id", name="uq_approval_step_request_approver"),
