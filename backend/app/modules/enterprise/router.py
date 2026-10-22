@@ -1,9 +1,10 @@
 from decimal import Decimal
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
@@ -15,8 +16,27 @@ from app.modules.enterprise.schemas import AssetCreate, AssetResponse, EmployeeC
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.accounting.chart_of_accounts.models import AccountCombination
+from app.modules.audit.service import record_audit_event
+from app.modules.company_settings.consumers.approvals import payroll_approval_required
+from app.modules.identity.models import User
+from app.modules.operations.approvals.models import ApprovalRequest
+from app.modules.operations.approvals.schemas import ApprovalDecision
+from app.modules.operations.approvals.service import create_approval_request, decide_approval
 
 router = APIRouter(prefix="/enterprise", tags=["Enterprise"])
+
+
+class PayrollSubmit(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    approver_ids: list[int] = Field(default_factory=list, max_length=50)
+
+    @model_validator(mode="after")
+    def validate_approvers(self):
+        if any(isinstance(user_id, bool) or user_id <= 0 for user_id in self.approver_ids):
+            raise ValueError("Approver IDs must be positive integers")
+        if len(set(self.approver_ids)) != len(self.approver_ids):
+            raise ValueError("Approver IDs must be unique")
+        return self
 
 
 def company_for_user(db: Session, company_id: int, user: User) -> Company:
@@ -146,6 +166,154 @@ def payroll(p: PayrollRunCreate, db: Session = Depends(get_db), current_user: Us
         rollback_integrity(db, "Payroll period already exists")
     db.refresh(r)
     return r
+
+
+@router.post(
+    "/payroll/runs/{run_id}/submit",
+    response_model=PayrollResponse,
+    dependencies=[Depends(require_permission("enterprise.post"))],
+)
+def submit_payroll_run(
+    run_id: int,
+    payload: PayrollSubmit,
+    company_id: int = Query(..., gt=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    company = company_for_user(db, company_id, current_user)
+    run = db.scalar(select(PayrollRun).where(
+        PayrollRun.id == run_id,
+        PayrollRun.company_id == company_id,
+    ).with_for_update())
+    if run is None:
+        raise HTTPException(404, "Payroll run not found")
+    if run.status != "draft":
+        raise HTTPException(409, "Only draft payroll runs can be submitted")
+    try:
+        if payroll_approval_required(db, company_id):
+            if not payload.approver_ids:
+                raise HTTPException(422, "At least one payroll approver is required by company policy")
+            if current_user.id in payload.approver_ids:
+                raise HTTPException(422, "Payroll requester cannot approve their own payroll run")
+            approvers = list(db.scalars(select(User).where(
+                User.id.in_(payload.approver_ids),
+                User.tenant_id == company.tenant_id,
+                User.is_active.is_(True),
+                User.is_deleted.is_(False),
+            )).all())
+            if {user.id for user in approvers} != set(payload.approver_ids):
+                raise HTTPException(422, "Every payroll approver must be an active user in the current tenant")
+            create_approval_request(
+                db,
+                tenant_id=company.tenant_id,
+                company_id=company_id,
+                requester_id=current_user.id,
+                entity_type="payroll_run",
+                entity_id=run.id,
+                title=f"Payroll approval for {run.period}",
+                mode="sequential",
+                approver_ids=payload.approver_ids,
+            )
+            run.status = "pending_approval"
+            action = "enterprise.payroll_submitted_for_approval"
+        else:
+            run.status = "ready_to_post"
+            action = "enterprise.payroll_approval_not_required"
+        record_audit_event(
+            db,
+            action=action,
+            entity_type="payroll_run",
+            entity_id=run.id,
+            user_id=current_user.id,
+            tenant_id=company.tenant_id,
+            company_id=company_id,
+            metadata={"period": run.period, "status": run.status},
+        )
+        db.commit()
+        db.refresh(run)
+        return run
+    except HTTPException:
+        db.rollback()
+        raise
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc)) from exc
+    except Exception:
+        db.rollback()
+        raise
+
+
+@router.post(
+    "/payroll/runs/{run_id}/decision",
+    response_model=PayrollResponse,
+    dependencies=[Depends(require_permission("enterprise.post"))],
+)
+def decide_payroll_run(
+    run_id: int,
+    payload: ApprovalDecision,
+    company_id: int = Query(..., gt=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    company = company_for_user(db, company_id, current_user)
+    run = db.scalar(select(PayrollRun).where(
+        PayrollRun.id == run_id,
+        PayrollRun.company_id == company_id,
+    ).with_for_update())
+    if run is None:
+        raise HTTPException(404, "Payroll run not found")
+    if run.status != "pending_approval":
+        raise HTTPException(409, "Payroll run is not awaiting approval")
+    request = db.scalar(select(ApprovalRequest).options(
+        selectinload(ApprovalRequest.steps)
+    ).where(
+        ApprovalRequest.tenant_id == company.tenant_id,
+        ApprovalRequest.company_id == company_id,
+        ApprovalRequest.entity_type == "payroll_run",
+        ApprovalRequest.entity_id == run.id,
+        ApprovalRequest.status == "pending",
+    ).with_for_update())
+    if request is None:
+        raise HTTPException(409, "Pending payroll approval request was not found")
+    try:
+        decide_approval(
+            db,
+            request=request,
+            actor_user_id=current_user.id,
+            decision=payload.decision,
+            reason=payload.reason,
+        )
+        if request.status == "approved":
+            run.status = "ready_to_post"
+        elif request.status == "rejected":
+            run.status = "rejected"
+        record_audit_event(
+            db,
+            action="enterprise.payroll_approval_decided",
+            entity_type="payroll_run",
+            entity_id=run.id,
+            user_id=current_user.id,
+            tenant_id=company.tenant_id,
+            company_id=company_id,
+            metadata={
+                "period": run.period,
+                "decision": payload.decision,
+                "approval_status": request.status,
+                "payroll_status": run.status,
+            },
+        )
+        db.commit()
+        db.refresh(run)
+        return run
+    except PermissionError as exc:
+        db.rollback()
+        raise HTTPException(403, str(exc)) from exc
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc)) from exc
+    except Exception:
+        db.rollback()
+        raise
 
 
 @router.post("/budgets", response_model=BudgetResponse, status_code=201, dependencies=[Depends(require_permission("enterprise.write"))])
