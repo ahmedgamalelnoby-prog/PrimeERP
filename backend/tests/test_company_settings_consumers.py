@@ -173,3 +173,51 @@ def test_automatic_integration_sync_worker_runs_a_claimed_connection(monkeypatch
     monkeypatch.setattr(worker, "full_sync", lambda db, connection_id: {"ok": connection_id})
     result = worker.run_once(lambda: sessions.pop(0))
     assert result == {"claimed": 1, "succeeded": 1, "failed": 0}
+
+
+def test_integration_worker_checks_later_candidates_without_holding_prior_row_locks(monkeypatch):
+    from types import SimpleNamespace
+    from app.modules.integrations import worker
+
+    first = SimpleNamespace(id=1, company_id=10, provider="salla", is_active=True, last_sync_at=None)
+    second = SimpleNamespace(id=2, company_id=20, provider="salla", is_active=True, last_sync_at=None)
+
+    class Rows:
+        def all(self):
+            return [1, 2]
+
+    class FakeDB:
+        def __init__(self):
+            self.scalar_calls = 0
+            self.rollbacks = 0
+            self.commits = 0
+
+        def scalars(self, _statement):
+            return Rows()
+
+        def scalar(self, _statement):
+            self.scalar_calls += 1
+            return first if self.scalar_calls == 1 else second
+
+        def rollback(self):
+            self.rollbacks += 1
+
+        def commit(self):
+            self.commits += 1
+
+        def refresh(self, _row):
+            pass
+
+    db = FakeDB()
+    monkeypatch.setattr(
+        worker,
+        "integration_sync_due",
+        lambda _db, company_id, *_args, **_kwargs: company_id == 20,
+    )
+    claimed = worker.claim_due_connection(
+        db, now=datetime(2026, 10, 22, 10, 0, tzinfo=timezone.utc)
+    )
+    assert claimed is second
+    assert db.scalar_calls == 2
+    assert db.rollbacks == 1
+    assert db.commits == 1
