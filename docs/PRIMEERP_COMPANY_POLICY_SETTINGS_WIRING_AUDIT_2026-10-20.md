@@ -505,3 +505,11 @@ Do not promote these seven settings until their owning workflows, tenant/company
 - Updated the treasury cheque form's cheque date and due date defaults to use the shared `getLocalISODate()` helper, avoiding UTC date rollover in local date inputs.
 - The cheque date values remain ISO calendar dates in the API payload; company display formatting is still used for the cheque due-date column.
 - Validation status: source committed; frontend typecheck/build and automated CI results remain unconfirmed.
+
+
+## Bank reconciliation local date-input defaults — 2026-10-22
+
+- Updated bank reconciliation statement period dates and bank transaction date defaults to use the shared local-calendar date helper rather than UTC ISO slicing.
+- Date-only values continue to be sent as ISO calendar dates to the API; statement period-end and transaction-date display remain company-format aware.
+- Follow-up review found that financial report date filters are submitted as date-only values and do not render date output in the inspected page. The reports delivery schedule displays `next_run_at` as a timestamp, so it should retain timestamp/timezone semantics rather than be treated as a calendar-only date.
+- Validation status: source committed; typecheck/build and automated checks remain unconfirmed.
