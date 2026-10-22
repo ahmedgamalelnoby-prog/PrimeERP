@@ -54,7 +54,7 @@ _RAW = [
     ("inventory.valuation_method","inventory","Inventory","enum","fifo","Default costing method for new inventory items; existing items are unchanged",["fifo","moving_average","standard_cost"],"runtime"),
     ("inventory.require_warehouse","inventory","Inventory","bool",True,"Require warehouse on stock transactions",None,"runtime"),
     ("inventory.require_bin_location","inventory","Inventory","bool",False,"Require a storage/bin location",None,"runtime"),
-    ("inventory.auto_reserve_sales_orders","inventory","Inventory","bool",False,"Reserve stock on sales order confirmation",None,"runtime"),
+    ("inventory.auto_reserve_sales_orders","inventory","Inventory","bool",False,"Reserve stock on sales order confirmation; order confirmation is not yet wired to safe reservation consumption",None,"catalog"),
     ("inventory.allow_below_cost_sale","inventory","Inventory","bool",False,"Allow sale below cost only with the dedicated override permission and an audit event",None,"runtime"),
     ("inventory.expiry_tracking_required","inventory","Inventory","bool",False,"Require expiry dates for perishable/batch items",None,"runtime"),
     ("inventory.serial_tracking_default","inventory","Inventory","bool",False,"Default serial tracking for eligible items",None,"runtime"),
@@ -77,7 +77,7 @@ _RAW = [
     ("pos.allow_discount_without_approval","pos","Point of Sale","bool",False,"Allow cashier discounts without approval",None,"runtime"),
     ("pos.max_discount_pct_without_approval","pos","Point of Sale","number",0,"Maximum discount without approval",None,"runtime"),
     # Manufacturing / service / integrations
-    ("manufacturing.require_work_order","manufacturing","Manufacturing","bool",True,"Require work order for production",None,"runtime"),
+    ("manufacturing.require_work_order","manufacturing","Manufacturing","bool",True,"Require work order for production; enforcement at every production entry point is not yet verified",None,"catalog"),
     ("manufacturing.allow_overproduction","manufacturing","Manufacturing","bool",False,"Allow production above planned quantity",None,"runtime"),
     ("crm.duplicate_customer_check","crm","CRM","bool",True,"Warn/block likely duplicate customers",None,"runtime"),
     ("integrations.auto_sync_enabled","integrations","Integrations","bool",False,"Enable automatic sync for configured Salla integrations; the scheduled integration worker gates automatic runs while manual sync remains available",None,"runtime"),
