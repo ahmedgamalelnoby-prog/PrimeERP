@@ -1,8 +1,11 @@
 from datetime import date
 from decimal import Decimal
 
+import pytest
+from pydantic import ValidationError
+
 from app.modules.inventory.items.models import InventoryItem
-from app.modules.inventory.items.schemas import InventoryItemCreate, InventoryItemResponse
+from app.modules.inventory.items.schemas import InventoryItemCreate, InventoryItemResponse, InventoryItemUpdate
 from app.modules.inventory.stock_moves.models import InventoryStockMove
 from app.modules.inventory.stock_moves.schemas import StockMoveCreate
 
@@ -32,3 +35,14 @@ def test_stock_move_persists_lot_serial_and_expiry_identity():
     assert move.lot_number == "LOT-2026-01"
     assert move.serial_number == "SER-0001"
     assert move.expiry_date == date(2027, 1, 31)
+
+
+@pytest.mark.parametrize("field", ["batch_tracking", "serial_tracking", "expiry_tracking"])
+def test_inventory_item_update_rejects_null_tracking_flags(field):
+    with pytest.raises(ValidationError):
+        InventoryItemUpdate.model_validate({field: None})
+
+
+def test_inventory_item_update_accepts_explicit_tracking_boolean():
+    update = InventoryItemUpdate.model_validate({"batch_tracking": False})
+    assert update.batch_tracking is False
