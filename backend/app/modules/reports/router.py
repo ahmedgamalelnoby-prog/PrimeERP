@@ -20,6 +20,8 @@ from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.saas.entitlements import require_module
 from app.modules.reports.models import ReportDefinition, ReportDelivery
+from app.modules.notifications.router import send_notification
+from app.modules.notifications.schemas import SendNotificationRequest
 from app.modules.accounting.reports.service import financial_report_service
 from app.modules.reports.worker import PROVIDERS, calculate_next_run
 from app.modules.platform.module_registry import REGISTRY_VERSION, knowledge_context
@@ -138,10 +140,22 @@ def preview_report(payload: ReportPayload, current_user: User = Depends(get_curr
 @router.post("/deliver")
 def deliver_report(request: DeliveryRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict[str, Any]:
     _company_for_user(db, request.company_id, current_user)
-    if request.channel == "email":
-        _send_email(request.destination, request.title, request.body)
-        return {"status": "sent", "channel": "email"}
-    return {"status": "sent", "channel": "whatsapp", "provider_reference": _send_whatsapp(request.destination, request.body)}
+    result = send_notification(
+        SendNotificationRequest(
+            company_id=request.company_id,
+            channel=request.channel,
+            destination=request.destination,
+            title=request.title,
+            body=request.body,
+        ),
+        db=db,
+        user=current_user,
+    )
+    if result.get("failed_count", 0):
+        raise HTTPException(status_code=502, detail="Report delivery failed; inspect notification delivery log")
+    delivery = (result.get("deliveries") or [{}])[0]
+    return {"status": "sent", "channel": request.channel, "provider_reference": delivery.get("provider_reference"),
+            "delivery_id": delivery.get("id")}
 
 
 @router.post("/schedules", status_code=201)
