@@ -108,6 +108,16 @@ export function formatCompanyDate(value: string, format: CompanyDateFormat = get
   return `${formatted}${suffix}`;
 }
 
+/** Format a timestamp using the browser's existing local-time semantics, but the company's date ordering. */
+export function formatCompanyDateTime(value: string, format: CompanyDateFormat = getCompanyDateFormat(), locale = "ar-EG"): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const localDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  const formattedDate = formatCompanyDate(localDate, format);
+  const formattedTime = date.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
+  return `${formattedDate} ${formattedTime}`;
+}
+
 export function isCompanyDateFormat(value: unknown): value is CompanyDateFormat {
   return typeof value === "string" && ALLOWED_FORMATS.includes(value as CompanyDateFormat);
 }
