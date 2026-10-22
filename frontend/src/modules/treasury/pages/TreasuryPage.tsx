@@ -71,6 +71,7 @@ export default function TreasuryPage() {
 
   useEffect(() => { void load(); }, [companyId]);
   useEffect(() => { if (companyDate) { setDate(current => current || companyDate); setDue(current => current || companyDate); } }, [companyDate]);
+  useEffect(() => { if (clockError) setError(clockError); }, [clockError]);
 
   async function create(e: FormEvent) {
     e.preventDefault();
