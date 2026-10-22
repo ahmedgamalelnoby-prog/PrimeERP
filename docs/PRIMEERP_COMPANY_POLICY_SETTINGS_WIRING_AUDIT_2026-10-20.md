@@ -513,3 +513,10 @@ Do not promote these seven settings until their owning workflows, tenant/company
 - Date-only values continue to be sent as ISO calendar dates to the API; statement period-end and transaction-date display remain company-format aware.
 - Follow-up review found that financial report date filters are submitted as date-only values and do not render date output in the inspected page. The reports delivery schedule displays `next_run_at` as a timestamp, so it should retain timestamp/timezone semantics rather than be treated as a calendar-only date.
 - Validation status: source committed; typecheck/build and automated checks remain unconfirmed.
+
+
+## AR/AP aging local date default — 2026-10-22
+
+- Updated `frontend/src/modules/accounting/pages/ARAgingPage.tsx` to initialize the “as of” date with the shared `getLocalISODate` helper rather than slicing `toISOString()`. This prevents UTC conversion from selecting the previous/next calendar date near local midnight.
+- API date-only contract remains `YYYY-MM-DD`; aging row document/due dates continue using the company date-format helper.
+- Validation status: source change committed; automated CI and local frontend/backend tests have not been confirmed in this turn.
