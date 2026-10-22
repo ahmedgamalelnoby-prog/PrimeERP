@@ -81,6 +81,11 @@ class AttendanceCreate(BaseModel):
         return self
 
 
+class AttendanceCheckOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    check_out_time: datetime
+
+
 class AttendanceCorrectionCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     check_in_time: datetime
