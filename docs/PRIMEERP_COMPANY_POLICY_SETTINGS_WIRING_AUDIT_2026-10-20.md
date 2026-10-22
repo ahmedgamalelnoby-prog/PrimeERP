@@ -584,3 +584,13 @@ Do not promote these seven settings until their owning workflows, tenant/company
 - Extracted timezone conversion to `company_clock_payload`; added unit tests for timezone date rollover, naive datetime rejection, and invalid timezone rejection.
 - Important limitation: this endpoint uses the application host's system clock. The host/VM/container must have correct time synchronization (NTP/host clock); an API cannot compensate for a wrong server clock without a trusted external time source.
 - Frontend date-input defaults have not yet been migrated to fetch this endpoint, so existing `getLocalISODate()` still depends on the device clock until the client-side integration is implemented. Backend tests/build and runtime verification have not been run in this session.
+
+
+## Device clock independence — company server clock integration — 2026-10-22
+
+- Added `useCompanyClockDate(companyId?)` in `frontend/src/utils/format-date.ts`. It requests the authenticated `GET /company-settings/clock` endpoint and accepts only a valid ISO calendar date returned as `company_date`.
+- It deliberately does **not** fall back to the device clock. If the company is not selected, access is denied, the API is offline, or the response is invalid, it returns an empty date and an error; transaction forms remain blank/blocked rather than silently using an unreliable date.
+- Migrated date defaults for sales documents, purchase documents, journal entries, HR hire/leave/attendance forms, treasury cheque dates, bank reconciliation statement/line dates, shipping settlements, and the AR/AP aging “as of” date. POS checkout now uses the company server date and refuses to queue/submit a sale when that date cannot be obtained.
+- Existing date-only values remain `YYYY-MM-DD` for HTML date inputs and API payloads; company display formatting remains a separate concern.
+- **Clock trust boundary:** the endpoint returns the application server/container clock converted to the configured company timezone. This removes dependence on a user's incorrect device clock, but it cannot correct a wrong server clock. Host/container time synchronization (NTP or equivalent) must be monitored. An external trusted time provider would be a separate infrastructure decision.
+- Validation: source changes committed; frontend build, unit tests, API authorization, and runtime behavior still require verification. Do not consider the date-format setting fully wired across every report/export based on this clock work alone.
