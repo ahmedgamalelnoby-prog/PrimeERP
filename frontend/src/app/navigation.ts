@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { BadgeDollarSign, Banknote, BarChart3, Boxes, Building2, Calculator, CalendarRange, CheckSquare, ClipboardCheck, Contact, FileCheck2, FileText, Gauge, Hotel, Landmark, LayoutDashboard, Package, Settings, ShieldCheck, SlidersHorizontal, ShoppingCart, Store, Truck, UserCog, Users, UsersRound, Wallet, Warehouse } from "lucide-react";
+import { BadgeDollarSign, Banknote, BarChart3, Bell, Boxes, Building2, Calculator, CalendarRange, CheckSquare, ClipboardCheck, Contact, FileCheck2, FileText, Gauge, Hotel, Landmark, LayoutDashboard, Package, Settings, ShieldCheck, SlidersHorizontal, ShoppingCart, Store, Truck, UserCog, Users, UsersRound, Wallet, Warehouse } from "lucide-react";
 
 export type NavigationItemType = "item" | "group" | "separator";
 export interface NavigationItem { id:string; label:string; labelAr:string; type:NavigationItemType; path?:string; icon?:LucideIcon; children?:NavigationItem[]; permission?:string; module?:string; visible?:boolean; disabled?:boolean; isNew?:boolean; comingSoon?:boolean; order?:number; }
@@ -55,6 +55,7 @@ export const navigationItems: NavigationItem[] = [
   {id:"plans",label:"Plans & Entitlements",labelAr:"الباقات والاستحقاقات",type:"item",path:"/platform/plans",icon:BadgeDollarSign,permission:"plans.view",module:"saas",visible:true,order:2},
  ]},
  {id:"reports",label:"Reports",labelAr:"التقارير",type:"item",path:"/reports",icon:BarChart3,permission:"reports.view",module:"reports",visible:true,order:14},
+ {id:"notifications",label:"Messages & Notifications",labelAr:"الرسائل والإشعارات",type:"item",path:"/notifications",icon:Bell,permission:"company.access",module:"settings",visible:true,order:14},
  {id:"settings",label:"Settings",labelAr:"الإعدادات",type:"item",path:"/settings",icon:Settings,permission:"settings.view",module:"settings",visible:true,order:15},
  {id:"company-policies",label:"Company Policies",labelAr:"سياسات الشركة",type:"item",path:"/settings/company-policies",icon:SlidersHorizontal,permission:"company.write",module:"settings",visible:true,order:16},
 ];
