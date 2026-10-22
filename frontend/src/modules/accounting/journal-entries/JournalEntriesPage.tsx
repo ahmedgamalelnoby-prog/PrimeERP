@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import client from "@/shared/api/client";
 import PageHeader from "@/components/layout/PageHeader";
-import { formatCompanyDate, getLocalISODate, useCompanyDateFormat } from "@/utils/format-date";
+import { formatCompanyDate, useCompanyClockDate, useCompanyDateFormat } from "@/utils/format-date";
 
 
 
@@ -36,6 +36,7 @@ const statusLabels: Record<string, string> = {
 export default function JournalEntriesPage() {
   const [companyId, setCompanyId] = useState(getStoredCompanyId);
   const dateFormat = useCompanyDateFormat(companyId);
+  const { companyDate, error: clockError } = useCompanyClockDate(companyId);
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [journals, setJournals] = useState<JournalOption[]>([]);
   const [accounts, setAccounts] = useState<AccountOption[]>([]);
@@ -51,7 +52,7 @@ export default function JournalEntriesPage() {
   const [toDate, setToDate] = useState("");
   const [details, setDetails] = useState<JournalEntry | null>(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [createForm, setCreateForm] = useState({ branchId: "", journalId: "", fiscalYearId: "", periodId: "", entryNumber: "", entryDate: getLocalISODate(), description: "", debitAccountId: "", creditAccountId: "", amount: "" });
+  const [createForm, setCreateForm] = useState({ branchId: "", journalId: "", fiscalYearId: "", periodId: "", entryNumber: "", entryDate: "", description: "", debitAccountId: "", creditAccountId: "", amount: "" });
   const [createBusy, setCreateBusy] = useState(false);
 
   const loadEntries = async () => {
@@ -69,6 +70,10 @@ export default function JournalEntriesPage() {
       setError(reason instanceof Error ? reason.message : "تعذر تحميل البيانات");
     } finally { setLoading(false); }
   };
+
+  useEffect(() => {
+    if (companyDate) setCreateForm(current => current.entryDate ? current : { ...current, entryDate: companyDate });
+  }, [companyDate]);
 
   useEffect(() => {
     void loadEntries();
