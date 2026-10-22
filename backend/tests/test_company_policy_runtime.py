@@ -494,3 +494,56 @@ def test_manufacturing_overproduction_policy_controls_work_order_completion(
             user_id=42,
         )
 
+
+
+@pytest.mark.parametrize(
+    ("movement_type", "source_module", "source_entity", "source_id"),
+    [
+        ("production_issue", None, None, None),
+        ("production_receipt", "manual", "work_order_output", "9"),
+    ],
+)
+def test_required_work_order_policy_blocks_unlinked_production_stock_moves(
+    monkeypatch, movement_type, source_module, source_entity, source_id
+):
+    from app.modules.inventory.stock_moves import service as stock_move_module
+
+    monkeypatch.setattr(
+        stock_move_module,
+        "get_company_setting",
+        lambda _db, _company_id, key: True if key == "manufacturing.require_work_order" else None,
+    )
+    payload = SimpleNamespace(
+        company_id=7,
+        movement_type=movement_type,
+        source_module=source_module,
+        source_entity=source_entity,
+        source_id=source_id,
+    )
+
+    with pytest.raises(ValueError, match="released manufacturing work order"):
+        stock_move_module.InventoryStockMoveService._validate_required_work_order(object(), payload)
+
+
+def test_required_work_order_policy_rejects_nonexistent_work_order_material_line(monkeypatch):
+    from app.modules.inventory.stock_moves import service as stock_move_module
+
+    class FakeDB:
+        def execute(self, _statement):
+            return SimpleNamespace(first=lambda: None)
+
+    monkeypatch.setattr(
+        stock_move_module,
+        "get_company_setting",
+        lambda _db, _company_id, key: key == "manufacturing.require_work_order",
+    )
+    payload = SimpleNamespace(
+        company_id=7,
+        movement_type="production_issue",
+        source_module="manufacturing",
+        source_entity="work_order_material",
+        source_id="999999",
+    )
+
+    with pytest.raises(ValueError, match="released company work order"):
+        stock_move_module.InventoryStockMoveService._validate_required_work_order(FakeDB(), payload)
