@@ -562,3 +562,10 @@ Do not promote these seven settings until their owning workflows, tenant/company
 - `frontend/src/modules/hr/pages/HrPage.tsx` now uses the shared local date helper for date-only leave defaults and guards active-company storage reads; unavailable storage results in no selected company.
 - `frontend/src/modules/pos/pages/PosPage.tsx` now uses the same local-calendar helper for POS payment dates, preserving the API's date-only ISO contract without UTC rollover.
 - These are incremental date-input fixes; they do not complete the global `general.date_format` display/export migration. CI and local tests remain unconfirmed.
+
+
+## Inventory transaction date-format coverage — 2026-10-22
+
+- `frontend/src/modules/inventory/pages/InventoryTransactionsPage.tsx` now displays the stock movement's date-only `transaction_date` using the shared company date-format hook and formatter; null dates display as an em dash.
+- This extends the date-format migration but does not complete app-wide reports/exports or every date-bearing screen. `general.date_format` remains catalog-only until a wider consumer inventory and verification are complete.
+- Source-level change committed. Frontend build, tests, and runtime verification remain unconfirmed.
