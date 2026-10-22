@@ -569,3 +569,10 @@ Do not promote these seven settings until their owning workflows, tenant/company
 - `frontend/src/modules/inventory/pages/InventoryTransactionsPage.tsx` now displays the stock movement's date-only `transaction_date` using the shared company date-format hook and formatter; null dates display as an em dash.
 - This extends the date-format migration but does not complete app-wide reports/exports or every date-bearing screen. `general.date_format` remains catalog-only until a wider consumer inventory and verification are complete.
 - Source-level change committed. Frontend build, tests, and runtime verification remain unconfirmed.
+
+
+## Shipping settlement local date default — 2026-10-22
+
+- `frontend/src/modules/shipping/pages/ShippingSettlementPage.tsx` now initializes the settlement date with `getLocalISODate()` instead of slicing a UTC ISO timestamp, avoiding local-calendar rollover.
+- The saved/API date remains an ISO date-only value. Existing settlement list display uses the company date formatter.
+- This is an incremental completion of the date-format/date-input pass, not full coverage. CI/build and runtime validation remain unconfirmed.
