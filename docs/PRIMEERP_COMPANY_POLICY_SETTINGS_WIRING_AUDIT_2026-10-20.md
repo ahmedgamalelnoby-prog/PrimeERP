@@ -612,3 +612,12 @@ Do not promote these seven settings until their owning workflows, tenant/company
 - Added backend tests for the three supported formats and invalid stored values.
 - This improves the shared formatter consumers but does not claim every date-bearing page, report, export, or printed document has been migrated. Host/server clock accuracy still depends on NTP; browser device time is not used for migrated date-only defaults.
 - Build and automated test results are pending confirmation.
+
+
+## Device-clock independence for fiscal-year defaults — 2026-10-22
+
+- `frontend/src/modules/accounting/pages/FiscalYearsPage.tsx` no longer seeds fiscal-year code, labels, or start/end dates from `new Date().getFullYear()` on the user's device.
+- Defaults are populated only after `useCompanyClockDate(companyId)` returns a validated `company_date` from the authenticated backend endpoint, which computes the date in the selected company's configured timezone.
+- If the clock endpoint fails, the page surfaces the clock error and leaves defaults blank rather than silently trusting an incorrect device clock; users can still enter values manually.
+- The backend endpoint uses the application host's UTC clock, so reliable host NTP/time synchronization is still an operational prerequisite. This protects against a wrong client/device clock; it cannot correct a wrong server clock.
+- No local frontend build or runtime test was performed in this session; GitHub Actions is still pending/in progress at the time of this change.
