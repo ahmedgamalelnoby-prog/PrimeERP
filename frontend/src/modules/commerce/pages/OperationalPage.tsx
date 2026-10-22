@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import client from "@/shared/api/client";
 import "@/shared/api/interceptors";
-import { formatCompanyDate, getCompanyDateFormat, isCompanyDateFormat, setCompanyDateFormat, type CompanyDateFormat } from "@/utils/format-date";
+import { formatCompanyDate, getCompanyDateFormat, getLocalISODate, isCompanyDateFormat, setCompanyDateFormat, type CompanyDateFormat } from "@/utils/format-date";
 
 type Row = Record<string, unknown>;
 type RouteConfig = { title: string; endpoint: string; kind: "partners" | "documents" | "shipping"; partnerType?: "customer" | "vendor"; documentKind?: "sale" | "purchase"; documentType?: string };
@@ -18,10 +18,14 @@ const config: Record<string, RouteConfig> = {
 };
 
 function selectedCompanyId(): number | null {
-  const raw = localStorage.getItem("company_id");
-  if (!raw) return null;
-  const value = Number(raw);
-  return Number.isInteger(value) && value > 0 ? value : null;
+  try {
+    const raw = localStorage.getItem("company_id");
+    if (!raw) return null;
+    const value = Number(raw);
+    return Number.isInteger(value) && value > 0 ? value : null;
+  } catch {
+    return null;
+  }
 }
 
 export default function OperationalPage() {
@@ -45,7 +49,7 @@ export default function OperationalPage() {
   const [paymentMethod, setPaymentMethod] = useState("bank");
   const [chequeNumber, setChequeNumber] = useState("");
   const [chequeBank, setChequeBank] = useState("");
-  const [chequeDueDate, setChequeDueDate] = useState(new Date().toISOString().slice(0, 10));
+  const [chequeDueDate, setChequeDueDate] = useState(getLocalISODate());
   const [payments, setPayments] = useState<Row[]>([]);
   const [dateFormat, setDateFormat] = useState<CompanyDateFormat>(() => getCompanyDateFormat(selectedCompanyId()));
   const companyId = selectedCompanyId();
@@ -103,7 +107,7 @@ export default function OperationalPage() {
       await client.post(`/commerce/${isSale ? "sales" : "purchases"}/${id}/payments`, {
         company_id: companyId,
         document_id: id,
-        payment_date: new Date().toISOString().slice(0, 10),
+        payment_date: getLocalISODate(),
         amount: Number(paymentAmount),
         method: paymentMethod,
         ...(paymentMethod === "cheque" ? { cheque_number: chequeNumber, cheque_bank_name: chequeBank || null, cheque_due_date: chequeDueDate } : {}),
@@ -121,7 +125,7 @@ export default function OperationalPage() {
     try {
       await client.post(`/commerce/payments/${paymentId}/reverse`, {
         company_id: companyId,
-        reversal_date: new Date().toISOString().slice(0, 10),
+        reversal_date: getLocalISODate(),
       });
       await Promise.all([load(), loadPayments()]);
     } catch (e: any) { setError(e?.response?.data?.detail || "تعذر عكس الدفعة"); }
@@ -165,7 +169,7 @@ export default function OperationalPage() {
           partner_id: Number(partnerId),
           document_type: type,
           number,
-          document_date: new Date().toISOString().slice(0, 10),
+          document_date: getLocalISODate(),
           ...(sourceOrderId ? { source_order_id: Number(sourceOrderId) } : {}),
           ...(type === "bill" && receiptIds.trim() ? { receipt_ids: receiptIds.split(",").map(value => Number(value.trim())).filter(value => Number.isInteger(value) && value > 0) } : {}),
           lines: [{
