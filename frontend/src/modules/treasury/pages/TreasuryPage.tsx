@@ -35,7 +35,7 @@ export default function TreasuryPage() {
   const [number, setNumber] = useState("");
   const [bank, setBank] = useState("");
   const [date, setDate] = useState("");
-  const [due, setDue] = useState(getLocalISODate);
+  const [due, setDue] = useState("");
   const [amount, setAmount] = useState("");
   const [saving, setSaving] = useState(false);
 
