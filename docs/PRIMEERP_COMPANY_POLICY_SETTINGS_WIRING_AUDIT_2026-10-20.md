@@ -576,3 +576,11 @@ Do not promote these seven settings until their owning workflows, tenant/company
 - `frontend/src/modules/shipping/pages/ShippingSettlementPage.tsx` now initializes the settlement date with `getLocalISODate()` instead of slicing a UTC ISO timestamp, avoiding local-calendar rollover.
 - The saved/API date remains an ISO date-only value. Existing settlement list display uses the company date formatter.
 - This is an incremental completion of the date-format/date-input pass, not full coverage. CI/build and runtime validation remain unconfirmed.
+
+
+## Authoritative company clock endpoint — 2026-10-22
+
+- Added `GET /company-settings/clock?company_id=<id>`, protected by `company.access` and the same active-company/tenant validation as company settings. It returns UTC server time, configured company timezone, and the company-local calendar date.
+- Extracted timezone conversion to `company_clock_payload`; added unit tests for timezone date rollover, naive datetime rejection, and invalid timezone rejection.
+- Important limitation: this endpoint uses the application host's system clock. The host/VM/container must have correct time synchronization (NTP/host clock); an API cannot compensate for a wrong server clock without a trusted external time source.
+- Frontend date-input defaults have not yet been migrated to fetch this endpoint, so existing `getLocalISODate()` still depends on the device clock until the client-side integration is implemented. Backend tests/build and runtime verification have not been run in this session.
