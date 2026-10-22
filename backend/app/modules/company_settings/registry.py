@@ -64,7 +64,7 @@ _RAW = [
     ("hr.require_attendance_approval","hr","Human Resources","bool",True,"Require a separate decision before applying attendance corrections",None,"runtime"),
     ("hr.overtime_requires_approval","hr","Human Resources","bool",True,"Require a separate decision for overtime hours recorded above standard daily hours",None,"runtime"),
     ("hr.leave_requires_approval","hr","Human Resources","bool",True,"Require a separate approval before leave is confirmed and deducted from balance",None,"runtime"),
-    ("hr.payroll_requires_approval","hr","Human Resources","bool",True,"Require payroll approval before posting; payroll posting/approval workflow is not implemented yet",None,"catalog"),
+    ("hr.payroll_requires_approval","hr","Human Resources","bool",True,"Require payroll approval before a payroll run can be marked ready to post",None,"runtime"),
     ("hr.allow_negative_leave_balance","hr","Human Resources","bool",False,"Allow approved paid leave to consume more days than the configured balance",None,"runtime"),
     ("hr.default_work_hours_per_day","hr","Human Resources","number",8,"Daily standard hours deducted from recorded attendance when calculating eligible overtime",None,"runtime"),
     ("hr.biometric_sync_interval_minutes","hr","Human Resources","int",15,"Target sync interval for biometric integrations; scheduler/connector must consume this value",None,"catalog"),
