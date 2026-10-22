@@ -1,8 +1,8 @@
 """Company-policy-driven automatic integration sync worker.
 
 Only active Salla connections are polled. The connection row lock and a committed
-last_sync_at claim prevent concurrent worker replicas from syncing the same
-connection at once. Manual sync endpoints remain independent of this policy.
+last_sync_at claim reduce duplicate claims by worker replicas within the
+configured interval. Manual sync requests remain independently callable. Manual sync endpoints remain independent of this policy.
 """
 from __future__ import annotations
 
