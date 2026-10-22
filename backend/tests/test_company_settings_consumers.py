@@ -104,3 +104,72 @@ def test_company_policy_intervals_must_be_positive(key, value):
 )
 def test_company_policy_intervals_accept_positive_values(key, value):
     assert validate_value(key, value) == value
+
+
+
+def test_automatic_integration_sync_worker_skips_when_policy_is_disabled(monkeypatch):
+    from types import SimpleNamespace
+    from app.modules.integrations import worker
+
+    class Rows:
+        def all(self):
+            return [SimpleNamespace(
+                id=9, company_id=4, provider="salla", is_active=True, last_sync_at=None
+            )]
+
+    class FakeDB:
+        def scalars(self, _statement):
+            return Rows()
+
+        def rollback(self):
+            self.rolled_back = True
+
+        def close(self):
+            pass
+
+    db = FakeDB()
+    monkeypatch.setattr(worker, "integration_sync_due", lambda *args, **kwargs: False)
+    result = worker.run_once(lambda: db)
+    assert result == {"claimed": 0, "succeeded": 0, "failed": 0}
+    assert getattr(db, "rolled_back", False)
+
+
+def test_automatic_integration_sync_worker_runs_a_claimed_connection(monkeypatch):
+    from types import SimpleNamespace
+    from app.modules.integrations import worker
+
+    connection = SimpleNamespace(
+        id=9, company_id=4, provider="salla", is_active=True, last_sync_at=None
+    )
+
+    class Rows:
+        def all(self):
+            return [connection]
+
+    class FakeDB:
+        def __init__(self):
+            self.committed = False
+
+        def scalars(self, _statement):
+            return Rows()
+
+        def scalar(self, _statement):
+            return connection
+
+        def commit(self):
+            self.committed = True
+
+        def refresh(self, _row):
+            pass
+
+        def rollback(self):
+            pass
+
+        def close(self):
+            pass
+
+    sessions = [FakeDB(), FakeDB()]
+    monkeypatch.setattr(worker, "integration_sync_due", lambda *args, **kwargs: True)
+    monkeypatch.setattr(worker, "full_sync", lambda db, connection_id: {"ok": connection_id})
+    result = worker.run_once(lambda: sessions.pop(0))
+    assert result == {"claimed": 1, "succeeded": 1, "failed": 0}
