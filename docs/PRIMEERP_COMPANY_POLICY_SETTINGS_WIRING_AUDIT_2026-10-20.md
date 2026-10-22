@@ -594,3 +594,12 @@ Do not promote these seven settings until their owning workflows, tenant/company
 - Existing date-only values remain `YYYY-MM-DD` for HTML date inputs and API payloads; company display formatting remains a separate concern.
 - **Clock trust boundary:** the endpoint returns the application server/container clock converted to the configured company timezone. This removes dependence on a user's incorrect device clock, but it cannot correct a wrong server clock. Host/container time synchronization (NTP or equivalent) must be monitored. An external trusted time provider would be a separate infrastructure decision.
 - Validation: source changes committed; frontend build, unit tests, API authorization, and runtime behavior still require verification. Do not consider the date-format setting fully wired across every report/export based on this clock work alone.
+
+
+## Server-authoritative company date defaults — 2026-10-22
+
+- Date-only defaults on the migrated sales, purchasing, HR, treasury, bank reconciliation, AR/AP aging, and POS screens are populated from the authenticated `GET /company-settings/clock` endpoint using the company's configured IANA timezone. The frontend clock hook does not fall back to the device clock when the server cannot be reached; date defaults remain blank and an error is surfaced.
+- Fixed a backend wiring defect in `backend/app/modules/company_settings/router.py`: the clock endpoint referenced `get_company_setting` and `company_clock_payload` without importing/defining them. It now reads the timezone through the shared typed `policy` consumer and imports the existing `company_clock_payload` implementation.
+- Added a focused test for the company clock endpoint's timezone-policy wiring in `backend/tests/test_company_settings_consumers.py`.
+- Important limit: this protects against an incorrect device clock, not an incorrect application-server/host clock. The host/container clock must be synchronized with NTP; the endpoint reports application-server time and does not independently verify an external time source.
+- Automated test/build status has not yet been confirmed for this commit.
