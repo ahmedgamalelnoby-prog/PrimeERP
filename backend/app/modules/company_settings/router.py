@@ -1,6 +1,4 @@
 from datetime import datetime, timezone
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy import select
@@ -81,16 +79,10 @@ def get_company_clock(
     company = _company(db, company_id, user)
     configured_timezone = get_company_setting(db, company.id, "general.timezone")
     try:
-        company_tz = ZoneInfo(configured_timezone)
-    except (ZoneInfoNotFoundError, TypeError):
-        raise HTTPException(status_code=500, detail="Invalid company timezone configuration")
-    now_utc = datetime.now(timezone.utc)
-    return {
-        "company_id": company.id,
-        "server_time_utc": now_utc.isoformat(),
-        "company_timezone": configured_timezone,
-        "company_date": now_utc.astimezone(company_tz).date().isoformat(),
-    }
+        clock = company_clock_payload(datetime.now(timezone.utc), configured_timezone)
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail="Invalid company timezone configuration") from exc
+    return {"company_id": company.id, **clock}
 
 
 @router.put("", dependencies=[Depends(require_permission("company.write"))])
