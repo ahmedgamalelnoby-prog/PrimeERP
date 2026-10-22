@@ -20,6 +20,7 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
     assert runtime_keys == {
         "inventory.allow_negative_stock",
         "inventory.allow_below_cost_sale",
+        "inventory.auto_reserve_sales_orders",
         "accounting.require_journal_approval",
         "general.default_language",
         "general.timezone",
@@ -93,7 +94,6 @@ def test_policies_without_a_safe_workflow_consumer_remain_catalog_only():
         "hr.biometric_sync_interval_minutes",
         "workflow.approval_mode",
         "workflow.escalation_after_hours",
-        "inventory.auto_reserve_sales_orders",
         "pos.allow_open_cash_drawer",
     }
     assert all(BY_KEY[key]["status"] == "catalog" for key in catalog_only_keys)
