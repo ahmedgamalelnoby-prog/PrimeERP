@@ -18,7 +18,6 @@ from app.modules.identity.models import User
 from app.modules.accounting.chart_of_accounts.models import AccountCombination
 from app.modules.audit.service import record_audit_event
 from app.modules.company_settings.consumers.approvals import payroll_approval_required
-from app.modules.identity.models import User
 from app.modules.operations.approvals.models import ApprovalRequest
 from app.modules.operations.approvals.schemas import ApprovalDecision
 from app.modules.operations.approvals.service import create_approval_request, decide_approval
