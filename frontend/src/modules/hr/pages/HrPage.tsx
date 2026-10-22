@@ -257,7 +257,7 @@ export default function HrPage() {
       <h1 className="text-2xl font-bold">الموارد البشرية</h1>
       <p className="mt-1 text-sm text-muted-foreground">ملفات الموظفين، أرصدة الإجازات، ودورة اعتماد الطلبات.</p>
     </header>
-    {error && <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm">{error}</div>}
+    {(error || clockError) && <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm">{error || clockError}</div>}
 
     <div className="grid gap-6 xl:grid-cols-3">
       <form onSubmit={submitEmployee} className="space-y-3 rounded-2xl border bg-card p-5">
