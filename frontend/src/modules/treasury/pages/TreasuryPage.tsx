@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import client from "@/shared/api/client";
-import { formatCompanyDate, getLocalISODate, useCompanyDateFormat } from "@/utils/format-date";
+import { formatCompanyDate, useCompanyClockDate, useCompanyDateFormat } from "@/utils/format-date";
 
 type Cheque = {
   id: number;
@@ -25,6 +25,7 @@ const issuedStatuses = ["issued", "cleared"];
 export default function TreasuryPage() {
   const companyId = cid();
   const dateFormat = useCompanyDateFormat(companyId);
+  const { companyDate, loading: clockLoading, error: clockError } = useCompanyClockDate(companyId);
   const [rows, setRows] = useState<Cheque[]>([]);
   const [withdrawableIds, setWithdrawableIds] = useState<Set<number>>(new Set());
   const [error, setError] = useState("");
@@ -33,7 +34,7 @@ export default function TreasuryPage() {
   const [partnerId, setPartnerId] = useState("");
   const [number, setNumber] = useState("");
   const [bank, setBank] = useState("");
-  const [date, setDate] = useState(getLocalISODate);
+  const [date, setDate] = useState("");
   const [due, setDue] = useState(getLocalISODate);
   const [amount, setAmount] = useState("");
   const [saving, setSaving] = useState(false);
@@ -69,6 +70,7 @@ export default function TreasuryPage() {
   }
 
   useEffect(() => { void load(); }, [companyId]);
+  useEffect(() => { if (companyDate) { setDate(current => current || companyDate); setDue(current => current || companyDate); } }, [companyDate]);
 
   async function create(e: FormEvent) {
     e.preventDefault();
@@ -137,7 +139,7 @@ export default function TreasuryPage() {
           <input required type="date" value={date} onChange={e => setDate(e.target.value)} className="w-full rounded-lg border bg-background px-3 py-2" />
           <input required type="date" value={due} onChange={e => setDue(e.target.value)} className="w-full rounded-lg border bg-background px-3 py-2" />
           <input required type="number" min="0.01" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="المبلغ EGP" className="w-full rounded-lg border bg-background px-3 py-2" />
-          <button disabled={saving || !companyId || Number(amount) <= 0 || !number.trim()} className="w-full rounded-lg bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50">
+          <button disabled={saving || clockLoading || !date || !due || !companyId || Number(amount) <= 0 || !number.trim()} className="w-full rounded-lg bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50">
             {saving ? "جارٍ الحفظ..." : "حفظ الشيك"}
           </button>
         </form>
