@@ -71,7 +71,19 @@ class InventoryStockMoveService:
         if payload.source_module and payload.source_entity and payload.source_id:
             existing = db.scalar(select(InventoryStockMove).where(InventoryStockMove.company_id == payload.company_id, InventoryStockMove.source_module == payload.source_module, InventoryStockMove.source_entity == payload.source_entity, InventoryStockMove.source_id == payload.source_id).with_for_update())
             if existing is not None:
-                same = all([existing.item_id == payload.item_id, existing.variant_id == payload.variant_id, existing.source_location_id == payload.source_location_id, existing.destination_location_id == payload.destination_location_id, Decimal(str(existing.quantity)) == Decimal(str(payload.quantity)), existing.movement_type == payload.movement_type])
+                same = all([
+                    existing.item_id == payload.item_id,
+                    existing.variant_id == payload.variant_id,
+                    existing.source_location_id == payload.source_location_id,
+                    existing.destination_location_id == payload.destination_location_id,
+                    Decimal(str(existing.quantity)) == Decimal(str(payload.quantity)),
+                    Decimal(str(existing.unit_cost)) == Decimal(str(payload.unit_cost)),
+                    existing.movement_type == payload.movement_type,
+                    existing.lot_number == payload.lot_number,
+                    existing.serial_number == payload.serial_number,
+                    existing.expiry_date == payload.expiry_date,
+                    existing.transaction_date == payload.transaction_date,
+                ])
                 if same:
                     return existing
                 raise ValueError("A stock movement already exists for this source reference with different data")
