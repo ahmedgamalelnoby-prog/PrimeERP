@@ -11,6 +11,8 @@ from app.modules.audit.service import record_audit_event
 from app.modules.companies.models import Company
 from app.modules.company_settings.models import CompanySetting
 from app.modules.company_settings.registry import BY_KEY, CATALOG, validate_value
+from app.modules.company_settings.consumers.common import policy
+from app.modules.company_settings.consumers.general import company_clock_payload
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 
@@ -77,7 +79,7 @@ def get_company_clock(
     authoritative application-server time, not a guarantee of external time.
     """
     company = _company(db, company_id, user)
-    configured_timezone = get_company_setting(db, company.id, "general.timezone")
+    configured_timezone = policy(db, company.id, "general.timezone")
     try:
         clock = company_clock_payload(datetime.now(timezone.utc), configured_timezone)
     except ValueError as exc:
