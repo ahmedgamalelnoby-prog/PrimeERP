@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { arApApi, type AgingRow, type AgingSummary } from "../api/arAp.api";
-import { formatCompanyDate, useCompanyDateFormat } from "@/utils/format-date";
+import { formatCompanyDate, getLocalISODate, useCompanyDateFormat } from "@/utils/format-date";
 
-const today=()=>new Date().toISOString().slice(0,10);
+const today = getLocalISODate;
 const money=(v:string|number)=>Number(v||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
 const bucketOrder=["current","1-30","31-60","61-90","91+"];
 
