@@ -59,6 +59,13 @@ class InventoryItemUpdate(BaseModel):
     expiry_tracking: Optional[bool] = None
     is_active: Optional[bool] = None
     description: Optional[str] = None
+    @field_validator("batch_tracking", "serial_tracking", "expiry_tracking", mode="before")
+    @classmethod
+    def tracking_flags_cannot_be_null(cls, value):
+        if value is None:
+            raise ValueError("Tracking flags cannot be null; use true or false")
+        return value
+
     @field_validator("sales_tax_ids", "purchase_tax_ids")
     @classmethod
     def validate_tax_ids(cls, value):
