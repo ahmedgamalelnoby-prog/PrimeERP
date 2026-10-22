@@ -549,3 +549,46 @@ def test_required_work_order_policy_rejects_nonexistent_work_order_material_line
         stock_move_module.InventoryStockMoveService._validate_required_work_order(
             FakeDB(), payload, from_work_order=True
         )
+
+def test_auto_reserve_sales_orders_reserves_each_order_line_on_confirmation(monkeypatch):
+    from app.modules.commerce import service as commerce_service_module
+
+    service = commerce_service_module.commerce_service
+    line = SimpleNamespace(id=12, quantity=Decimal("3"))
+    order = SimpleNamespace(
+        id=50, company_id=7, document_type="order", status="draft",
+        lines=[line],
+    )
+
+    class FakeDB:
+        def scalar(self, _query):
+            return order
+
+        def flush(self):
+            return None
+
+    calls = []
+    monkeypatch.setattr(
+        commerce_service_module,
+        "get_company_setting",
+        lambda _db, _company_id, key: {
+            "sales.require_order_approval": False,
+            "inventory.auto_reserve_sales_orders": True,
+        }.get(key),
+    )
+    monkeypatch.setattr(service, "enforce_credit_limit", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        service,
+        "_reserve_sales_line",
+        lambda _db, **kwargs: calls.append(kwargs),
+    )
+
+    result = service.confirm(FakeDB(), company_id=7, document_id=50, kind="sale")
+
+    assert result is order
+    assert order.status == "confirmed"
+    assert len(calls) == 1
+    assert calls[0]["order"] is order
+    assert calls[0]["line"] is line
+    assert calls[0]["quantity"] == Decimal("3")
+
