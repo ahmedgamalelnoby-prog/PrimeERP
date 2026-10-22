@@ -475,3 +475,11 @@ Do not promote these seven settings until their owning workflows, tenant/company
 - When enabled, a production issue must reference an existing material line belonging to a released work order in the same company; item and source location are checked against that line/order.
 - When enabled, a production receipt must reference a released work order in the same company; output item, variant, and destination location must match the work order.
 - Added policy tests for unlinked production movements and nonexistent material-line references. These are source changes only; the self-hosted Release Gate must pass before the workflow is considered verified.
+
+## Company date-format coverage — 2026-10-22
+
+- Hardened `getCompanyDateFormat` so the entire local-storage read path is guarded; restricted browser contexts fall back to the default format rather than throwing.
+- Applied the company-scoped date-format hook to the Sales and Purchasing document lists and added a visible document-date column to both.
+- Applied the same formatter to HR attendance dates, overtime dates, and leave-request date ranges. Attendance check-in/out timestamps remain formatted separately with the company timezone because they represent instants, not calendar-only dates.
+- This is incremental UI coverage only. Other modules, report layouts, and export formats have not all been migrated; therefore `general.date_format` remains catalog-only until the remaining consumers are covered and verified.
+- GitHub Actions for the latest source change is queued/pending. Frontend typecheck/build and automated tests have not been confirmed successful in this environment.
