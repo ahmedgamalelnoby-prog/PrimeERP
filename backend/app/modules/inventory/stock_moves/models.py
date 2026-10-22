@@ -109,6 +109,26 @@ class InventoryLotBalance(Base):
     )
 
 
+class InventoryLotMoveAllocation(Base):
+    """Immutable audit of lot quantities consumed or received by a posted movement."""
+
+    __tablename__ = "inventory_lot_move_allocations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    stock_move_id = Column(Integer, ForeignKey("inventory_stock_moves.id", ondelete="CASCADE"), nullable=False, index=True)
+    lot_number = Column(String(100), nullable=True)
+    serial_number = Column(String(100), nullable=True)
+    expiry_date = Column(Date, nullable=True)
+    quantity = Column(Numeric(18, 4), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_inventory_lot_move_allocation_quantity"),
+        CheckConstraint("lot_number IS NOT NULL OR serial_number IS NOT NULL", name="ck_inventory_lot_move_allocation_identity"),
+    )
+
+
 class InventoryCostLayer(Base):
     __tablename__ = "inventory_cost_layers"
 
