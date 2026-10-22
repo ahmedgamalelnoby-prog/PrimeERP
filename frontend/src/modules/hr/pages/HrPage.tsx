@@ -27,7 +27,7 @@ const selectedCompany = () => {
 export default function HrPage() {
   const companyId = selectedCompany();
   const dateFormat = useCompanyDateFormat(companyId);
-  const { companyDate, loading: clockLoading, error: clockError } = useCompanyClockDate(companyId);
+  const { companyDate, error: clockError } = useCompanyClockDate(companyId);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
   const [balances, setBalances] = useState<LeaveBalance[]>([]);
@@ -84,6 +84,12 @@ export default function HrPage() {
   }, [companyId]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (!companyDate) return;
+    setAttendanceForm(current => ({ ...current, attendance_date: current.attendance_date || companyDate, check_in_time: current.check_in_time || `${companyDate}T09:00`, check_out_time: current.check_out_time || `${companyDate}T17:00` }));
+    setEmployeeForm(current => ({ ...current, hire_date: current.hire_date || companyDate }));
+    setLeaveForm(current => ({ ...current, start_date: current.start_date || companyDate, end_date: current.end_date || companyDate }));
+  }, [companyDate]);
 
   function displayDateTime(value?: string | null) {
     if (!value) return "—";
