@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import client from "@/shared/api/client";
-import { formatCompanyDate, getLocalISODate, useCompanyDateFormat } from "@/utils/format-date";
+import { formatCompanyDate, useCompanyClockDate, useCompanyDateFormat } from "@/utils/format-date";
 
 type Employee = { id: number; employee_no: string; name: string; is_active: boolean };
 type LeaveRequest = {
@@ -23,11 +23,11 @@ const selectedCompany = () => {
     return null;
   }
 };
-const today = getLocalISODate;
 
 export default function HrPage() {
   const companyId = selectedCompany();
   const dateFormat = useCompanyDateFormat(companyId);
+  const { companyDate, loading: clockLoading, error: clockError } = useCompanyClockDate(companyId);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
   const [balances, setBalances] = useState<LeaveBalance[]>([]);
@@ -38,14 +38,14 @@ export default function HrPage() {
   const [companyTimezone, setCompanyTimezone] = useState("Africa/Cairo");
   const [correctionTarget, setCorrectionTarget] = useState<number | null>(null);
   const [correctionForm, setCorrectionForm] = useState({ check_in_time: "", check_out_time: "", reason: "" });
-  const [attendanceForm, setAttendanceForm] = useState({ employee_id: "", attendance_date: today(), check_in_time: today() + "T09:00", check_out_time: today() + "T17:00" });
+  const [attendanceForm, setAttendanceForm] = useState({ employee_id: "", attendance_date: "", check_in_time: "", check_out_time: "" });
   const [workforce, setWorkforce] = useState<any[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [employeeForm, setEmployeeForm] = useState({ employee_no: "", name: "", hire_date: today(), basic_salary: "0" });
+  const [employeeForm, setEmployeeForm] = useState({ employee_no: "", name: "", hire_date: "", basic_salary: "0" });
   const [balanceForm, setBalanceForm] = useState({ employee_id: "", leave_type: "annual", entitled_days: "0" });
   const [leaveForm, setLeaveForm] = useState({
-    employee_id: "", leave_type: "annual", start_date: today(), end_date: today(), requested_days: "1", reason: "",
+    employee_id: "", leave_type: "annual", start_date: "", end_date: "", requested_days: "1", reason: "",
   });
 
   const load = useCallback(async () => {
