@@ -11,6 +11,15 @@ type Company = { id:number; name:string };
 type Setting = { key:string; module:string; category:string; type:"bool"|"int"|"number"|"string"|"enum"; default:any; value:any; label:string; choices:string[]|null; status:"runtime"|"catalog" };
 type Payload = { company_id:number; company_name:string; categories:string[]; settings:Setting[] };
 
+function getInitialCompanyId(): number {
+  try {
+    const stored = Number(window.localStorage.getItem("company_id"));
+    return Number.isSafeInteger(stored) && stored > 0 ? stored : 0;
+  } catch {
+    return 0;
+  }
+}
+
 const categoryAr:Record<string,string> = {
   General:"الإعدادات العامة", Accounting:"المحاسبة", Taxes:"الضرائب والفاتورة الإلكترونية",
   Sales:"المبيعات والعملاء", Purchasing:"المشتريات والموردون", Inventory:"المخزون والمستودعات",
@@ -27,7 +36,7 @@ const moduleAr:Record<string,string> = {
 
 export default function CompanyPolicySettingsPage() {
   const [companies,setCompanies] = useState<Company[]>([]);
-  const [companyId,setCompanyId] = useState<number>(Number(localStorage.getItem("company_id")) || 0);
+  const [companyId,setCompanyId] = useState<number>(getInitialCompanyId());
   const [payload,setPayload] = useState<Payload|null>(null);
   const [values,setValues] = useState<Record<string,any>>({});
   const [activeCategory,setActiveCategory] = useState("General");
