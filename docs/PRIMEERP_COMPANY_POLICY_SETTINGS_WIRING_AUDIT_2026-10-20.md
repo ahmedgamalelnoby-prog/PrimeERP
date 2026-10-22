@@ -648,3 +648,11 @@ Do not promote these five settings until their owning workflows, tenant/company 
 - Payroll package entry points/models/repository/schemas/router/tests are currently empty files in this branch. A real approval setting cannot be considered wired until a payroll run lifecycle, audited approval decisions, and safe accounting posting/reversal integration are implemented; a boolean helper alone is insufficient.
 - POS has a policy helper for standalone cash-drawer opens but no standalone endpoint/device bridge. Hardware make/model/protocol or a supported POS driver is needed to actually open a physical drawer. An audit-only API would not prove hardware actuation.
 - Source changes above are committed, but no frontend build, backend test suite, migration run, or live Docker verification has been completed in this session. Do not mark the remaining five as fully wired until implementation and tests substantiate it.
+
+
+## Unsupported attendance-source selection guard — 2026-10-22
+
+- The company-settings update endpoint now rejects a requested `hr.attendance_source` value other than `manual` with HTTP 409 until authenticated biometric/mobile/integration ingestion adapters exist.
+- Reason: the existing manual attendance endpoint correctly rejects manual writes when a non-manual source is selected, but no replacement ingestion adapter is currently implemented. Accepting those values could disable attendance entry without providing an alternate path.
+- This is a safe failure guard, not completion of biometric/mobile integrations. `hr.attendance_source` and `hr.biometric_sync_interval_minutes` remain catalog-only; no device connector or sync worker is claimed.
+- No backend tests or Docker runtime checks were executed for this commit in this session; CI must verify it.
