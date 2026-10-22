@@ -18,7 +18,7 @@ def test_company_rounding_policy_modes():
 
 def test_requester_cannot_approve_own_transaction_when_company_policy_disables_it(monkeypatch):
     service = transaction_service_module.transaction_service
-    transaction = SimpleNamespace(company_id=7, tenant_id=3, created_by=42, status="pending")
+    transaction = SimpleNamespace(id=100, company_id=7, tenant_id=3, created_by=42, status="pending")
     monkeypatch.setattr(service, "_get_locked", lambda **_kwargs: transaction)
     monkeypatch.setattr(
         transaction_service_module,
@@ -294,7 +294,7 @@ def test_integration_retry_policy_moves_exhausted_event_to_dead_letter(monkeypat
 
 
 def test_integration_retry_policy_allows_retry_below_company_limit(monkeypatch):
-    from app.modules.integrations import router as integrations_router
+    integrations_router = importlib.import_module("app.modules.integrations.router")
 
     event = SimpleNamespace(
         id=9, status="failed", attempts=2, company_id=7,
@@ -384,7 +384,7 @@ def test_salla_webhook_signature_rejects_missing_signature():
 
 def test_company_webhook_signature_policy_is_enforced_by_public_endpoint(monkeypatch):
     import asyncio
-    from app.modules.integrations import router as integrations_router
+    integrations_router = importlib.import_module("app.modules.integrations.router")
 
     connection = SimpleNamespace(
         id=12,
