@@ -28,6 +28,7 @@ def upgrade():
         sa.CheckConstraint("quantity_on_hand >= 0", name="ck_inventory_lot_balance_nonnegative"),
         sa.CheckConstraint("lot_number IS NOT NULL OR serial_number IS NOT NULL", name="ck_inventory_lot_balance_identity"),
     )
+    op.create_index("ix_inventory_lot_balances_id", "inventory_lot_balances", ["id"])
     for column in ("company_id", "item_id", "variant_id", "location_id", "lot_number", "serial_number", "expiry_date"):
         op.create_index(f"ix_inventory_lot_balances_{column}", "inventory_lot_balances", [column])
     op.create_index(
@@ -47,6 +48,7 @@ def upgrade():
 
 def downgrade():
     op.drop_index("uq_inventory_lot_balance_identity", table_name="inventory_lot_balances")
+    op.drop_index("ix_inventory_lot_balances_id", table_name="inventory_lot_balances")
     for column in ("expiry_date", "serial_number", "lot_number", "location_id", "variant_id", "item_id", "company_id"):
         op.drop_index(f"ix_inventory_lot_balances_{column}", table_name="inventory_lot_balances")
     op.drop_table("inventory_lot_balances")
