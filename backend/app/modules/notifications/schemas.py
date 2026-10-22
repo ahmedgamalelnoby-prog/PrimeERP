@@ -1,4 +1,5 @@
 from typing import Literal
+import re
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -50,6 +51,13 @@ class SendNotificationRequest(BaseModel):
     body: str = Field(default="", max_length=10000)
     context: dict[str, str | int | float | bool | None] = Field(default_factory=dict, max_length=50)
     idempotency_key: str | None = Field(default=None, min_length=8, max_length=120)
+
+    @field_validator("idempotency_key")
+    @classmethod
+    def safe_idempotency_key(cls, value):
+        if value is not None and not re.fullmatch(r"[A-Za-z0-9_.:-]+", value):
+            raise ValueError("Idempotency key may contain only letters, digits, dot, underscore, colon, and hyphen")
+        return value
 
     @field_validator("context")
     @classmethod
