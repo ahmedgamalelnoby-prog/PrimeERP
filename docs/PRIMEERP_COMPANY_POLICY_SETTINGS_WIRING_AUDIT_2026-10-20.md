@@ -555,3 +555,10 @@ Do not promote these seven settings until their owning workflows, tenant/company
 - `frontend/src/modules/commerce/pages/OperationalPage.tsx` now uses the shared local-calendar date helper for document creation, payment dates, payment reversals, and cheque due-date defaults; API date-only fields remain ISO `YYYY-MM-DD` values.
 - The active-company lookup is guarded against blocked/unavailable browser storage and returns no selected company rather than throwing. Existing page guards stop company-scoped operations when no valid company is selected.
 - This improves one shared commerce page used by sales/purchasing operations; it does not complete app-wide `general.date_format` coverage. CI and local tests remain unconfirmed.
+
+
+## Additional local-calendar date defaults — 2026-10-22
+
+- `frontend/src/modules/hr/pages/HrPage.tsx` now uses the shared local date helper for date-only leave defaults and guards active-company storage reads; unavailable storage results in no selected company.
+- `frontend/src/modules/pos/pages/PosPage.tsx` now uses the same local-calendar helper for POS payment dates, preserving the API's date-only ISO contract without UTC rollover.
+- These are incremental date-input fixes; they do not complete the global `general.date_format` display/export migration. CI and local tests remain unconfirmed.
