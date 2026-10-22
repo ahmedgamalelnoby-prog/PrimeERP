@@ -240,3 +240,25 @@ def test_company_clock_rejects_naive_or_invalid_timezone():
         company_clock_payload(datetime(2026, 10, 21, 16, 30), "UTC")
     with pytest.raises(ValueError, match="Invalid company timezone"):
         company_clock_payload(datetime(2026, 10, 21, 16, 30, tzinfo=timezone.utc), "Invalid/Timezone")
+
+
+def test_company_clock_endpoint_uses_company_timezone_policy(monkeypatch):
+    from types import SimpleNamespace
+    from app.modules.company_settings import router as settings_router
+
+    company = SimpleNamespace(id=7, tenant_id=3, name="Test company")
+    monkeypatch.setattr(settings_router, "_company", lambda db, company_id, user: company)
+    monkeypatch.setattr(settings_router, "policy", lambda db, company_id, key: "Asia/Tokyo")
+    now = datetime(2026, 10, 21, 16, 30, tzinfo=timezone.utc)
+    monkeypatch.setattr(settings_router, "company_clock_payload", lambda value, tz: {
+        "server_time_utc": value.isoformat(), "company_timezone": tz, "company_date": "2026-10-22"
+    })
+
+    result = settings_router.get_company_clock(company_id=7, db=object(), user=object())
+
+    assert result == {
+        "company_id": 7,
+        "server_time_utc": now.isoformat(),
+        "company_timezone": "Asia/Tokyo",
+        "company_date": "2026-10-22",
+    }
