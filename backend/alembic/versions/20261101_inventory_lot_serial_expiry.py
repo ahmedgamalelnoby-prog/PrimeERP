@@ -25,7 +25,6 @@ def upgrade():
 
 
 def downgrade():
-    op.drop_index("uq_inventory_stock_move_serial_identity", table_name="inventory_stock_moves")
     op.drop_index("ix_inventory_stock_moves_expiry_date", table_name="inventory_stock_moves")
     op.drop_index("ix_inventory_stock_moves_serial_number", table_name="inventory_stock_moves")
     op.drop_index("ix_inventory_stock_moves_lot_number", table_name="inventory_stock_moves")
