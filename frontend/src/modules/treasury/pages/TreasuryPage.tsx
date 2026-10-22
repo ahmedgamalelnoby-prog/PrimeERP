@@ -14,8 +14,12 @@ type Cheque = {
 };
 
 const cid = () => {
-  const n = Number(localStorage.getItem("company_id"));
-  return Number.isInteger(n) && n > 0 ? n : null;
+  try {
+    const n = Number(localStorage.getItem("company_id"));
+    return Number.isSafeInteger(n) && n > 0 ? n : null;
+  } catch {
+    return null;
+  }
 };
 
 const terminal = ["withdrawn", "cancelled", "reversed"];
@@ -25,6 +29,7 @@ const issuedStatuses = ["issued", "cleared"];
 export default function TreasuryPage() {
   const companyId = cid();
   const dateFormat = useCompanyDateFormat(companyId);
+  const companyToday = useCompanyToday(companyId);
   const { companyDate, loading: clockLoading, error: clockError } = useCompanyClockDate(companyId);
   const [rows, setRows] = useState<Cheque[]>([]);
   const [withdrawableIds, setWithdrawableIds] = useState<Set<number>>(new Set());
@@ -70,6 +75,12 @@ export default function TreasuryPage() {
   }
 
   useEffect(() => { void load(); }, [companyId]);
+
+  useEffect(() => {
+    if (!companyToday) return;
+    setDate((current) => current || companyToday);
+    setDue((current) => current || companyToday);
+  }, [companyToday]);
   useEffect(() => { if (companyDate) { setDate(current => current || companyDate); setDue(current => current || companyDate); } }, [companyDate]);
   useEffect(() => { if (clockError) setError(clockError); }, [clockError]);
 
