@@ -625,3 +625,11 @@ Do not promote these five settings until their owning workflows, tenant/company 
 - Added `backend/app/jobs/approval_escalation.py`, a continuously polling worker that evaluates the company-specific `workflow.escalation_after_hours` policy for pending approval requests and queues one idempotent in-app reminder per still-pending approver/request.
 - Added `approval-escalation-worker` to `docker-compose.yml`; it waits for the migration service to complete and uses the existing database configuration. Poll interval is configurable via `APPROVAL_ESCALATION_POLL_SECONDS` (default 60 seconds, minimum 30).
 - The worker does not bypass approval authorization or decide requests. It only queues reminders; SMTP/WhatsApp escalation routing and manager/backup approver resolution are not claimed as implemented. The worker is not yet verified in a running Docker environment and no CI result has been confirmed.
+
+
+## Server-clock date defaults — 2026-10-22 follow-up
+
+- Verified the current branch uses `useCompanyClockDate` backed by the authenticated `GET /company-settings/clock` endpoint for date defaults in HR, treasury cheque entry, and bank reconciliation. These forms start with blank date-only fields and populate from the selected company's server-resolved timezone date; they do not trust the device's calendar clock for initial values.
+- Treasury and bank reconciliation also block relevant submissions while the server clock is loading or unavailable, and surface the clock error rather than silently substituting the device date.
+- This reduces incorrect date defaults when the workstation clock is wrong, but it does not finish `general.date_format` display coverage across every screen, report, print view, and export. That policy remains catalog-only until the remaining consumers are migrated and verified.
+- Current registry count is **66 runtime / 5 catalog-only**, not the older seven-item count. The two workflow policies `workflow.approval_mode` and `workflow.escalation_after_hours` are no longer listed as catalog-only in the current registry. Static classification is not a claim that all end-to-end tests passed.
