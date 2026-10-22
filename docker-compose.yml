@@ -171,6 +171,29 @@ services:
     networks:
       - primeerp
 
+  approval-escalation-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: primeerp-approval-escalation-worker
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      DEBUG: ${DEBUG:-false}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-primeerp}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-primeerp}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set}
+      APPROVAL_ESCALATION_POLL_SECONDS: ${APPROVAL_ESCALATION_POLL_SECONDS:-60}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    command: ["python", "-m", "app.jobs.approval_escalation"]
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - primeerp
+
   frontend:
     build:
       context: ./frontend
