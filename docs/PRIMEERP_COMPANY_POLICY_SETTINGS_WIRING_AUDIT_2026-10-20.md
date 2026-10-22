@@ -541,3 +541,10 @@ Do not promote these seven settings until their owning workflows, tenant/company
 - `frontend/src/modules/accounting/journal-entries/JournalEntriesPage.tsx` now initializes new journal-entry dates through shared `getLocalISODate()`, preserving local calendar semantics for date-only accounting documents.
 - The initial cached company ID is now read through a guarded helper. Unavailable browser storage or invalid/non-positive IDs resolve to `0`, and the existing active-company guard prevents loading/creating entries without a selected company.
 - This is UI resilience, not an authorization boundary; backend tenant scoping remains required. CI is pending and no local tests were run in this session.
+
+
+## Fiscal years company-storage resilience — 2026-10-22
+
+- `frontend/src/modules/accounting/pages/FiscalYearsPage.tsx` now reads the cached active company through a guarded helper; blocked/unavailable browser storage and invalid IDs safely resolve to `0`.
+- Existing company guard blocks list loading and disables creating a fiscal year when no valid company is selected. Backend authorization and company scoping remain mandatory; this frontend guard is not a security boundary.
+- Validation status remains pending in GitHub Actions; this change has not been locally built or tested in this session.
