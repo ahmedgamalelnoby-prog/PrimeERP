@@ -1,14 +1,14 @@
 """Register the explicit below-cost sales override permission.
 
 Revision ID: 20261031_below_cost_override_permission
-Revises: 20261030_manufacturing_work_orders
+Revises: 20261030_manufacturing_work_orders, 20260920_enterprise_finance
 """
 from alembic import op
 import sqlalchemy as sa
 
 
 revision = "20261031_below_cost_override_permission"
-down_revision = "20261030_manufacturing_work_orders"
+down_revision = ("20261030_manufacturing_work_orders", "20260920_enterprise_finance")
 branch_labels = None
 depends_on = None
 
