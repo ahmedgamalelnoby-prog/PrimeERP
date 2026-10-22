@@ -91,9 +91,12 @@ class InventoryStockMoveService:
                 raise ValueError("Serial-tracked stock movements must have quantity exactly 1 per serial number")
         elif payload.serial_number:
             raise ValueError("Serial number is only allowed for serial-tracked items")
-        if payload.expiry_date is not None and payload.transaction_date is not None and payload.expiry_date < payload.transaction_date:
+        movement_date = payload.transaction_date or date.today()
+        if payload.expiry_date is not None and payload.expiry_date < movement_date:
             raise ValueError("Expiry date cannot be earlier than the stock movement date")
-        if (item.expiry_tracking or get_company_setting(db, payload.company_id, "inventory.expiry_tracking_required") is True) and payload.movement_type in {"receipt", "opening", "return", "production_receipt"} and payload.expiry_date is None:
+        if item.expiry_tracking and payload.expiry_date is None:
+            raise ValueError("Expiry-tracked items require an expiry date on every stock movement")
+        if get_company_setting(db, payload.company_id, "inventory.expiry_tracking_required") is True and item.batch_tracking and payload.movement_type in {"receipt", "opening", "return", "production_receipt"} and payload.expiry_date is None:
             raise ValueError("Company policy requires an expiry date for batch-tracked stock receipts")
         require_bin_location = get_company_setting(db, payload.company_id, "inventory.require_bin_location") is True
         locations = {}
