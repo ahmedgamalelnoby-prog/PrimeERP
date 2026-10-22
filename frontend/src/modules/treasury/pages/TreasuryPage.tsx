@@ -124,7 +124,7 @@ export default function TreasuryPage() {
         </p>
       </header>
 
-      {error && <div className="rounded-xl border bg-destructive/10 p-3 text-sm">{error}</div>}
+      {(error || clockError) && <div className="rounded-xl border bg-destructive/10 p-3 text-sm">{error || clockError}</div>}
 
       <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
         <form onSubmit={create} className="space-y-3 rounded-2xl border bg-card p-5 shadow-sm">
