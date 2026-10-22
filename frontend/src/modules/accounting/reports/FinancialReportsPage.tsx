@@ -39,11 +39,17 @@ type TrialBalance = {
 const formatMoney = (value: string | number) =>
   Number(value).toLocaleString("ar-EG", { maximumFractionDigits: 2 });
 
+function getStoredCompanyId(): number {
+  try {
+    const value = Number(localStorage.getItem("company_id"));
+    return Number.isInteger(value) && value > 0 ? value : 0;
+  } catch {
+    return 0;
+  }
+}
+
 export default function FinancialReportsPage() {
-  const [companyId, setCompanyId] = useState(() => {
-    const n = Number(localStorage.getItem("company_id"));
-    return Number.isInteger(n) && n > 0 ? n : 0;
-  });
+  const [companyId, setCompanyId] = useState(getStoredCompanyId);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [summary, setSummary] = useState<Summary | null>(null);
