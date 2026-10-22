@@ -221,3 +221,22 @@ def test_integration_worker_checks_later_candidates_without_holding_prior_row_lo
     assert db.scalar_calls == 2
     assert db.rollbacks == 1
     assert db.commits == 1
+
+
+def test_company_clock_uses_server_time_and_company_timezone():
+    from app.modules.company_settings.consumers.general import company_clock_payload
+
+    now = datetime(2026, 10, 21, 16, 30, tzinfo=timezone.utc)
+    result = company_clock_payload(now, "Asia/Tokyo")
+    assert result["server_time_utc"] == "2026-10-21T16:30:00+00:00"
+    assert result["company_timezone"] == "Asia/Tokyo"
+    assert result["company_date"] == "2026-10-22"
+
+
+def test_company_clock_rejects_naive_or_invalid_timezone():
+    from app.modules.company_settings.consumers.general import company_clock_payload
+
+    with pytest.raises(ValueError, match="timezone-aware"):
+        company_clock_payload(datetime(2026, 10, 21, 16, 30), "UTC")
+    with pytest.raises(ValueError, match="Invalid company timezone"):
+        company_clock_payload(datetime(2026, 10, 21, 16, 30, tzinfo=timezone.utc), "Invalid/Timezone")
