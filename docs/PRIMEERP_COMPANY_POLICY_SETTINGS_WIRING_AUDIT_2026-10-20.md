@@ -414,19 +414,19 @@ Regression tests cover a configured override, an unset fallback, and invalid-cod
 
 
 
-## Remaining catalog-only review — 2026-10-22
-The following **11** policies remain catalog-only after manufacturing, sales-order reservation, and below-cost sales control wiring. They were reviewed against the current registry; each needs its owning workflow before it can be promoted.
+## Remaining catalog-only review — updated 2026-10-22
 
-- `general.date_format`: the preference and formatter exist, but most date-bearing screens and exports still render dates independently. Migrate all app display/export paths before promotion.
-- `inventory.expiry_tracking_required`, `inventory.serial_tracking_default`, `inventory.batch_tracking_default`: the item and stock movement lifecycle has no linked lot/serial identity across receipts, transfers, issues, returns, and adjustments. Add that traceability model and validate it end to end; defaults must affect new items only.
-- `hr.attendance_source`, `hr.biometric_sync_interval_minutes`: manual attendance exists, but there is no authenticated biometric/mobile connector or sync worker. Keep non-manual options visibly catalog-only until ingestion exists.
-- `hr.payroll_requires_approval`: payroll is currently a preview; it has no approval state or payroll journal posting lifecycle.
-- `workflow.approval_mode`: existing approvals are single-decision flows; there are no assigned approver chains or parallel/any-one decision semantics.
-- `workflow.escalation_after_hours`: pending approvals have no reliable scheduler or escalation recipient model.
-- `pos.allow_open_cash_drawer`: cashier shifts now reconcile cash sales, but the system has no authenticated drawer event or hardware command integration.
-- `integrations.auto_sync_enabled`: integrations support manual event retries, but no scheduled synchronization lifecycle exists.
+Eight policies remain catalog-only because their full owning workflows are not yet implemented or verified. The inventory lot/serial/expiry model and per-item movement allocation have since been added, so the three new-item tracking defaults are now marked runtime and covered by the registry contract test.
 
-These remaining 11 settings stay at `catalog` until their named workflows and company-isolation controls are implemented. The sales reservation and below-cost policies are runtime. No tests, builds, or migrations were run for this review.
+- `general.date_format`: a shared formatter exists, but date-bearing screens and exports are not yet consistently migrated. Finish the app-wide display/export migration before promotion.
+- `hr.attendance_source` and `hr.biometric_sync_interval_minutes`: manual attendance is enforced, but biometric/mobile ingestion has no authenticated connector or scheduled sync worker. Keep non-manual options catalog-only until ingestion is implemented.
+- `hr.payroll_requires_approval`: payroll remains a preview without an approval state or journal-posting lifecycle.
+- `workflow.approval_mode`: existing approval flows do not yet implement assigned approver chains or sequential/parallel/any-one semantics end to end.
+- `workflow.escalation_after_hours`: pending approvals have no reliable scheduler and escalation-recipient model.
+- `pos.allow_open_cash_drawer`: cashier shifts reconcile cash sales, but authenticated drawer events and hardware-command integration are absent.
+- `integrations.auto_sync_enabled`: integrations support manual event retries, but no scheduled synchronization lifecycle is implemented.
+
+Do not promote these eight settings until their owning workflows, tenant/company isolation, and tests are in place. Inventory tracking defaults remain runtime because item creation consumes the settings and the stock-movement lifecycle persists and validates lot/serial/expiry allocations. Source-level implementation is not a substitute for passing CI and migration/runtime validation.
 
 ## POS cashier shift foundation — 2026-10-22
 - Added company/branch/terminal-scoped cashier shifts with one open shift per terminal, opening float, opener/closer, and close reconciliation fields.
