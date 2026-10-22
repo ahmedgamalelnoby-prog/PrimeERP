@@ -347,6 +347,14 @@ class InventoryStockMoveService:
         item = db.scalar(select(InventoryItem).where(InventoryItem.id == move.item_id, InventoryItem.company_id == company_id, InventoryItem.is_active.is_(True)))
         if item is None:
             raise ValueError("Item is unavailable for reversal")
+        lot_allocations = db.scalars(
+            select(InventoryLotMoveAllocation).where(
+                InventoryLotMoveAllocation.company_id == company_id,
+                InventoryLotMoveAllocation.stock_move_id == move.id,
+            ).with_for_update()
+        ).all()
+        if (item.batch_tracking or item.serial_tracking or item.expiry_tracking) and not lot_allocations:
+            raise ValueError("Tracked movement is missing its lot-allocation audit; reversal is blocked to protect traceability")
         variant_id = move.variant_id
         quantity = Decimal(move.quantity)
         source_balance = self._location_balance(db, company_id, move.item_id, variant_id, move.source_location_id, lock=True) if move.source_location_id else None
@@ -359,6 +367,13 @@ class InventoryStockMoveService:
             raise ValueError("Cannot reverse movement: destination stock has already been consumed")
 
         if destination_balance is not None:
+            if item.batch_tracking or item.serial_tracking or item.expiry_tracking:
+                for lot in lot_allocations:
+                    self._adjust_lot_balance(
+                        db, move=move, item=item, location_id=move.destination_location_id,
+                        delta=-Decimal(lot.quantity), lot_number=lot.lot_number,
+                        serial_number=lot.serial_number, expiry_date=lot.expiry_date,
+                    )
             destination_balance.quantity_on_hand -= quantity
             warehouse_destination = self._warehouse_stock(db, company_id, move.item_id, variant_id, destination_warehouse_id)
             if Decimal(warehouse_destination.quantity_on_hand or 0) < quantity:
@@ -368,6 +383,13 @@ class InventoryStockMoveService:
             self._recalculate_average_cost(db, company_id, move.item_id, variant_id, destination_warehouse_id, item)
 
         if source_balance is not None:
+            if item.batch_tracking or item.serial_tracking or item.expiry_tracking:
+                for lot in lot_allocations:
+                    self._adjust_lot_balance(
+                        db, move=move, item=item, location_id=move.source_location_id,
+                        delta=Decimal(lot.quantity), lot_number=lot.lot_number,
+                        serial_number=lot.serial_number, expiry_date=lot.expiry_date,
+                    )
             source_balance.quantity_on_hand += quantity
             warehouse_source = self._warehouse_stock(db, company_id, move.item_id, variant_id, source_warehouse_id)
             warehouse_source.quantity_on_hand += quantity
