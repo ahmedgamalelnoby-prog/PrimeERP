@@ -520,3 +520,10 @@ Do not promote these seven settings until their owning workflows, tenant/company
 - Updated `frontend/src/modules/accounting/pages/ARAgingPage.tsx` to initialize the “as of” date with the shared `getLocalISODate` helper rather than slicing `toISOString()`. This prevents UTC conversion from selecting the previous/next calendar date near local midnight.
 - API date-only contract remains `YYYY-MM-DD`; aging row document/due dates continue using the company date-format helper.
 - Validation status: source change committed; automated CI and local frontend/backend tests have not been confirmed in this turn.
+
+
+## Report page company-id storage resilience — 2026-10-22
+
+- `frontend/src/modules/reports/pages/ReportsPage.tsx` now reads the cached company ID through a guarded helper. If browser storage is unavailable, blocked, malformed, or contains a non-positive/non-integer ID, the page starts with company ID `0` and existing explicit “choose an active company” guards remain in force.
+- This is a frontend resilience improvement only; it does not replace backend company authorization or tenant isolation.
+- Validation status: source change committed; automated CI and local tests remain unconfirmed.
