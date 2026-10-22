@@ -82,7 +82,7 @@ class InventoryStockMoveService:
                     existing.lot_number == payload.lot_number,
                     existing.serial_number == payload.serial_number,
                     existing.expiry_date == payload.expiry_date,
-                    existing.transaction_date == payload.transaction_date,
+                    payload.transaction_date is None or existing.transaction_date == payload.transaction_date,
                 ])
                 if same:
                     return existing
