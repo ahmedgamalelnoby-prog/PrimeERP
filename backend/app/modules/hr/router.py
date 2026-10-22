@@ -18,6 +18,7 @@ from app.modules.saas.entitlements import require_module
 from app.modules.hr.models import HRLeaveBalance, HRLeaveRequest, HRAttendanceRecord, HRAttendanceCorrection, HROvertimeRequest
 from app.modules.hr.schemas import AttendanceCreate, AttendanceCorrectionCreate, AttendanceCorrectionDecision, AttendanceCorrectionResponse, AttendanceResponse, LeaveBalanceResponse, LeaveBalanceUpdate, LeaveDecision, LeaveRequestCreate, LeaveRequestResponse, OvertimeRequestCreate, OvertimeRequestResponse
 from app.modules.hr.service import hr_leave_service
+from app.modules.company_settings.consumers.hr import attendance_source_allowed
 
 router = APIRouter(
     prefix="/hr",
@@ -430,6 +431,10 @@ def create_attendance(
 ):
     tenant_id = _tenant(current_user)
     _company_for_tenant(db, company_id, tenant_id)
+    # This endpoint is the manual-entry path. If policy selects biometric/mobile/
+    # integration, do not silently accept a manual record as that source.
+    if not attendance_source_allowed(db, company_id, "manual"):
+        raise HTTPException(409, "Manual attendance is disabled by company policy; use the configured attendance source.")
     try:
         record = hr_leave_service.create_attendance(
             db, company_id=company_id, payload=payload, actor_user_id=current_user.id
