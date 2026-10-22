@@ -127,6 +127,8 @@ def validate_value(key: str, value: Any) -> Any:
         raise ValueError(f"{key} must be between 0 and 5")
     if key == "hr.default_work_hours_per_day" and not 0 < float(value) <= 24:
         raise ValueError(f"{key} must be greater than 0 and at most 24")
+    if key in {"hr.biometric_sync_interval_minutes", "workflow.escalation_after_hours"} and value < 1:
+        raise ValueError(f"{key} must be at least 1")
     if kind == "int" and ("days" in key or "hours" in key or "minutes" in key or "limit" in key) and not 0 <= value <= 10000:
         raise ValueError(f"{key} must be between 0 and 10000")
     if kind == "number" and not 0 <= float(value) <= 100:
