@@ -108,7 +108,9 @@ class InventoryStockMoveService:
         if payload.expiry_date is not None and payload.expiry_date < movement_date:
             raise ValueError("Expiry date cannot be earlier than the stock movement date")
         if item.expiry_tracking and payload.expiry_date is None:
-            raise ValueError("Expiry-tracked items require an expiry date on every stock movement")
+            auto_fefo_outbound = payload.source_location_id is not None and payload.movement_type in {"issue", "transfer", "adjustment", "production_issue"} and not payload.serial_number
+            if not auto_fefo_outbound:
+                raise ValueError("Expiry-tracked inbound movements require an expiry date; outbound batch movements may use FEFO allocation")
         if get_company_setting(db, payload.company_id, "inventory.expiry_tracking_required") is True and item.batch_tracking and payload.movement_type in {"receipt", "opening", "return", "production_receipt"} and payload.expiry_date is None:
             raise ValueError("Company policy requires an expiry date for batch-tracked stock receipts")
         require_bin_location = get_company_setting(db, payload.company_id, "inventory.require_bin_location") is True
@@ -538,7 +540,7 @@ class InventoryStockMoveService:
             balance.quantity_on_hand = Decimal(balance.quantity_on_hand) + delta
             return balance
 
-        if item.serial_tracking and move.serial_number:
+        if item.serial_tracking and serial_number:
             duplicate_stmt = select(InventoryLotBalance.id).where(
                 InventoryLotBalance.company_id == move.company_id,
                 InventoryLotBalance.item_id == move.item_id,
@@ -564,7 +566,7 @@ class InventoryStockMoveService:
             db.flush()
             return balance
 
-        if balance.expiry_date != move.expiry_date:
+        if balance.expiry_date != expiry_date:
             raise ValueError("A lot/serial identity cannot be reused with a different expiry date")
         balance.quantity_on_hand = Decimal(balance.quantity_on_hand or 0) + delta
         return balance
