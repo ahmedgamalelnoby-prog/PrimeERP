@@ -15,7 +15,9 @@ the policy.
 - `PRIMEERP_INTEGRATION_WORKER_ID`: optional worker identifier for logs.
 
 The worker claims a due connection using a database row lock and updates
-`last_sync_at` before making external requests. This reduces duplicate claims
+`last_sync_at` before making external requests. Receiving a webhook does not
+change `last_sync_at`, so frequent webhook traffic does not indefinitely defer
+the scheduled full sync. This reduces duplicate claims
 between worker replicas during the configured interval. It is not a durable
 lease, and manual sync requests remain independently callable. A failed
 automatic sync is logged and becomes eligible again after the interval; it
