@@ -69,9 +69,9 @@ _RAW = [
     ("hr.default_work_hours_per_day","hr","Human Resources","number",8,"Daily standard hours deducted from recorded attendance when calculating eligible overtime",None,"runtime"),
     ("hr.biometric_sync_interval_minutes","hr","Human Resources","int",15,"Target sync interval for biometric integrations; scheduler/connector must consume this value",None,"catalog"),
     # Approvals / operations / POS
-    ("workflow.approval_mode","approvals","Approvals","enum","sequential","Approval chain mode; current document approvals are not yet orchestrated by this global mode",["sequential","parallel","any_one"],"catalog"),
+    ("workflow.approval_mode","approvals","Approvals","enum","sequential","Approval mode enforced by the generic approval-request workflow; document-specific workflows still require integration",["sequential","parallel","any_one"],"runtime"),
     ("workflow.allow_self_approval","approvals","Approvals","bool",False,"Allow requester to approve their own request",None,"runtime"),
-    ("workflow.escalation_after_hours","approvals","Approvals","int",24,"Escalation threshold; a scheduler and escalation recipient policy must consume this value",None,"catalog"),
+    ("workflow.escalation_after_hours","approvals","Approvals","int",24,"Escalation threshold enforced by the approval-escalation worker for pending generic approval requests",None,"runtime"),
     ("pos.allow_open_cash_drawer","pos","Point of Sale","bool",False,"Allow cash drawer opening without a transaction; no standalone drawer-open endpoint is wired to this policy yet",None,"catalog"),
     ("pos.require_shift_close","pos","Point of Sale","bool",True,"Require cashier shift closing and reconciliation",None,"runtime"),
     ("pos.allow_discount_without_approval","pos","Point of Sale","bool",False,"Allow cashier discounts without approval",None,"runtime"),
