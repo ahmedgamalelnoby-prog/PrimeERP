@@ -534,3 +534,10 @@ Do not promote these seven settings until their owning workflows, tenant/company
 - `frontend/src/modules/accounting/reports/FinancialReportsPage.tsx` now uses a guarded company-ID reader. Unavailable browser storage and invalid/non-positive IDs resolve to `0`; the existing page guard then requests an explicit active company instead of allowing a storage exception to break initialization.
 - This client-side fallback is not an authorization boundary. Backend company scoping and permission checks remain mandatory.
 - Validation status: source change committed; CI is queued/pending and local tests have not been run in this session.
+
+
+## Journal entries local date and storage defaults — 2026-10-22
+
+- `frontend/src/modules/accounting/journal-entries/JournalEntriesPage.tsx` now initializes new journal-entry dates through shared `getLocalISODate()`, preserving local calendar semantics for date-only accounting documents.
+- The initial cached company ID is now read through a guarded helper. Unavailable browser storage or invalid/non-positive IDs resolve to `0`, and the existing active-company guard prevents loading/creating entries without a selected company.
+- This is UI resilience, not an authorization boundary; backend tenant scoping remains required. CI is pending and no local tests were run in this session.
