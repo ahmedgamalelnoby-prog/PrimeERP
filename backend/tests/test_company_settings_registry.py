@@ -81,7 +81,6 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
         "hr.default_work_hours_per_day",
         "manufacturing.require_work_order",
         "manufacturing.allow_overproduction",
-        "integrations.auto_sync_enabled",
     }
 
 
@@ -95,6 +94,7 @@ def test_policies_without_a_safe_workflow_consumer_remain_catalog_only():
         "workflow.approval_mode",
         "workflow.escalation_after_hours",
         "pos.allow_open_cash_drawer",
+        "integrations.auto_sync_enabled",
     }
     assert all(BY_KEY[key]["status"] == "catalog" for key in catalog_only_keys)
 
