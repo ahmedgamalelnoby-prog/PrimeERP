@@ -1,30 +1,16 @@
-from datetime import datetime, timedelta, timezone
+"""Safe, idempotent bootstrap for system modules and subscription plans.
+
+This command intentionally does not create user accounts, credentials, demo
+tenants, companies, branches, or subscriptions. Tenant creation belongs to the
+validated SaaS registration flow.
+"""
+
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from app.core.security import get_password_hash
-from app.database.models import (
-    Branch,
-    Company,
-    PlanModule,
-    Subscription,
-    SubscriptionPlan,
-    SystemModule,
-    Tenant,
-    TenantModule,
-    User,
-)
+from app.database.models import PlanModule, SubscriptionPlan, SystemModule
 from app.database.session import SessionLocal
-
-
-PLATFORM_ADMIN_EMAIL = "platform@primeerp.com"
-PLATFORM_ADMIN_USERNAME = "platformadmin"
-PLATFORM_ADMIN_PASSWORD = "Platform@123"
-
-TENANT_OWNER_EMAIL = "admin@primeerp.com"
-TENANT_OWNER_USERNAME = "admin"
-TENANT_OWNER_PASSWORD = "Admin@123"
 
 
 SYSTEM_MODULES = [
@@ -318,6 +304,8 @@ def get_or_create_plan(
         module = modules_by_code[module_code]
 
         if module.id in existing_module_ids:
+            existing = next(item for item in plan.plan_modules if item.module_id == module.id)
+            existing.is_enabled = True
             continue
 
         db.add(
@@ -331,226 +319,6 @@ def get_or_create_plan(
     db.flush()
 
     return plan
-
-
-def create_platform_admin(
-    db: Session,
-) -> User:
-    user = (
-        db.query(User)
-        .filter(
-            User.email
-            == PLATFORM_ADMIN_EMAIL
-        )
-        .first()
-    )
-
-    if user:
-        return user
-
-    user = User(
-        tenant_id=None,
-        username=PLATFORM_ADMIN_USERNAME,
-        email=PLATFORM_ADMIN_EMAIL,
-        full_name="PrimeERP Platform Admin",
-        hashed_password=get_password_hash(
-            PLATFORM_ADMIN_PASSWORD
-        ),
-        preferred_language="ar",
-        is_active=True,
-        is_superuser=True,
-        is_platform_admin=True,
-        is_deleted=False,
-        must_change_password=False,
-    )
-
-    db.add(user)
-    db.flush()
-
-    return user
-
-
-def create_demo_tenant(
-    db: Session,
-    trial_plan: SubscriptionPlan,
-    modules_by_code: dict[str, SystemModule],
-) -> Tenant:
-    tenant = (
-        db.query(Tenant)
-        .filter(
-            Tenant.slug == "primeerp-demo"
-        )
-        .first()
-    )
-
-    now = datetime.now(timezone.utc)
-
-    if not tenant:
-        tenant = Tenant(
-            name="PrimeERP Demo",
-            slug="primeerp-demo",
-            business_type="restaurant",
-            owner_name="PrimeERP Demo Owner",
-            email=TENANT_OWNER_EMAIL,
-            phone="01000000000",
-            country_code="EG",
-            default_language="ar",
-            default_locale="ar-EG",
-            timezone="Africa/Cairo",
-            currency_code="EGP",
-            status="trial",
-            is_trial=True,
-            trial_started_at=now,
-            trial_ends_at=now
-            + timedelta(
-                days=trial_plan.trial_days
-            ),
-            is_active=True,
-        )
-
-        db.add(tenant)
-        db.flush()
-
-    subscription = (
-        db.query(Subscription)
-        .filter(
-            Subscription.tenant_id
-            == tenant.id,
-            Subscription.status.in_(
-                ["trialing", "active"]
-            ),
-        )
-        .first()
-    )
-
-    if not subscription:
-        subscription = Subscription(
-            tenant_id=tenant.id,
-            plan_id=trial_plan.id,
-            status="trialing",
-            billing_cycle="monthly",
-            starts_at=now,
-            ends_at=now
-            + timedelta(
-                days=trial_plan.trial_days
-            ),
-            trial_ends_at=now
-            + timedelta(
-                days=trial_plan.trial_days
-            ),
-            is_auto_renew=False,
-        )
-
-        db.add(subscription)
-
-    enabled_module_ids = {
-        item.module_id
-        for item in tenant.enabled_modules
-    }
-
-    trial_module_codes = next(
-        plan["modules"]
-        for plan in PLANS
-        if plan["code"] == "trial"
-    )
-
-    for module_code in trial_module_codes:
-        module = modules_by_code[module_code]
-
-        if module.id in enabled_module_ids:
-            continue
-
-        db.add(
-            TenantModule(
-                tenant_id=tenant.id,
-                module_id=module.id,
-                is_enabled=True,
-                starts_at=now,
-                ends_at=tenant.trial_ends_at,
-            )
-        )
-
-    company = (
-        db.query(Company)
-        .filter(
-            Company.tenant_id == tenant.id,
-            Company.code == "MAIN",
-        )
-        .first()
-    )
-
-    if not company:
-        company = Company(
-            tenant_id=tenant.id,
-            name="PrimeERP Demo Company",
-            code="MAIN",
-            description="Default demo company",
-            address="Cairo, Egypt",
-            phone="01000000000",
-            email=TENANT_OWNER_EMAIL,
-            tax_id=None,
-            is_active=True,
-        )
-
-        db.add(company)
-        db.flush()
-
-    branch = (
-        db.query(Branch)
-        .filter(
-            Branch.tenant_id == tenant.id,
-            Branch.company_id == company.id,
-            Branch.code == "MAIN",
-        )
-        .first()
-    )
-
-    if not branch:
-        branch = Branch(
-            tenant_id=tenant.id,
-            company_id=company.id,
-            name="Main Branch",
-            code="MAIN",
-            address="Cairo, Egypt",
-            phone="01000000000",
-            email=TENANT_OWNER_EMAIL,
-            is_active=True,
-        )
-
-        db.add(branch)
-
-    owner = (
-        db.query(User)
-        .filter(
-            User.tenant_id == tenant.id,
-            User.username
-            == TENANT_OWNER_USERNAME,
-        )
-        .first()
-    )
-
-    if not owner:
-        owner = User(
-            tenant_id=tenant.id,
-            username=TENANT_OWNER_USERNAME,
-            email=TENANT_OWNER_EMAIL,
-            full_name="PrimeERP Demo Admin",
-            hashed_password=get_password_hash(
-                TENANT_OWNER_PASSWORD
-            ),
-            preferred_language="ar",
-            is_active=True,
-            is_superuser=True,
-            is_platform_admin=False,
-            is_deleted=False,
-            must_change_password=False,
-        )
-
-        db.add(owner)
-
-    db.flush()
-
-    return tenant
 
 
 def seed_initial_data() -> None:
@@ -588,40 +356,12 @@ def seed_initial_data() -> None:
                 plan.code
             ] = plan
 
-        create_platform_admin(db)
-
-        create_demo_tenant(
-            db,
-            plans_by_code["trial"],
-            modules_by_code,
-        )
-
         db.commit()
 
-        print("")
-        print("PrimeERP seed completed successfully.")
-        print("")
-        print("Platform Admin:")
-        print(
-            f"  Email: {PLATFORM_ADMIN_EMAIL}"
-        )
-        print(
-            f"  Password: "
-            f"{PLATFORM_ADMIN_PASSWORD}"
-        )
-        print("")
-        print("Demo Tenant Admin:")
-        print(
-            f"  Username: "
-            f"{TENANT_OWNER_USERNAME}"
-        )
-        print(
-            f"  Email: {TENANT_OWNER_EMAIL}"
-        )
-        print(
-            f"  Password: "
-            f"{TENANT_OWNER_PASSWORD}"
-        )
+        print("PrimeERP system bootstrap completed successfully.")
+        print(f"System modules configured: {len(modules_by_code)}")
+        print(f"Subscription plans configured: {len(plans_by_code)}")
+        print("No user accounts, demo tenants, companies, branches, or subscriptions were created.")
 
     except Exception:
         db.rollback()
