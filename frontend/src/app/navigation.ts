@@ -21,7 +21,7 @@ export const navigationItems: NavigationItem[] = [
   {id:"journals",label:"Journals",labelAr:"دفاتر اليومية",type:"item",path:"/accounting/journals",icon:FileText,permission:"journals.view",module:"accounting",visible:true,order:3},
   {id:"journal-entries",label:"Journal Entries",labelAr:"القيود اليومية",type:"item",path:"/accounting/journal-entries",icon:FileText,permission:"journal_entries.view",module:"accounting",visible:true,order:4},
   {id:"cost-centers",label:"Cost Centers",labelAr:"مراكز التكلفة",type:"item",path:"/accounting/cost-centers",icon:Gauge,permission:"cost_centers.view",module:"accounting",visible:true,order:5},
-  {id:"financial-reports",label:"Financial Reports",labelAr:"التقارير المالية",type:"item",path:"/accounting/reports",icon:BarChart3,permission:"reports.view",module:"accounting",visible:true,order:6}]},
+  {id:"financial-reports",label:"Financial Reports",labelAr:"التقارير المالية",type:"item",path:"/reports",icon:BarChart3,permission:"reports.view",module:"reports",visible:true,order:6}]},
  {id:"treasury",label:"Treasury",labelAr:"الخزينة والبنوك",type:"group",icon:Landmark,module:"treasury",visible:true,order:7,children:[
   {id:"banks",label:"Banks",labelAr:"البنوك",type:"item",path:"/treasury/banks",icon:Landmark,permission:"banks.view",module:"treasury",visible:true,order:1},
   {id:"cash",label:"Cash",labelAr:"الخزن النقدية",type:"item",path:"/treasury/cash",icon:Banknote,permission:"cash.view",module:"treasury",visible:true,order:2},
@@ -56,7 +56,7 @@ export const navigationItems: NavigationItem[] = [
  ]},
  {id:"reports",label:"Reports",labelAr:"التقارير",type:"item",path:"/reports",icon:BarChart3,permission:"reports.view",module:"reports",visible:true,order:14},
  {id:"notifications",label:"Messages & Notifications",labelAr:"الرسائل والإشعارات",type:"item",path:"/notifications",icon:Bell,permission:"company.write",module:"settings",visible:true,order:14},
- {id:"settings",label:"Settings",labelAr:"الإعدادات",type:"item",path:"/settings",icon:Settings,permission:"settings.view",module:"settings",visible:true,order:15},
+ {id:"settings",label:"Settings",labelAr:"الإعدادات",type:"item",path:"/settings/center",icon:Settings,permission:"settings.view",module:"settings",visible:true,order:15},
  {id:"company-policies",label:"Company Policies",labelAr:"سياسات الشركة",type:"item",path:"/settings/company-policies",icon:SlidersHorizontal,permission:"company.write",module:"settings",visible:true,order:16},
 ];
 
