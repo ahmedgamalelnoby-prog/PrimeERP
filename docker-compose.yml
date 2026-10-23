@@ -4,13 +4,13 @@ services:
     container_name: primeerp-db
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-primeerp}
+      POSTGRES_DB: ${POSTGRES_DB:-primeerp_clean}
       POSTGRES_USER: ${POSTGRES_USER:-primeerp}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - primeerp_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-primeerp} -d ${POSTGRES_DB:-primeerp}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-primeerp} -d ${POSTGRES_DB:-primeerp_clean}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -27,7 +27,7 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-production}
       DEBUG: ${DEBUG:-false}
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-primeerp}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-primeerp}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-primeerp}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-primeerp_clean}
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set}
       CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set}
     command: ["alembic", "upgrade", "head"]
@@ -48,7 +48,7 @@ services:
       APP_VERSION: ${APP_VERSION:-1.0.0}
       APP_ENV: ${APP_ENV:-production}
       DEBUG: ${DEBUG:-false}
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-primeerp}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-primeerp}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-primeerp}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-primeerp_clean}
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set}
       ALGORITHM: ${ALGORITHM:-HS256}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
@@ -100,8 +100,8 @@ services:
     environment:
       APP_ENV: test
       DEBUG: ${DEBUG:-false}
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-primeerp}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-primeerp}
-      TEST_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-primeerp}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-primeerp}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-primeerp}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-primeerp_clean}
+      TEST_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-primeerp}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-primeerp_clean}
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set}
       CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set}
     depends_on:
@@ -121,7 +121,7 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-production}
       DEBUG: ${DEBUG:-false}
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-primeerp}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-primeerp}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-primeerp}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-primeerp_clean}
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set}
       CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set}
       SMTP_HOST: ${SMTP_HOST:-}
@@ -156,7 +156,7 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-production}
       DEBUG: ${DEBUG:-false}
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-primeerp}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-primeerp}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-primeerp}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-primeerp_clean}
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set}
       CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set}
       PRIMEERP_INTEGRATION_WORKER_ID: ${PRIMEERP_INTEGRATION_WORKER_ID:-integration-worker}
@@ -180,7 +180,7 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-production}
       DEBUG: ${DEBUG:-false}
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-primeerp}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-primeerp}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-primeerp}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-primeerp_clean}
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set}
       CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set}
       APPROVAL_ESCALATION_POLL_SECONDS: ${APPROVAL_ESCALATION_POLL_SECONDS:-60}
@@ -206,12 +206,13 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "${FRONTEND_HOST_PORT:-3000}:80"
+      - "${FRONTEND_HOST_PORT:-3001}:80"
     networks:
       - primeerp
 
 volumes:
-  postgres_data:
+  primeerp_postgres_data:
+    name: primeerp_postgres_data
 
 networks:
   primeerp:
