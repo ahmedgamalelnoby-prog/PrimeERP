@@ -17,6 +17,8 @@ from app.modules.identity.models.user import User
 from app.modules.identity.services.password_service import password_service
 from app.modules.roles.models import Role  # noqa: F401
 from app.modules.saas.models import Tenant  # noqa: F401
+from app.modules.companies.models import Company  # noqa: F401
+from app.modules.branches.models import Branch  # noqa: F401
 
 
 def prompt_nonempty(label: str, *, max_length: int) -> str:
