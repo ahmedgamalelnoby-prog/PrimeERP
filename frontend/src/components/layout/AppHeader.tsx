@@ -1,5 +1,5 @@
-import { Bell, ChevronLeft, Command, LogOut, Menu, Search, Settings2, ShieldCheck, UserCircle2 } from "lucide-react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Bell, ChevronLeft, Command, LogOut, Menu, Settings2, ShieldCheck, UserCircle2 } from "lucide-react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/modules/identity/context/AuthContext";
 import { findNavigationItemByPath, findNavigationParent } from "@/app/navigation";
