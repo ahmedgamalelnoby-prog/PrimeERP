@@ -117,7 +117,7 @@ def answer_helpdesk(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> HelpdeskAnswer:
-    from app.models.company import Company
+    from app.modules.companies.models import Company
     company = db.get(Company, request.company_id)
     if (
         company is None
@@ -157,7 +157,7 @@ def business_advice(
     if from_date and to_date and from_date > to_date:
         raise HTTPException(status_code=422, detail="from_date cannot be after to_date")
 
-    from app.models.company import Company
+    from app.modules.companies.models import Company
     company = db.get(Company, request.company_id)
     if (
         company is None
