@@ -1,10 +1,11 @@
 import { Link } from "react-router-dom";
-import { BarChart3, Calculator, Boxes, ShoppingCart, Users, Building2, Hotel, FileSpreadsheet, ArrowLeft } from "lucide-react";
+import { BarChart3, Calculator, Boxes, ShoppingCart, Users, Building2, Hotel, FileSpreadsheet, ArrowLeft, Truck } from "lucide-react";
 
 const groups = [
   { id:"accounting", title:"تقارير المحاسبة", description:"الأستاذ العام، ميزان المراجعة، القوائم المالية، الخزينة ومراكز التكلفة.", icon:Calculator, reports:[["القوائم والتقارير المالية","/reports/financial"],["ميزان المراجعة والأستاذ العام","/reports/ledger"],["الخزينة والبنوك","/reports/treasury"]] },
   { id:"commerce", title:"تقارير التجارة وCommercialERP", description:"المبيعات والمشتريات والعملاء والموردون والربحية وحركة المستندات.", icon:ShoppingCart, reports:[["المبيعات والعملاء","/reports/sales"],["المشتريات والموردون","/reports/purchasing"],["تحليل الربحية","/reports/profitability"]] },
   { id:"inventory", title:"تقارير المخزون", description:"الأرصدة والحركات والتحويلات والجرد والأصناف الراكدة.", icon:Boxes, reports:[["أرصدة وحركة المخزون","/reports/inventory"],["الجرد والتحويلات","/reports/stock-counts"]] },
+  { id:"shipping", title:"تقارير الشحن والتسويات", description:"مطابقة شركات الشحن وتسوياتها التشغيلية والمالية.", icon:Truck, reports:[["مطابقة شركات الشحن","/reports/shipping/reconciliation"]] },
   { id:"hr", title:"تقارير الموارد البشرية", description:"الحضور والإجازات والرواتب والقوى العاملة.", icon:Users, reports:[["الحضور والإجازات","/reports/hr/attendance"],["الرواتب","/reports/hr/payroll"]] },
   { id:"hospitality", title:"تقارير الفنادق والإيجارات", description:"الإيرادات والإشغال وعقود الإيجار والاستحقاقات.", icon:Hotel, reports:[["إيرادات الفنادق","/reports/hospitality"],["الإيجارات والاستحقاقات","/reports/leasing"]] },
   { id:"management", title:"تقارير الإدارة والمؤسسة", description:"مؤشرات الأداء والتدقيق والتشغيل ومقارنة الفروع.", icon:Building2, reports:[["لوحة مؤشرات الإدارة","/reports/management"],["سجل التدقيق","/reports/audit"]] },
