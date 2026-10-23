@@ -9,9 +9,7 @@ from __future__ import annotations
 
 import getpass
 import re
-import sys
-
-from sqlalchemy import func, select
+from sqlalchemy import func, text
 
 # Import model classes before opening the session so the ORM registry is complete.
 from app.database.session import SessionLocal
@@ -63,8 +61,8 @@ def main() -> int:
 
     db = SessionLocal()
     try:
-        # Lock the users table during the final check to reduce concurrent bootstrap races.
-        db.execute(select(User.id).with_for_update()).all()
+        # Serialize bootstrap attempts so two concurrent invocations cannot both pass the empty check.
+        db.execute(text("SELECT pg_advisory_xact_lock(726190314, 1)"))
         existing_users = db.query(func.count(User.id)).scalar() or 0
         existing_admins = db.query(func.count(User.id)).filter(
             User.is_platform_admin.is_(True),
