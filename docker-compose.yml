@@ -91,23 +91,55 @@ services:
     networks:
       - primeerp
 
+  test-db:
+    image: postgres:17-alpine
+    profiles: ["test"]
+    environment:
+      POSTGRES_DB: primeerp_test
+      POSTGRES_USER: ${POSTGRES_USER:-primeerp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-primeerp} -d primeerp_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks:
+      - primeerp
+
+  test-migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    profiles: ["test"]
+    restart: "no"
+    environment:
+      APP_ENV: test
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-primeerp}:${POSTGRES_PASSWORD}@test-db:5432/primeerp_test
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set}
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      test-db:
+        condition: service_healthy
+    networks:
+      - primeerp
+
   backend-test:
     build:
       context: ./backend
       dockerfile: Dockerfile
       target: test
+    profiles: ["test"]
     restart: "no"
     environment:
       APP_ENV: test
       DEBUG: ${DEBUG:-false}
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-primeerp}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-primeerp_clean}
-      TEST_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-primeerp}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-primeerp_clean}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-primeerp}:${POSTGRES_PASSWORD}@test-db:5432/primeerp_test
+      TEST_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-primeerp}:${POSTGRES_PASSWORD}@test-db:5432/primeerp_test
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set}
       CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set}
     depends_on:
-      db:
-        condition: service_healthy
-      migrate:
+      test-migrate:
         condition: service_completed_successfully
     networks:
       - primeerp
