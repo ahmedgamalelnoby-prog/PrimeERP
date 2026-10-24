@@ -5,8 +5,8 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 
 ## Result
 
-- Catalog entries audited individually: **71**.
-- Current registry classification: **66 runtime / 5 catalog-only**.
+- Catalog entries audited individually: **75**.
+- Current registry classification at the 2026-10-24 branch head: **68 runtime / 7 catalog-only**.
 - This is a source-level classification, not proof that migrations, tests, or end-to-end workflows have passed. The catalog-only list below reflects the current registry; runtime claims still require CI and workflow verification.
 - Confirmed runtime consumers: `inventory.allow_negative_stock` (stock-movement posting), `inventory.allow_below_cost_sale` (delivery posting compares net line revenue with outbound stock valuation and requires the dedicated permission plus an audit event), `accounting.require_journal_approval` (journal posting), `general.timezone`, `general.base_currency`, `general.allow_multi_currency`, `general.require_cost_center`, `general.require_project`, `sales.document_numbering` (atomic company/year, company, or global numbering sequences), `hr.leave_requires_approval` / `hr.allow_negative_leave_balance` (leave request decisions and paid-leave balance checks), `hr.require_attendance_approval` (attendance correction decisions), `hr.default_work_hours_per_day` / `hr.overtime_requires_approval` (overtime eligibility and approval), and `accounting.allow_backdated_entries` (journal/generic transaction creation), plus `integrations.retry_limit` and `integrations.webhook_signature_required` (integration retry and Salla webhook intake), `accounting.fiscal_year_start_month` (fiscal-year creation), `accounting.rounding_method` and `tax.default_tax_inclusive_pricing` (tax calculation), `workflow.allow_self_approval` (generic transaction approval and HR leave/attendance decisions), `inventory.require_bin_location` (stock movement creation), `inventory.auto_reserve_sales_orders` (sales-order confirmation reservations, partial delivery consumption, and cancellation release), `general.branch_required` (generic transaction creation), and `accounting.period_lock_enabled` (journal posting), `sales.credit_limit_enforced` (customer credit exposure check), `purchasing.require_goods_receipt` (supplier-bill creation), `sales.default_payment_terms_days` / `purchasing.default_payment_terms_days` (sales invoices and supplier bills when partner terms are unset), `crm.duplicate_customer_check` (customer creation by email/tax number), `pos.allow_discount_without_approval` / `pos.max_discount_pct_without_approval` (POS checkout discounts), `inventory.require_warehouse` (stockable/consumable commerce documents), `inventory.expiry_tracking_required`, `inventory.serial_tracking_default`, and `inventory.batch_tracking_default` (new inventory-item defaults consumed by item creation; serial/expiry imply batch tracking), `notifications.email_enabled`, `notifications.whatsapp_enabled`, and `notifications.retry_limit` (company-scoped delivery gates and bounded transient retries), `tax.require_tax_code_on_invoice` (taxable sales/purchase invoice lines), and `accounting.auto_post_sales_invoice` / `accounting.auto_post_purchase_invoice` (company-gated accounting auto-post), and the five `accounting.default_*_account` code settings (company-scoped active posting-account overrides for commerce AR, AP, sales, purchase expense, and payment/cash lines), and `purchasing.allow_invoice_price_variance` / `purchasing.price_variance_tolerance_pct` (supplier bill vs linked receipt valuation comparison at bill accounting posting), `purchasing.require_purchase_order` (bills must reference a confirmed company/vendor purchase order and line-matched receipts), `sales.require_quote_approval` / `sales.require_order_approval` / `purchasing.require_purchase_approval` (orders pause in pending approval, enforce requester separation and require an authorized separate decision before confirmation), `general.intercompany_enabled` (new intercompany transaction creation), and `tax.einvoice_required_for_sales` (sales invoices and credit notes require ETA status `valid` before confirmation), and `inventory.valuation_method` (default costing method for newly created items when no item-specific choice is submitted), and `sales.allow_negative_customer_balance` (explicitly permits overpayment of a sales invoice to create customer credit), and `sales.invoice_requires_delivery` / `sales.allow_overbilling` (order-linked stock invoice quantities are checked against posted delivery quantities and ordered quantities), plus `integrations.auto_sync_enabled` (the scheduled Salla integration worker checks the company policy before claiming due connections; manual sync remains available). FIFO negative issues remain blocked for valuation safety, and reserved quantities remain protected.
 - This is a source-level audit, not a successful runtime test. The GitHub Windows self-hosted Release Gate is currently queued; no test-pass claim is made until the run completes on the latest commit.
@@ -21,7 +21,7 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 | Option key | Type | Current status | Purpose |
 |---|---|---|---|
 | `general.default_language` | enum | **RUNTIME** | Applies the saved company interface language when the Company Policy Settings page loads or saves |
-| `general.date_format` | enum | CATALOG ONLY | Date display format |
+| `general.date_format` | enum | **RUNTIME** | Shared company date formatter preference; broader report/export coverage still requires separate verification |
 | `general.timezone` | string | **RUNTIME** | Company-local date used by journal backdating policy |
 | `general.base_currency` | string | **RUNTIME** | Default journal currency and foreign-currency policy |
 | `general.allow_multi_currency` | bool | **RUNTIME** | Allow foreign-currency journal entries |
@@ -143,6 +143,15 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 | `integrations.auto_sync_enabled` | bool | **RUNTIME** | Scheduled Salla full-sync worker checks this company policy before claiming due connections; manual sync remains available |
 | `integrations.retry_limit` | int | **RUNTIME** | Maximum manual integration event retries before dead-lettering |
 | `integrations.webhook_signature_required` | bool | **RUNTIME** | Require signature for public Salla webhook intake; supplied signatures are always verified |
+
+## Reporting (4)
+
+| Option key | Type | Current status | Purpose |
+|---|---|---|---|
+| `reports.default_export_format` | enum | **RUNTIME** | Supplies JSON/text format when scheduled report creation omits a format |
+| `reports.allow_scheduled_delivery` | bool | **RUNTIME** | Blocks scheduled report creation with HTTP 409 unless explicitly enabled for the company |
+| `reports.max_export_rows` | int | CATALOG ONLY | Reserved for a future tabular export service; no row-limiting consumer is claimed |
+| `reports.include_filters_in_export` | bool | CATALOG ONLY | Reserved for a future export renderer; current report manifests already include their filter metadata |
 
 ## Follow-up review fixes (2026-10-20)
 
@@ -669,3 +678,8 @@ The current `feature/odoo-sap-gap-audit-20261024` branch has **75 settings: 68 r
 - `reports.max_export_rows` and `reports.include_filters_in_export` remain **catalog-only** because the current report scheduler emits JSON/text manifests rather than tabular row exports. Their presence does not claim row limiting or export metadata enforcement.
 - The financial AI analysis endpoint now also requires `accounting.access`, in addition to the router-wide Reports module entitlement, because it reads tenant-scoped accounting data.
 - Latest self-hosted Release Gate run is queued. No local test/build/migration result or end-to-end release verification is claimed.
+
+
+## Current catalog-only list (2026-10-24)
+
+The seven catalog-only keys at the current branch head are: `hr.attendance_source`, `hr.biometric_sync_interval_minutes`, `workflow.approval_mode`, `workflow.escalation_after_hours`, `pos.allow_open_cash_drawer`, `reports.max_export_rows`, and `reports.include_filters_in_export`. `hr.payroll_requires_approval` and `general.date_format` are marked runtime in the current registry; end-to-end payroll lifecycle completeness and broad date-format coverage remain separate verification gaps and must not be inferred from registry status alone.
