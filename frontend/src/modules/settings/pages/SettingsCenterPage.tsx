@@ -8,7 +8,7 @@ const sections = [
  {id:"hr",title:"إعدادات الموارد البشرية",desc:"الحضور والبصمة والإجازات والرواتب ودورات اعتمادها.",icon:Users,path:"/settings/company-policies?category=Human%20Resources"},
  {id:"workflow",title:"إعدادات سير العمل",desc:"قواعد الموافقات، حدود الاعتماد، التفويض والتصعيد والتنبيهات.",icon:Workflow,path:"/settings/company-policies?category=Approvals"},
  {id:"messaging",title:"الرسائل وWhatsApp",desc:"قوالب الرسائل، قواعد الإرسال، المجموعات وحالات التسليم.",icon:MessageCircle,path:"/settings/company-policies?category=Messaging%20%26%20Notifications"},
- {id:"reports",title:"إعدادات التقارير",desc:"الصلاحيات، الجداول الزمنية، صيغ التصدير وقنوات التوزيع.",icon:BarChart3,path:"/settings/company-policies?category=General"},
+ {id:"reports",title:"إعدادات التقارير",desc:"مدخل سياسات الشركة؛ إعدادات جدولة التقارير والتصدير تحتاج فئة مستقلة قبل تفعيلها.",icon:BarChart3,path:"/settings/company-policies?category=General"},
  {id:"security",title:"الأمان والتدقيق",desc:"الأدوار والصلاحيات وسياسات الجلسات وسجل التدقيق.",icon:ShieldCheck,path:"/settings/company-policies?category=Security%20%26%20Audit"},
 ];
 export default function SettingsCenterPage(){return <main className="mx-auto w-full max-w-[1600px] space-y-6 p-5 md:p-8" dir="rtl">
