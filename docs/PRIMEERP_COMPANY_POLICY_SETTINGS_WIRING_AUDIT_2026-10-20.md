@@ -704,3 +704,11 @@ The current branch has 75 registered company policies: **72 runtime / 3 catalog-
 The centralized `POST /reports/export` endpoint now enforces `reports.max_export_rows`, `reports.include_filters_in_export`, and `reports.default_export_format`. It checks company/tenant scope, requires `company.access`, returns JSON or text attachments, rejects oversized exports, and fails closed if the policy values cannot be verified. The endpoint exports caller-supplied rows; module-specific live report query providers and real biometric ingestion remain separate gaps. The cash-drawer endpoint authorizes and audits requests only; physical device actuation still requires a terminal driver.
 
 A new unit test file covers JSON/text rendering and filter inclusion behavior. Tests/build have not been run or confirmed green in this environment; keep the release gate as the authority before merging.
+
+
+## Follow-up status — 2026-10-24 (module permissions and attendance source)
+
+- Report exports now require the owning module's tenant entitlement and the caller's `<module_code>.access` permission, in addition to Reports module access and company/tenant scope. Tests cover allowed access, missing entitlement, and missing permission.
+- Manual HR attendance check-in and check-out share one fail-closed source-policy guard. If the company selects biometric/mobile/integration, manual check-out is rejected; if the setting cannot be read, the request is denied with a service-unavailable response instead of bypassing policy.
+- These changes do **not** implement a biometric device connector or scheduled device polling. A real connector still needs an authenticated device/vendor adapter, replay protection/idempotency, device-to-employee mapping, sync cursor/health state, and integration tests. The interval setting must not be described as a functioning sync job until those pieces exist.
+- The self-hosted release gate has been triggered for the latest commits. Until the run completes successfully, test/build status remains unverified.
