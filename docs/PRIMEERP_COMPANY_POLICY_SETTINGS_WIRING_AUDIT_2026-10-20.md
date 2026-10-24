@@ -695,3 +695,12 @@ The `reports.allow_scheduled_delivery` policy is checked both when creating/resu
 - The generic approval-request endpoint already consumes `workflow.approval_mode`; payroll submission now consumes the same company policy rather than hard-coding sequential approval. The registry marks the policy runtime, with tests for all supported modes and invalid values.
 - The approval escalation worker consumes `workflow.escalation_after_hours` to queue idempotent in-app reminders for pending approval steps; the registry now marks this policy runtime. This does not claim external email/WhatsApp escalation or prove the worker has passed integration tests.
 - The current catalog-only list is now five settings: `hr.attendance_source`, `hr.biometric_sync_interval_minutes`, `pos.allow_open_cash_drawer`, `reports.max_export_rows`, and `reports.include_filters_in_export`.
+
+
+## Follow-up status — 2026-10-24 (report export)
+
+The current branch has 75 registered company policies: **72 runtime / 3 catalog-only**. This supersedes earlier counts in the historical notes above. The remaining catalog-only settings are `hr.attendance_source`, `hr.biometric_sync_interval_minutes`, and `pos.allow_open_cash_drawer`.
+
+The centralized `POST /reports/export` endpoint now enforces `reports.max_export_rows`, `reports.include_filters_in_export`, and `reports.default_export_format`. It checks company/tenant scope, requires `company.access`, returns JSON or text attachments, rejects oversized exports, and fails closed if the policy values cannot be verified. The endpoint exports caller-supplied rows; module-specific live report query providers and real biometric ingestion remain separate gaps. The cash-drawer endpoint authorizes and audits requests only; physical device actuation still requires a terminal driver.
+
+A new unit test file covers JSON/text rendering and filter inclusion behavior. Tests/build have not been run or confirmed green in this environment; keep the release gate as the authority before merging.
