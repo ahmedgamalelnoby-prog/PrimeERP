@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
@@ -13,6 +14,7 @@ from app.modules.accounting.fiscal_years.repositories.fiscal_year_repository imp
 from app.modules.accounting.journals.models import JournalEntry, JournalEntryLine
 from app.modules.accounting.journals.repositories.journal_repository import journal_repository
 from app.modules.branches.models import Branch
+from app.modules.company_settings.service import get_company_setting
 
 
 class JournalService:
@@ -30,7 +32,7 @@ class JournalService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Journal entry not found")
         return entry
 
-    def create_draft(self, db: Session, *, tenant_id: int, company_id: int, branch_id: int, journal_id: int, fiscal_year_id: int, period_id: int, entry_number: str, entry_date: date, description: str, lines: list[dict], user_id: int | None = None, currency_code: str = "EGP", exchange_rate: Decimal = Decimal("1"), reference: str | None = None, source_module: str | None = None, source_entity: str | None = None, source_id: int | None = None, commit: bool = True) -> JournalEntry:
+    def create_draft(self, db: Session, *, tenant_id: int, company_id: int, branch_id: int, journal_id: int, fiscal_year_id: int, period_id: int, entry_number: str, entry_date: date, description: str, lines: list[dict], user_id: int | None = None, currency_code: str | None = None, exchange_rate: Decimal = Decimal("1"), reference: str | None = None, source_module: str | None = None, source_entity: str | None = None, source_id: int | None = None, commit: bool = True) -> JournalEntry:
         journal = journal_repository.get_journal(db, journal_id, tenant_id, company_id)
         if journal is None or not journal.is_active:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Accounting journal not found")
@@ -40,6 +42,33 @@ class JournalService:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Journal entry requires at least two lines")
         if exchange_rate <= 0:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Exchange rate must be positive")
+        base_currency = str(get_company_setting(db, company_id, "general.base_currency")).upper()
+        allow_multi_currency = get_company_setting(db, company_id, "general.allow_multi_currency") is True
+        currency_code = str(currency_code or base_currency).upper()
+        if currency_code != base_currency and not allow_multi_currency:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Company policy does not allow foreign-currency journals (base currency: {base_currency})",
+            )
+        if currency_code == base_currency and exchange_rate != Decimal("1"):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Base-currency journal entries must use an exchange rate of 1",
+            )
+        company_timezone = str(get_company_setting(db, company_id, "general.timezone"))
+        company_today = datetime.now(ZoneInfo(company_timezone)).date()
+        if get_company_setting(db, company_id, "accounting.allow_backdated_entries") is not True and entry_date < company_today:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Company policy does not allow backdated journal entries",
+            )
+        if get_company_setting(db, company_id, "general.require_cost_center") is True:
+            missing_cost_center = [index + 1 for index, line in enumerate(lines) if line.get("cost_center_id") is None]
+            if missing_cost_center:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={"message": "Company policy requires a cost center on every journal line", "line_numbers": missing_cost_center},
+                )
         branch = db.scalar(select(Branch).where(Branch.id == branch_id, Branch.company_id == company_id, Branch.tenant_id == tenant_id, Branch.is_active.is_(True)))
         if branch is None:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Branch does not belong to the selected company and tenant")
@@ -118,13 +147,31 @@ class JournalService:
         entry = self._locked_entry(db, tenant_id, entry_id)
         if entry.status not in {"approved", "pending"}:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only approved or pending entries can be posted")
-        if entry.status == "pending" and entry.journal.requires_approval:
+        company_requires_approval = get_company_setting(
+            db, entry.company_id, "accounting.require_journal_approval"
+        ) is True
+        if entry.status == "pending" and (entry.journal.requires_approval or company_requires_approval):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Journal approval is required before posting")
         if entry.status == "approved" and entry.approved_by is not None and entry.approved_by == user_id:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The user who approved the journal entry cannot post it")
+        base_currency = str(get_company_setting(db, entry.company_id, "general.base_currency")).upper()
+        allow_multi_currency = get_company_setting(db, entry.company_id, "general.allow_multi_currency") is True
+        if entry.currency_code != base_currency and not allow_multi_currency:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Company policy does not allow posting a foreign-currency journal")
+        if entry.currency_code == base_currency and Decimal(str(entry.exchange_rate)) != Decimal("1"):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Base-currency journal entries must use an exchange rate of 1")
+        company_timezone = str(get_company_setting(db, entry.company_id, "general.timezone"))
+        company_today = datetime.now(ZoneInfo(company_timezone)).date()
+        if get_company_setting(db, entry.company_id, "accounting.allow_backdated_entries") is not True and entry.entry_date < company_today:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Company policy does not allow posting backdated journal entries")
         period = fiscal_year_repository.get_period_by_id(db, entry.period_id, tenant_id, for_update=True)
-        if period is None or period.company_id != entry.company_id or period.fiscal_year_id != entry.fiscal_year_id or period.status != "open" or not period.allow_posting:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Accounting period is not open for posting")
+        period_lock_enabled = get_company_setting(
+            db, entry.company_id, "accounting.period_lock_enabled"
+        ) is True
+        if period is None or period.company_id != entry.company_id or period.fiscal_year_id != entry.fiscal_year_id:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Accounting period does not belong to this company and fiscal year")
+        if period_lock_enabled and (period.status != "open" or not period.allow_posting):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Accounting period is locked for posting by company policy")
         if not (period.start_date <= entry.entry_date <= period.end_date):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Entry date is outside the posting period")
 
@@ -153,6 +200,13 @@ class JournalService:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=str(exc),
             ) from exc
+        if get_company_setting(db, entry.company_id, "general.require_cost_center") is True:
+            missing_cost_center_lines = [line.line_number for line in db_lines if line.cost_center_id is None]
+            if missing_cost_center_lines:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={"message": "Company policy requires a cost center on every journal line", "line_numbers": missing_cost_center_lines},
+                )
         entry.total_debit = debit
         entry.total_credit = credit
         entry.status = "posted"; entry.posting_date = entry.entry_date; entry.posted_by = user_id; entry.posted_at = datetime.now(timezone.utc)
@@ -173,22 +227,39 @@ class JournalService:
         if not reason or not reason.strip():
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="A reversal reason is required")
 
-        target_date = reversal_date or date.today()
+        company_timezone = str(get_company_setting(db, original.company_id, "general.timezone"))
+        company_today = datetime.now(ZoneInfo(company_timezone)).date()
+        target_date = reversal_date or company_today
+        if (
+            get_company_setting(db, original.company_id, "accounting.allow_backdated_entries") is not True
+            and target_date < company_today
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Company policy does not allow backdated journal reversals",
+            )
+        period_lock_enabled = get_company_setting(
+            db, original.company_id, "accounting.period_lock_enabled"
+        ) is True
 
-        # A reversal is a new accounting event. Its posting period must be
-        # resolved from the reversal date, not inherited from the original
-        # entry. This is essential when an entry is reversed after month/year
-        # close or in a later open fiscal period.
+        # A reversal is a new accounting event. Resolve its period from the
+        # reversal date and apply the same company period-lock policy as normal
+        # journal posting. Company/fiscal-year/date membership is always checked.
         period = fiscal_year_repository.get_period_for_date(
             db=db,
             tenant_id=tenant_id,
             company_id=original.company_id,
             posting_date=target_date,
+            require_open=period_lock_enabled,
         )
         if period is None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="No open accounting period is available for the reversal date",
+                detail=(
+                    "No open accounting period is available for the reversal date"
+                    if period_lock_enabled
+                    else "No accounting period covers the reversal date"
+                ),
             )
         period = fiscal_year_repository.get_period_by_id(
             db,
@@ -196,10 +267,15 @@ class JournalService:
             tenant_id,
             for_update=True,
         )
-        if period is None or period.status != "open" or not period.allow_posting:
+        if period is None or period.company_id != original.company_id or period.fiscal_year_id is None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Accounting period is not open for reversal posting",
+                detail="Accounting period does not belong to this company",
+            )
+        if period_lock_enabled and (period.status != "open" or not period.allow_posting):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Accounting period is locked for reversal posting by company policy",
             )
 
         lines = db.scalars(

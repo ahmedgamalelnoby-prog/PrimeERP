@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useCompanyClockDate } from "@/utils/format-date";
 import client from "@/shared/api/client";
 import { cachePosData, enqueueCheckout, getDeviceId, installOfflineSync, listCheckoutQueue, readPosCache, type PosCheckoutPayload } from "../services/offlinePos";
 
@@ -7,6 +8,7 @@ const companyId = () => Number(localStorage.getItem("company_id")) || 0;
 
 export default function PosPage() {
   const cid = companyId();
+  const { companyDate, error: clockError } = useCompanyClockDate(cid);
   const [outlets, setOutlets] = useState<AnyRow[]>([]);
   const [stations, setStations] = useState<AnyRow[]>([]);
   const [terminals, setTerminals] = useState<AnyRow[]>([]);
@@ -20,6 +22,9 @@ export default function PosPage() {
   const [branchId, setBranchId] = useState("");
   const [selectedOutlet, setSelectedOutlet] = useState("");
   const [selectedTerminal, setSelectedTerminal] = useState("");
+  const [cashierShift, setCashierShift] = useState<AnyRow | null>(null);
+  const [openingCash, setOpeningCash] = useState("0");
+  const [countedCash, setCountedCash] = useState("");
   const [selectedStation, setSelectedStation] = useState("");
   const [selectedMenu, setSelectedMenu] = useState("");
   const [selectedMenuItem, setSelectedMenuItem] = useState("");
@@ -82,6 +87,13 @@ export default function PosPage() {
     }
   }
   useEffect(() => { void load(); }, [cid]);
+  useEffect(() => {
+    setCashierShift(null);
+    if (!cid || !selectedTerminal) return;
+    client.get("/pos/shifts/current", { params: { company_id: cid, terminal_id: Number(selectedTerminal) } })
+      .then(({ data }) => setCashierShift(data))
+      .catch((e: any) => setError(e?.response?.data?.detail || "تعذر تحميل وردية الكاشير"));
+  }, [cid, selectedTerminal]);
 
   async function createOutlet(e: any) {
     e.preventDefault();
@@ -113,14 +125,32 @@ export default function PosPage() {
     try { await client.post("/pos/menu-routes", { terminal_id: Number(selectedTerminal), menu_item_id: Number(selectedMenuItem), station_id: Number(selectedStation) }, { params: { company_id: cid } }); setError(""); }
     catch (e: any) { setError(e?.response?.data?.detail || "فشل ربط صنف المنيو بالمحطة"); }
   }
+  async function openCashierShift() {
+    if (!selectedTerminal) return setError("اختر جهاز POS أولًا");
+    try {
+      const { data } = await client.post("/pos/shifts/open", {
+        company_id: cid, terminal_id: Number(selectedTerminal), opening_cash: Number(openingCash || 0),
+      });
+      setCashierShift(data); setCountedCash(""); setError("");
+    } catch (e: any) { setError(e?.response?.data?.detail || "فشل فتح وردية الكاشير"); }
+  }
+  async function closeCashierShift() {
+    if (!cashierShift || !countedCash) return setError("أدخل النقدية الفعلية قبل إغلاق الوردية");
+    if (offlineQueue.length) return setError("زامن الطلبات المحفوظة محليًا قبل إغلاق الوردية");
+    try {
+      const { data } = await client.post(`/pos/shifts/${cashierShift.id}/close`, { counted_cash: Number(countedCash) }, { params: { company_id: cid } });
+      setCashierShift(data); setError("");
+    } catch (e: any) { setError(e?.response?.data?.detail || "فشل إغلاق الوردية"); }
+  }
   async function checkout(e: any) {
     e.preventDefault();
+    if (!companyDate) return setError(clockError || "تعذر جلب تاريخ الشركة من الخادم؛ لا يمكن إتمام البيع بتاريخ الجهاز.");
     if (!activeMenuItem) return setError("اختر صنفًا من المنيو");
     try {
       const payload: PosCheckoutPayload = {
         company_id: cid, partner_id: Number(partnerId), warehouse_id: Number(warehouseId),
         number: `POS-${getDeviceId().slice(0, 8)}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        payment_date: new Date().toISOString().slice(0, 10), method, terminal_id: Number(selectedTerminal),
+        payment_date: companyDate, method, terminal_id: Number(selectedTerminal),
         lines: [{ menu_item_id: Number(selectedMenuItem), quantity: Number(qty) }],
       };
       if (!navigator.onLine) {
@@ -213,6 +243,29 @@ export default function PosPage() {
     </div>}
 
     {tab === "sale" && <div className="grid gap-4 lg:grid-cols-3">
+      <div className="rounded-2xl border bg-card p-5 lg:col-span-3">
+        <h2 className="mb-3 font-bold">وردية الكاشير وتسوية النقدية</h2>
+        {!selectedTerminal && <p className="text-sm text-muted-foreground">اختر جهاز POS لعرض ورديته.</p>}
+        {selectedTerminal && !cashierShift && <div className="flex flex-wrap items-end gap-3">
+          <label className="grid gap-1 text-sm">رصيد بداية الوردية
+            <input type="number" min="0" step="0.01" value={openingCash} onChange={e => setOpeningCash(e.target.value)} className="rounded-lg border px-3 py-2"/>
+          </label>
+          <button type="button" onClick={() => void openCashierShift()} className="rounded-lg bg-primary px-4 py-2 text-primary-foreground">فتح وردية</button>
+        </div>}
+        {cashierShift?.status === "open" && <div className="flex flex-wrap items-end gap-3">
+          <div className="text-sm">الوردية #{cashierShift.id} مفتوحة · رصيد البداية {cashierShift.opening_cash}</div>
+          <label className="grid gap-1 text-sm">النقدية الفعلية عند الإغلاق
+            <input type="number" min="0" step="0.01" value={countedCash} onChange={e => setCountedCash(e.target.value)} className="rounded-lg border px-3 py-2"/>
+          </label>
+          <button type="button" disabled={offlineQueue.length > 0} onClick={() => void closeCashierShift()} className="rounded-lg border px-4 py-2 disabled:opacity-50">إغلاق وتسوية الوردية</button>
+          {offlineQueue.length > 0 && <span className="text-xs text-amber-700">لا يمكن الإغلاق مع طلبات غير متزامنة.</span>}
+        </div>}
+        {cashierShift?.status === "closed" && <div className="space-y-1 text-sm">
+          <p>الوردية #{cashierShift.id} أُغلقت.</p>
+          <p>المتوقع نقدًا: {cashierShift.expected_cash} · المعدود: {cashierShift.counted_cash} · الفرق: {cashierShift.variance}</p>
+          <button type="button" onClick={() => void openCashierShift()} className="rounded-lg border px-4 py-2">فتح وردية جديدة</button>
+        </div>}
+      </div>
       <form onSubmit={checkout} className="rounded-2xl border bg-card p-5 space-y-3 lg:col-span-2">
         <h2 className="font-bold">طلب من المنيو</h2>
         <div className="grid gap-3 md:grid-cols-2">

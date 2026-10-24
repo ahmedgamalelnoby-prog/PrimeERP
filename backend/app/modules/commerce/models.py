@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, CheckConstraint, Column, Date, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Column, Date, DateTime, ForeignKey, Index, Integer, JSON, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.database.base import Base
 
@@ -35,6 +35,8 @@ class SalesDocument(Base):
     due_date = Column(Date, nullable=True)
     status = Column(String(20), nullable=False, default="draft")
     warehouse_id = Column(Integer, ForeignKey("inventory_warehouses.id", ondelete="RESTRICT"), nullable=True)
+    source_order_id = Column(Integer, ForeignKey("sales_documents.id", ondelete="RESTRICT"), nullable=True, index=True)
+    pos_shift_id = Column(Integer, ForeignKey("pos_cashier_shifts.id", ondelete="RESTRICT"), nullable=True, index=True)
     notes = Column(Text, nullable=True)
     subtotal = Column(Numeric(18, 4), nullable=False, default=0)
     tax_total = Column(Numeric(18, 4), nullable=False, default=0)
@@ -44,7 +46,7 @@ class SalesDocument(Base):
     lines = relationship("SalesLine", back_populates="document", cascade="all, delete-orphan")
     __table_args__ = (
         CheckConstraint("document_type IN ('quotation','order','delivery','invoice','credit_note')", name="ck_sales_document_type"),
-        CheckConstraint("status IN ('draft','confirmed','partially_fulfilled','fulfilled','cancelled','posted')", name="ck_sales_document_status"),
+        CheckConstraint("status IN ('draft','pending_approval','approved','rejected','confirmed','partially_fulfilled','fulfilled','cancelled','posted')", name="ck_sales_document_status"),
     )
 
 
@@ -63,6 +65,7 @@ class SalesLine(Base):
     discount_percent = Column(Numeric(8, 4), nullable=False, default=0)
     tax_percent = Column(Numeric(8, 4), nullable=False, default=0)
     line_total = Column(Numeric(18, 4), nullable=False, default=0)
+    source_sales_line_id = Column(Integer, ForeignKey("sales_lines.id", ondelete="RESTRICT"), nullable=True, index=True)
     document = relationship("SalesDocument", back_populates="lines")
 
 
@@ -77,6 +80,7 @@ class PurchaseDocument(Base):
     due_date = Column(Date, nullable=True)
     status = Column(String(20), nullable=False, default="draft")
     warehouse_id = Column(Integer, ForeignKey("inventory_warehouses.id", ondelete="RESTRICT"), nullable=True)
+    source_order_id = Column(Integer, ForeignKey("purchase_documents.id", ondelete="RESTRICT"), nullable=True, index=True)
     notes = Column(Text, nullable=True)
     subtotal = Column(Numeric(18, 4), nullable=False, default=0)
     tax_total = Column(Numeric(18, 4), nullable=False, default=0)
@@ -86,7 +90,7 @@ class PurchaseDocument(Base):
     lines = relationship("PurchaseLine", back_populates="document", cascade="all, delete-orphan")
     __table_args__ = (
         CheckConstraint("document_type IN ('requisition','rfq','order','receipt','bill','debit_note')", name="ck_purchase_document_type"),
-        CheckConstraint("status IN ('draft','confirmed','partially_received','received','cancelled','posted')", name="ck_purchase_document_status"),
+        CheckConstraint("status IN ('draft','pending_approval','approved','rejected','confirmed','partially_received','received','cancelled','posted')", name="ck_purchase_document_status"),
     )
 
 
@@ -105,6 +109,7 @@ class PurchaseLine(Base):
     discount_percent = Column(Numeric(8, 4), nullable=False, default=0)
     tax_percent = Column(Numeric(8, 4), nullable=False, default=0)
     line_total = Column(Numeric(18, 4), nullable=False, default=0)
+    source_purchase_line_id = Column(Integer, ForeignKey("purchase_lines.id", ondelete="RESTRICT"), nullable=True, index=True)
     document = relationship("PurchaseDocument", back_populates="lines")
 
 
@@ -174,4 +179,33 @@ class CommercePayment(Base):
         CheckConstraint("amount > 0", name="ck_commerce_payment_amount"),
         CheckConstraint("wht_amount >= 0 AND wht_amount <= amount", name="ck_commerce_payment_wht"),
         CheckConstraint("status IN ('posted','reversed')", name="ck_commerce_payment_status"),
+    )
+
+
+class CommerceApprovalEvent(Base):
+    __tablename__ = "commerce_approval_events"
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    document_kind = Column(String(12), nullable=False)
+    document_id = Column(Integer, nullable=False, index=True)
+    action = Column(String(20), nullable=False)
+    actor_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    reason = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default="CURRENT_TIMESTAMP")
+    __table_args__ = (
+        CheckConstraint("document_kind IN ('sale','purchase')", name="ck_commerce_approval_event_kind"),
+        CheckConstraint("action IN ('submitted','approved','rejected')", name="ck_commerce_approval_event_action"),
+        Index("ix_commerce_approval_document_timeline", "company_id", "document_kind", "document_id", "id"),
+    )
+
+
+class CommerceDocumentNumberSequence(Base):
+    __tablename__ = "commerce_document_number_sequences"
+    id = Column(Integer, primary_key=True)
+    scope_key = Column(String(180), nullable=False)
+    current_value = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default="CURRENT_TIMESTAMP")
+    __table_args__ = (
+        UniqueConstraint("scope_key", name="uq_commerce_document_sequence_scope"),
+        CheckConstraint("current_value >= 0", name="ck_commerce_document_sequence_value"),
     )

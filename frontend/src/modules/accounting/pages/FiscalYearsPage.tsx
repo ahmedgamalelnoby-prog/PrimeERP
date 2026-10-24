@@ -1,5 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import client from "@/shared/api/client";
+import { formatCompanyDate, useCompanyClockDate, useCompanyDateFormat } from "@/utils/format-date";
+
+function getStoredCompanyId(): number {
+  try {
+    const value = Number(localStorage.getItem("company_id"));
+    return Number.isInteger(value) && value > 0 ? value : 0;
+  } catch {
+    return 0;
+  }
+}
 
 type Period = {
   id: number;
@@ -27,18 +37,20 @@ type FiscalYear = {
 };
 
 export default function FiscalYearsPage() {
-  const companyId = Number(localStorage.getItem("company_id")) || 0;
+  const companyId = getStoredCompanyId();
+  const dateFormat = useCompanyDateFormat(companyId);
+  const { companyDate, error: clockError } = useCompanyClockDate(companyId);
   const [rows, setRows] = useState<FiscalYear[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<number | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({
-    code: new Date().getFullYear().toString(),
-    name_ar: `السنة المالية ${new Date().getFullYear()}`,
-    name_en: `Fiscal Year ${new Date().getFullYear()}`,
-    start_date: `${new Date().getFullYear()}-01-01`,
-    end_date: `${new Date().getFullYear()}-12-31`,
+    code: "",
+    name_ar: "",
+    name_en: "",
+    start_date: "",
+    end_date: "",
     create_monthly_periods: true,
     adjustment_period: false,
   });
@@ -62,6 +74,20 @@ export default function FiscalYearsPage() {
   };
 
   useEffect(() => { void load(); }, [companyId]);
+
+  // Seed fiscal-year defaults from the company server clock, never the device clock.
+  useEffect(() => {
+    if (!companyDate) return;
+    const year = companyDate.slice(0, 4);
+    setForm(current => ({
+      ...current,
+      code: current.code || year,
+      name_ar: current.name_ar || `السنة المالية ${year}`,
+      name_en: current.name_en || `Fiscal Year ${year}`,
+      start_date: current.start_date || `${year}-01-01`,
+      end_date: current.end_date || `${year}-12-31`,
+    }));
+  }, [companyDate]);
 
   const action = async (path: string, id: number) => {
     setBusy(id);
@@ -140,7 +166,7 @@ export default function FiscalYearsPage() {
         </section>
       )}
 
-      {error && <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">{error}</div>}
+      {(error || clockError) && <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">{error || clockError}</div>}
 
       {loading ? <div className="rounded-xl border p-6">جاري التحميل...</div> : (
         <div className="space-y-4">
@@ -149,7 +175,7 @@ export default function FiscalYearsPage() {
               <div className="flex flex-wrap items-center justify-between gap-3 border-b p-4">
                 <div>
                   <div className="flex items-center gap-2 font-semibold">{year.name_ar} <span className="text-xs text-muted-foreground">({year.code})</span></div>
-                  <div className="mt-1 text-sm text-muted-foreground">{year.start_date} → {year.end_date} · {year.status}{year.is_current ? " · الحالية" : ""}</div>
+                  <div className="mt-1 text-sm text-muted-foreground">{formatCompanyDate(year.start_date, dateFormat)} → {formatCompanyDate(year.end_date, dateFormat)} · {year.status}{year.is_current ? " · الحالية" : ""}</div>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {year.status === "draft" && <button className="rounded-lg border px-3 py-2 text-sm" disabled={busy === year.id} onClick={() => void action(`/accounting/fiscal-years/${year.id}/open`, year.id)}>فتح السنة</button>}
@@ -163,8 +189,8 @@ export default function FiscalYearsPage() {
                     {year.periods.map((period) => (
                       <tr key={period.id} className="border-b last:border-0">
                         <td className="p-3">{period.name_ar} ({period.code})</td>
-                        <td className="p-3">{period.start_date}</td>
-                        <td className="p-3">{period.end_date}</td>
+                        <td className="p-3">{formatCompanyDate(period.start_date, dateFormat)}</td>
+                        <td className="p-3">{formatCompanyDate(period.end_date, dateFormat)}</td>
                         <td className="p-3">{period.status}</td>
                         <td className="p-3">{period.allow_posting ? "مسموح" : "مغلق"}</td>
                         <td className="p-3">

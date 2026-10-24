@@ -84,21 +84,46 @@ def create_document(db: Session, *, tenant_id: int, company_id: int, source_type
     if normalized_source_type not in {"sales_document", "sale", "sales_invoice"}:
         raise ValueError("Unsupported ETA source type")
 
-    company_tenant_id = db.scalar(select(Company.tenant_id).where(Company.id == company_id))
-    if company_tenant_id is None or company_tenant_id != tenant_id:
-        raise ValueError("ETA company does not belong to the tenant")
+    company = db.scalar(
+        select(Company).where(
+            Company.id == company_id,
+            Company.tenant_id == tenant_id,
+            Company.is_active.is_(True),
+        )
+    )
+    if company is None:
+        raise ValueError("ETA company does not belong to the tenant or is inactive")
 
-    source = db.scalar(select(SalesDocument).where(SalesDocument.id == source_id, SalesDocument.company_id == company_id))
+    source = db.scalar(
+        select(SalesDocument).where(
+            SalesDocument.id == source_id,
+            SalesDocument.company_id == company_id,
+        )
+    )
     if source is None:
         raise ValueError("ETA source sales document does not belong to the company")
+
     if source.document_type not in {"invoice", "credit_note"}:
         raise ValueError("Only sales invoices and credit notes can be submitted to ETA")
+    if normalized_document_type not in {"invoice", "credit_note"} or normalized_document_type != source.document_type:
+        raise ValueError("ETA document type does not match the source sales document")
+    if not internal_number.strip():
+        raise ValueError("ETA internal number is required")
 
-    partner = db.scalar(select(BusinessPartner).where(
-        BusinessPartner.id == source.partner_id,
-        BusinessPartner.company_id == company_id,
-        BusinessPartner.partner_type.in_({"customer", "both"}),
-    ))
+    try:
+        payload = json.loads(signed_payload)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise ValueError("Signed ETA payload must be valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("Signed ETA payload must be a JSON object")
+
+    partner = db.scalar(
+        select(BusinessPartner).where(
+            BusinessPartner.id == source.partner_id,
+            BusinessPartner.company_id == company_id,
+            BusinessPartner.partner_type.in_({"customer", "both"}),
+        )
+    )
     if partner is None:
         raise ValueError("ETA source invoice customer does not belong to the company")
 
@@ -109,23 +134,13 @@ def create_document(db: Session, *, tenant_id: int, company_id: int, source_type
     if not receiver_id:
         raise ValueError("Customer ETA party ID / tax registration number is required before ETA submission")
 
-    try:
-        payload = json.loads(signed_payload)
-    except (TypeError, json.JSONDecodeError) as exc:
-        raise ValueError("Signed ETA payload must be valid JSON") from exc
-    if not isinstance(payload, dict):
-        raise ValueError("Signed ETA payload must be a JSON object")
-
     issuer = payload.get("issuer")
     receiver = payload.get("receiver")
     if not isinstance(issuer, dict) or str(issuer.get("id") or "").strip() != issuer_id:
         raise ValueError("Signed ETA payload issuer.id does not match the company's tax identity")
     if not isinstance(receiver, dict) or str(receiver.get("id") or "").strip() != receiver_id:
         raise ValueError("Signed ETA payload receiver.id does not match the customer's tax identity")
-    if normalized_document_type not in {"invoice", "credit_note"} or normalized_document_type != source.document_type:
-        raise ValueError("ETA document type does not match the source sales document")
-    if not internal_number.strip():
-        raise ValueError("ETA internal number is required")
+
     obj = EgyptianEInvoiceDocument(
         tenant_id=tenant_id,
         company_id=company_id,
@@ -139,7 +154,6 @@ def create_document(db: Session, *, tenant_id: int, company_id: int, source_type
     db.add(obj)
     db.flush()
     return obj
-
 
 def submit_document(db: Session, obj: EgyptianEInvoiceDocument, *, user_id: int | None = None, tenant_id: int | None = None) -> EgyptianEInvoiceDocument:
     if obj.status not in {"draft", "error", "rejected"}:

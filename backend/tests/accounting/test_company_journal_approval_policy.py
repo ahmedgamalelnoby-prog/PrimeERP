@@ -1,0 +1,154 @@
+from datetime import date
+import importlib
+from decimal import Decimal
+from types import SimpleNamespace
+
+import pytest
+from fastapi import HTTPException
+
+service_module = importlib.import_module("app.modules.accounting.journals.services.journal_service")
+from app.modules.company_settings.registry import BY_KEY
+
+
+class FakeDB:
+    def __init__(self, lines):
+        self.lines = lines
+        self.flushed = False
+
+    def scalars(self, _query):
+        return SimpleNamespace(all=lambda: self.lines)
+
+    def flush(self):
+        self.flushed = True
+
+
+def _entry():
+    return SimpleNamespace(
+        id=10,
+        company_id=20,
+        currency_code="EGP",
+        exchange_rate=Decimal("1"),
+        approved_by=None,
+        status="pending",
+        journal=SimpleNamespace(requires_approval=False),
+        period_id=30,
+        fiscal_year_id=40,
+        entry_date=date(2026, 10, 10),
+        total_debit=Decimal("0"),
+        total_credit=Decimal("0"),
+        posting_date=None,
+        posted_by=None,
+        posted_at=None,
+    )
+
+
+def _period():
+    return SimpleNamespace(
+        company_id=20,
+        fiscal_year_id=40,
+        status="open",
+        allow_posting=True,
+        start_date=date(2026, 10, 1),
+        end_date=date(2026, 10, 31),
+    )
+
+
+def _lines():
+    return [
+        SimpleNamespace(account_combination_id=1, debit=Decimal("100"), credit=Decimal("0"), department_id=None, cost_center_id=None),
+        SimpleNamespace(account_combination_id=2, debit=Decimal("0"), credit=Decimal("100"), department_id=None, cost_center_id=None),
+    ]
+
+
+def _wire(monkeypatch, entry, db, policy):
+    monkeypatch.setattr(service_module.journal_service, "_locked_entry", lambda *_args, **_kwargs: entry)
+    def company_policy(_db, _company_id, key):
+        if key == "accounting.require_journal_approval":
+            return policy
+        if key == "accounting.allow_backdated_entries":
+            return True  # Keep these focused approval tests independent of the date policy.
+        return BY_KEY[key]["default"]
+
+    monkeypatch.setattr(service_module, "get_company_setting", company_policy)
+    monkeypatch.setattr(
+        service_module.fiscal_year_repository,
+        "get_period_by_id",
+        lambda *_args, **_kwargs: _period(),
+    )
+
+
+def test_company_policy_blocks_pending_journal_without_approval(monkeypatch):
+    entry = _entry()
+    db = FakeDB(_lines())
+    _wire(monkeypatch, entry, db, True)
+
+    with pytest.raises(HTTPException) as exc:
+        service_module.journal_service.post(db, tenant_id=1, entry_id=10, user_id=99, commit=False)
+
+    assert exc.value.status_code == 409
+    assert "approval is required" in exc.value.detail.lower()
+    assert not db.flushed
+
+
+def test_company_policy_can_allow_posting_when_journal_does_not_require_approval(monkeypatch):
+    entry = _entry()
+    db = FakeDB(_lines())
+    _wire(monkeypatch, entry, db, False)
+
+    result = service_module.journal_service.post(db, tenant_id=1, entry_id=10, user_id=99, commit=False)
+
+    assert result.status == "posted"
+    assert result.total_debit == Decimal("100")
+    assert result.total_credit == Decimal("100")
+    assert db.flushed
+
+
+def test_company_policy_blocks_backdated_journal_reversal(monkeypatch):
+    from datetime import datetime as real_datetime
+
+    original = SimpleNamespace(
+        id=10,
+        company_id=20,
+        status="posted",
+        reversal_entry_id=None,
+        posted_by=7,
+    )
+    monkeypatch.setattr(
+        service_module.journal_service,
+        "_locked_entry",
+        lambda *_args, **_kwargs: original,
+    )
+
+    class FrozenDateTime:
+        @staticmethod
+        def now(tz=None):
+            return real_datetime(2026, 10, 20, 12, 0, tzinfo=tz)
+
+    monkeypatch.setattr(service_module, "datetime", FrozenDateTime)
+    monkeypatch.setattr(
+        service_module,
+        "get_company_setting",
+        lambda _db, _company_id, key: {
+            "general.timezone": "UTC",
+            "accounting.allow_backdated_entries": False,
+        }.get(key, BY_KEY[key]["default"]),
+    )
+    monkeypatch.setattr(
+        service_module.fiscal_year_repository,
+        "get_period_for_date",
+        lambda **_kwargs: pytest.fail("A prohibited backdated reversal must not look up a period"),
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        service_module.journal_service.reverse(
+            object(),
+            tenant_id=1,
+            entry_id=10,
+            user_id=99,
+            reversal_date=date(2026, 10, 19),
+            reason="Correction",
+        )
+
+    assert exc.value.status_code == 409
+    assert "backdated" in exc.value.detail.lower()
+

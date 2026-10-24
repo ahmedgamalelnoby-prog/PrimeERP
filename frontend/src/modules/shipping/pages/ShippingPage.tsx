@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import client from "@/shared/api/client";
+import { formatCompanyDate, useCompanyDateFormat } from "@/utils/format-date";
 
 type Carrier = { id:number; company_id:number; code:string; name:string; is_active:boolean };
 type Profile = { id:number; carrier_id:number; name:string; effective_from:string; effective_to?:string|null; priority:number; is_active:boolean };
@@ -11,6 +12,7 @@ type Shipment = { id:number; tracking_no:string; carrier_id:number; status:strin
 type Position = { carrier_id:number; carrier_name:string; shipment_count:number; unsettled_count:number; cod_receivable:string; carrier_payable:string; settled_net:string; settled_fees:string; net_position:string; position:string };
 
 export default function ShippingPage() {
+ const dateFormat = useCompanyDateFormat();
   const companyId = Number(localStorage.getItem("company_id")) || 0;
   const [carriers,setCarriers]=useState<Carrier[]>([]);
   const [profiles,setProfiles]=useState<Profile[]>([]);
@@ -102,7 +104,7 @@ export default function ShippingPage() {
 
       <Card className="rounded-2xl"><CardHeader><CardTitle className="flex items-center gap-2"><Calculator className="size-5"/>آخر الشحنات</CardTitle></CardHeader><CardContent className="overflow-x-auto">
         <table className="w-full min-w-[760px] text-sm"><thead><tr className="border-b"><th className="p-3 text-start">Tracking</th><th className="p-3 text-start">العميل</th><th className="p-3 text-start">الحالة</th><th className="p-3 text-start">COD</th><th className="p-3 text-start">تكلفة الشحن</th><th className="p-3 text-start">التاريخ</th></tr></thead>
-          <tbody>{shipments.slice(0,20).map(s=><tr key={s.id} className="border-b"><td className="p-3 font-semibold">{s.tracking_no}</td><td className="p-3">{s.customer_name}</td><td className="p-3">{s.status}</td><td className="p-3">{s.cod_amount}</td><td className="p-3">{s.shipping_fee}</td><td className="p-3">{s.shipment_date||"-"}</td></tr>)}</tbody>
+          <tbody>{shipments.slice(0,20).map(s=><tr key={s.id} className="border-b"><td className="p-3 font-semibold">{s.tracking_no}</td><td className="p-3">{s.customer_name}</td><td className="p-3">{s.status}</td><td className="p-3">{s.cod_amount}</td><td className="p-3">{s.shipping_fee}</td><td className="p-3">{s.shipment_date ? formatCompanyDate(s.shipment_date, dateFormat) : "-"}</td></tr>)}</tbody>
         </table>
       </CardContent></Card>
     </div>

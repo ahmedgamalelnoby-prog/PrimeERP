@@ -3,6 +3,7 @@ import secrets
 from datetime import datetime,timezone,timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db,SessionLocal
 from app.modules.identity.dependencies import get_current_user
@@ -14,7 +15,7 @@ from app.modules.platform.developer.service import create_app,create_key,authent
 router=APIRouter(prefix="/developer",tags=["Developer Platform"])
 MAX_DELIVERY_ATTEMPTS=5
 def company_ok(db,cid,user):
-    if not user.tenant_id or not db.scalar(select(Company.id).where(Company.id==cid,Company.tenant_id==user.tenant_id)):raise HTTPException(404,"Company not found")
+    if not get_effective_tenant_id(user) or not db.scalar(select(Company.id).where(Company.id==cid,Company.tenant_id==get_effective_tenant_id(user),Company.is_active.is_(True))):raise HTTPException(404,"Company not found")
 @router.post("/apps",response_model=AppCreated,status_code=201,dependencies=[Depends(require_permission("developer.manage"))])
 def apps(p:AppCreate,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     company_ok(db,p.company_id,user);a,s=create_app(db,user,p);return {**AppResponse.model_validate(a).model_dump(),"client_secret":s}

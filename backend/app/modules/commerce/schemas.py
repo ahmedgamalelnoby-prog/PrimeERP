@@ -33,6 +33,8 @@ class PartnerResponse(PartnerCreate):
 
 class DocumentLineCreate(BaseModel):
     item_id: int = Field(gt=0)
+    source_sales_line_id: int | None = Field(default=None, gt=0)
+    source_purchase_line_id: int | None = Field(default=None, gt=0)
     variant_id: int | None = Field(default=None, gt=0)
     tax_rate_id: int | None = Field(default=None, gt=0)
     tax_rate_ids: list[int] | None = None
@@ -63,7 +65,8 @@ class DocumentCreate(BaseModel):
     company_id: int = Field(gt=0)
     partner_id: int = Field(gt=0)
     document_type: SaleType | PurchaseType
-    number: str = Field(min_length=1, max_length=60)
+    source_order_id: int | None = Field(default=None, gt=0)
+    number: str | None = Field(default=None, min_length=1, max_length=60)
     document_date: date
     due_date: date | None = None
     warehouse_id: int | None = Field(default=None, gt=0)
@@ -73,6 +76,21 @@ class DocumentCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_receipt_links(self):
+        if self.document_type in {"requisition", "rfq", "order", "receipt", "bill", "debit_note"} and not self.number:
+            raise ValueError("Purchase document number is required")
+        sales_source_ids = [line.source_sales_line_id for line in self.lines]
+        purchase_source_ids = [line.source_purchase_line_id for line in self.lines]
+        if self.source_order_id is not None:
+            if self.document_type in {"delivery", "invoice"}:
+                if any(source_line_id is None for source_line_id in sales_source_ids) or any(source_line_id is not None for source_line_id in purchase_source_ids):
+                    raise ValueError("Every linked sales delivery/invoice line must identify its sales order line")
+            elif self.document_type in {"receipt", "bill"}:
+                if any(source_line_id is None for source_line_id in purchase_source_ids) or any(source_line_id is not None for source_line_id in sales_source_ids):
+                    raise ValueError("Every linked purchase receipt/bill line must identify its purchase order line")
+            else:
+                raise ValueError("source_order_id is allowed only for sales delivery/invoice or purchase receipt/bill documents")
+        elif any(source_line_id is not None for source_line_id in sales_source_ids + purchase_source_ids):
+            raise ValueError("Source order lines require source_order_id")
         if len(self.receipt_ids) != len(set(self.receipt_ids)):
             raise ValueError("Duplicate receipt ids are not allowed")
         if any(receipt_id <= 0 for receipt_id in self.receipt_ids):
@@ -82,12 +100,24 @@ class DocumentCreate(BaseModel):
         return self
 
 
+class DocumentLineResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    item_id: int
+    variant_id: int | None
+    quantity: Decimal
+    source_sales_line_id: int | None = None
+    source_purchase_line_id: int | None = None
+
+
 class DocumentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     company_id: int
     partner_id: int
     document_type: str
+    source_order_id: int | None = None
+    lines: list[DocumentLineResponse] = Field(default_factory=list)
     number: str
     document_date: date
     due_date: date | None
@@ -201,3 +231,8 @@ class PartnerStatement(BaseModel):
     opening_balance: Decimal
     closing_balance: Decimal
     rows: list[StatementRow]
+
+
+class CommerceApprovalDecision(BaseModel):
+    decision: Literal["approve", "reject"]
+    reason: str | None = Field(default=None, max_length=1000)

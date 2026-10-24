@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
@@ -16,9 +17,9 @@ router = APIRouter(prefix="/inventory/stock-moves", tags=["Inventory Stock Moves
 
 
 def _company_for_user(db: Session, company_id: int, user: User):
-    if user.tenant_id is None:
+    if get_effective_tenant_id(user) is None:
         raise HTTPException(403, "User is not assigned to a tenant")
-    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == user.tenant_id))
+    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == get_effective_tenant_id(user), Company.is_active.is_(True)))
     if company is None:
         raise HTTPException(403, "Company is outside the current tenant")
     return company
@@ -33,7 +34,7 @@ def list_stock_moves(company_id: int = Query(..., gt=0), item_id: int | None = Q
 @router.get("/accounting-config", response_model=InventoryAccountingConfigResponse, dependencies=[Depends(require_permission("inventory.access"))])
 def get_accounting_config(company_id: int = Query(..., gt=0), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _company_for_user(db, company_id, user)
-    config = inventory_stock_move_service.get_accounting_config(db, tenant_id=user.tenant_id, company_id=company_id)
+    config = inventory_stock_move_service.get_accounting_config(db, tenant_id=get_effective_tenant_id(user), company_id=company_id)
     if config is None:
         raise HTTPException(404, "Inventory accounting configuration not found")
     return config
@@ -43,7 +44,7 @@ def get_accounting_config(company_id: int = Query(..., gt=0), db: Session = Depe
 def save_accounting_config(payload: InventoryAccountingConfigCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _company_for_user(db, payload.company_id, user)
     try:
-        config = inventory_stock_move_service.save_accounting_config(db, tenant_id=user.tenant_id, payload=payload)
+        config = inventory_stock_move_service.save_accounting_config(db, tenant_id=get_effective_tenant_id(user), payload=payload)
         db.commit()
         db.refresh(config)
         return config
@@ -69,7 +70,7 @@ def create_stock_move(payload: StockMoveCreate, db: Session = Depends(get_db), u
 def post_stock_move(move_id: int, company_id: int = Query(..., gt=0), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _company_for_user(db, company_id, user)
     try:
-        move = inventory_stock_move_service.post(db, tenant_id=user.tenant_id, company_id=company_id, move_id=move_id, user_id=user.id)
+        move = inventory_stock_move_service.post(db, tenant_id=get_effective_tenant_id(user), company_id=company_id, move_id=move_id, user_id=user.id)
         db.commit()
         db.refresh(move)
         return move
@@ -82,7 +83,7 @@ def post_stock_move(move_id: int, company_id: int = Query(..., gt=0), db: Sessio
 def reverse_stock_move(move_id: int, company_id: int = Query(..., gt=0), reversal_date: date | None = Query(default=None), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _company_for_user(db, company_id, user)
     try:
-        move = inventory_stock_move_service.reverse(db, tenant_id=user.tenant_id, company_id=company_id, move_id=move_id, user_id=user.id, reversal_date=reversal_date)
+        move = inventory_stock_move_service.reverse(db, tenant_id=get_effective_tenant_id(user), company_id=company_id, move_id=move_id, user_id=user.id, reversal_date=reversal_date)
         # journal_service.reverse commits as part of its atomic reversal. For
         # transfer movements there is no GL entry, so commit the physical reversal here.
         db.commit()

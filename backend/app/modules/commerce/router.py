@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.accounting.chart_of_accounts.models import AccountCombination
@@ -12,7 +13,7 @@ from app.modules.branches.models import Branch
 from app.modules.commerce.accounting_models import CommerceAccountingSettings
 from app.modules.commerce.accounting_schemas import CommerceAccountingSettingsCreate
 from app.modules.commerce.models import CommercePayment, SalesDocument, PurchaseDocument
-from app.modules.commerce.schemas import PartnerCreate, PartnerResponse, DocumentCreate, DocumentResponse, PaymentCreate, PaymentResponse, PaymentReverse, AgingSummary, PartnerStatement
+from app.modules.commerce.schemas import PartnerCreate, PartnerResponse, DocumentCreate, DocumentResponse, PaymentCreate, PaymentResponse, PaymentReverse, AgingSummary, PartnerStatement, CommerceApprovalDecision
 from app.modules.commerce.sales_return_schemas import SalesReturnCreate
 from app.modules.commerce.sales_return_service import sales_return_service
 from app.modules.commerce.service import commerce_service
@@ -25,8 +26,8 @@ router = APIRouter(prefix="/commerce", tags=["Commerce"], dependencies=[Depends(
 
 
 def _company_for_user(db: Session, company_id: int, user: User):
-    if user.tenant_id is None: raise HTTPException(403, "User is not assigned to a tenant")
-    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == user.tenant_id))
+    if get_effective_tenant_id(user) is None: raise HTTPException(403, "User is not assigned to a tenant")
+    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == get_effective_tenant_id(user), Company.is_active.is_(True)))
     if company is None: raise HTTPException(403, "Company is outside the current tenant")
     return company
 
@@ -159,6 +160,13 @@ def purchases(
         raise HTTPException(400, "Invalid purchase document type")
     return commerce_service.list_documents(db, company_id, "purchase", document_type)
 
+@router.post("/sales/{document_id}/cancel", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
+def cancel_sales_order(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company_for_user(db, company_id, current_user)
+    order = _run(lambda: commerce_service.cancel_sales_order(db, company_id=company_id, document_id=document_id))
+    db.commit(); db.refresh(order); return order
+
+
 @router.post("/sales/{document_id}/confirm", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def confirm_sale(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
@@ -183,6 +191,36 @@ def confirm_purchase(document_id: int, company_id: int = Query(..., gt=0), curre
         validate_document_tax_snapshot(obj, snapshot)
         return commerce_service.confirm(db, company_id, document_id, "purchase", current_user.id)
     obj = _run(action); db.commit(); db.refresh(obj); return obj
+
+
+
+
+
+
+@router.get("/sales/{document_id}/approval-events")
+def list_sales_order_approval_events(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company_for_user(db, company_id, current_user)
+    return _run(lambda: commerce_service.list_approval_events(db, company_id, document_id, "sale"))
+
+
+@router.get("/purchases/{document_id}/approval-events")
+def list_purchase_order_approval_events(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company_for_user(db, company_id, current_user)
+    return _run(lambda: commerce_service.list_approval_events(db, company_id, document_id, "purchase"))
+
+
+@router.post("/sales/{document_id}/approval-decision", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
+def decide_sales_order_approval(document_id: int, payload: CommerceApprovalDecision, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company_for_user(db, company_id, current_user)
+    obj = _run(lambda: commerce_service.decide_approval(db, company_id, document_id, "sale", payload.decision, current_user.id, payload.reason))
+    db.commit(); db.refresh(obj); return obj
+
+
+@router.post("/purchases/{document_id}/approval-decision", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
+def decide_purchase_order_approval(document_id: int, payload: CommerceApprovalDecision, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _company_for_user(db, company_id, current_user)
+    obj = _run(lambda: commerce_service.decide_approval(db, company_id, document_id, "purchase", payload.decision, current_user.id, payload.reason))
+    db.commit(); db.refresh(obj); return obj
 
 
 @router.post("/sales/{document_id}/post-inventory", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])

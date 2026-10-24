@@ -1,6 +1,7 @@
 import { CalendarDays, CheckCircle2, RefreshCw, ShieldCheck, Sparkles, Users, Boxes, CircleDollarSign } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/modules/identity/hooks/useAuth";
+import { formatCompanyDate, useCompanyDateFormat } from "@/utils/format-date";
 
 import {
   BusinessUnitsSummary,
@@ -14,12 +15,10 @@ import { dashboardStatistics } from "../data/dashboard.data";
 export default function DashboardPage() {
   const { user } = useAuth();
   const companyName = user?.tenant_name || "مساحة العمل";
-  const currentDate = new Intl.DateTimeFormat("ar-EG", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  }).format(new Date());
+  const dateFormat = useCompanyDateFormat();
+  const today = new Date();
+  const localDate = [today.getFullYear(), String(today.getMonth() + 1).padStart(2, "0"), String(today.getDate()).padStart(2, "0")].join("-");
+  const currentDate = formatCompanyDate(localDate, dateFormat);
 
   return (
     <div className="mx-auto w-full max-w-[1600px] space-y-7" dir="rtl">

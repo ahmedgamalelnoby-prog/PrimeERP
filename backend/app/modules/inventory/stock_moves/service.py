@@ -17,9 +17,11 @@ from app.modules.companies.models import Company
 from app.modules.inventory.items.models import InventoryItem, InventoryStock
 from app.modules.inventory.locations.models import InventoryLocation
 from app.modules.inventory.stock_moves.location_stock import InventoryLocationStock
-from app.modules.inventory.stock_moves.models import InventoryAccountingConfig, InventoryCostLayer, InventoryStockMove, InventoryValuationAllocation
+from app.modules.inventory.stock_moves.models import InventoryAccountingConfig, InventoryCostLayer, InventoryLotBalance, InventoryLotMoveAllocation, InventoryStockMove, InventoryValuationAllocation
 from app.modules.inventory.stock_moves.repository import inventory_stock_move_repository
 from app.modules.inventory.reservations.models import InventoryReservation
+from app.modules.company_settings.service import get_company_setting
+from app.modules.manufacturing.production_orders.models import ManufacturingWorkOrder, ManufacturingWorkOrderLine
 
 
 class InventoryStockMoveService:
@@ -66,11 +68,79 @@ class InventoryStockMoveService:
             raise ValueError("Variant does not belong to the item/company or is inactive")
         return variant
 
-    def create_draft(self, db: Session, payload):
+    @staticmethod
+    def _validate_required_work_order(db: Session, payload, *, from_work_order: bool = False) -> None:
+        """When enabled, accept production movements only when they match a released company work order."""
+        if get_company_setting(db, payload.company_id, "manufacturing.require_work_order") is not True:
+            return
+        if payload.movement_type not in {"production_issue", "production_receipt"}:
+            return
+        if not from_work_order:
+            raise ValueError("Production stock movements must be created by the work-order completion workflow")
+        if payload.source_module != "manufacturing" or not payload.source_id:
+            raise ValueError("A released manufacturing work order is required for production stock movements")
+        try:
+            source_id = int(payload.source_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Production stock movement must reference a valid work order source") from exc
+
+        if payload.movement_type == "production_issue":
+            if payload.source_entity != "work_order_material":
+                raise ValueError("Production issue must reference a work-order material line")
+            row = db.execute(
+                select(ManufacturingWorkOrderLine, ManufacturingWorkOrder)
+                .join(ManufacturingWorkOrder, ManufacturingWorkOrder.id == ManufacturingWorkOrderLine.work_order_id)
+                .where(
+                    ManufacturingWorkOrderLine.id == source_id,
+                    ManufacturingWorkOrder.company_id == payload.company_id,
+                    ManufacturingWorkOrder.status == "released",
+                )
+                .with_for_update()
+            ).first()
+            if row is None:
+                raise ValueError("Production issue must reference a material line on a released company work order")
+            line, order = row
+            if line.ingredient_item_id != payload.item_id or order.source_location_id != payload.source_location_id:
+                raise ValueError("Production issue item and source location must match the work order material line")
+        else:
+            if payload.source_entity != "work_order_output":
+                raise ValueError("Production receipt must reference a work-order output")
+            order = db.scalar(
+                select(ManufacturingWorkOrder)
+                .where(
+                    ManufacturingWorkOrder.id == source_id,
+                    ManufacturingWorkOrder.company_id == payload.company_id,
+                    ManufacturingWorkOrder.status == "released",
+                )
+                .with_for_update()
+            )
+            if order is None:
+                raise ValueError("Production receipt must reference a released company work order")
+            if (
+                order.output_item_id != payload.item_id
+                or order.output_variant_id != payload.variant_id
+                or order.destination_location_id != payload.destination_location_id
+            ):
+                raise ValueError("Production receipt item, variant, and destination must match the work order output")
+
+    def create_draft(self, db: Session, payload, *, from_work_order: bool = False):
+        self._validate_required_work_order(db, payload, from_work_order=from_work_order)
         if payload.source_module and payload.source_entity and payload.source_id:
             existing = db.scalar(select(InventoryStockMove).where(InventoryStockMove.company_id == payload.company_id, InventoryStockMove.source_module == payload.source_module, InventoryStockMove.source_entity == payload.source_entity, InventoryStockMove.source_id == payload.source_id).with_for_update())
             if existing is not None:
-                same = all([existing.item_id == payload.item_id, existing.variant_id == payload.variant_id, existing.source_location_id == payload.source_location_id, existing.destination_location_id == payload.destination_location_id, Decimal(str(existing.quantity)) == Decimal(str(payload.quantity)), existing.movement_type == payload.movement_type])
+                same = all([
+                    existing.item_id == payload.item_id,
+                    existing.variant_id == payload.variant_id,
+                    existing.source_location_id == payload.source_location_id,
+                    existing.destination_location_id == payload.destination_location_id,
+                    Decimal(str(existing.quantity)) == Decimal(str(payload.quantity)),
+                    existing.status != "draft" or Decimal(str(existing.unit_cost)) == Decimal(str(payload.unit_cost)),
+                    existing.movement_type == payload.movement_type,
+                    existing.lot_number == payload.lot_number,
+                    existing.serial_number == payload.serial_number,
+                    existing.expiry_date == payload.expiry_date,
+                    payload.transaction_date is None or existing.transaction_date == payload.transaction_date,
+                ])
                 if same:
                     return existing
                 raise ValueError("A stock movement already exists for this source reference with different data")
@@ -81,18 +151,40 @@ class InventoryStockMoveService:
         if item.item_type not in {"stockable", "consumable"}:
             raise ValueError("Only stockable or consumable items can have stock movements")
         self._validate_variant(db, company_id=payload.company_id, item=item, variant_id=payload.variant_id)
+        if getattr(item, "batch_tracking", False) and not payload.lot_number and not payload.serial_number:
+            if payload.source_location_id is None or payload.movement_type not in {"issue", "transfer", "adjustment", "production_issue"}:
+                raise ValueError("Batch-tracked inbound movements require an explicit lot/batch number; outbound movements may use FEFO allocation")
+        if getattr(item, "serial_tracking", False):
+            if not payload.serial_number:
+                raise ValueError("Serial-tracked items require a serial number on every stock movement")
+            if Decimal(str(payload.quantity)) != Decimal("1"):
+                raise ValueError("Serial-tracked stock movements must have quantity exactly 1 per serial number")
+        elif payload.serial_number:
+            raise ValueError("Serial number is only allowed for serial-tracked items")
+        movement_date = payload.transaction_date or date.today()
+        if payload.expiry_date is not None and payload.expiry_date < movement_date:
+            raise ValueError("Expiry date cannot be earlier than the stock movement date")
+        if getattr(item, "expiry_tracking", False) and payload.expiry_date is None:
+            auto_fefo_outbound = payload.source_location_id is not None and payload.movement_type in {"issue", "transfer", "adjustment", "production_issue"} and not payload.serial_number
+            if not auto_fefo_outbound:
+                raise ValueError("Expiry-tracked inbound movements require an expiry date; outbound batch movements may use FEFO allocation")
+        if get_company_setting(db, payload.company_id, "inventory.expiry_tracking_required") is True and getattr(item, "batch_tracking", False) and payload.movement_type in {"receipt", "opening", "return", "production_receipt"} and payload.expiry_date is None:
+            raise ValueError("Company policy requires an expiry date for batch-tracked stock receipts")
+        require_bin_location = get_company_setting(db, payload.company_id, "inventory.require_bin_location") is True
         locations = {}
         for location_id in (payload.source_location_id, payload.destination_location_id):
             if location_id is not None:
                 location = db.scalar(select(InventoryLocation).where(InventoryLocation.id == location_id, InventoryLocation.company_id == payload.company_id, InventoryLocation.is_active.is_(True)))
                 if location is None:
                     raise ValueError("Location does not belong to the company or is inactive")
+                if require_bin_location and location.parent_id is None:
+                    raise ValueError("Company policy requires stock movements to use child/bin locations")
                 locations[location_id] = location
         if payload.source_location_id is None and payload.destination_location_id is None:
             raise ValueError("At least one stock location is required")
-        if payload.movement_type in {"issue", "transfer", "return"} and payload.source_location_id is None:
+        if payload.movement_type in {"issue", "transfer", "return", "production_issue"} and payload.source_location_id is None:
             raise ValueError("Source location is required for this movement")
-        if payload.movement_type in {"receipt", "transfer", "return"} and payload.destination_location_id is None:
+        if payload.movement_type in {"receipt", "transfer", "return", "production_receipt"} and payload.destination_location_id is None:
             raise ValueError("Destination location is required for this movement")
         if payload.source_location_id and payload.destination_location_id and payload.source_location_id == payload.destination_location_id:
             raise ValueError("Source and destination locations must differ")
@@ -120,6 +212,9 @@ class InventoryStockMoveService:
             raise ValueError("Company is outside the current tenant")
         if getattr(move, "source_entity", None) == "sales_delivery" and move.movement_type != "issue":
             raise ValueError("Sales delivery stock moves must be issue movements")
+        if move.movement_type in {"production_issue", "production_receipt"}:
+            self._validate_production_movement(db, company_id=company_id, move=move)
+        allow_negative_stock = get_company_setting(db, company_id, "inventory.allow_negative_stock") is True
         reservation = None
         reservation_id = getattr(move, "reservation_id", None)
         if reservation_id is not None:
@@ -134,33 +229,60 @@ class InventoryStockMoveService:
                 raise ValueError("Only active reservations can be consumed by a stock movement")
             if reservation.item_id != move.item_id or reservation.variant_id != move.variant_id or reservation.location_id != move.source_location_id:
                 raise ValueError("Reservation does not match the stock movement item, variant, or source location")
-            if Decimal(reservation.quantity) != Decimal(move.quantity):
-                raise ValueError("Reservation quantity must exactly match the stock movement quantity")
+            if Decimal(reservation.quantity) < Decimal(move.quantity):
+                raise ValueError("Reservation quantity is less than the stock movement quantity")
             if move.movement_type not in {"issue", "transfer", "return"}:
                 raise ValueError("Reservations can only be consumed by issue, transfer, or return movements")
-        item = db.scalar(select(InventoryItem).where(InventoryItem.id == move.item_id, InventoryItem.company_id == company_id, InventoryItem.is_active.is_(True)))
+        item_query = select(InventoryItem).where(InventoryItem.id == move.item_id, InventoryItem.company_id == company_id, InventoryItem.is_active.is_(True))
+        if item_query is not None:
+            item_query = item_query.with_for_update()
+        item = db.scalar(item_query)
         if item is None:
             raise ValueError("Item is unavailable for posting")
         self._validate_variant(db, company_id=company_id, item=item, variant_id=getattr(move, "variant_id", None))
         variant_id = getattr(move, "variant_id", None)
         source_balance = self._location_balance(db, company_id, move.item_id, variant_id, move.source_location_id, lock=True) if move.source_location_id else None
         destination_balance = self._location_balance(db, company_id, move.item_id, variant_id, move.destination_location_id, lock=True) if move.destination_location_id else None
+        require_bin_location = get_company_setting(db, company_id, "inventory.require_bin_location") is True
+        if require_bin_location:
+            for location_id in (move.source_location_id, move.destination_location_id):
+                if location_id is None:
+                    continue
+                endpoint_location = db.scalar(
+                    select(InventoryLocation).where(
+                        InventoryLocation.id == location_id,
+                        InventoryLocation.company_id == company_id,
+                        InventoryLocation.is_active.is_(True),
+                    )
+                )
+                if endpoint_location is None:
+                    raise ValueError("Stock movement location is unavailable")
+                if endpoint_location.parent_id is None:
+                    raise ValueError("Company policy requires stock movements to use child/bin locations")
         source_warehouse_id = source_balance.location.warehouse_id if source_balance else None
         destination_warehouse_id = destination_balance.location.warehouse_id if destination_balance else None
         unit_cost = Decimal(move.unit_cost or 0)
         fifo_allocations: list[tuple[InventoryCostLayer, Decimal, Decimal]] = []
         quantity = Decimal(move.quantity)
+        tracked_item = bool(getattr(item, "batch_tracking", False) or getattr(item, "serial_tracking", False) or getattr(item, "expiry_tracking", False))
+        lot_allocations: list[tuple[str | None, str | None, date | None, Decimal]] = []
 
         if source_balance:
             on_hand = Decimal(source_balance.quantity_on_hand or 0)
             reserved = Decimal(source_balance.quantity_reserved or 0)
-            if move.movement_type in {"issue", "transfer", "adjustment"} and on_hand - reserved < quantity:
-                raise ValueError("Insufficient available stock after excluding reserved quantity")
-            if on_hand < quantity:
+            if move.movement_type in {"issue", "transfer", "adjustment", "production_issue"} and reserved > 0 and on_hand - reserved < quantity:
+                raise ValueError("Movement would consume stock reserved for another transaction")
+            if on_hand < quantity and not allow_negative_stock:
                 raise ValueError("Insufficient stock at source location")
+            if on_hand < quantity and item.costing_method == "fifo":
+                raise ValueError("Negative stock is not supported for FIFO valuation; receive stock or use a supported valuation policy")
             warehouse_source = self._warehouse_stock(db, company_id, move.item_id, variant_id, source_warehouse_id)
-            if move.movement_type in {"issue", "transfer", "adjustment"} and Decimal(warehouse_source.quantity_on_hand or 0) - Decimal(warehouse_source.quantity_reserved or 0) < quantity:
-                raise ValueError("Insufficient available warehouse stock after excluding reserved quantity")
+            warehouse_on_hand = Decimal(warehouse_source.quantity_on_hand or 0)
+            warehouse_reserved = Decimal(warehouse_source.quantity_reserved or 0)
+            if move.movement_type in {"issue", "transfer", "adjustment", "production_issue"} and warehouse_reserved > 0 and warehouse_on_hand - warehouse_reserved < quantity:
+                raise ValueError("Movement would consume warehouse stock reserved for another transaction")
+            if warehouse_on_hand < quantity and not allow_negative_stock:
+                raise ValueError("Insufficient warehouse stock")
             if item.costing_method == "fifo":
                 fifo_allocations = self._consume_fifo_layers(db, company_id, move.item_id, variant_id, source_warehouse_id, quantity)
                 unit_cost = self._weighted_cost(fifo_allocations)
@@ -171,6 +293,22 @@ class InventoryStockMoveService:
                 unit_cost = self._outbound_unit_cost(item, warehouse_source)
             if unit_cost <= 0:
                 raise ValueError("A positive inventory valuation is required before changing stock")
+            if tracked_item:
+                if move.lot_number or move.serial_number:
+                    lot_allocations = [(move.lot_number, move.serial_number, move.expiry_date, quantity)]
+                else:
+                    lot_allocations = self._select_fefo_lots(db, move=move, item=item, quantity=quantity)
+                for lot_number, serial_number, expiry_date, allocated_quantity in lot_allocations:
+                    self._adjust_lot_balance(
+                        db, move=move, item=item, location_id=move.source_location_id,
+                        delta=-allocated_quantity, lot_number=lot_number,
+                        serial_number=serial_number, expiry_date=expiry_date,
+                    )
+                    db.add(InventoryLotMoveAllocation(
+                        company_id=move.company_id, stock_move_id=move.id,
+                        lot_number=lot_number, serial_number=serial_number,
+                        expiry_date=expiry_date, quantity=allocated_quantity,
+                    ))
             source_balance.quantity_on_hand -= quantity
             warehouse_source.quantity_on_hand -= quantity
             if reservation is not None:
@@ -183,6 +321,23 @@ class InventoryStockMoveService:
                     raise ValueError("Warehouse reserved stock is insufficient for the linked reservation")
                 source_balance.quantity_reserved -= quantity
                 warehouse_source.quantity_reserved -= quantity
+                reserved_quantity = Decimal(reservation.quantity)
+                remaining_quantity = reserved_quantity - quantity
+                if remaining_quantity > 0:
+                    db.add(InventoryReservation(
+                        company_id=reservation.company_id,
+                        item_id=reservation.item_id,
+                        variant_id=reservation.variant_id,
+                        location_id=reservation.location_id,
+                        quantity=remaining_quantity,
+                        status="active",
+                        source_module=reservation.source_module,
+                        source_entity=reservation.source_entity,
+                        source_id=reservation.source_id,
+                        reference=reservation.reference,
+                        notes=reservation.notes,
+                    ))
+                    reservation.quantity = quantity
                 reservation.status = "consumed"
 
         if destination_balance:
@@ -193,6 +348,21 @@ class InventoryStockMoveService:
                 unit_cost = old_cost if old_qty > 0 else Decimal(item.standard_cost or item.purchase_price or 0)
             if unit_cost <= 0:
                 raise ValueError("A positive inventory valuation is required before changing stock")
+            if tracked_item:
+                destination_lots = lot_allocations or [(move.lot_number, move.serial_number, move.expiry_date, quantity)]
+                for lot_number, serial_number, expiry_date, allocated_quantity in destination_lots:
+                    self._adjust_lot_balance(
+                        db, move=move, item=item, location_id=move.destination_location_id,
+                        delta=allocated_quantity, lot_number=lot_number,
+                        serial_number=serial_number, expiry_date=expiry_date,
+                    )
+                if not source_balance:
+                    for lot_number, serial_number, expiry_date, allocated_quantity in destination_lots:
+                        db.add(InventoryLotMoveAllocation(
+                            company_id=move.company_id, stock_move_id=move.id,
+                            lot_number=lot_number, serial_number=serial_number,
+                            expiry_date=expiry_date, quantity=allocated_quantity,
+                        ))
             destination_balance.quantity_on_hand += quantity
             warehouse_destination.quantity_on_hand += quantity
             new_qty = old_qty + quantity
@@ -209,11 +379,13 @@ class InventoryStockMoveService:
         db.flush()
         return move
 
-    def reverse(self, db: Session, *, tenant_id: int, company_id: int, move_id: int, user_id: int, reversal_date: date | None = None):
+    def reverse(self, db: Session, *, tenant_id: int, company_id: int, move_id: int, user_id: int, reversal_date: date | None = None, allow_production: bool = False):
         """Reverse a posted inventory movement atomically, including physical stock and its GL entry."""
         move = db.scalar(select(InventoryStockMove).where(InventoryStockMove.id == move_id, InventoryStockMove.company_id == company_id).with_for_update())
         if move is None:
             raise ValueError("Stock move not found")
+        if move.movement_type in {"production_issue", "production_receipt"} and not allow_production:
+            raise ValueError("Production movements must be reversed through work-order cancellation")
         if move.status == "reversed":
             return move
         if move.status != "posted":
@@ -232,6 +404,14 @@ class InventoryStockMoveService:
         item = db.scalar(select(InventoryItem).where(InventoryItem.id == move.item_id, InventoryItem.company_id == company_id, InventoryItem.is_active.is_(True)))
         if item is None:
             raise ValueError("Item is unavailable for reversal")
+        lot_allocations = db.scalars(
+            select(InventoryLotMoveAllocation).where(
+                InventoryLotMoveAllocation.company_id == company_id,
+                InventoryLotMoveAllocation.stock_move_id == move.id,
+            ).with_for_update()
+        ).all()
+        if (getattr(item, "batch_tracking", False) or getattr(item, "serial_tracking", False) or getattr(item, "expiry_tracking", False)) and not lot_allocations:
+            raise ValueError("Tracked movement is missing its lot-allocation audit; reversal is blocked to protect traceability")
         variant_id = move.variant_id
         quantity = Decimal(move.quantity)
         source_balance = self._location_balance(db, company_id, move.item_id, variant_id, move.source_location_id, lock=True) if move.source_location_id else None
@@ -244,6 +424,13 @@ class InventoryStockMoveService:
             raise ValueError("Cannot reverse movement: destination stock has already been consumed")
 
         if destination_balance is not None:
+            if getattr(item, "batch_tracking", False) or getattr(item, "serial_tracking", False) or getattr(item, "expiry_tracking", False):
+                for lot in lot_allocations:
+                    self._adjust_lot_balance(
+                        db, move=move, item=item, location_id=move.destination_location_id,
+                        delta=-Decimal(lot.quantity), lot_number=lot.lot_number,
+                        serial_number=lot.serial_number, expiry_date=lot.expiry_date,
+                    )
             destination_balance.quantity_on_hand -= quantity
             warehouse_destination = self._warehouse_stock(db, company_id, move.item_id, variant_id, destination_warehouse_id)
             if Decimal(warehouse_destination.quantity_on_hand or 0) < quantity:
@@ -253,6 +440,13 @@ class InventoryStockMoveService:
             self._recalculate_average_cost(db, company_id, move.item_id, variant_id, destination_warehouse_id, item)
 
         if source_balance is not None:
+            if getattr(item, "batch_tracking", False) or getattr(item, "serial_tracking", False) or getattr(item, "expiry_tracking", False):
+                for lot in lot_allocations:
+                    self._adjust_lot_balance(
+                        db, move=move, item=item, location_id=move.source_location_id,
+                        delta=Decimal(lot.quantity), lot_number=lot.lot_number,
+                        serial_number=lot.serial_number, expiry_date=lot.expiry_date,
+                    )
             source_balance.quantity_on_hand += quantity
             warehouse_source = self._warehouse_stock(db, company_id, move.item_id, variant_id, source_warehouse_id)
             warehouse_source.quantity_on_hand += quantity
@@ -285,6 +479,44 @@ class InventoryStockMoveService:
         db.flush()
         return move
 
+    @staticmethod
+    def _validate_production_movement(db, *, company_id: int, move: InventoryStockMove) -> None:
+        if move.source_module != "manufacturing":
+            raise ValueError("Production stock movements must originate from a manufacturing work order")
+        from app.modules.manufacturing.production_orders.models import ManufacturingWorkOrder, ManufacturingWorkOrderLine
+
+        if move.movement_type == "production_issue":
+            try:
+                line_id = int(move.source_id or "")
+            except ValueError as exc:
+                raise ValueError("Production issue must identify its work-order material line") from exc
+            row = db.execute(
+                select(ManufacturingWorkOrderLine, ManufacturingWorkOrder)
+                .join(ManufacturingWorkOrder, ManufacturingWorkOrder.id == ManufacturingWorkOrderLine.work_order_id)
+                .where(
+                    ManufacturingWorkOrderLine.id == line_id,
+                    ManufacturingWorkOrderLine.issue_move_id == move.id,
+                    ManufacturingWorkOrder.company_id == company_id,
+                    ManufacturingWorkOrder.status == "released",
+                )
+            ).first()
+            if row is None or row[0].ingredient_item_id != move.item_id:
+                raise ValueError("Production issue is not linked to a released work-order material line")
+        else:
+            try:
+                work_order_id = int(move.source_id or "")
+            except ValueError as exc:
+                raise ValueError("Production receipt must identify its work order") from exc
+            order = db.scalar(select(ManufacturingWorkOrder).where(
+                ManufacturingWorkOrder.id == work_order_id,
+                ManufacturingWorkOrder.company_id == company_id,
+                ManufacturingWorkOrder.status == "released",
+                ManufacturingWorkOrder.output_item_id == move.item_id,
+                ManufacturingWorkOrder.output_variant_id == move.variant_id,
+            ))
+            if order is None:
+                raise ValueError("Production receipt is not linked to a released work order")
+
     def _post_accounting(self, db: Session, *, tenant_id: int, company_id: int, move: InventoryStockMove, user_id: int):
         if move.unit_cost <= 0:
             raise ValueError("A positive inventory valuation is required before accounting can be posted")
@@ -311,10 +543,12 @@ class InventoryStockMoveService:
     @staticmethod
     def _accounting_lines(move, config, amount):
         inv, cogs, adjustment, clearing = config.inventory_account_id, config.cogs_account_id, config.adjustment_account_id, config.clearing_account_id
-        if move.movement_type in {"receipt", "opening"}:
+        if move.movement_type in {"receipt", "opening", "production_receipt"}:
             debit, credit = inv, clearing
         elif move.movement_type == "issue":
             debit, credit = cogs, inv
+        elif move.movement_type == "production_issue":
+            debit, credit = clearing, inv
         elif move.movement_type == "return":
             debit, credit = (inv, cogs) if move.destination_location_id else (clearing, inv)
         elif move.movement_type == "adjustment":
@@ -322,6 +556,104 @@ class InventoryStockMoveService:
         else:
             raise ValueError("Unsupported inventory accounting movement")
         return [{"account_combination_id": debit, "debit": amount, "credit": Decimal("0"), "description": f"Inventory {move.movement_type}"}, {"account_combination_id": credit, "debit": Decimal("0"), "credit": amount, "description": f"Inventory {move.movement_type}"}]
+
+    @staticmethod
+    def _select_fefo_lots(db, *, move, item, quantity: Decimal):
+        """Select source lots by earliest expiry, excluding expired stock."""
+        if getattr(item, "serial_tracking", False):
+            raise ValueError("Serial-tracked issues must identify the exact serial number")
+        today = move.transaction_date or date.today()
+        stmt = select(InventoryLotBalance).where(
+            InventoryLotBalance.company_id == move.company_id,
+            InventoryLotBalance.item_id == move.item_id,
+            InventoryLotBalance.location_id == move.source_location_id,
+            InventoryLotBalance.quantity_on_hand > 0,
+        )
+        stmt = stmt.where(InventoryLotBalance.variant_id == move.variant_id) if move.variant_id is not None else stmt.where(InventoryLotBalance.variant_id.is_(None))
+        stmt = stmt.where(
+            (InventoryLotBalance.expiry_date >= today)
+            if getattr(item, "expiry_tracking", False)
+            else ((InventoryLotBalance.expiry_date.is_(None)) | (InventoryLotBalance.expiry_date >= today))
+        )
+        lots = db.scalars(
+            stmt.order_by(
+                InventoryLotBalance.expiry_date.is_(None),
+                InventoryLotBalance.expiry_date.asc(),
+                InventoryLotBalance.id.asc(),
+            ).with_for_update()
+        ).all()
+        remaining = quantity
+        picks = []
+        for lot in lots:
+            if remaining <= 0:
+                break
+            available = Decimal(lot.quantity_on_hand or 0)
+            take = min(available, remaining)
+            if take > 0:
+                picks.append((lot.lot_number, lot.serial_number, lot.expiry_date, take))
+                remaining -= take
+        if remaining > 0:
+            raise ValueError("Insufficient non-expired lot quantity for FEFO allocation")
+        return picks
+
+    @staticmethod
+    def _adjust_lot_balance(db, *, move, item, location_id: int, delta: Decimal, lot_number=None, serial_number=None, expiry_date=None):
+        """Apply a tracked movement to its exact lot/serial balance under row locks."""
+        lot_number = move.lot_number if lot_number is None else lot_number
+        serial_number = move.serial_number if serial_number is None else serial_number
+        expiry_date = move.expiry_date if expiry_date is None else expiry_date
+        if not lot_number and not serial_number:
+            raise ValueError("Tracked stock movement is missing its lot or serial identity")
+        stmt = select(InventoryLotBalance).where(
+            InventoryLotBalance.company_id == move.company_id,
+            InventoryLotBalance.item_id == move.item_id,
+            InventoryLotBalance.location_id == location_id,
+            InventoryLotBalance.lot_number == lot_number if lot_number is not None else InventoryLotBalance.lot_number.is_(None),
+            InventoryLotBalance.serial_number == serial_number if serial_number is not None else InventoryLotBalance.serial_number.is_(None),
+        )
+        stmt = stmt.where(InventoryLotBalance.variant_id == move.variant_id) if move.variant_id is not None else stmt.where(InventoryLotBalance.variant_id.is_(None))
+        balance = db.scalar(stmt.with_for_update())
+
+        if delta < 0:
+            if balance is None or Decimal(balance.quantity_on_hand or 0) < abs(delta):
+                raise ValueError("Insufficient quantity for the selected lot or serial at the source location")
+            if balance.expiry_date != expiry_date:
+                raise ValueError("The selected lot/serial expiry date does not match the source balance")
+            balance.quantity_on_hand = Decimal(balance.quantity_on_hand) + delta
+            return balance
+
+        if getattr(item, "serial_tracking", False) and serial_number:
+            if balance is not None and Decimal(balance.quantity_on_hand or 0) > 0:
+                raise ValueError("This serial number is already on hand at the destination location")
+            duplicate_stmt = select(InventoryLotBalance.id).where(
+                InventoryLotBalance.company_id == move.company_id,
+                InventoryLotBalance.item_id == move.item_id,
+                InventoryLotBalance.serial_number == serial_number,
+                InventoryLotBalance.quantity_on_hand > 0,
+            )
+            duplicate_stmt = duplicate_stmt.where(InventoryLotBalance.id != balance.id) if balance is not None else duplicate_stmt
+            if db.scalar(duplicate_stmt.with_for_update()) is not None:
+                raise ValueError("This serial number already has on-hand stock at another location")
+
+        if balance is None:
+            balance = InventoryLotBalance(
+                company_id=move.company_id,
+                item_id=move.item_id,
+                variant_id=move.variant_id,
+                location_id=location_id,
+                lot_number=lot_number,
+                serial_number=serial_number,
+                expiry_date=expiry_date,
+                quantity_on_hand=delta,
+            )
+            db.add(balance)
+            db.flush()
+            return balance
+
+        if balance.expiry_date != expiry_date:
+            raise ValueError("A lot/serial identity cannot be reused with a different expiry date")
+        balance.quantity_on_hand = Decimal(balance.quantity_on_hand or 0) + delta
+        return balance
 
     @staticmethod
     def _location_balance(db: Session, company_id: int, item_id: int, variant_id: int | None, location_id: int, *, lock: bool):

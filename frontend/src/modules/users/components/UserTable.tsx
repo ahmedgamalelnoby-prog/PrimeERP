@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { formatCompanyDate, useCompanyDateFormat, type CompanyDateFormat } from "@/utils/format-date";
 import { Switch } from "@/components/ui/switch";
 import {
   Table,
@@ -42,7 +43,7 @@ function getUserInitial(user: User): string {
   return displayName.charAt(0).toUpperCase();
 }
 
-function formatLastLogin(value: string | null): string {
+function formatLastLogin(value: string | null, format: CompanyDateFormat): string {
   if (!value) {
     return "لم يسجل الدخول";
   }
@@ -53,13 +54,13 @@ function formatLastLogin(value: string | null): string {
     return "غير متاح";
   }
 
-  return new Intl.DateTimeFormat("ar-EG", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
+  const datePart = value.slice(0, 10);
+  const displayDate = formatCompanyDate(datePart, format);
+  const displayTime = new Intl.DateTimeFormat("ar-EG", {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+  return `${displayDate} ${displayTime}`;
 }
 
 export default function UserTable({
@@ -71,6 +72,8 @@ export default function UserTable({
   onToggleStatus,
   onResetPassword,
 }: UserTableProps) {
+  const dateFormat = useCompanyDateFormat();
+
   if (loading) {
     return (
       <div
@@ -219,6 +222,7 @@ export default function UserTable({
                     <span className="whitespace-nowrap text-sm text-muted-foreground">
                       {formatLastLogin(
                         user.last_login,
+                        dateFormat,
                       )}
                     </span>
                   </TableCell>

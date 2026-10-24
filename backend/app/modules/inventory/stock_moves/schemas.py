@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-MovementType = Literal["receipt", "issue", "transfer", "adjustment", "opening", "return"]
+MovementType = Literal["receipt", "issue", "transfer", "adjustment", "opening", "return", "production_issue", "production_receipt"]
 
 
 class StockMoveCreate(BaseModel):
@@ -22,6 +22,9 @@ class StockMoveCreate(BaseModel):
     source_entity: str | None = Field(default=None, max_length=80)
     source_id: str | None = Field(default=None, max_length=80)
     reservation_id: int | None = Field(default=None, gt=0)
+    lot_number: str | None = Field(default=None, min_length=1, max_length=100)
+    serial_number: str | None = Field(default=None, min_length=1, max_length=100)
+    expiry_date: date | None = None
     notes: str | None = None
 
 

@@ -5,6 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.modules.accounting.models import TaxRate
+from app.modules.company_settings.service import get_company_setting
 from app.modules.catalog.models import ProductCategory
 from app.modules.inventory.items.models import InventoryItem
 from app.modules.inventory.items.repository import inventory_item_repository
@@ -73,6 +74,18 @@ class InventoryItemService:
         self._validate_commercial_uoms(db, company_id=payload.company_id, base_uom=uom, sales_uom_id=payload.sales_uom_id, purchase_uom_id=payload.purchase_uom_id)
         sales_tax_ids, purchase_tax_ids = self._validate_tax_profiles(db, company_id=payload.company_id, sales_tax_ids=payload.sales_tax_ids, purchase_tax_ids=payload.purchase_tax_ids)
         values = payload.model_dump()
+        for field, setting_key in (("batch_tracking", "inventory.batch_tracking_default"), ("serial_tracking", "inventory.serial_tracking_default"), ("expiry_tracking", "inventory.expiry_tracking_required")):
+            if field not in payload.model_fields_set or values.get(field) is None:
+                values[field] = get_company_setting(db, payload.company_id, setting_key) is True
+        if values["serial_tracking"] or values["expiry_tracking"]:
+            values["batch_tracking"] = True
+        if "costing_method" not in payload.model_fields_set:
+            company_method = get_company_setting(db, payload.company_id, "inventory.valuation_method")
+            values["costing_method"] = {
+                "fifo": "fifo",
+                "moving_average": "weighted_average",
+                "standard_cost": "standard",
+            }[company_method]
         values.update(uom_id=uom.id, uom=uom.code, sales_tax_ids=sales_tax_ids, purchase_tax_ids=purchase_tax_ids)
         item = InventoryItem(**values)
         db.add(item)

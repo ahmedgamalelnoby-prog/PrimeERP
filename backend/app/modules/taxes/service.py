@@ -36,5 +36,5 @@ def ensure_unique_code(db: Session, company_id: int, code: str, *, exclude_id: i
         raise HTTPException(409, "Tax code already exists for this company")
 
 
-def calculate(db: Session, *, company_id: int, amount: Decimal, tax_ids: list[int], inclusive: bool = False) -> dict:
+def calculate(db: Session, *, company_id: int, amount: Decimal, tax_ids: list[int], inclusive: bool | None = None) -> dict:
     return calculate_taxes(db, company_id=company_id, amount=amount, tax_ids=tax_ids, inclusive=inclusive)

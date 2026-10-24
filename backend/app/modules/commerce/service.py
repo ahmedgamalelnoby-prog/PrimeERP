@@ -1,18 +1,27 @@
 from datetime import datetime, timezone, timedelta
-from decimal import Decimal
-from sqlalchemy import select
+from decimal import Decimal, ROUND_CEILING
+from sqlalchemy import func, or_, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from app.modules.accounting.models import TaxRate
 from app.modules.companies.models import Company
+from app.modules.company_settings.service import get_company_setting
+from app.core.permissions.checker import user_has_permission
+from app.modules.audit.service import record_audit_event
 from app.modules.identity.models import User
+from app.modules.egyptian_einvoice.models import EgyptianEInvoiceDocument
 from app.modules.accounting.tax_engine import calculate_taxes
 from app.modules.commerce.accounting_service import commerce_accounting_service
 from app.modules.catalog.models import ProductVariant, Recipe
-from app.modules.commerce.models import BusinessPartner, CommercePayment, CommercePaymentAllocation, PurchaseBillReceiptLink, PurchaseDocument, PurchaseLine, SalesDocument, SalesLine
+from app.modules.commerce.models import BusinessPartner, CommerceApprovalEvent, CommercePayment, CommercePaymentAllocation, PurchaseBillReceiptLink, PurchaseDocument, PurchaseLine, SalesDocument, SalesLine, CommerceDocumentNumberSequence
 from app.modules.commerce.payment_workflow import post_payment, reverse_payment
 from app.modules.inventory.items.models import InventoryItem
 from app.modules.inventory.locations.models import InventoryLocation
+from app.modules.inventory.reservations.models import InventoryReservation
+from app.modules.inventory.reservations.schemas import ReservationCreate
+from app.modules.inventory.reservations.service import inventory_reservation_service
 from app.modules.inventory.stock_moves.models import InventoryStockMove
 from app.modules.inventory.stock_moves.schemas import StockMoveCreate
 from app.modules.inventory.stock_moves.service import inventory_stock_move_service
@@ -32,8 +41,73 @@ def resolve_due_date(document_type: str, document_date, explicit_due_date, payme
     return None
 
 class CommerceService:
+    @staticmethod
+    def _next_sales_document_number(db: Session, *, company_id: int, document_type: str, document_year: int) -> str:
+        policy = get_company_setting(db, company_id, "sales.document_numbering")
+        if policy == "global":
+            scope_key = "global"
+        elif policy == "per_company":
+            scope_key = f"company:{company_id}"
+        elif policy == "per_company_year":
+            scope_key = f"company:{company_id}:year:{document_year}"
+        else:
+            raise ValueError("Unsupported sales document numbering policy")
+        table = CommerceDocumentNumberSequence.__table__
+        insert_factory = sqlite_insert if db.get_bind().dialect.name == "sqlite" else pg_insert
+        statement = insert_factory(table).values(
+            scope_key=scope_key,
+            current_value=1,
+        ).on_conflict_do_update(
+            index_elements=[table.c.scope_key],
+            set_={"current_value": table.c.current_value + 1},
+        ).returning(table.c.current_value)
+        sequence_value = int(db.scalar(statement))
+        prefixes = {
+            "quotation": "QUO",
+            "order": "SO",
+            "delivery": "DEL",
+            "invoice": "INV",
+            "credit_note": "CN",
+        }
+        prefix = prefixes[document_type]
+        year_part = f"-{document_year}" if policy == "per_company_year" else ""
+        for _ in range(1000):
+            candidate = f"{prefix}{year_part}-{sequence_value:06d}"
+            existing_query = select(SalesDocument.id).where(SalesDocument.number == candidate)
+            if policy != "global":
+                existing_query = existing_query.where(SalesDocument.company_id == company_id)
+            if db.scalar(existing_query.limit(1)) is None:
+                return candidate
+            sequence_value = int(db.scalar(
+                update(CommerceDocumentNumberSequence)
+                .where(CommerceDocumentNumberSequence.scope_key == scope_key)
+                .values(current_value=CommerceDocumentNumberSequence.current_value + 1)
+                .returning(CommerceDocumentNumberSequence.current_value)
+            ))
+        raise ValueError("Unable to allocate a unique sales document number")
+
     def create_partner(self, db: Session, payload):
-        if db.scalar(select(BusinessPartner).where(BusinessPartner.company_id == payload.company_id, BusinessPartner.code == payload.code)): raise ValueError("Partner code already exists")
+        if db.scalar(select(BusinessPartner).where(BusinessPartner.company_id == payload.company_id, BusinessPartner.code == payload.code)):
+            raise ValueError("Partner code already exists")
+        if getattr(payload, "partner_type", None) in {"customer", "both"} and get_company_setting(
+            db, payload.company_id, "crm.duplicate_customer_check"
+        ) is True:
+            duplicate_conditions = []
+            email = (getattr(payload, "email", None) or "").strip().lower()
+            tax_number = (getattr(payload, "tax_number", None) or "").strip()
+            if email:
+                duplicate_conditions.append(func.lower(BusinessPartner.email) == email)
+            if tax_number:
+                duplicate_conditions.append(BusinessPartner.tax_number == tax_number)
+            if duplicate_conditions:
+                duplicate = db.scalar(select(BusinessPartner.id).where(
+                    BusinessPartner.company_id == payload.company_id,
+                    BusinessPartner.partner_type.in_(["customer", "both"]),
+                    BusinessPartner.is_active.is_(True),
+                    or_(*duplicate_conditions),
+                ).limit(1))
+                if duplicate is not None:
+                    raise ValueError("Possible duplicate customer: matching email or tax registration number already exists")
         obj = BusinessPartner(**payload.model_dump()); db.add(obj); db.flush(); return obj
 
     def list_partners(self, db, company_id, partner_type=None):
@@ -76,6 +150,155 @@ class CommerceService:
         if remaining_wht <= 0 or outstanding <= 0: return Decimal("0")
         return min(remaining_wht, (remaining_wht * amount / outstanding).quantize(Decimal("0.01")))
 
+    def _linked_sales_quantities(self, db, *, company_id: int, order_id: int, source_line_ids: set[int], document_types: set[str], statuses: set[str]) -> dict[int, Decimal]:
+        if not source_line_ids:
+            return {}
+        rows = db.execute(
+            select(SalesLine.source_sales_line_id, func.sum(SalesLine.quantity))
+            .join(SalesDocument, SalesDocument.id == SalesLine.document_id)
+            .where(
+                SalesDocument.company_id == company_id,
+                SalesDocument.source_order_id == order_id,
+                SalesDocument.document_type.in_(document_types),
+                SalesDocument.status.in_(statuses),
+                SalesLine.source_sales_line_id.in_(source_line_ids),
+            )
+            .group_by(SalesLine.source_sales_line_id)
+        ).all()
+        return {int(line_id): Decimal(quantity or 0) for line_id, quantity in rows}
+
+    @staticmethod
+    def _expand_sales_components(db, *, company_id: int, product_id: int, variant_id: int | None, quantity: Decimal, visited=None):
+        recipes = list(db.scalars(select(Recipe).where(
+            Recipe.company_id == company_id,
+            Recipe.product_id == product_id,
+            Recipe.is_active.is_(True),
+        ).order_by(Recipe.version.desc())).all())
+        recipe = next((row for row in recipes if row.variant_id == variant_id), None) if variant_id is not None else None
+        if recipe is None:
+            recipe = next((row for row in recipes if row.variant_id is None), None)
+        if recipe is None:
+            return [(product_id, variant_id, quantity)]
+        key = (product_id, variant_id)
+        visited = set(visited or ())
+        if key in visited:
+            raise ValueError(f"Recipe cycle detected while processing item {product_id}")
+        visited.add(key)
+        multiplier = quantity / Decimal(recipe.yield_quantity)
+        multiplier *= Decimal("1") + Decimal(recipe.waste_percentage or 0) / Decimal("100")
+        result = []
+        for recipe_line in recipe.lines:
+            line_quantity = multiplier * Decimal(recipe_line.quantity)
+            line_quantity *= Decimal("1") + Decimal(recipe_line.waste_percentage or 0) / Decimal("100")
+            result.extend(CommerceService._expand_sales_components(
+                db,
+                company_id=company_id,
+                product_id=recipe_line.ingredient_product_id,
+                variant_id=None,
+                quantity=line_quantity,
+                visited=visited,
+            ))
+        return result
+
+    @staticmethod
+    def _reserve_sales_line(db, *, order: SalesDocument, line: SalesLine, quantity: Decimal):
+        output_item = db.scalar(select(InventoryItem).where(
+            InventoryItem.id == line.item_id,
+            InventoryItem.company_id == order.company_id,
+            InventoryItem.is_active.is_(True),
+        ))
+        if output_item is None:
+            raise ValueError("Sales order item is unavailable")
+        if output_item.item_type not in {"stockable", "consumable"} and db.scalar(select(Recipe.id).where(
+            Recipe.company_id == order.company_id,
+            Recipe.product_id == line.item_id,
+            Recipe.is_active.is_(True),
+        )) is None:
+            return False
+        if not order.warehouse_id:
+            raise ValueError("A warehouse is required to reserve a sales order")
+        locations = list(db.scalars(select(InventoryLocation).where(
+            InventoryLocation.company_id == order.company_id,
+            InventoryLocation.warehouse_id == order.warehouse_id,
+            InventoryLocation.is_active.is_(True),
+            InventoryLocation.is_virtual.is_(False),
+        ).order_by(InventoryLocation.id)).all())
+        if not locations:
+            raise ValueError("The sales order warehouse has no active physical stock locations")
+
+        for item_id, variant_id, raw_quantity in CommerceService._expand_sales_components(
+            db,
+            company_id=order.company_id,
+            product_id=line.item_id,
+            variant_id=line.variant_id,
+            quantity=quantity,
+        ):
+            item = db.scalar(select(InventoryItem).where(
+                InventoryItem.id == item_id,
+                InventoryItem.company_id == order.company_id,
+                InventoryItem.is_active.is_(True),
+            ))
+            if item is None:
+                raise ValueError("A sales order component is unavailable in the selected company")
+            if item.item_type not in {"stockable", "consumable"}:
+                continue
+            needed = Decimal(raw_quantity).quantize(Decimal("0.0001"), rounding=ROUND_CEILING)
+            if needed <= 0:
+                continue
+            for location in locations:
+                if get_company_setting(db, order.company_id, "inventory.require_bin_location") is True and location.parent_id is None:
+                    continue
+                balance = inventory_reservation_service._locked_balance(
+                    db, order.company_id, item_id, variant_id, location.id
+                )
+                warehouse_stock = inventory_reservation_service._locked_warehouse_stock(
+                    db, order.company_id, item_id, variant_id, location.warehouse_id
+                )
+                available = min(
+                    Decimal(balance.quantity_on_hand or 0) - Decimal(balance.quantity_reserved or 0),
+                    Decimal(warehouse_stock.quantity_on_hand or 0) - Decimal(warehouse_stock.quantity_reserved or 0),
+                )
+                allocated = min(needed, max(available, Decimal("0")))
+                if allocated <= 0:
+                    continue
+                inventory_reservation_service.reserve(db, ReservationCreate(
+                    company_id=order.company_id,
+                    item_id=item_id,
+                    variant_id=variant_id,
+                    location_id=location.id,
+                    quantity=allocated,
+                    source_module="commerce",
+                    source_entity="sales_order_line",
+                    source_id=str(line.id),
+                    reference=order.number,
+                    notes=f"Sales order {order.id}, line {line.id}",
+                ))
+                needed -= allocated
+                if needed <= 0:
+                    break
+            if needed > 0:
+                raise ValueError(
+                    f"Insufficient available stock to reserve sales order line {line.id}, item {item_id}; short by {needed}"
+                )
+        return True
+
+    @staticmethod
+    def _release_sales_order_reservations(db, *, order: SalesDocument):
+        source_ids = [str(line.id) for line in order.lines]
+        if not source_ids:
+            return
+        reservations = db.scalars(select(InventoryReservation).where(
+            InventoryReservation.company_id == order.company_id,
+            InventoryReservation.source_module == "commerce",
+            InventoryReservation.source_entity == "sales_order_line",
+            InventoryReservation.source_id.in_(source_ids),
+            InventoryReservation.status == "active",
+        ).order_by(InventoryReservation.id).with_for_update()).all()
+        for reservation in reservations:
+            inventory_reservation_service.release(
+                db, company_id=order.company_id, reservation_id=reservation.id
+            )
+
     def create_document(self, db, payload):
         is_sale = payload.document_type in SALE_TYPES
         if not is_sale and payload.document_type not in PURCHASE_TYPES: raise ValueError("Unsupported document type")
@@ -85,24 +308,175 @@ class CommerceService:
         if not is_sale and partner.partner_type not in ("vendor", "both"): raise ValueError("Partner is not a vendor")
         if payload.warehouse_id is not None and db.scalar(select(InventoryWarehouse).where(InventoryWarehouse.id == payload.warehouse_id, InventoryWarehouse.company_id == payload.company_id, InventoryWarehouse.is_active.is_(True))) is None: raise ValueError("Warehouse does not belong to the company or is inactive")
         model = SalesDocument if is_sale else PurchaseDocument; line_model = SalesLine if is_sale else PurchaseLine
-        if db.scalar(select(model).where(model.company_id == payload.company_id, model.number == payload.number)): raise ValueError("Document number already exists")
+        document_number = payload.number
+        if is_sale:
+            document_number = self._next_sales_document_number(
+                db,
+                company_id=payload.company_id,
+                document_type=payload.document_type,
+                document_year=payload.document_date.year,
+            )
+        if not document_number:
+            raise ValueError("Document number is required")
+        if db.scalar(select(model).where(model.company_id == payload.company_id, model.number == document_number)): raise ValueError("Document number already exists")
+        receipt_docs = []
         if payload.receipt_ids:
-            receipts = list(db.scalars(select(PurchaseDocument).where(PurchaseDocument.id.in_(payload.receipt_ids), PurchaseDocument.company_id == payload.company_id, PurchaseDocument.partner_id == payload.partner_id, PurchaseDocument.document_type == "receipt", PurchaseDocument.status.in_(["received", "partially_received"]))).all()); found = {r.id for r in receipts}; missing = [r for r in payload.receipt_ids if r not in found]
+            receipt_docs = list(db.scalars(select(PurchaseDocument).where(PurchaseDocument.id.in_(payload.receipt_ids), PurchaseDocument.company_id == payload.company_id, PurchaseDocument.partner_id == payload.partner_id, PurchaseDocument.document_type == "receipt", PurchaseDocument.status.in_(["received", "partially_received"]))).all()); found = {r.id for r in receipt_docs}; missing = [r for r in payload.receipt_ids if r not in found]
             if missing: raise ValueError(f"Receipt(s) not found, not received, or not owned by the vendor/company: {missing}")
-        obj = model(company_id=payload.company_id, partner_id=payload.partner_id, document_type=payload.document_type, number=payload.number, document_date=payload.document_date, warehouse_id=payload.warehouse_id, due_date=resolve_due_date(payload.document_type, payload.document_date, payload.due_date, partner.payment_terms_days), notes=payload.notes)
+        if payload.document_type == "bill" and get_company_setting(
+            db, payload.company_id, "purchasing.require_goods_receipt"
+        ) is True and not payload.receipt_ids:
+            raise ValueError("Company policy requires a received goods receipt before creating a supplier bill")
+
+        purchase_source_order = None
+        purchase_source_lines: dict[int, PurchaseLine] = {}
+        if not is_sale and payload.source_order_id is not None:
+            if payload.document_type not in {"receipt", "bill"}:
+                raise ValueError("Only purchase receipts and bills can be linked to an order")
+            purchase_source_order = db.scalar(select(PurchaseDocument).where(
+                PurchaseDocument.id == payload.source_order_id,
+                PurchaseDocument.company_id == payload.company_id,
+                PurchaseDocument.partner_id == payload.partner_id,
+                PurchaseDocument.document_type == "order",
+            ).with_for_update())
+            if purchase_source_order is None:
+                raise ValueError("Source purchase order was not found for this company/vendor")
+            if purchase_source_order.status not in {"confirmed", "partially_received", "received", "posted"}:
+                raise ValueError("Source purchase order must be confirmed before receipt or billing")
+            purchase_source_ids = {int(line.source_purchase_line_id) for line in payload.lines if line.source_purchase_line_id is not None}
+            if any(line.source_purchase_line_id is None for line in payload.lines):
+                raise ValueError("Every line in an order-linked purchase document must identify its source order line")
+            purchase_source_lines = {
+                line.id: line
+                for line in db.scalars(select(PurchaseLine).where(
+                    PurchaseLine.document_id == purchase_source_order.id,
+                    PurchaseLine.id.in_(purchase_source_ids or {-1}),
+                )).all()
+            }
+            if len(purchase_source_lines) != len(purchase_source_ids):
+                raise ValueError("A source purchase line does not belong to the selected order")
+            for line in payload.lines:
+                source_line = purchase_source_lines[int(line.source_purchase_line_id)]
+                if source_line.item_id != line.item_id or source_line.variant_id != line.variant_id:
+                    raise ValueError("Linked receipt/bill line must match the source purchase order item and variant")
+        elif not is_sale and any(line.source_purchase_line_id is not None for line in payload.lines):
+            raise ValueError("Source purchase lines require a source order")
+
+        if payload.document_type == "bill" and get_company_setting(
+            db, payload.company_id, "purchasing.require_purchase_order"
+        ) is True and purchase_source_order is None:
+            raise ValueError("Company policy requires a confirmed purchase order before creating a supplier bill")
+        if payload.document_type == "bill" and purchase_source_order is not None and payload.receipt_ids:
+            if any(receipt.source_order_id != purchase_source_order.id for receipt in receipt_docs):
+                raise ValueError("Every linked goods receipt must belong to the bill's purchase order")
+
+        source_order = None
+        source_lines: dict[int, SalesLine] = {}
+        source_requested: dict[int, Decimal] = {}
+        if is_sale and payload.source_order_id is not None:
+            if payload.document_type not in {"delivery", "invoice"}:
+                raise ValueError("Only sales deliveries and invoices can be linked to an order")
+            source_order = db.scalar(select(SalesDocument).where(
+                SalesDocument.id == payload.source_order_id,
+                SalesDocument.company_id == payload.company_id,
+                SalesDocument.partner_id == payload.partner_id,
+                SalesDocument.document_type == "order",
+            ).with_for_update())
+            if source_order is None:
+                raise ValueError("Source sales order was not found for this company/customer")
+            if source_order.status not in {"confirmed", "partially_fulfilled", "fulfilled", "posted"}:
+                raise ValueError("Source sales order must be confirmed before delivery or invoicing")
+            source_ids = {int(line.source_sales_line_id) for line in payload.lines if line.source_sales_line_id is not None}
+            if any(line.source_sales_line_id is None for line in payload.lines):
+                raise ValueError("Every line in an order-linked document must identify its source order line")
+            source_lines = {
+                line.id: line
+                for line in db.scalars(select(SalesLine).where(
+                    SalesLine.document_id == source_order.id,
+                    SalesLine.id.in_(source_ids or {-1}),
+                )).all()
+            }
+            if len(source_lines) != len(source_ids):
+                raise ValueError("A source sales line does not belong to the selected order")
+            for line in payload.lines:
+                source_line = source_lines[int(line.source_sales_line_id)]
+                if source_line.item_id != line.item_id or source_line.variant_id != line.variant_id:
+                    raise ValueError("Linked delivery/invoice line must match the source order item and variant")
+                source_requested[source_line.id] = source_requested.get(source_line.id, Decimal("0")) + Decimal(line.quantity)
+        elif is_sale and any(line.source_sales_line_id is not None for line in payload.lines):
+            raise ValueError("Source sales lines require a source order")
+
+        if payload.document_type == "invoice" and source_order is not None:
+            active_invoice_statuses = {"draft", "confirmed", "partially_fulfilled", "fulfilled", "posted"}
+            already_invoiced = self._linked_sales_quantities(
+                db, company_id=payload.company_id, order_id=source_order.id,
+                source_line_ids=set(source_lines), document_types={"invoice"},
+                statuses=active_invoice_statuses,
+            )
+            if get_company_setting(db, payload.company_id, "sales.allow_overbilling") is not True:
+                for source_line_id, requested in source_requested.items():
+                    source_line = source_lines[source_line_id]
+                    if already_invoiced.get(source_line_id, Decimal("0")) + requested > Decimal(source_line.quantity):
+                        raise ValueError("Company policy does not allow invoicing above the linked order quantity")
+            if get_company_setting(db, payload.company_id, "sales.invoice_requires_delivery") is True:
+                source_item_ids = {line.item_id for line in source_lines.values()}
+                stock_item_ids = set(db.scalars(select(InventoryItem.id).where(
+                    InventoryItem.company_id == payload.company_id,
+                    InventoryItem.id.in_(source_item_ids or {-1}),
+                    InventoryItem.item_type.in_({"stockable", "consumable"}),
+                )).all())
+                stock_source_line_ids = {
+                    line_id for line_id, line in source_lines.items()
+                    if line.item_id in stock_item_ids
+                }
+                delivered = self._linked_sales_quantities(
+                    db, company_id=payload.company_id, order_id=source_order.id,
+                    source_line_ids=stock_source_line_ids, document_types={"delivery"},
+                    statuses={"fulfilled", "posted"},
+                )
+                for source_line_id, requested in source_requested.items():
+                    if source_line_id not in stock_source_line_ids:
+                        continue
+                    available = delivered.get(source_line_id, Decimal("0")) - already_invoiced.get(source_line_id, Decimal("0"))
+                    if requested > available:
+                        raise ValueError("Company policy requires enough posted delivery quantity before invoicing")
+        payment_terms_key = "sales.default_payment_terms_days" if is_sale else "purchasing.default_payment_terms_days"
+        payment_terms_days = partner.payment_terms_days or int(get_company_setting(db, payload.company_id, payment_terms_key))
+        obj = model(company_id=payload.company_id, partner_id=payload.partner_id, document_type=payload.document_type, number=document_number, document_date=payload.document_date, warehouse_id=payload.warehouse_id, due_date=resolve_due_date(payload.document_type, payload.document_date, payload.due_date, payment_terms_days), notes=payload.notes)
+        obj.source_order_id = payload.source_order_id
         subtotal = Decimal("0"); tax = Decimal("0"); discount = Decimal("0")
         for p in payload.lines:
             item = db.scalar(select(InventoryItem).where(InventoryItem.id == p.item_id, InventoryItem.company_id == payload.company_id, InventoryItem.is_active.is_(True)))
             if not item: raise ValueError(f"Item {p.item_id} not found")
+            if (payload.document_type == "invoice"
+                    and item.item_type in {"stockable", "consumable"}
+                    and get_company_setting(db, payload.company_id, "sales.invoice_requires_delivery") is True
+                    and (source_order is None or p.source_sales_line_id is None)):
+                raise ValueError("Company policy requires stock invoice lines to link to an order with posted delivery")
+            if item.item_type in {"stockable", "consumable"} and payload.warehouse_id is None and get_company_setting(
+                db, payload.company_id, "inventory.require_warehouse"
+            ) is True:
+                raise ValueError("Company policy requires a warehouse for stockable/consumable document lines")
             variant_id = getattr(p, "variant_id", None); self._resolve_line_variant(db, company_id=payload.company_id, item=item, variant_id=variant_id)
             explicit_tax_ids = getattr(p, "tax_rate_ids", None); tax_ids = self._resolve_line_tax_ids(db, company_id=payload.company_id, item=item, explicit_tax_ids=explicit_tax_ids, is_sale=is_sale)
+            if payload.document_type in {"invoice", "bill"} and get_company_setting(
+                db, payload.company_id, "tax.require_tax_code_on_invoice"
+            ) is True:
+                configured_tax_ids = list((item.sales_tax_ids if is_sale else item.purchase_tax_ids) or [])
+                if configured_tax_ids and not tax_ids:
+                    raise ValueError("Company policy requires a tax code on taxable invoice lines")
             if explicit_tax_ids is None and p.tax_percent != 0: raise ValueError("Tax Master is required for non-zero tax rates")
             gross = p.quantity * p.unit_price; disc = gross * p.discount_percent / Decimal("100"); net = gross - disc
             if net < 0: raise ValueError("Line discount cannot exceed the line gross amount")
-            tax_result = calculate_taxes(db, company_id=payload.company_id, amount=net, tax_ids=tax_ids, inclusive=False); tax_amount = Decimal(tax_result["tax_total"]); line_total = net + tax_amount
+            tax_result = calculate_taxes(db, company_id=payload.company_id, amount=net, tax_ids=tax_ids, inclusive=None); tax_amount = Decimal(tax_result["tax_total"]); taxable_base = Decimal(tax_result["taxable_base"]); line_total = Decimal(tax_result["gross_total"])
             tax_rows = list(db.scalars(select(TaxRate).where(TaxRate.id.in_(tax_ids), TaxRate.company_id == payload.company_id)).all()) if tax_ids else []
             non_wht_ids = [tax.id for tax in tax_rows if not tax.is_withholding]; primary_tax_id = non_wht_ids[0] if non_wht_ids else (tax_ids[0] if tax_ids else None); primary_tax_percent = Decimal(next((tax.rate for tax in tax_rows if tax.id == primary_tax_id), 0))
-            obj.lines.append(line_model(item_id=p.item_id, variant_id=variant_id, tax_rate_id=primary_tax_id, tax_rate_ids=tax_ids, description=p.description, quantity=p.quantity, unit_price=p.unit_price, discount_percent=p.discount_percent, tax_percent=primary_tax_percent, line_total=line_total)); subtotal += net; discount += disc; tax += tax_amount
+            line_values = dict(item_id=p.item_id, variant_id=variant_id, tax_rate_id=primary_tax_id, tax_rate_ids=tax_ids, description=p.description, quantity=p.quantity, unit_price=p.unit_price, discount_percent=p.discount_percent, tax_percent=primary_tax_percent, line_total=line_total)
+            if is_sale:
+                line_values["source_sales_line_id"] = getattr(p, "source_sales_line_id", None)
+            else:
+                line_values["source_purchase_line_id"] = getattr(p, "source_purchase_line_id", None)
+            obj.lines.append(line_model(**line_values)); subtotal += taxable_base if tax_result["inclusive"] else net; discount += disc; tax += tax_amount
         obj.subtotal = subtotal; obj.discount_total = discount; obj.tax_total = tax; obj.total = subtotal + tax; db.add(obj); db.flush()
         if payload.receipt_ids:
             for receipt_id in payload.receipt_ids: db.add(PurchaseBillReceiptLink(company_id=payload.company_id, bill_id=obj.id, receipt_id=receipt_id))
@@ -172,6 +546,10 @@ class CommerceService:
     def enforce_credit_limit(self, db, company_id: int, document):
         if document.document_type != "invoice":
             return
+        # Read the policy before touching partner data: disabled enforcement
+        # must not perform unnecessary lookups or lock a customer row.
+        if get_company_setting(db, company_id, "sales.credit_limit_enforced") is not True:
+            return
         partner = db.scalar(select(BusinessPartner).where(BusinessPartner.id == document.partner_id, BusinessPartner.company_id == company_id).with_for_update())
         limit = Decimal(partner.credit_limit or 0) if partner else Decimal("0")
         if limit <= 0:
@@ -184,10 +562,44 @@ class CommerceService:
     def confirm(self, db, company_id, document_id, kind, user_id: int | None = None):
         model = SalesDocument if kind == "sale" else PurchaseDocument; obj = db.scalar(select(model).where(model.id == document_id, model.company_id == company_id).with_for_update())
         if not obj: raise ValueError("Document not found")
-        if obj.status != "draft": raise ValueError("Only draft documents can be confirmed")
+        if obj.status not in {"draft", "approved"}: raise ValueError("Only draft or approved documents can be confirmed")
         if not obj.lines: raise ValueError("A document must contain at least one line before confirmation")
+        approval_setting = None
+        if kind == "sale" and obj.document_type == "order":
+            approval_setting = "sales.require_order_approval"
+        elif kind == "sale" and obj.document_type == "quotation":
+            approval_setting = "sales.require_quote_approval"
+        elif kind == "purchase" and obj.document_type == "order":
+            approval_setting = "purchasing.require_purchase_approval"
+        if obj.status == "draft" and approval_setting and get_company_setting(db, company_id, approval_setting) is True:
+            obj.status = "pending_approval"
+            db.add(CommerceApprovalEvent(
+                company_id=company_id,
+                document_kind=kind,
+                document_id=obj.id,
+                action="submitted",
+                actor_id=user_id,
+            ))
+            db.flush()
+            return obj
         if kind == "sale":
             self.enforce_credit_limit(db, company_id, obj)
+            if obj.document_type in {"invoice", "credit_note"} and get_company_setting(
+                db, company_id, "tax.einvoice_required_for_sales"
+            ) is True:
+                eta_document = db.scalar(select(EgyptianEInvoiceDocument).where(
+                    EgyptianEInvoiceDocument.company_id == company_id,
+                    EgyptianEInvoiceDocument.source_type == "sales_document",
+                    EgyptianEInvoiceDocument.source_id == obj.id,
+                    EgyptianEInvoiceDocument.document_type == obj.document_type,
+                ).with_for_update())
+                if eta_document is None or eta_document.status != "valid":
+                    raise ValueError("A valid Egyptian e-invoice is required before confirming this sales document")
+        if kind == "sale" and obj.document_type == "order" and get_company_setting(
+            db, company_id, "inventory.auto_reserve_sales_orders"
+        ) is True:
+            for order_line in obj.lines:
+                self._reserve_sales_line(db, order=obj, line=order_line, quantity=Decimal(order_line.quantity))
         obj.status = "confirmed"; db.flush()
         if user_id is not None:
             if kind == "sale":
@@ -198,7 +610,84 @@ class CommerceService:
                 elif obj.document_type == "debit_note": commerce_accounting_service.post_purchase_debit_note(db, obj, user_id)
         return obj
 
+    def cancel_sales_order(self, db, *, company_id: int, document_id: int):
+        order = db.scalar(select(SalesDocument).where(
+            SalesDocument.id == document_id,
+            SalesDocument.company_id == company_id,
+        ).with_for_update())
+        if order is None:
+            raise ValueError("Sales document not found")
+        if order.document_type != "order":
+            raise ValueError("Only sales orders can be cancelled through this workflow")
+        if order.status == "cancelled":
+            return order
+        if order.status not in {"draft", "pending_approval", "approved", "confirmed", "partially_fulfilled"}:
+            raise ValueError("Sales order cannot be cancelled from its current state")
+        self._release_sales_order_reservations(db, order=order)
+        order.status = "cancelled"
+        db.flush()
+        return order
+
+    def decide_approval(self, db, company_id: int, document_id: int, kind: str, decision: str, user_id: int, reason: str | None = None):
+        if kind not in {"sale", "purchase"} or decision not in {"approve", "reject"}:
+            raise ValueError("Invalid approval decision")
+        model = SalesDocument if kind == "sale" else PurchaseDocument
+        obj = db.scalar(select(model).where(
+            model.id == document_id,
+            model.company_id == company_id,
+        ).with_for_update())
+        if obj is None:
+            raise ValueError("Document not found")
+        if obj.status != "pending_approval":
+            raise ValueError("Only documents pending approval can be decided")
+        submission = db.scalar(select(CommerceApprovalEvent).where(
+            CommerceApprovalEvent.company_id == company_id,
+            CommerceApprovalEvent.document_kind == kind,
+            CommerceApprovalEvent.document_id == document_id,
+            CommerceApprovalEvent.action == "submitted",
+        ).order_by(CommerceApprovalEvent.id.desc()).limit(1))
+        if submission and submission.actor_id == user_id and get_company_setting(
+            db, company_id, "workflow.allow_self_approval"
+        ) is not True:
+            raise ValueError("Company policy does not allow the requester to approve their own document")
+        approved = decision == "approve"
+        obj.status = "approved" if approved else "rejected"
+        db.add(CommerceApprovalEvent(
+            company_id=company_id,
+            document_kind=kind,
+            document_id=document_id,
+            action="approved" if approved else "rejected",
+            actor_id=user_id,
+            reason=reason,
+        ))
+        db.flush()
+        return obj
+
+    def list_approval_events(self, db, company_id: int, document_id: int, kind: str):
+        if kind not in {"sale", "purchase"}:
+            raise ValueError("Invalid document kind")
+        model = SalesDocument if kind == "sale" else PurchaseDocument
+        document = db.scalar(select(model.id).where(
+            model.id == document_id,
+            model.company_id == company_id,
+        ))
+        if document is None:
+            raise ValueError("Document not found")
+        events = db.scalars(select(CommerceApprovalEvent).where(
+            CommerceApprovalEvent.company_id == company_id,
+            CommerceApprovalEvent.document_kind == kind,
+            CommerceApprovalEvent.document_id == document_id,
+        ).order_by(CommerceApprovalEvent.id)).all()
+        return [{
+            "id": event.id,
+            "action": event.action,
+            "actor_id": event.actor_id,
+            "reason": event.reason,
+            "created_at": event.created_at,
+        } for event in events]
+
     def post_inventory(self, db, company_id, document_id, kind, user_id: int | None = None):
+        actor_user_id = user_id
         model = SalesDocument if kind == "sale" else PurchaseDocument; obj = db.scalar(select(model).where(model.id == document_id, model.company_id == company_id).with_for_update())
         if not obj: raise ValueError("Document not found")
         allowed = {"delivery"} if kind == "sale" else {"receipt"}
@@ -216,63 +705,202 @@ class CommerceService:
             if user is None:
                 raise ValueError("No active tenant user is available for inventory posting")
             user_id = user.id
-        locations = list(db.scalars(select(InventoryLocation).where(InventoryLocation.warehouse_id == obj.warehouse_id, InventoryLocation.company_id == company_id, InventoryLocation.is_active.is_(True)).order_by(InventoryLocation.id)).all())
+        locations = list(db.scalars(select(InventoryLocation).where(InventoryLocation.warehouse_id == obj.warehouse_id, InventoryLocation.company_id == company_id, InventoryLocation.is_active.is_(True), InventoryLocation.is_virtual.is_(False)).order_by(InventoryLocation.id)).all())
         if not locations: raise ValueError("Warehouse has no active location")
         loc = locations[0]; source_entity = "sales_delivery" if kind == "sale" else "purchase_receipt"
-
-        def active_recipe(product_id: int, variant_id: int | None):
-            recipes = list(db.scalars(select(Recipe).where(
-                Recipe.company_id == company_id,
-                Recipe.product_id == product_id,
-                Recipe.is_active.is_(True),
-            ).order_by(Recipe.version.desc())).all())
-            if variant_id is not None:
-                for recipe in recipes:
-                    if recipe.variant_id == variant_id:
-                        return recipe
-            return next((recipe for recipe in recipes if recipe.variant_id is None), None)
-
-        def expand_recipe(product_id: int, variant_id: int | None, quantity: Decimal, visited: set[tuple[int, int | None]]):
-            recipe = active_recipe(product_id, variant_id)
-            if recipe is None:
-                return [(product_id, variant_id, quantity)]
-            key = (product_id, variant_id)
-            if key in visited:
-                raise ValueError(f"Recipe cycle detected while posting inventory for item {product_id}")
-            visited = set(visited)
-            visited.add(key)
-            multiplier = quantity / Decimal(recipe.yield_quantity)
-            multiplier *= Decimal("1") + Decimal(recipe.waste_percentage or 0) / Decimal("100")
-            expanded = []
-            for recipe_line in recipe.lines:
-                line_qty = multiplier * Decimal(recipe_line.quantity)
-                line_qty *= Decimal("1") + Decimal(recipe_line.waste_percentage or 0) / Decimal("100")
-                expanded.extend(expand_recipe(recipe_line.ingredient_product_id, None, line_qty, visited))
-            return expanded
+        auto_reserve = get_company_setting(db, company_id, "inventory.auto_reserve_sales_orders") is True
+        allow_below_cost = get_company_setting(db, company_id, "inventory.allow_below_cost_sale") is True
+        source_order = None
+        if kind == "sale" and obj.source_order_id is not None:
+            source_order = db.scalar(select(SalesDocument).where(
+                SalesDocument.id == obj.source_order_id,
+                SalesDocument.company_id == company_id,
+                SalesDocument.document_type == "order",
+            ).with_for_update())
+            if source_order is None:
+                raise ValueError("Linked sales order is unavailable during inventory posting")
+            if source_order.status == "cancelled":
+                raise ValueError("A delivery linked to a cancelled sales order cannot post inventory")
+            order_line_ids = list(db.scalars(select(SalesLine.id).where(SalesLine.document_id == source_order.id)).all())
+            has_active_reservation = db.scalar(select(InventoryReservation.id).where(
+                InventoryReservation.company_id == company_id,
+                InventoryReservation.source_module == "commerce",
+                InventoryReservation.source_entity == "sales_order_line",
+                InventoryReservation.source_id.in_([str(line_id) for line_id in order_line_ids] or ["-1"]),
+                InventoryReservation.status == "active",
+            ).limit(1)) is not None
+            if (auto_reserve or has_active_reservation) and source_order.warehouse_id != obj.warehouse_id:
+                raise ValueError("A delivery using order reservations must use the sales order warehouse")
 
         for line in obj.lines:
             if kind == "sale":
-                components = expand_recipe(line.item_id, line.variant_id, Decimal(line.quantity), set())
-                for component_index, (component_item_id, component_variant_id, component_qty) in enumerate(components, start=1):
-                    source_id = f"{obj.id}:{line.id}:component:{component_index}:{component_item_id}:{component_variant_id or 0}"
-                    existing = db.scalar(select(InventoryStockMove).where(
-                        InventoryStockMove.company_id == company_id,
-                        InventoryStockMove.source_module == "commerce",
-                        InventoryStockMove.source_entity == source_entity,
-                        InventoryStockMove.source_id == source_id,
-                        InventoryStockMove.status.in_(["draft", "posted"]),
+                order_line = None
+                active_reservations = []
+                reserved_for_delivery_only = False
+                if source_order is not None and line.source_sales_line_id is not None:
+                    order_line = db.scalar(select(SalesLine).where(
+                        SalesLine.id == line.source_sales_line_id,
+                        SalesLine.document_id == source_order.id,
                     ))
-                    if existing:
-                        continue
-                    payload = StockMoveCreate(
-                        company_id=company_id, item_id=component_item_id, variant_id=component_variant_id,
-                        movement_type="issue", source_location_id=loc.id, destination_location_id=None,
-                        quantity=component_qty, unit_cost=0, transaction_date=obj.document_date,
-                        reference=obj.number, source_module="commerce", source_entity=source_entity,
-                        source_id=source_id, notes=f"Sales delivery component for line {line.id}",
+                    if order_line is None:
+                        raise ValueError("Delivery line does not belong to the linked sales order")
+                    active_reservations = db.scalars(select(InventoryReservation).where(
+                        InventoryReservation.company_id == company_id,
+                        InventoryReservation.source_module == "commerce",
+                        InventoryReservation.source_entity == "sales_order_line",
+                        InventoryReservation.source_id == str(order_line.id),
+                        InventoryReservation.status == "active",
+                    ).order_by(InventoryReservation.item_id, InventoryReservation.variant_id, InventoryReservation.location_id, InventoryReservation.id).with_for_update()).all()
+                    if auto_reserve and not active_reservations:
+                        reserved_for_delivery_only = self._reserve_sales_line(
+                            db, order=source_order, line=order_line, quantity=Decimal(line.quantity)
+                        )
+                        active_reservations = db.scalars(select(InventoryReservation).where(
+                            InventoryReservation.company_id == company_id,
+                            InventoryReservation.source_module == "commerce",
+                            InventoryReservation.source_entity == "sales_order_line",
+                            InventoryReservation.source_id == str(order_line.id),
+                            InventoryReservation.status == "active",
+                        ).order_by(InventoryReservation.item_id, InventoryReservation.variant_id, InventoryReservation.location_id, InventoryReservation.id).with_for_update()).all()
+
+                if active_reservations:
+                    if reserved_for_delivery_only:
+                        remaining_order_quantity = Decimal(line.quantity)
+                    else:
+                        already_delivered = self._linked_sales_quantities(
+                            db,
+                            company_id=company_id,
+                            order_id=source_order.id,
+                            source_line_ids={order_line.id},
+                            document_types={"delivery"},
+                            statuses={"fulfilled", "posted"},
+                        ).get(order_line.id, Decimal("0"))
+                        remaining_order_quantity = Decimal(order_line.quantity) - already_delivered
+                        if remaining_order_quantity <= 0 or Decimal(line.quantity) > remaining_order_quantity:
+                            raise ValueError("Delivery quantity exceeds the remaining sales order quantity")
+                    groups = {}
+                    for reservation in active_reservations:
+                        key = (reservation.item_id, reservation.variant_id)
+                        groups.setdefault(key, []).append(reservation)
+                    for component_index, ((component_item_id, component_variant_id), reservations) in enumerate(sorted(groups.items(), key=lambda entry: (entry[0][0], entry[0][1] or 0)), start=1):
+                        total_reserved = sum((Decimal(row.quantity) for row in reservations), Decimal("0"))
+                        if reserved_for_delivery_only or Decimal(line.quantity) >= remaining_order_quantity:
+                            required_quantity = total_reserved
+                        else:
+                            required_quantity = (total_reserved * Decimal(line.quantity) / remaining_order_quantity).quantize(
+                                Decimal("0.0001"), rounding=ROUND_CEILING
+                            )
+                            required_quantity = min(required_quantity, total_reserved)
+                        remaining = required_quantity
+                        for reservation in reservations:
+                            take = min(remaining, Decimal(reservation.quantity))
+                            if take <= 0:
+                                continue
+                            source_id = f"{obj.id}:{line.id}:{component_index}:{reservation.id}"
+                            existing = db.scalar(select(InventoryStockMove).where(
+                                InventoryStockMove.company_id == company_id,
+                                InventoryStockMove.source_module == "commerce",
+                                InventoryStockMove.source_entity == source_entity,
+                                InventoryStockMove.source_id == source_id,
+                                InventoryStockMove.status.in_(["draft", "posted"]),
+                            ))
+                            if existing:
+                                remaining -= take
+                                continue
+                            move = inventory_stock_move_service.create_draft(db, StockMoveCreate(
+                                company_id=company_id, item_id=component_item_id, variant_id=component_variant_id,
+                                movement_type="issue", source_location_id=reservation.location_id, destination_location_id=None,
+                                quantity=take, unit_cost=0, transaction_date=obj.document_date,
+                                reference=obj.number, source_module="commerce", source_entity=source_entity,
+                                source_id=source_id, reservation_id=reservation.id,
+                                notes=f"Sales delivery component for line {line.id}",
+                            ))
+                            inventory_stock_move_service.post(db, tenant_id=tenant_id, company_id=company_id, move_id=move.id, user_id=user_id)
+                            remaining -= take
+                        if remaining > 0:
+                            raise ValueError("Active reservations could not cover the sales delivery quantity")
+                else:
+                    components = self._expand_sales_components(
+                        db, company_id=company_id, product_id=line.item_id,
+                        variant_id=line.variant_id, quantity=Decimal(line.quantity),
                     )
-                    move = inventory_stock_move_service.create_draft(db, payload)
-                    inventory_stock_move_service.post(db, tenant_id=tenant_id, company_id=company_id, move_id=move.id, user_id=user_id)
+                    for component_index, (component_item_id, component_variant_id, raw_component_qty) in enumerate(components, start=1):
+                        component_item = db.scalar(select(InventoryItem).where(
+                            InventoryItem.id == component_item_id,
+                            InventoryItem.company_id == company_id,
+                            InventoryItem.is_active.is_(True),
+                        ))
+                        if component_item is None:
+                            raise ValueError("Sales delivery component is unavailable")
+                        if component_item.item_type not in {"stockable", "consumable"}:
+                            continue
+                        component_qty = Decimal(raw_component_qty).quantize(Decimal("0.0001"), rounding=ROUND_CEILING)
+                        if component_qty <= 0:
+                            raise ValueError("Sales delivery component quantity must be positive")
+                        source_id = f"{obj.id}:{line.id}:component:{component_index}:{component_item_id}:{component_variant_id or 0}"
+                        existing = db.scalar(select(InventoryStockMove).where(
+                            InventoryStockMove.company_id == company_id,
+                            InventoryStockMove.source_module == "commerce",
+                            InventoryStockMove.source_entity == source_entity,
+                            InventoryStockMove.source_id == source_id,
+                            InventoryStockMove.status.in_(["draft", "posted"]),
+                        ))
+                        if existing:
+                            continue
+                        move = inventory_stock_move_service.create_draft(db, StockMoveCreate(
+                            company_id=company_id, item_id=component_item_id, variant_id=component_variant_id,
+                            movement_type="issue", source_location_id=loc.id, destination_location_id=None,
+                            quantity=component_qty, unit_cost=0, transaction_date=obj.document_date,
+                            reference=obj.number, source_module="commerce", source_entity=source_entity,
+                            source_id=source_id, notes=f"Sales delivery component for line {line.id}",
+                        ))
+                        inventory_stock_move_service.post(db, tenant_id=tenant_id, company_id=company_id, move_id=move.id, user_id=user_id)
+            line_moves = list(db.scalars(select(InventoryStockMove).where(
+                InventoryStockMove.company_id == company_id,
+                InventoryStockMove.source_module == "commerce",
+                InventoryStockMove.source_entity == "sales_delivery",
+                InventoryStockMove.source_id.like(f"{obj.id}:{line.id}:%"),
+                InventoryStockMove.status == "posted",
+            )).all())
+            actual_cost = sum(
+                (Decimal(move.quantity) * Decimal(move.unit_cost or 0) for move in line_moves),
+                Decimal("0"),
+            ).quantize(Decimal("0.0001"))
+            net_revenue = (
+                Decimal(line.quantity)
+                * Decimal(line.unit_price)
+                * (Decimal("100") - Decimal(line.discount_percent or 0))
+                / Decimal("100")
+            ).quantize(Decimal("0.0001"))
+            if actual_cost > net_revenue:
+                if not allow_below_cost:
+                    raise ValueError(
+                        f"Sales delivery line {line.id} is below inventory cost; "
+                        "enable inventory.allow_below_cost_sale and assign commerce.below_cost_override to an authorized role to continue"
+                    )
+                actor = db.scalar(select(User).where(User.id == actor_user_id)) if actor_user_id is not None else None
+                if actor is None or not actor.is_active or getattr(actor, "is_deleted", False) or not user_has_permission(
+                    actor, "commerce.below_cost_override", db
+                ):
+                    raise ValueError(
+                        "Posting a below-cost sales delivery requires the active commerce.below_cost_override permission"
+                    )
+                record_audit_event(
+                    db,
+                    action="sales.below_cost_override",
+                    entity_type="sales_delivery_line",
+                    entity_id=line.id,
+                    user_id=actor.id,
+                    tenant_id=tenant_id,
+                    company_id=company_id,
+                    metadata={
+                        "document_id": obj.id,
+                        "document_number": obj.number,
+                        "net_revenue": str(net_revenue),
+                        "inventory_cost": str(actual_cost),
+                        "loss_amount": str(actual_cost - net_revenue),
+                    },
+                )
             else:
                 source_id = f"{obj.id}:{line.id}"
                 existing = db.scalar(select(InventoryStockMove).where(

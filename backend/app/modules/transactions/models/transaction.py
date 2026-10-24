@@ -46,6 +46,16 @@ class BusinessTransaction(Base):
         index=True,
     )
 
+    project_id = Column(
+        Integer,
+        ForeignKey(
+            "projects.id",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+        index=True,
+    )
+
     branch_id = Column(
         Integer,
         ForeignKey(

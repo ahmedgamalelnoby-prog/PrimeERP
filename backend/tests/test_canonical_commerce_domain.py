@@ -16,6 +16,9 @@ def test_item_product_and_composition_are_distinct():
     composition = ProductComposition(product_id=100, lines=(line,))
     assert ItemKind.RAW_MATERIAL.value == "raw_material"
     assert ProductKind.MANUFACTURED.value == "manufactured"
+    # Preserve StrEnum string conversion while supporting the declared Python 3.10 runtime.
+    assert str(ItemKind.RAW_MATERIAL) == "raw_material"
+    assert str(ProductKind.MANUFACTURED) == "manufactured"
     assert composition.material_cost({10: Decimal("2")}) == Decimal("60")
 
 

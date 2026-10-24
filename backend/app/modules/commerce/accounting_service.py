@@ -1,5 +1,6 @@
 from datetime import date
 from decimal import Decimal
+from types import SimpleNamespace
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
@@ -9,9 +10,11 @@ from app.modules.accounting.compliance_controls import validate_double_entry, va
 from app.modules.accounting.fiscal_years.models import AccountingPeriod, FiscalYear
 from app.modules.accounting.journals.models import AccountingJournal, JournalEntry
 from app.modules.accounting.journals.services.journal_service import journal_service
+from app.modules.accounting.chart_of_accounts.models import AccountCombination, NaturalAccount
 from app.modules.commerce.accounting_models import CommerceAccountingSettings
 from app.modules.commerce.models import PurchaseBillReceiptAllocation, PurchaseBillReceiptLink
 from app.modules.companies.models import Company
+from app.modules.company_settings.service import get_company_setting
 from app.modules.branches.models import Branch
 from app.modules.inventory.items.models import InventoryItem
 from app.modules.inventory.stock_moves.models import InventoryStockMove
@@ -22,7 +25,47 @@ class CommerceAccountingService:
         obj = db.scalar(select(CommerceAccountingSettings).where(CommerceAccountingSettings.company_id == company_id))
         if obj is None:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Commerce accounting configuration is missing for this company")
-        return obj
+        # Return a detached value object: mutating the ORM row with policy
+        # overrides could accidentally persist company defaults as legacy IDs
+        # on a later commit in the same request.
+        settings = SimpleNamespace(
+            **{column.key: getattr(obj, column.key) for column in obj.__table__.columns}
+        )
+        for attribute, policy_key in (
+            ("ar_account_id", "accounting.default_receivable_account"),
+            ("ap_account_id", "accounting.default_payable_account"),
+            ("sales_account_id", "accounting.default_sales_account"),
+            ("purchase_account_id", "accounting.default_purchase_account"),
+            ("default_payment_account_id", "accounting.default_cash_account"),
+        ):
+            configured_id = self._configured_account_id(
+                db, company_id, policy_key, getattr(settings, attribute)
+            )
+            setattr(settings, attribute, configured_id)
+        return settings
+
+    def _configured_account_id(self, db: Session, company_id: int, policy_key: str, fallback_id: int) -> int:
+        code = get_company_setting(db, company_id, policy_key)
+        if not isinstance(code, str) or not code.strip():
+            return fallback_id
+        account_id = db.scalar(
+            select(AccountCombination.id)
+            .join(NaturalAccount, NaturalAccount.id == AccountCombination.natural_account_id)
+            .where(
+                AccountCombination.company_id == company_id,
+                AccountCombination.code == code.strip(),
+                AccountCombination.is_active.is_(True),
+                NaturalAccount.company_id == company_id,
+                NaturalAccount.is_active.is_(True),
+                NaturalAccount.is_posting.is_(True),
+            )
+        )
+        if account_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Configured company setting {policy_key} does not identify an active posting account",
+            )
+        return account_id
 
     def _context(self, db: Session, company_id: int, entry_date: date):
         settings = self._settings(db, company_id)
@@ -30,7 +73,18 @@ class CommerceAccountingService:
         if company is None: raise HTTPException(404, "Company not found")
         branch = db.scalar(select(Branch).where(Branch.id == settings.default_branch_id, Branch.company_id == company_id, Branch.tenant_id == company.tenant_id, Branch.is_active.is_(True)))
         if branch is None: raise HTTPException(409, "Configured accounting branch was not found")
-        period = db.scalar(select(AccountingPeriod).where(AccountingPeriod.company_id == company_id, AccountingPeriod.tenant_id == company.tenant_id, AccountingPeriod.start_date <= entry_date, AccountingPeriod.end_date >= entry_date, AccountingPeriod.status == "open", AccountingPeriod.allow_posting.is_(True)).order_by(AccountingPeriod.period_number.desc()))
+        period_query = select(AccountingPeriod).where(
+            AccountingPeriod.company_id == company_id,
+            AccountingPeriod.tenant_id == company.tenant_id,
+            AccountingPeriod.start_date <= entry_date,
+            AccountingPeriod.end_date >= entry_date,
+        )
+        if get_company_setting(db, company_id, "accounting.period_lock_enabled") is True:
+            period_query = period_query.where(
+                AccountingPeriod.status == "open",
+                AccountingPeriod.allow_posting.is_(True),
+            )
+        period = db.scalar(period_query.order_by(AccountingPeriod.period_number.desc()))
         if period is None: raise HTTPException(409, "No open posting period exists for the document date")
         fiscal_year = db.scalar(select(FiscalYear).where(FiscalYear.id == period.fiscal_year_id, FiscalYear.company_id == company_id, FiscalYear.tenant_id == company.tenant_id))
         if fiscal_year is None: raise HTTPException(409, "Fiscal year for the posting period was not found")
@@ -41,7 +95,7 @@ class CommerceAccountingService:
         if company is None: return None
         return db.scalar(select(JournalEntry).where(JournalEntry.tenant_id == company.tenant_id, JournalEntry.company_id == company_id, JournalEntry.source_module == "commerce", JournalEntry.source_entity == source_entity, JournalEntry.source_id == source_id))
 
-    def _post(self, db: Session, *, company_id: int, user_id: int, entry_date: date, journal_id: int, entry_number: str, description: str, lines: list[dict], source_entity: str, source_id: int):
+    def _post(self, db: Session, *, company_id: int, user_id: int, entry_date: date, journal_id: int, entry_number: str, description: str, lines: list[dict], source_entity: str, source_id: int, auto_post_policy_key: str | None = None):
         validate_double_entry(lines); validate_source(source_module="commerce", source_entity=source_entity, source_id=source_id)
         settings, tenant_id, period, fiscal_year = self._context(db, company_id, entry_date)
         existing = db.scalar(select(JournalEntry).where(JournalEntry.tenant_id == tenant_id, JournalEntry.company_id == company_id, JournalEntry.source_module == "commerce", JournalEntry.source_entity == source_entity, JournalEntry.source_id == source_id).with_for_update())
@@ -52,14 +106,15 @@ class CommerceAccountingService:
         entry = journal_service.create_draft(db, tenant_id=tenant_id, company_id=company_id, branch_id=settings.default_branch_id, journal_id=journal_id, fiscal_year_id=fiscal_year.id, period_id=period.id, entry_number=entry_number, entry_date=entry_date, description=description, lines=lines, user_id=user_id, source_module="commerce", source_entity=source_entity, source_id=source_id, commit=False)
         journal_service.submit(db, tenant_id=tenant_id, entry_id=entry.id, user_id=user_id, commit=False)
         if journal.requires_approval: journal_service.approve(db, tenant_id=tenant_id, entry_id=entry.id, user_id=user_id, commit=False)
-        if settings.auto_post and journal.auto_post: journal_service.post(db, tenant_id=tenant_id, entry_id=entry.id, user_id=user_id, commit=False)
+        company_auto_post_enabled = auto_post_policy_key is None or get_company_setting(db, company_id, auto_post_policy_key) is True
+        if settings.auto_post and journal.auto_post and company_auto_post_enabled: journal_service.post(db, tenant_id=tenant_id, entry_id=entry.id, user_id=user_id, commit=False)
         return entry
 
     def post_sales_invoice(self, db, document, user_id: int):
         settings = self._settings(db, document.company_id)
         lines = [{"account_combination_id": settings.ar_account_id, "debit": Decimal(document.total), "credit": 0, "description": f"AR {document.number}"}, {"account_combination_id": settings.sales_account_id, "debit": 0, "credit": Decimal(document.subtotal), "description": f"Sales {document.number}"}]
         if Decimal(document.tax_total or 0): lines.append({"account_combination_id": settings.output_vat_account_id, "debit": 0, "credit": Decimal(document.tax_total), "description": f"Output VAT {document.number}"})
-        return self._post(db, company_id=document.company_id, user_id=user_id, entry_date=document.document_date, journal_id=settings.sales_journal_id, entry_number=f"SI-{document.id}", description=f"Sales invoice {document.number}", lines=lines, source_entity="sales_invoice", source_id=document.id)
+        return self._post(db, company_id=document.company_id, user_id=user_id, entry_date=document.document_date, journal_id=settings.sales_journal_id, entry_number=f"SI-{document.id}", description=f"Sales invoice {document.number}", lines=lines, source_entity="sales_invoice", source_id=document.id, auto_post_policy_key="accounting.auto_post_sales_invoice")
 
     def post_sales_credit_note(self, db, document, user_id: int):
         settings = self._settings(db, document.company_id)
@@ -108,6 +163,29 @@ class CommerceAccountingService:
         if inventory_value <= 0: return None
         return self._post(db, company_id=document.company_id, user_id=user_id, entry_date=document.document_date, journal_id=settings.purchase_journal_id, entry_number=f"GRN-{document.id}", description=f"Goods receipt {document.number}", lines=[{"account_combination_id": settings.inventory_account_id, "debit": inventory_value, "credit": 0, "description": f"Inventory receipt {document.number}"}, {"account_combination_id": settings.grni_account_id, "debit": 0, "credit": inventory_value, "description": f"GRNI {document.number}"}], source_entity="purchase_receipt_accounting", source_id=document.id)
 
+    def _validate_purchase_price_variance(
+        self, db: Session, *, company_id: int, invoice_value: Decimal, receipt_value: Decimal
+    ) -> None:
+        if receipt_value <= 0:
+            return
+        variance_pct = abs(invoice_value - receipt_value) / receipt_value * Decimal("100")
+        tolerance = Decimal(str(get_company_setting(
+            db, company_id, "purchasing.price_variance_tolerance_pct"
+        )))
+        allow_beyond_tolerance = get_company_setting(
+            db, company_id, "purchasing.allow_invoice_price_variance"
+        ) is True
+        if variance_pct > tolerance and not allow_beyond_tolerance:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Supplier invoice price variance exceeds the company tolerance "
+                    f"({variance_pct:.4f}% > {tolerance:.4f}%). "
+                    "Review the invoice/receipt values or enable the company policy "
+                    "to allow variance beyond tolerance."
+                ),
+            )
+
     def post_purchase_bill(self, db, document, user_id: int):
         settings = self._settings(db, document.company_id)
         existing = self._existing_source(db, company_id=document.company_id, source_entity="purchase_bill", source_id=document.id)
@@ -123,6 +201,12 @@ class CommerceAccountingService:
                     item = db.scalar(select(InventoryItem).where(InventoryItem.id == line.item_id, InventoryItem.company_id == document.company_id))
                     if item and item.item_type in {"stockable", "consumable"}: receipt_value += self._allocate_receipt_value(db, document=document, line=line)
                 if receipt_value <= 0 and stock_total > 0: raise HTTPException(409, "Linked purchase receipts have no inventory valuation")
+                self._validate_purchase_price_variance(
+                    db,
+                    company_id=document.company_id,
+                    invoice_value=stock_total,
+                    receipt_value=receipt_value,
+                )
                 lines.append({"account_combination_id": account, "debit": receipt_value, "credit": 0, "description": f"GRNI clearing {document.number}"})
                 variance = stock_total - receipt_value
                 if variance != 0 and settings.purchase_price_variance_account_id is None: raise HTTPException(409, "Purchase Price Variance account is required when bill and receipt valuations differ")
@@ -133,7 +217,7 @@ class CommerceAccountingService:
         if expense_total: lines.append({"account_combination_id": settings.purchase_account_id, "debit": expense_total, "credit": 0, "description": f"Purchase expense {document.number}"})
         if Decimal(document.tax_total or 0): lines.append({"account_combination_id": settings.input_vat_account_id, "debit": Decimal(document.tax_total), "credit": 0, "description": f"Input VAT {document.number}"})
         lines.append({"account_combination_id": settings.ap_account_id, "debit": 0, "credit": Decimal(document.total), "description": f"AP {document.number}"})
-        return self._post(db, company_id=document.company_id, user_id=user_id, entry_date=document.document_date, journal_id=settings.purchase_journal_id, entry_number=f"PB-{document.id}", description=f"Purchase bill {document.number}", lines=lines, source_entity="purchase_bill", source_id=document.id)
+        return self._post(db, company_id=document.company_id, user_id=user_id, entry_date=document.document_date, journal_id=settings.purchase_journal_id, entry_number=f"PB-{document.id}", description=f"Purchase bill {document.number}", lines=lines, source_entity="purchase_bill", source_id=document.id, auto_post_policy_key="accounting.auto_post_purchase_invoice")
 
     def post_purchase_debit_note(self, db, document, user_id: int):
         settings = self._settings(db, document.company_id); stock_total, expense_total = self._purchase_stock_expense_totals(db, document); lines = []

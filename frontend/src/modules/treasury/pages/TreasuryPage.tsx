@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import client from "@/shared/api/client";
+import { formatCompanyDate, useCompanyClockDate, useCompanyDateFormat } from "@/utils/format-date";
 
 type Cheque = {
   id: number;
@@ -13,8 +14,12 @@ type Cheque = {
 };
 
 const cid = () => {
-  const n = Number(localStorage.getItem("company_id"));
-  return Number.isInteger(n) && n > 0 ? n : null;
+  try {
+    const n = Number(localStorage.getItem("company_id"));
+    return Number.isSafeInteger(n) && n > 0 ? n : null;
+  } catch {
+    return null;
+  }
 };
 
 const terminal = ["withdrawn", "cancelled", "reversed"];
@@ -23,6 +28,8 @@ const issuedStatuses = ["issued", "cleared"];
 
 export default function TreasuryPage() {
   const companyId = cid();
+  const dateFormat = useCompanyDateFormat(companyId);
+  const { companyDate, loading: clockLoading, error: clockError } = useCompanyClockDate(companyId);
   const [rows, setRows] = useState<Cheque[]>([]);
   const [withdrawableIds, setWithdrawableIds] = useState<Set<number>>(new Set());
   const [error, setError] = useState("");
@@ -31,8 +38,8 @@ export default function TreasuryPage() {
   const [partnerId, setPartnerId] = useState("");
   const [number, setNumber] = useState("");
   const [bank, setBank] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [due, setDue] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState("");
+  const [due, setDue] = useState("");
   const [amount, setAmount] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -67,6 +74,9 @@ export default function TreasuryPage() {
   }
 
   useEffect(() => { void load(); }, [companyId]);
+
+  useEffect(() => { if (companyDate) { setDate(current => current || companyDate); setDue(current => current || companyDate); } }, [companyDate]);
+  useEffect(() => { if (clockError) setError(clockError); }, [clockError]);
 
   async function create(e: FormEvent) {
     e.preventDefault();
@@ -120,7 +130,7 @@ export default function TreasuryPage() {
         </p>
       </header>
 
-      {error && <div className="rounded-xl border bg-destructive/10 p-3 text-sm">{error}</div>}
+      {(error || clockError) && <div className="rounded-xl border bg-destructive/10 p-3 text-sm">{error || clockError}</div>}
 
       <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
         <form onSubmit={create} className="space-y-3 rounded-2xl border bg-card p-5 shadow-sm">
@@ -135,7 +145,7 @@ export default function TreasuryPage() {
           <input required type="date" value={date} onChange={e => setDate(e.target.value)} className="w-full rounded-lg border bg-background px-3 py-2" />
           <input required type="date" value={due} onChange={e => setDue(e.target.value)} className="w-full rounded-lg border bg-background px-3 py-2" />
           <input required type="number" min="0.01" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="المبلغ EGP" className="w-full rounded-lg border bg-background px-3 py-2" />
-          <button disabled={saving || !companyId || Number(amount) <= 0 || !number.trim()} className="w-full rounded-lg bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50">
+          <button disabled={saving || clockLoading || !date || !due || !companyId || Number(amount) <= 0 || !number.trim()} className="w-full rounded-lg bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50">
             {saving ? "جارٍ الحفظ..." : "حفظ الشيك"}
           </button>
         </form>
@@ -155,7 +165,7 @@ export default function TreasuryPage() {
                 <tbody>{rows.map(c => <tr key={c.id} className="border-b">
                   <td className="p-3">{c.direction === "received" ? "مستلم" : "صادر"}</td>
                   <td className="p-3">{c.cheque_number}</td><td className="p-3">{c.bank_name || "—"}</td>
-                  <td className="p-3">{c.amount} {c.currency}</td><td className="p-3">{c.due_date}</td><td className="p-3">{c.status}</td>
+                  <td className="p-3">{c.amount} {c.currency}</td><td className="p-3">{formatCompanyDate(c.due_date, dateFormat)}</td><td className="p-3">{c.status}</td>
                   <td className="p-3"><div className="flex flex-wrap gap-1">
                     {c.status === "received" && <button onClick={() => void action(c.id, "deposit")} className="rounded border px-2 py-1 text-xs">إيداع</button>}
                     {c.status === "deposited" && <button onClick={() => void action(c.id, "under-collection")} className="rounded border px-2 py-1 text-xs">تحت التحصيل</button>}

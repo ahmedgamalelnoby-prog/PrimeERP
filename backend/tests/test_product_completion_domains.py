@@ -57,7 +57,7 @@ def test_money_rounding_used_by_tax_engine():
     assert money(Decimal('1.005')) == Decimal('1.01')
 
 
-def test_tax_engine_rejects_withholding_above_gross():
+def test_tax_engine_rejects_withholding_above_gross(monkeypatch):
     taxes = [
         SimpleNamespace(id=1, code='WHT-60', name='WHT 60%', rate=Decimal('60'), tax_type='wht', is_withholding=True),
         SimpleNamespace(id=2, code='WHT-50', name='WHT 50%', rate=Decimal('50'), tax_type='wht', is_withholding=True),
@@ -70,6 +70,9 @@ def test_tax_engine_rejects_withholding_above_gross():
     class FakeDB:
         def scalars(self, _query):
             return FakeScalarResult()
+
+    from app.modules.accounting import tax_engine
+    monkeypatch.setattr(tax_engine, "get_company_setting", lambda _db, _company_id, key: "half_up" if key == "accounting.rounding_method" else False)
 
     with pytest.raises(Exception, match='Total withholding tax cannot exceed the gross taxable amount'):
         calculate_taxes(
@@ -484,7 +487,8 @@ def test_stock_move_reservation_contract_is_atomic_and_exact():
     assert "with_for_update()" in source
     assert "reservation.status != " + '"active"' in source
     assert "reservation.item_id != move.item_id" in source
-    assert "Decimal(reservation.quantity) != Decimal(move.quantity)" in source
+    assert "Decimal(reservation.quantity) < Decimal(move.quantity)" in source
+    assert "remaining_quantity = reserved_quantity - quantity" in source
     assert "source_balance.quantity_reserved -= quantity" in source
     assert "warehouse_source.quantity_reserved -= quantity" in source
     assert 'reservation.status = "consumed"' in source

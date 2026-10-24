@@ -50,6 +50,9 @@ class InventoryStockMove(Base):
     accounting_entry_id = Column(Integer, ForeignKey("journal_entries.id", ondelete="RESTRICT"), nullable=True, index=True)
     reversed_by_move_id = Column(Integer, ForeignKey("inventory_stock_moves.id", ondelete="RESTRICT"), nullable=True, index=True)
     reservation_id = Column(Integer, ForeignKey("inventory_reservations.id", ondelete="RESTRICT"), nullable=True, index=True)
+    lot_number = Column(String(100), nullable=True, index=True)
+    serial_number = Column(String(100), nullable=True, index=True)
+    expiry_date = Column(Date, nullable=True, index=True)
 
     item = relationship("InventoryItem")
     variant = relationship("ProductVariant")
@@ -63,12 +66,66 @@ class InventoryStockMove(Base):
     __table_args__ = (
         CheckConstraint("quantity > 0", name="ck_inventory_stock_move_quantity"),
         CheckConstraint("unit_cost >= 0", name="ck_inventory_stock_move_unit_cost"),
-        CheckConstraint("movement_type IN ('receipt','issue','transfer','adjustment','opening','return')", name="ck_inventory_stock_move_type"),
+        CheckConstraint("movement_type IN ('receipt','issue','transfer','adjustment','opening','return','production_issue','production_receipt')", name="ck_inventory_stock_move_type"),
         CheckConstraint("status IN ('draft','posted','cancelled','reversed')", name="ck_inventory_stock_move_status"),
         CheckConstraint("source_location_id IS NOT NULL OR destination_location_id IS NOT NULL", name="ck_inventory_stock_move_endpoint"),
         CheckConstraint("source_location_id IS NULL OR destination_location_id IS NULL OR source_location_id <> destination_location_id", name="ck_inventory_stock_move_distinct_endpoints"),
         CheckConstraint("status <> 'posted' OR movement_type = 'transfer' OR accounting_entry_id IS NOT NULL", name="ck_inventory_stock_move_posted_accounting"),
         Index("uq_inventory_stock_move_source_nonnull", "company_id", "source_module", "source_entity", "source_id", unique=True, postgresql_where=(source_module.is_not(None) & source_entity.is_not(None) & source_id.is_not(None))),
+    )
+
+
+class InventoryLotBalance(Base):
+    """Current on-hand quantity for one item/variant/lot/serial at a stock location."""
+
+    __tablename__ = "inventory_lot_balances"
+
+    id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    item_id = Column(Integer, ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False, index=True)
+    variant_id = Column(Integer, ForeignKey("product_variants.id", ondelete="RESTRICT"), nullable=True, index=True)
+    location_id = Column(Integer, ForeignKey("inventory_locations.id", ondelete="RESTRICT"), nullable=False, index=True)
+    lot_number = Column(String(100), nullable=True, index=True)
+    serial_number = Column(String(100), nullable=True, index=True)
+    expiry_date = Column(Date, nullable=True, index=True)
+    quantity_on_hand = Column(Numeric(18, 4), nullable=False, default=0)
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    location = relationship("InventoryLocation")
+    item = relationship("InventoryItem")
+    variant = relationship("ProductVariant")
+
+    __table_args__ = (
+        CheckConstraint("quantity_on_hand >= 0", name="ck_inventory_lot_balance_nonnegative"),
+        CheckConstraint("lot_number IS NOT NULL OR serial_number IS NOT NULL", name="ck_inventory_lot_balance_identity"),
+        Index(
+            "uq_inventory_lot_balance_identity",
+            "company_id", "item_id", "location_id",
+            func.coalesce(variant_id, 0),
+            func.coalesce(lot_number, ""),
+            func.coalesce(serial_number, ""),
+            unique=True,
+        ),
+    )
+
+
+class InventoryLotMoveAllocation(Base):
+    """Immutable audit of lot quantities consumed or received by a posted movement."""
+
+    __tablename__ = "inventory_lot_move_allocations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    stock_move_id = Column(Integer, ForeignKey("inventory_stock_moves.id", ondelete="CASCADE"), nullable=False, index=True)
+    lot_number = Column(String(100), nullable=True)
+    serial_number = Column(String(100), nullable=True)
+    expiry_date = Column(Date, nullable=True)
+    quantity = Column(Numeric(18, 4), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_inventory_lot_move_allocation_quantity"),
+        CheckConstraint("lot_number IS NOT NULL OR serial_number IS NOT NULL", name="ck_inventory_lot_move_allocation_identity"),
     )
 
 

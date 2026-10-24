@@ -1,7 +1,17 @@
 import { FormEvent, useEffect, useState } from "react";
 import client from "@/shared/api/client";
+import { formatCompanyDateTime, useCompanyDateFormat } from "@/utils/format-date";
 
 type Schedule = { id:number; report_definition_id:number; channel:string; destination:string; schedule:string; format:string; is_active:boolean; last_status?:string|null; next_run_at?:string|null };
+
+function getStoredCompanyId(): number {
+  try {
+    const value = Number(localStorage.getItem("company_id"));
+    return Number.isInteger(value) && value > 0 ? value : 0;
+  } catch {
+    return 0;
+  }
+}
 
 export default function ReportsPage(){
   const [question,setQuestion]=useState("");
@@ -16,9 +26,10 @@ export default function ReportsPage(){
   const [body,setBody]=useState("");
   const [schedule,setSchedule]=useState("daily:09:00");
   const [schedules,setSchedules]=useState<Schedule[]>([]);
-  const [companyId,setCompanyId]=useState(Number(localStorage.getItem("company_id"))||0);
+  const [companyId,setCompanyId]=useState(getStoredCompanyId);
   const [fromDate,setFromDate]=useState("");
   const [toDate,setToDate]=useState("");
+  const dateFormat = useCompanyDateFormat(companyId);
 
   useEffect(()=>{loadSchedules();},[companyId]);
 
@@ -104,7 +115,7 @@ export default function ReportsPage(){
 
     <div className="rounded-2xl border bg-card p-5 shadow-sm">
       <h2 className="mb-4 font-semibold">الجدولات الحالية</h2>
-      {schedules.length===0?<p className="text-sm text-muted-foreground">لا توجد جدولات لهذه الشركة.</p>:<div className="overflow-auto"><table className="w-full text-sm"><thead><tr className="border-b text-right"><th className="p-2">القناة</th><th className="p-2">المستلم</th><th className="p-2">الجدول</th><th className="p-2">الحالة</th><th className="p-2">التشغيل القادم</th></tr></thead><tbody>{schedules.map(s=><tr key={s.id} className="border-b last:border-0"><td className="p-2">{s.channel}</td><td className="p-2">{s.destination}</td><td className="p-2">{s.schedule}</td><td className="p-2">{s.last_status||"scheduled"}</td><td className="p-2">{s.next_run_at?new Date(s.next_run_at).toLocaleString("ar-EG"):"-"}</td></tr>)}</tbody></table></div>}
+      {schedules.length===0?<p className="text-sm text-muted-foreground">لا توجد جدولات لهذه الشركة.</p>:<div className="overflow-auto"><table className="w-full text-sm"><thead><tr className="border-b text-right"><th className="p-2">القناة</th><th className="p-2">المستلم</th><th className="p-2">الجدول</th><th className="p-2">الحالة</th><th className="p-2">التشغيل القادم</th></tr></thead><tbody>{schedules.map(s=><tr key={s.id} className="border-b last:border-0"><td className="p-2">{s.channel}</td><td className="p-2">{s.destination}</td><td className="p-2">{s.schedule}</td><td className="p-2">{s.last_status||"scheduled"}</td><td className="p-2">{s.next_run_at?formatCompanyDateTime(s.next_run_at,dateFormat):"—"}</td></tr>)}</tbody></table></div>}
     </div>
   </section>;
 }

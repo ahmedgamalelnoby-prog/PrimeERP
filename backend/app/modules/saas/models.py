@@ -156,7 +156,6 @@ class Tenant(Base):
     companies = relationship(
         "Company",
         back_populates="tenant",
-        foreign_keys="Company.tenant_id",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
@@ -164,7 +163,6 @@ class Tenant(Base):
     branches = relationship(
         "Branch",
         back_populates="tenant",
-        foreign_keys="Branch.tenant_id",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )

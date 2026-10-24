@@ -122,8 +122,9 @@ class FiscalYearRepository:
         tenant_id: int,
         company_id: int,
         posting_date: date,
+        require_open: bool = True,
     ) -> Optional[AccountingPeriod]:
-        return (
+        query = (
             db.query(AccountingPeriod)
             .filter(
                 AccountingPeriod.tenant_id
@@ -134,18 +135,18 @@ class FiscalYearRepository:
                 <= posting_date,
                 AccountingPeriod.end_date
                 >= posting_date,
-                AccountingPeriod.status
-                == "open",
-                AccountingPeriod.allow_posting
-                .is_(True),
             )
-            .order_by(
-                AccountingPeriod.start_date.desc(),
-                AccountingPeriod.end_date.desc(),
-                AccountingPeriod.id.desc(),
-            )
-            .first()
         )
+        if require_open:
+            query = query.filter(
+                AccountingPeriod.status == "open",
+                AccountingPeriod.allow_posting.is_(True),
+            )
+        return query.order_by(
+            AccountingPeriod.start_date.desc(),
+            AccountingPeriod.end_date.desc(),
+            AccountingPeriod.id.desc(),
+        ).first()
 
 
 fiscal_year_repository = (

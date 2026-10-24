@@ -3,19 +3,34 @@ from datetime import date
 from fastapi import APIRouter,Depends,HTTPException
 from sqlalchemy import select,func
 from sqlalchemy.orm import Session
+from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
+from app.modules.saas.entitlements import require_module
 from app.database.session import get_db
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.companies.models import Company
+from app.modules.company_settings.service import get_company_setting
 from app.modules.enterprise.finance_models import FinanceEntity,ConsolidationGroup,ConsolidationMember,IntercompanyTransaction,ConsolidationRun,ConsolidationLine,ConsolidationElimination,FinanceFxRate,FinanceRevaluation
 from app.modules.enterprise.finance_schemas import *
 from app.modules.accounting.journals.models.journal_entry import JournalEntry
 from app.modules.accounting.journals.models.journal_entry_line import JournalEntryLine
 from app.modules.accounting.chart_of_accounts.models import AccountCombination
-router=APIRouter(prefix="/enterprise/finance",tags=["Enterprise Finance"])
-def company_ok(db,cid,user):
-    if not user.tenant_id or not db.scalar(select(Company.id).where(Company.id==cid,Company.tenant_id==user.tenant_id)): raise HTTPException(404,"Company not found")
+router = APIRouter(
+    prefix="/enterprise/finance",
+    tags=["Enterprise Finance"],
+    dependencies=[Depends(require_module("enterprise"))],
+)
+def company_ok(db, cid, user):
+    tenant_id = get_effective_tenant_id(user)
+    if tenant_id is None or not db.scalar(
+        select(Company.id).where(
+            Company.id == cid,
+            Company.tenant_id == tenant_id,
+            Company.is_active.is_(True),
+        )
+    ):
+        raise HTTPException(404, "Company not found")
 @router.post("/entities",response_model=EntityResponse,status_code=201,dependencies=[Depends(require_permission("enterprise.finance.write"))])
 def entity(p:EntityCreate,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     company_ok(db,p.company_id,user);o=FinanceEntity(**p.model_dump());db.add(o);db.commit();db.refresh(o);return o
@@ -29,12 +44,47 @@ def group(p:GroupCreate,db:Session=Depends(get_db),user:User=Depends(get_current
 def member(group_id:int,p:MemberCreate,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     g=db.get(ConsolidationGroup,group_id);e=db.get(FinanceEntity,p.entity_id)
     if not g or not e:raise HTTPException(404,"Group/entity not found")
-    company_ok(db,g.company_id,user);company_ok(db,e.company_id,user);o=ConsolidationMember(group_id=group_id,**p.model_dump());db.add(o);db.commit();db.refresh(o);return {"id":o.id}
-@router.post("/intercompany",dependencies=[Depends(require_permission("enterprise.finance.write"))])
-def intercompany(p:IntercompanyCreate,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
-    company_ok(db,p.company_id,user)
-    if p.from_entity_id==p.to_entity_id:raise HTTPException(422,"Intercompany parties must differ")
-    o=IntercompanyTransaction(**p.model_dump());db.add(o);db.commit();db.refresh(o);return {"id":o.id,"status":o.status}
+    company_ok(db,g.company_id,user);company_ok(db,e.company_id,user)
+    company_member = db.scalar(
+        select(ConsolidationMember.id)
+        .join(FinanceEntity, FinanceEntity.id == ConsolidationMember.entity_id)
+        .where(
+            ConsolidationMember.group_id == group_id,
+            ConsolidationMember.is_active.is_(True),
+            FinanceEntity.company_id == e.company_id,
+        )
+    )
+    if company_member is not None:
+        raise HTTPException(409, "A company can only be represented once in a consolidation group")
+    o=ConsolidationMember(group_id=group_id,**p.model_dump());db.add(o);db.commit();db.refresh(o);return {"id":o.id}
+@router.post("/intercompany", dependencies=[Depends(require_permission("enterprise.finance.write"))])
+def intercompany(p: IntercompanyCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    company_ok(db, p.company_id, user)
+    if get_company_setting(db, p.company_id, "general.intercompany_enabled") is not True:
+        raise HTTPException(409, "Company policy disables intercompany transactions")
+    if p.from_entity_id == p.to_entity_id:
+        raise HTTPException(422, "Intercompany parties must differ")
+
+    tenant_id = get_effective_tenant_id(user)
+    party_ids = {p.from_entity_id, p.to_entity_id}
+    tenant_entities = set(db.scalars(
+        select(FinanceEntity.id)
+        .join(Company, Company.id == FinanceEntity.company_id)
+        .where(
+            FinanceEntity.id.in_(party_ids),
+            FinanceEntity.is_active.is_(True),
+            Company.tenant_id == tenant_id,
+            Company.is_active.is_(True),
+        )
+    ).all())
+    if tenant_entities != party_ids:
+        raise HTTPException(404, "Intercompany entity not found")
+
+    transaction = IntercompanyTransaction(**p.model_dump())
+    db.add(transaction)
+    db.commit()
+    db.refresh(transaction)
+    return {"id": transaction.id, "status": transaction.status}
 @router.get("/intercompany",dependencies=[Depends(require_permission("enterprise.finance.access"))])
 def intercompanies(company_id:int,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     company_ok(db,company_id,user);q=select(IntercompanyTransaction).where(IntercompanyTransaction.company_id==company_id).order_by(IntercompanyTransaction.id.desc())
@@ -56,9 +106,25 @@ def run(p:ConsolidationRunCreate,db:Session=Depends(get_db),user:User=Depends(ge
         return {"run_id":existing.id,"status":existing.status,"duplicate":True,"total_debit":existing.total_debit,"total_credit":existing.total_credit,"elimination_total":existing.elimination_total}
     members=list(db.scalars(select(ConsolidationMember).where(ConsolidationMember.group_id==g.id,ConsolidationMember.is_active.is_(True))).all())
     if not members:raise HTTPException(422,"Consolidation group has no active members")
+    member_entity_ids = {member.entity_id for member in members}
+    tenant_id = get_effective_tenant_id(user)
+    entities = list(db.scalars(
+        select(FinanceEntity)
+        .join(Company, Company.id == FinanceEntity.company_id)
+        .where(
+            FinanceEntity.id.in_(member_entity_ids),
+            FinanceEntity.is_active.is_(True),
+            Company.tenant_id == tenant_id,
+            Company.is_active.is_(True),
+        )
+    ).all())
+    if {entity.id for entity in entities} != member_entity_ids:
+        raise HTTPException(409, "Consolidation group contains an inactive or out-of-tenant entity")
+    entity_by_company = {entity.company_id: entity for entity in entities}
+    if len(entity_by_company) != len(entities):
+        raise HTTPException(409, "A company can only be represented once in a consolidation group")
+    company_ids = list(entity_by_company)
     r=ConsolidationRun(group_id=g.id,period_start=p.period_start,period_end=p.period_end,status="draft",created_by=user.id);db.add(r);db.flush()
-    entities=list(db.scalars(select(FinanceEntity).where(FinanceEntity.id.in_([m.entity_id for m in members]),FinanceEntity.is_active.is_(True))).all())
-    entity_by_company={e.company_id:e for e in entities};company_ids=list(entity_by_company)
     pct={e.company_id:Decimal(next(m.consolidation_percent for m in members if m.entity_id==e.id))/Decimal(100) for e in entities}
     def fx_rate(from_currency:str,to_currency:str):
         if from_currency==to_currency:return Decimal(1)

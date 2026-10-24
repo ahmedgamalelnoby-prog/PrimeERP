@@ -107,7 +107,6 @@ class Company(Base):
         back_populates="company",
         cascade="all, delete-orphan",
         passive_deletes=True,
-        foreign_keys="Branch.company_id",
     )
 
     __table_args__ = (
