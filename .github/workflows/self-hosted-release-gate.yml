@@ -82,7 +82,39 @@ jobs:
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
           $ErrorActionPreference = 'Stop'
-          docker info
+
+          # A self-hosted Windows runner may be online while Docker Desktop's
+          # Linux engine is stopped. Start it when installed, then wait briefly.
+          try {
+            docker info *> $null
+          } catch {
+            # PowerShell native-command handling varies by version; the explicit
+            # exit-code check below is the authoritative engine test.
+          }
+          if ($LASTEXITCODE -ne 0) {
+            $dockerDesktop = @(
+              'C:\Program Files\Docker\Docker\Docker Desktop.exe',
+              'C:\Users\Admin\AppData\Local\Programs\DockerDesktop\Docker Desktop.exe'
+            ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+            if ($dockerDesktop) {
+              Write-Host 'Docker engine is stopped; starting Docker Desktop.'
+              Start-Process -FilePath $dockerDesktop
+            }
+          }
+
+          $deadline = (Get-Date).AddMinutes(3)
+          $engineReady = $false
+          while ((Get-Date) -lt $deadline) {
+            docker info *> $null
+            if ($LASTEXITCODE -eq 0) {
+              $engineReady = $true
+              break
+            }
+            Start-Sleep -Seconds 5
+          }
+          if (-not $engineReady) {
+            throw 'Docker Desktop Linux engine is unavailable. Start Docker Desktop and switch to the desktop-linux context, then rerun the release gate.'
+          }
           docker run --rm hello-world
 
       - name: Prepare CI environment
@@ -327,4 +359,10 @@ jobs:
         if: always()
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
+          $ErrorActionPreference = 'Continue'
+          docker info *> $null
+          if ($LASTEXITCODE -ne 0) {
+            Write-Warning 'Docker engine is unavailable; skipping Compose cleanup because no CI containers could have been started.'
+            exit 0
+          }
           docker compose down -v --remove-orphans
