@@ -69,9 +69,9 @@ _RAW = [
     ("hr.default_work_hours_per_day","hr","Human Resources","number",8,"Daily standard hours deducted from recorded attendance when calculating eligible overtime",None,"runtime"),
     ("hr.biometric_sync_interval_minutes","hr","Human Resources","int",15,"Target sync interval for biometric integrations; scheduler/connector must consume this value",None,"catalog"),
     # Approvals / operations / POS
-    ("workflow.approval_mode","approvals","Approvals","enum","sequential","Approval mode helper exists, but end-to-end workflow consumers are not yet verified",["sequential","parallel","any_one"],"catalog"),
+    ("workflow.approval_mode","approvals","Approvals","enum","sequential","Approval ordering semantics consumed by generic approvals and payroll approval requests",["sequential","parallel","any_one"],"runtime"),
     ("workflow.allow_self_approval","approvals","Approvals","bool",False,"Allow requester to approve their own request",None,"runtime"),
-    ("workflow.escalation_after_hours","approvals","Approvals","int",24,"Escalation threshold helper exists, but end-to-end escalation consumption is not yet verified",None,"catalog"),
+    ("workflow.escalation_after_hours","approvals","Approvals","int",24,"Escalation SLA consumed by the approval escalation worker for in-app reminders",None,"runtime"),
     ("pos.allow_open_cash_drawer","pos","Point of Sale","bool",False,"Allow cash drawer opening without a transaction; no standalone drawer-open endpoint is wired to this policy yet",None,"catalog"),
     ("pos.require_shift_close","pos","Point of Sale","bool",True,"Require cashier shift closing and reconciliation",None,"runtime"),
     ("pos.allow_discount_without_approval","pos","Point of Sale","bool",False,"Allow cashier discounts without approval",None,"runtime"),
