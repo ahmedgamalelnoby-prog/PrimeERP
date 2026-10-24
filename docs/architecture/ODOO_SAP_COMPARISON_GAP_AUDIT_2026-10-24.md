@@ -73,3 +73,10 @@ These are routing/architecture improvements, not proof that every Odoo/SAP capab
 - If a schedule omits its format, the API resolves `reports.default_export_format`; supported formats are JSON and text, matching the current worker. Explicit supported formats are preserved.
 - The financial AI analysis endpoint now enforces `accounting.access` as well as the Reports module entitlement because it reads accounting records.
 - `reports.max_export_rows` and `reports.include_filters_in_export` remain catalog-only until tabular export paths exist; no non-existent export functionality is claimed.
+
+
+## Module-aware report visibility — 2026-10-24 follow-up
+
+- The central Report Center now filters each report entry by its owning module's enabled entitlement, hides empty groups, and retains the platform-administrator override.
+- This is a navigation/visibility improvement, not the authorization boundary: each backend report endpoint must still enforce source-module permissions and tenant/company scoping. The financial AI analysis endpoint specifically requires `accounting.access` in addition to the Reports module entitlement.
+- Frontend typecheck/build and backend tests are still pending the self-hosted Release Gate; this UI change is not claimed as verified until that run completes.
