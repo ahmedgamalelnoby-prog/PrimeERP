@@ -52,6 +52,8 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
         "inventory.batch_tracking_default",
         "notifications.email_enabled",
         "notifications.whatsapp_enabled",
+        "reports.default_export_format",
+        "reports.allow_scheduled_delivery",
         "notifications.retry_limit",
         "tax.require_tax_code_on_invoice",
         "accounting.auto_post_sales_invoice",
@@ -193,15 +195,18 @@ def test_notification_delivery_switches_default_to_disabled():
     assert BY_KEY["notifications.whatsapp_enabled"]["status"] == "runtime"
 
 
-def test_reporting_policies_have_a_dedicated_category_and_remain_catalog_only():
-    reporting = [item for item in CATALOG if item["category"] == "Reporting"]
-    assert {item["key"] for item in reporting} == {
+def test_reporting_policies_have_a_dedicated_category_with_explicit_runtime_status():
+    reporting = {item["key"]: item for item in CATALOG if item["category"] == "Reporting"}
+    assert set(reporting) == {
         "reports.default_export_format",
         "reports.max_export_rows",
         "reports.include_filters_in_export",
         "reports.allow_scheduled_delivery",
     }
-    assert all(item["status"] == "catalog" for item in reporting)
+    assert reporting["reports.default_export_format"]["status"] == "runtime"
+    assert reporting["reports.allow_scheduled_delivery"]["status"] == "runtime"
+    assert reporting["reports.max_export_rows"]["status"] == "catalog"
+    assert reporting["reports.include_filters_in_export"]["status"] == "catalog"
 
 
 @pytest.mark.parametrize("bad_rows", [99, 100001, True, 1.5, "1000"])
