@@ -56,6 +56,8 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
         "notifications.whatsapp_enabled",
         "reports.default_export_format",
         "reports.allow_scheduled_delivery",
+        "reports.max_export_rows",
+        "reports.include_filters_in_export",
         "notifications.retry_limit",
         "tax.require_tax_code_on_invoice",
         "accounting.auto_post_sales_invoice",
@@ -207,8 +209,8 @@ def test_reporting_policies_have_a_dedicated_category_with_explicit_runtime_stat
     }
     assert reporting["reports.default_export_format"]["status"] == "runtime"
     assert reporting["reports.allow_scheduled_delivery"]["status"] == "runtime"
-    assert reporting["reports.max_export_rows"]["status"] == "catalog"
-    assert reporting["reports.include_filters_in_export"]["status"] == "catalog"
+    assert reporting["reports.max_export_rows"]["status"] == "runtime"
+    assert reporting["reports.include_filters_in_export"]["status"] == "runtime"
 
 
 @pytest.mark.parametrize("bad_rows", [99, 100001, True, 1.5, "1000"])
