@@ -95,3 +95,9 @@ These are routing/architecture improvements, not proof that every Odoo/SAP capab
 - The generic approval-request endpoint already consumes `workflow.approval_mode`; payroll submission now consumes the same company policy rather than hard-coding sequential approval. The registry marks the policy runtime, with tests for all supported modes and invalid values.
 - The approval escalation worker consumes `workflow.escalation_after_hours` to queue idempotent in-app reminders for pending approval steps; the registry now marks this policy runtime. This does not claim external email/WhatsApp escalation or prove the worker has passed integration tests.
 - The current catalog-only list is now five settings: `hr.attendance_source`, `hr.biometric_sync_interval_minutes`, `pos.allow_open_cash_drawer`, `reports.max_export_rows`, and `reports.include_filters_in_export`.
+
+
+## Report delivery authorization hardening — 2026-10-24
+
+- Direct report delivery and schedule create/resume operations now require `company.write`; listing schedules requires `company.access`. This is important because the report router calls the notification helper directly, which otherwise would bypass the notification route's permission dependency.
+- The routes continue to enforce the Reports module entitlement and validate active company ownership within the current tenant. These layered checks reduce risk of unauthorized outbound delivery, but still require the Release Gate and route-level tests to confirm behavior.
