@@ -101,3 +101,8 @@ These are routing/architecture improvements, not proof that every Odoo/SAP capab
 
 - Direct report delivery and schedule create/resume operations now require `company.write`; listing schedules requires `company.access`. This is important because the report router calls the notification helper directly, which otherwise would bypass the notification route's permission dependency.
 - The routes continue to enforce the Reports module entitlement and validate active company ownership within the current tenant. These layered checks reduce risk of unauthorized outbound delivery, but still require the Release Gate and route-level tests to confirm behavior.
+
+
+## Report export policy wiring follow-up (2026-10-24)
+
+The centralized `POST /reports/export` endpoint now enforces the company `reports.max_export_rows`, `reports.include_filters_in_export`, and `reports.default_export_format` policies. It is company/tenant scoped, fails closed when policy cannot be verified, returns JSON or text as an attachment, and rejects row counts above the configured limit. These two export controls are now classified as runtime. This endpoint exports rows supplied by an authorized caller; it does not yet replace module-specific live report query providers.
