@@ -58,6 +58,8 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
         "reports.allow_scheduled_delivery",
         "reports.max_export_rows",
         "reports.include_filters_in_export",
+        "reports.max_export_rows",
+        "reports.include_filters_in_export",
         "notifications.retry_limit",
         "tax.require_tax_code_on_invoice",
         "accounting.auto_post_sales_invoice",
@@ -99,8 +101,6 @@ def test_policies_without_a_safe_workflow_consumer_remain_catalog_only():
         "hr.attendance_source",
         "hr.biometric_sync_interval_minutes",
         "pos.allow_open_cash_drawer",
-        "reports.max_export_rows",
-        "reports.include_filters_in_export",
     }
     assert all(BY_KEY[key]["status"] == "catalog" for key in catalog_only_keys)
 
