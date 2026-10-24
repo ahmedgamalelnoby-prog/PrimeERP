@@ -156,7 +156,7 @@ def preview_report(payload: ReportPayload, current_user: User = Depends(get_curr
     return {"title": payload.title, "format": payload.format, "body": body}
 
 
-@router.post("/deliver")
+@router.post("/deliver", dependencies=[Depends(require_permission("company.write"))])
 def deliver_report(request: DeliveryRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict[str, Any]:
     _company_for_user(db, request.company_id, current_user)
     result = send_notification(
@@ -177,7 +177,7 @@ def deliver_report(request: DeliveryRequest, current_user: User = Depends(get_cu
             "delivery_id": delivery.get("id")}
 
 
-@router.post("/schedules", status_code=201)
+@router.post("/schedules", status_code=201, dependencies=[Depends(require_permission("company.write"))])
 def create_schedule(request: ScheduleRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict[str, Any]:
     company = _company_for_user(db, request.company_id, current_user)
     schedule_format = _resolve_schedule_format(db, company.id, request.format)
@@ -203,13 +203,13 @@ def create_schedule(request: ScheduleRequest, current_user: User = Depends(get_c
     return {"id": delivery.id, "report_definition_id": definition.id, "next_run_at": delivery.next_run_at, "status": "scheduled"}
 
 
-@router.get("/schedules")
+@router.get("/schedules", dependencies=[Depends(require_permission("company.access"))])
 def list_schedules(company_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
     return list(db.scalars(select(ReportDelivery).where(ReportDelivery.company_id == company_id).order_by(ReportDelivery.id.desc()).limit(500)).all())
 
 
-@router.post("/schedules/{delivery_id}/resume")
+@router.post("/schedules/{delivery_id}/resume", dependencies=[Depends(require_permission("company.write"))])
 def resume_schedule(
     delivery_id: int,
     request: ScheduleResumeRequest,
