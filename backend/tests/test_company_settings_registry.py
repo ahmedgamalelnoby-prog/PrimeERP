@@ -35,6 +35,8 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
         "accounting.fiscal_year_start_month",
         "tax.default_tax_inclusive_pricing",
         "workflow.allow_self_approval",
+        "workflow.approval_mode",
+        "workflow.escalation_after_hours",
         "inventory.require_bin_location",
         "general.branch_required",
         "accounting.period_lock_enabled",
@@ -90,12 +92,10 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
 
 
 def test_policies_without_a_safe_workflow_consumer_remain_catalog_only():
-    # These policies still lack complete owning workflows. Do not advertise them as enforced.
+    # These policies still lack a complete owning workflow consumer. Do not advertise them as enforced.
     catalog_only_keys = {
         "hr.attendance_source",
         "hr.biometric_sync_interval_minutes",
-        "workflow.approval_mode",
-        "workflow.escalation_after_hours",
         "pos.allow_open_cash_drawer",
     }
     assert all(BY_KEY[key]["status"] == "catalog" for key in catalog_only_keys)
