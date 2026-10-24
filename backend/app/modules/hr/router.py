@@ -468,6 +468,10 @@ def check_out_attendance(
 ):
     tenant_id = _tenant(current_user)
     _company_for_tenant(db, company_id, tenant_id)
+    # Check-out is a manual attendance write too. Do not let it bypass the
+    # company source policy after manual entry has been disabled.
+    if not attendance_source_allowed(db, company_id, "manual"):
+        raise HTTPException(409, "Manual attendance changes are disabled by company policy; use the configured attendance source.")
     try:
         record = hr_leave_service.check_out_attendance(
             db,
