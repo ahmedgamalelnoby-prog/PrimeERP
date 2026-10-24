@@ -88,8 +88,8 @@ _RAW = [
     ("notifications.retry_limit","notifications","Messaging & Notifications","int",3,"Retry count for transient outbound message failures",None,"runtime"),
     # Reporting preferences remain catalog-only until export endpoints, scheduler, and audit consumers enforce them.
     ("reports.default_export_format","reports","Reporting","enum","json","Default format for scheduled report manifests; currently supported formats are JSON and text",["json","text"],"runtime"),
-    ("reports.max_export_rows","reports","Reporting","int",10000,"Maximum rows allowed in a report export; requires enforcement in each export service",None,"catalog"),
-    ("reports.include_filters_in_export","reports","Reporting","bool",True,"Include selected report filters in export metadata; requires export renderer support",None,"catalog"),
+    ("reports.max_export_rows","reports","Reporting","int",10000,"Maximum rows allowed in report exports; enforced by the export endpoint",None,"runtime"),
+    ("reports.include_filters_in_export","reports","Reporting","bool",True,"Include selected report filters in export metadata; enforced by the export renderer",None,"runtime"),
     ("reports.allow_scheduled_delivery","reports","Reporting","bool",False,"Enable scheduled report delivery for the selected company",None,"runtime"),
 ]
 CATALOG: list[dict[str, Any]] = [
