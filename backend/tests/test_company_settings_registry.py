@@ -6,7 +6,7 @@ from app.modules.company_settings.registry import BY_KEY, CATALOG, validate_valu
 def test_company_policy_catalog_has_unique_keys_and_module_ownership():
     keys = [item["key"] for item in CATALOG]
     assert len(keys) == len(set(keys))
-    assert len(keys) == 71
+    assert len(keys) == 75
     assert all("." in item["key"] and item["module"] for item in CATALOG)
 
 
@@ -191,3 +191,20 @@ def test_notification_delivery_switches_default_to_disabled():
     assert BY_KEY["notifications.whatsapp_enabled"]["default"] is False
     assert BY_KEY["notifications.email_enabled"]["status"] == "runtime"
     assert BY_KEY["notifications.whatsapp_enabled"]["status"] == "runtime"
+
+
+def test_reporting_policies_have_a_dedicated_category_and_remain_catalog_only():
+    reporting = [item for item in CATALOG if item["category"] == "Reporting"]
+    assert {item["key"] for item in reporting} == {
+        "reports.default_export_format",
+        "reports.max_export_rows",
+        "reports.include_filters_in_export",
+        "reports.allow_scheduled_delivery",
+    }
+    assert all(item["status"] == "catalog" for item in reporting)
+
+
+@pytest.mark.parametrize("bad_rows", [99, 100001, True, 1.5, "1000"])
+def test_report_export_row_limit_rejects_invalid_bounds(bad_rows):
+    with pytest.raises(ValueError):
+        validate_value("reports.max_export_rows", bad_rows)
