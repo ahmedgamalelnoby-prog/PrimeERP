@@ -24,10 +24,6 @@ def test_biometric_sync_due_uses_company_interval_and_normalizes_naive_datetimes
     ) is False
 
 
-@pytest.mark.parametrize(
-    ("mode", "required", "sequential"),
-    [("sequential", 3, True), ("parallel", 3, False), ("any_one", 1, False)],
-)
 @pytest.mark.parametrize("mode", ["sequential", "parallel", "any_one"])
 def test_approval_mode_reads_and_validates_company_policy(monkeypatch, mode):
     monkeypatch.setattr(approvals, "policy", lambda db, company_id, key: mode)
@@ -40,6 +36,10 @@ def test_approval_mode_rejects_invalid_company_policy(monkeypatch):
         approvals.approval_mode(None, 7)
 
 
+@pytest.mark.parametrize(
+    ("mode", "required", "sequential"),
+    [("sequential", 3, True), ("parallel", 3, False), ("any_one", 1, False)],
+)
 def test_approval_plan_encodes_mode_semantics(mode, required, sequential):
     plan = approvals.approval_plan(mode, [4, 5, 6, 5])
     assert plan == {
