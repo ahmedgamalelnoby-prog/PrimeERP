@@ -14,12 +14,12 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.context import get_effective_tenant_id
-from app.core.permissions import require_permission
+from app.core.permissions import require_permission, user_has_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
-from app.modules.saas.entitlements import require_module
+from app.modules.saas.entitlements import require_module, tenant_has_module
 from app.modules.reports.models import ReportDefinition, ReportDelivery
 from app.modules.notifications.router import send_notification
 from app.modules.notifications.schemas import SendNotificationRequest
@@ -39,6 +39,7 @@ class ReportPayload(BaseModel):
 
 class ReportExportRequest(BaseModel):
     company_id: int = Field(gt=0)
+    module_code: str = Field(min_length=2, max_length=50, pattern=r"^[a-z][a-z0-9_-]+$")
     title: str = Field(default="PrimeERP report", min_length=1, max_length=255)
     rows: list[dict[str, Any]]
     filters: dict[str, Any] = Field(default_factory=dict)
@@ -158,6 +159,15 @@ def _ai_analysis(request: AIAnalysisRequest) -> dict[str, Any]:
         return {**fallback, "ai_provider": "fallback_after_provider_error", "knowledge_version": REGISTRY_VERSION, "provider_error": str(exc)[:500]}
 
 
+def _require_export_module_access(db: Session, user: User, module_code: str) -> None:
+    """Require both tenant entitlement and the user's access permission for the report owner module."""
+    tenant_id = get_effective_tenant_id(user)
+    if tenant_id is None or not tenant_has_module(db, tenant_id, module_code):
+        raise HTTPException(403, "The report's owning module is not enabled for this tenant")
+    if not user_has_permission(user, f"{module_code}.access", db):
+        raise HTTPException(403, "Missing access permission for the report's owning module")
+
+
 def _render_export(
     *,
     title: str,
@@ -189,6 +199,7 @@ def export_report(
     db: Session = Depends(get_db),
 ) -> Response:
     _company_for_user(db, request.company_id, current_user)
+    _require_export_module_access(db, current_user, request.module_code)
     try:
         maximum_rows = policy(db, request.company_id, "reports.max_export_rows")
         include_filters = policy(db, request.company_id, "reports.include_filters_in_export")
