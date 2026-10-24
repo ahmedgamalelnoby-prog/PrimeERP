@@ -26,6 +26,7 @@ from app.modules.notifications.schemas import SendNotificationRequest
 from app.modules.accounting.reports.service import financial_report_service
 from app.modules.reports.worker import PROVIDERS, calculate_next_run
 from app.modules.platform.module_registry import REGISTRY_VERSION, knowledge_context
+from app.modules.company_settings.consumers.common import policy
 
 router = APIRouter(prefix="/reports", tags=["reports"], dependencies=[Depends(require_module("reports"))])
 
@@ -52,7 +53,7 @@ class ScheduleRequest(BaseModel):
     channel: str = Field(pattern="^(email|whatsapp)$")
     destination: str = Field(min_length=3, max_length=320)
     schedule: str = Field(min_length=1, max_length=120)
-    format: str = Field(default="json", pattern="^(json|text)$")
+    format: str | None = Field(default=None, pattern="^(json|text)$")
     parameters: dict[str, Any] = Field(default_factory=dict)
     filters: dict[str, Any] = Field(default_factory=dict)
 
@@ -64,6 +65,19 @@ class AIAnalysisRequest(BaseModel):
     question: str | None = Field(default=None, max_length=2000)
     from_date: str | None = None
     to_date: str | None = None
+
+
+def _resolve_schedule_format(db: Session, company_id: int, requested_format: str | None) -> str:
+    """Enforce the company scheduling switch and resolve a supported default format."""
+    enabled = policy(db, company_id, "reports.allow_scheduled_delivery")
+    if not isinstance(enabled, bool):
+        raise HTTPException(status_code=500, detail="Invalid report scheduling policy configuration")
+    if not enabled:
+        raise HTTPException(status_code=409, detail="Scheduled report delivery is disabled by company policy")
+    selected = requested_format or policy(db, company_id, "reports.default_export_format")
+    if selected not in {"json", "text"}:
+        raise HTTPException(status_code=500, detail="Invalid default report format configuration")
+    return selected
 
 
 def _company_for_user(db: Session, company_id: int, user: User) -> Company:
@@ -161,7 +175,8 @@ def deliver_report(request: DeliveryRequest, current_user: User = Depends(get_cu
 
 @router.post("/schedules", status_code=201)
 def create_schedule(request: ScheduleRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict[str, Any]:
-    _company_for_user(db, request.company_id, current_user)
+    company = _company_for_user(db, request.company_id, current_user)
+    schedule_format = _resolve_schedule_format(db, company.id, request.format)
     try:
         next_run = calculate_next_run(request.schedule)
     except (ValueError, TypeError) as exc:
@@ -177,7 +192,7 @@ def create_schedule(request: ScheduleRequest, current_user: User = Depends(get_c
         raise HTTPException(409, "Report definition has no registered provider")
     elif definition.report_type.lower() != request.report_type.lower():
         raise HTTPException(409, "Report code already exists with a different report type")
-    delivery = ReportDelivery(company_id=request.company_id, report_definition_id=definition.id, channel=request.channel, destination=request.destination, schedule=request.schedule, format=request.format, filters_json=json.dumps(request.filters, ensure_ascii=False), next_run_at=next_run, delivery_key=uuid.uuid4().hex)
+    delivery = ReportDelivery(company_id=request.company_id, report_definition_id=definition.id, channel=request.channel, destination=request.destination, schedule=request.schedule, format=schedule_format, filters_json=json.dumps(request.filters, ensure_ascii=False), next_run_at=next_run, delivery_key=uuid.uuid4().hex)
     db.add(delivery)
     db.commit()
     db.refresh(delivery)
