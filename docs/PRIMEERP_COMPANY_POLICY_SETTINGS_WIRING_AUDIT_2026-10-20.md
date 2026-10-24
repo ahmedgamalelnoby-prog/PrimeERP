@@ -656,3 +656,16 @@ Do not promote these five settings until their owning workflows, tenant/company 
 - Reason: the existing manual attendance endpoint correctly rejects manual writes when a non-manual source is selected, but no replacement ingestion adapter is currently implemented. Accepting those values could disable attendance entry without providing an alternate path.
 - This is a safe failure guard, not completion of biometric/mobile integrations. `hr.attendance_source` and `hr.biometric_sync_interval_minutes` remain catalog-only; no device connector or sync worker is claimed.
 - No backend tests or Docker runtime checks were executed for this commit in this session; CI must verify it.
+
+
+## Current branch follow-up — reporting policies (2026-10-24)
+
+The current `feature/odoo-sap-gap-audit-20261024` branch has **75 settings: 68 runtime / 7 catalog-only**. This supersedes older counts above, which describe earlier commits.
+
+- Added the dedicated `Reporting` category with `reports.default_export_format`, `reports.max_export_rows`, `reports.include_filters_in_export`, and `reports.allow_scheduled_delivery`.
+- `reports.allow_scheduled_delivery` is now enforced by the schedule-creation API and defaults to **false**. A company must explicitly enable it before creating scheduled report delivery. Invalid stored policy types fail closed.
+- `reports.default_export_format` is now consumed when a schedule omits its format. Supported values match the current worker contract: `json` and `text`. Explicit supported request formats remain respected.
+- Added focused tests for disabled scheduling, default format resolution, explicit format precedence, and invalid saved policy values. These tests are committed but **not yet confirmed passing**.
+- `reports.max_export_rows` and `reports.include_filters_in_export` remain **catalog-only** because the current report scheduler emits JSON/text manifests rather than tabular row exports. Their presence does not claim row limiting or export metadata enforcement.
+- The financial AI analysis endpoint now also requires `accounting.access`, in addition to the router-wide Reports module entitlement, because it reads tenant-scoped accounting data.
+- Latest self-hosted Release Gate run is queued. No local test/build/migration result or end-to-end release verification is claimed.
