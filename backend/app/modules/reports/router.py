@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.context import get_effective_tenant_id
+from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
@@ -189,7 +190,7 @@ def list_schedules(company_id: int, current_user: User = Depends(get_current_use
     return list(db.scalars(select(ReportDelivery).where(ReportDelivery.company_id == company_id).order_by(ReportDelivery.id.desc()).limit(500)).all())
 
 
-@router.post("/ai/analyze")
+@router.post("/ai/analyze", dependencies=[Depends(require_permission("accounting.access"))])
 def analyze_report(
     request: AIAnalysisRequest,
     current_user: User = Depends(get_current_user),
