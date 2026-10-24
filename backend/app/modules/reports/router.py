@@ -58,6 +58,10 @@ class ScheduleRequest(BaseModel):
     filters: dict[str, Any] = Field(default_factory=dict)
 
 
+class ScheduleResumeRequest(BaseModel):
+    company_id: int = Field(gt=0)
+
+
 class AIAnalysisRequest(BaseModel):
     company_id: int = Field(gt=0)
     domain: str = Field(default="general", min_length=1, max_length=80)
@@ -203,6 +207,38 @@ def create_schedule(request: ScheduleRequest, current_user: User = Depends(get_c
 def list_schedules(company_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
     return list(db.scalars(select(ReportDelivery).where(ReportDelivery.company_id == company_id).order_by(ReportDelivery.id.desc()).limit(500)).all())
+
+
+@router.post("/schedules/{delivery_id}/resume")
+def resume_schedule(
+    delivery_id: int,
+    request: ScheduleResumeRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    company = _company_for_user(db, request.company_id, current_user)
+    delivery = db.scalar(
+        select(ReportDelivery).where(
+            ReportDelivery.id == delivery_id,
+            ReportDelivery.company_id == company.id,
+        )
+    )
+    if delivery is None:
+        raise HTTPException(404, "Scheduled report was not found for this company")
+    # Reuse the same fail-closed policy and format validation as schedule creation.
+    _resolve_schedule_format(db, company.id, delivery.format)
+    try:
+        delivery.next_run_at = calculate_next_run(delivery.schedule)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    delivery.is_active = True
+    delivery.last_status = None
+    delivery.last_error = None
+    delivery.locked_until = None
+    delivery.locked_by = None
+    db.commit()
+    db.refresh(delivery)
+    return {"id": delivery.id, "next_run_at": delivery.next_run_at, "status": "scheduled"}
 
 
 @router.post("/ai/analyze", dependencies=[Depends(require_permission("accounting.access"))])
