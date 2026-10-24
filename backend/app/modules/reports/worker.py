@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.modules.reports.models import ReportDelivery, ReportDeliveryAttempt, ReportDefinition
+from app.modules.company_settings.consumers.common import policy
 
 WORKER_ID = os.getenv("PRIMEERP_REPORT_WORKER_ID", f"report-worker-{uuid.uuid4().hex[:8]}")
 LEASE_SECONDS = max(30, int(os.getenv("PRIMEERP_REPORT_WORKER_LEASE_SECONDS", "300")))
@@ -208,6 +209,22 @@ def _send_whatsapp(destination: str, body: str) -> tuple[int, str]:
 
 
 def process_delivery(db: Session, delivery: ReportDelivery) -> None:
+    # Re-check the live company policy at delivery time. A schedule may have
+    # been created while enabled and disabled afterwards; the worker must not
+    # keep sending data after that policy change.
+    try:
+        scheduling_enabled = policy(db, delivery.company_id, "reports.allow_scheduled_delivery")
+    except Exception:
+        scheduling_enabled = False
+    if scheduling_enabled is not True:
+        delivery.last_status = "paused_policy"
+        delivery.last_error = "Scheduled report delivery is paused because company policy is disabled or invalid"
+        delivery.next_run_at = None
+        delivery.locked_until = None
+        delivery.locked_by = None
+        db.commit()
+        return
+
     attempt = create_attempt(db, delivery)
     definition = db.get(ReportDefinition, delivery.report_definition_id)
     try:
