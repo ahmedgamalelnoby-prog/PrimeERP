@@ -97,6 +97,8 @@ def test_policies_without_a_safe_workflow_consumer_remain_catalog_only():
         "hr.attendance_source",
         "hr.biometric_sync_interval_minutes",
         "pos.allow_open_cash_drawer",
+        "reports.max_export_rows",
+        "reports.include_filters_in_export",
     }
     assert all(BY_KEY[key]["status"] == "catalog" for key in catalog_only_keys)
 
