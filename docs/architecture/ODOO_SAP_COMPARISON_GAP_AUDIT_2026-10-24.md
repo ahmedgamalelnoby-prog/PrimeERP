@@ -41,7 +41,7 @@ Reference scope:
 7. Complete HR attendance source/biometric synchronization and payroll approval-to-GL with device failure/replay and payroll-period locking tests.
 8. Complete manufacturing BOM/routing/MRP/WIP/quality and inventory valuation/cost roll-up.
 9. Implement report pages/services for every advertised report card; remove or disable any link until an actual page/API exists. Keep all report entry points in central Reports and apply source-module plus report-level permissions server-side.
-10. Make Settings section links select the requested section, and bind each setting to validated APIs, audit history, permission checks and the business workflow consuming it.
+10. Bind each setting to validated APIs, audit history, permission checks and the business workflow consuming it. Settings Center category links now route to the company-policy registry; reporting still needs a dedicated registry category.
 
 ### P2 — enterprise breadth
 11. Add fixed asset register/depreciation/disposal, budget planning and variance, project accounting/profitability, service contracts/SLA, maintenance scheduling, document management/retention and approval delegation.
@@ -54,6 +54,7 @@ Reference scope:
 - Legacy `/accounting/reports` redirects to `/reports/financial`.
 - Legacy `/shipping/reconciliation` redirects to `/reports/shipping/reconciliation`.
 - Removed Carrier Reconciliation from the Shipping navigation group so it is not exposed as a separate shipping menu item; the report remains in the central Reports navigation/route.
+- Settings Center links for accounting, commerce, inventory, HR, approvals, messaging and security now select the corresponding category in the company-policy screen. Reporting settings still route to General because no dedicated reporting policy category exists.
 
 These are routing/architecture improvements, not proof that every Odoo/SAP capability has been implemented. No database changes or destructive operations are included. Build and test status must be verified in the local environment/CI before merging.
 
