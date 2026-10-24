@@ -25,12 +25,12 @@ const categoryAr:Record<string,string> = {
   Sales:"المبيعات والعملاء", Purchasing:"المشتريات والموردون", Inventory:"المخزون والمستودعات",
   "Human Resources":"الموارد البشرية والحضور والرواتب", Approvals:"الموافقات ودورة العمل",
   "Point of Sale":"نقاط البيع", Manufacturing:"التصنيع", CRM:"إدارة العملاء",
-  Integrations:"التكاملات الخارجية", "Messaging & Notifications":"الرسائل والإشعارات", "Security & Audit":"الأمان والمراجعة"
+  Integrations:"التكاملات الخارجية", "Messaging & Notifications":"الرسائل والإشعارات", Reporting:"التقارير والتصدير", "Security & Audit":"الأمان والمراجعة"
 };
 const moduleAr:Record<string,string> = {
   general:"عام", accounting:"المحاسبة", taxes:"الضرائب", "egyptian-einvoice":"الفاتورة الإلكترونية",
   sales:"المبيعات", purchasing:"المشتريات", inventory:"المخزون", hr:"الموارد البشرية",
-  approvals:"الموافقات", pos:"نقاط البيع", manufacturing:"التصنيع", crm:"إدارة العملاء",
+  approvals:"الموافقات", pos:"نقاط البيع", manufacturing:"التصنيع", crm:"إدارة العملاء", reports:"التقارير",
   integrations:"التكاملات", audit:"المراجعة"
 };
 
