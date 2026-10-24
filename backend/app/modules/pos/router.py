@@ -188,7 +188,6 @@ def authorize_cash_drawer_open(
             SalesDocument.id == payload.sales_document_id,
             SalesDocument.company_id == payload.company_id,
             SalesDocument.document_type == "invoice",
-            SalesDocument.document_kind == "sale",
         ))
         if document is None:
             raise HTTPException(422, "A transaction-linked drawer opening requires a sales invoice from the same company")
