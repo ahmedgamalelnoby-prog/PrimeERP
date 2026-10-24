@@ -7,7 +7,7 @@ from email.message import EmailMessage
 from typing import Any
 
 import requests
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -35,6 +35,14 @@ class ReportPayload(BaseModel):
     title: str = Field(min_length=1, max_length=255)
     data: dict[str, Any]
     format: str = Field(default="json", pattern="^(json|text)$")
+
+
+class ReportExportRequest(BaseModel):
+    company_id: int = Field(gt=0)
+    title: str = Field(default="PrimeERP report", min_length=1, max_length=255)
+    rows: list[dict[str, Any]]
+    filters: dict[str, Any] = Field(default_factory=dict)
+    format: str | None = Field(default=None, pattern="^(json|text)$")
 
 
 class DeliveryRequest(BaseModel):
@@ -148,6 +156,67 @@ def _ai_analysis(request: AIAnalysisRequest) -> dict[str, Any]:
         return {"engine": "llm", "ai_provider": "openai_compatible", "knowledge_version": REGISTRY_VERSION, "analysis": json.loads(content), "rule_checks": fallback}
     except (requests.RequestException, KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
         return {**fallback, "ai_provider": "fallback_after_provider_error", "knowledge_version": REGISTRY_VERSION, "provider_error": str(exc)[:500]}
+
+
+def _render_export(
+    *,
+    title: str,
+    rows: list[dict[str, Any]],
+    filters: dict[str, Any],
+    export_format: str,
+    include_filters: bool,
+) -> tuple[str, str]:
+    """Render validated report rows and optionally include applied filters."""
+    envelope: dict[str, Any] = {"title": title, "row_count": len(rows), "rows": rows}
+    if include_filters:
+        envelope["filters"] = filters
+    if export_format == "json":
+        return json.dumps(envelope, ensure_ascii=False, indent=2, default=str), "application/json; charset=utf-8"
+    if export_format == "text":
+        lines = [title, f"Rows: {len(rows)}"]
+        if include_filters and filters:
+            lines.append("Filters: " + json.dumps(filters, ensure_ascii=False, default=str))
+        for index, row in enumerate(rows, start=1):
+            lines.append(f"[{index}] " + " | ".join(f"{key}: {value}" for key, value in row.items()))
+        return "\\n".join(lines), "text/plain; charset=utf-8"
+    raise HTTPException(500, "Unsupported report export format policy")
+
+
+@router.post("/export", dependencies=[Depends(require_permission("company.access"))])
+def export_report(
+    request: ReportExportRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    _company_for_user(db, request.company_id, current_user)
+    try:
+        maximum_rows = policy(db, request.company_id, "reports.max_export_rows")
+        include_filters = policy(db, request.company_id, "reports.include_filters_in_export")
+        default_format = policy(db, request.company_id, "reports.default_export_format")
+    except Exception:
+        raise HTTPException(503, "Report export policy could not be verified; export is denied") from None
+    if isinstance(maximum_rows, bool) or not isinstance(maximum_rows, int) or not 100 <= maximum_rows <= 100000:
+        raise HTTPException(503, "Report export row-limit policy is invalid")
+    if not isinstance(include_filters, bool):
+        raise HTTPException(503, "Report export filter policy is invalid")
+    selected_format = request.format or default_format
+    if selected_format not in {"json", "text"}:
+        raise HTTPException(503, "Report export format policy is invalid")
+    if len(request.rows) > maximum_rows:
+        raise HTTPException(413, f"Export contains {len(request.rows)} rows; company limit is {maximum_rows}")
+    body, media_type = _render_export(
+        title=request.title,
+        rows=request.rows,
+        filters=request.filters,
+        export_format=selected_format,
+        include_filters=include_filters,
+    )
+    safe_filename = "report.json" if selected_format == "json" else "report.txt"
+    return Response(
+        content=body,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{safe_filename}"'},
+    )
 
 
 @router.post("/preview")
