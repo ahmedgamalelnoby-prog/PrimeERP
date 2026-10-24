@@ -13,6 +13,10 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
+# Register every ORM model before this standalone worker configures SQLAlchemy mappers.
+# The API process imports this registry during startup; workers must do so explicitly.
+import app.database.models  # noqa: F401
+
 from app.database.session import SessionLocal
 from app.modules.company_settings.consumers.approvals import approval_escalation_due
 from app.modules.companies.models import Company
