@@ -80,3 +80,11 @@ These are routing/architecture improvements, not proof that every Odoo/SAP capab
 - The central Report Center now filters each report entry by its owning module's enabled entitlement, hides empty groups, and retains the platform-administrator override.
 - This is a navigation/visibility improvement, not the authorization boundary: each backend report endpoint must still enforce source-module permissions and tenant/company scoping. The financial AI analysis endpoint specifically requires `accounting.access` in addition to the Reports module entitlement.
 - Frontend typecheck/build and backend tests are still pending the self-hosted Release Gate; this UI change is not claimed as verified until that run completes.
+
+
+## Scheduled report policy enforcement — 2026-10-24 follow-up
+
+- The scheduled-report worker now re-reads `reports.allow_scheduled_delivery` immediately before processing each due delivery. A disabled, malformed, or unreadable policy fails closed: the delivery is paused, its next-run time is cleared, and the worker does not create a delivery attempt or send a message.
+- Added a company-scoped `POST /reports/schedules/{delivery_id}/resume` endpoint. It verifies tenant/company ownership, re-checks the scheduling policy, validates the stored format, and calculates the next run before reactivating a paused schedule.
+- The Report Center's hero action is now hidden when the user lacks the Reports module entitlement, matching the existing module-aware report-card filtering. Backend entitlement checks remain authoritative.
+- Added unit tests for worker pause behavior when the policy is false or cannot be read. Tests and Release Gate remain unconfirmed until the self-hosted run completes.
