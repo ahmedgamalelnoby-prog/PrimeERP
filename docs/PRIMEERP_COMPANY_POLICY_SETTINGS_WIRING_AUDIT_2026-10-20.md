@@ -683,3 +683,8 @@ The current `feature/odoo-sap-gap-audit-20261024` branch has **75 settings: 68 r
 ## Current catalog-only list (2026-10-24)
 
 The seven catalog-only keys at the current branch head are: `hr.attendance_source`, `hr.biometric_sync_interval_minutes`, `workflow.approval_mode`, `workflow.escalation_after_hours`, `pos.allow_open_cash_drawer`, `reports.max_export_rows`, and `reports.include_filters_in_export`. `hr.payroll_requires_approval` and `general.date_format` are marked runtime in the current registry; end-to-end payroll lifecycle completeness and broad date-format coverage remain separate verification gaps and must not be inferred from registry status alone.
+
+
+### Worker-level enforcement update (2026-10-24)
+
+The `reports.allow_scheduled_delivery` policy is checked both when creating/resuming a schedule and immediately before the worker sends each due delivery. If the setting is disabled or cannot be read, the worker pauses the delivery (`last_status=paused_policy`, `next_run_at=NULL`) and sends nothing. A tenant/company-scoped resume endpoint is available after an administrator enables the policy. This behavior is covered by unit tests committed to the branch; passing status is not yet confirmed.
