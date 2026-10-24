@@ -129,6 +129,8 @@ def validate_value(key: str, value: Any) -> Any:
         raise ValueError(f"{key} must be between 1 and 12")
     if key == "notifications.retry_limit" and not 0 <= value <= 5:
         raise ValueError(f"{key} must be between 0 and 5")
+    if key == "reports.max_export_rows" and (isinstance(value, bool) or not 100 <= value <= 100000):
+        raise ValueError(f"{key} must be between 100 and 100000")
     if key == "hr.default_work_hours_per_day" and not 0 < float(value) <= 24:
         raise ValueError(f"{key} must be greater than 0 and at most 24")
     if key in {"hr.biometric_sync_interval_minutes", "workflow.escalation_after_hours"} and value < 1:
