@@ -178,7 +178,7 @@ def _render_export(
             lines.append("Filters: " + json.dumps(filters, ensure_ascii=False, default=str))
         for index, row in enumerate(rows, start=1):
             lines.append(f"[{index}] " + " | ".join(f"{key}: {value}" for key, value in row.items()))
-        return "\\n".join(lines), "text/plain; charset=utf-8"
+        return "\n".join(lines), "text/plain; charset=utf-8"
     raise HTTPException(500, "Unsupported report export format policy")
 
 
