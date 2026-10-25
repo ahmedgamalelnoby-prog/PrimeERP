@@ -9,6 +9,7 @@ type RetriableRequestConfig = InternalAxiosRequestConfig & {
 };
 
 let refreshInFlight: Promise<string> | null = null;
+let refreshTokenUsed: string | null = null;
 
 async function refreshAccessToken(): Promise<string> {
   const refreshToken = storage.getRefreshToken();
@@ -20,6 +21,11 @@ async function refreshAccessToken(): Promise<string> {
     "/identity/refresh",
     { refresh_token: refreshToken },
   );
+
+  // Do not resurrect a session after logout or overwrite a newer login.
+  if (storage.getRefreshToken() !== refreshToken) {
+    throw new Error("The session changed while the token was refreshing.");
+  }
 
   storage.setTokens(
     response.data.access_token,
@@ -62,14 +68,21 @@ client.interceptors.response.use(
     config._primeerpRetry = true;
 
     try {
-      refreshInFlight ??= refreshAccessToken().finally(() => {
-        refreshInFlight = null;
-      });
+      if (!refreshInFlight) {
+        refreshTokenUsed = storage.getRefreshToken();
+        refreshInFlight = refreshAccessToken().finally(() => {
+          refreshInFlight = null;
+          refreshTokenUsed = null;
+        });
+      }
       const accessToken = await refreshInFlight;
       config.headers.Authorization = `Bearer ${accessToken}`;
       return await client.request(config);
     } catch (refreshError) {
-      storage.clear();
+      // Only clear the session that failed; a newer login may have happened meanwhile.
+      if (refreshTokenUsed && storage.getRefreshToken() === refreshTokenUsed) {
+        storage.clear();
+      }
       return Promise.reject(refreshError);
     }
   },
