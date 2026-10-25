@@ -11,8 +11,7 @@ type RetriableRequestConfig = InternalAxiosRequestConfig & {
 
 const refreshCoordinator = createRefreshCoordinator();
 
-async function refreshAccessToken(): Promise<string> {
-  const refreshToken = storage.getRefreshToken();
+async function refreshAccessToken(refreshToken: string | null): Promise<string> {
   if (!refreshToken) {
     throw new Error("No refresh token is available.");
   }
