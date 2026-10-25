@@ -134,12 +134,14 @@ jobs:
             'ETA_ENABLED=false'
             'WHATSAPP_ENABLED=false'
             'FRONTEND_HOST_PORT=3001'
+            "COMPOSE_PROJECT_NAME=primeerp-ci-$env:GITHUB_RUN_ID"
             "PRIMEERP_CONTAINER_PREFIX=primeerp-ci-$env:GITHUB_RUN_ID"
             "PRIMEERP_POSTGRES_VOLUME_NAME=primeerp_ci_data_$env:GITHUB_RUN_ID"
           ) | Set-Content -Encoding utf8 .env
           "PRIMEERP_CI_POSTGRES_PASSWORD=$pgPassword" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "PRIMEERP_CI_SECRET_KEY=$secretKey" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "FRONTEND_HOST_PORT=3001" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "COMPOSE_PROJECT_NAME=primeerp-ci-$env:GITHUB_RUN_ID" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "PRIMEERP_CONTAINER_PREFIX=primeerp-ci-$env:GITHUB_RUN_ID" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "PRIMEERP_POSTGRES_VOLUME_NAME=primeerp_ci_data_$env:GITHUB_RUN_ID" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
