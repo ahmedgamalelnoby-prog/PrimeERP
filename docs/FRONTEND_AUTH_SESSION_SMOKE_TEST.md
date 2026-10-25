@@ -76,4 +76,6 @@ For each scenario record Pass/Fail, commit SHA, browser, console errors, and rel
 
 ## Automation status
 
-These are manual regression scenarios, not an automated browser suite. The current frontend package has build/typecheck scripts but no dedicated frontend test runner or browser E2E dependency configured. Do not mark the interactive scenarios passed until executed against a running app.
+The frontend now has a Node built-in `node:test` suite at `frontend/tests/auth-session-contract.test.mjs`, run by `npm test` and included in the self-hosted Release Gate. These automated checks validate source-code contracts for refresh coalescing, identity endpoint exclusions, one-retry protection, stale-response protection, and session-scoped cleanup. They are static contract checks—not behavioral Axios simulations or browser E2E tests.
+
+The seven scenarios above remain manual regression scenarios. Do not mark them passed until executed against a running app with a disposable test account. The latest confirmed self-hosted Release Gate run is [Run #4111](https://github.com/ahmedgamalelnoby-prog/PrimeERP/actions/runs/40234708686), which completed successfully with `npm test`, typecheck, lint, and build.
