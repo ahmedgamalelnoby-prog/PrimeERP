@@ -2,14 +2,14 @@ import type { InternalAxiosRequestConfig } from "axios";
 
 import client from "./client";
 import { storage } from "../utils/storage";
+import { createRefreshCoordinator, shouldClearFailedSession } from "./refreshCoordinator.mjs";
 import type { TokenPairResponse } from "@/modules/identity/types/auth";
 
 type RetriableRequestConfig = InternalAxiosRequestConfig & {
   _primeerpRetry?: boolean;
 };
 
-let refreshInFlight: Promise<string> | null = null;
-let refreshTokenUsed: string | null = null;
+const refreshCoordinator = createRefreshCoordinator();
 
 async function refreshAccessToken(): Promise<string> {
   const refreshToken = storage.getRefreshToken();
@@ -69,21 +69,18 @@ client.interceptors.response.use(
     let attemptedRefreshToken: string | null = null;
 
     try {
-      if (!refreshInFlight) {
-        refreshTokenUsed = storage.getRefreshToken();
-        refreshInFlight = refreshAccessToken().finally(() => {
-          refreshInFlight = null;
-          refreshTokenUsed = null;
-        });
-      }
-      attemptedRefreshToken = refreshTokenUsed;
-      const accessToken = await refreshInFlight;
+      const refreshAttempt = refreshCoordinator.run(
+        () => storage.getRefreshToken(),
+        refreshAccessToken,
+      );
+      attemptedRefreshToken = refreshAttempt.refreshTokenUsed;
+      const accessToken = await refreshAttempt.promise;
       config.headers.Authorization = `Bearer ${accessToken}`;
       return await client.request(config);
     } catch (refreshError) {
       // Clear only the session snapshot that failed. This also clears an
       // access-token-only stale session, while preserving any newer login.
-      if (storage.getRefreshToken() === attemptedRefreshToken) {
+      if (shouldClearFailedSession(storage.getRefreshToken(), attemptedRefreshToken)) {
         storage.clear();
       }
       return Promise.reject(refreshError);
