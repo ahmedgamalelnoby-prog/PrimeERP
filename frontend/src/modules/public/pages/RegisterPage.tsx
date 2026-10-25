@@ -281,8 +281,6 @@ export default function RegisterPage() {
     : "Main Branch",
 };
 
-console.log("Registration payload:", payload);
-
     try {
       setIsLoading(true);
 
