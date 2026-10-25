@@ -303,11 +303,6 @@ export default function RegisterPage() {
     } catch (
       submitError: unknown
     ) {
-      console.error(
-        "Registration failed:",
-        submitError,
-      );
-
       if (
         axios.isAxiosError(
           submitError,
