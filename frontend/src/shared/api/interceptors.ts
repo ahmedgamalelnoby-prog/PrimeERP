@@ -66,6 +66,7 @@ client.interceptors.response.use(
     }
 
     config._primeerpRetry = true;
+    let attemptedRefreshToken: string | null = null;
 
     try {
       if (!refreshInFlight) {
@@ -75,12 +76,13 @@ client.interceptors.response.use(
           refreshTokenUsed = null;
         });
       }
+      attemptedRefreshToken = refreshTokenUsed;
       const accessToken = await refreshInFlight;
       config.headers.Authorization = `Bearer ${accessToken}`;
       return await client.request(config);
     } catch (refreshError) {
       // Only clear the session that failed; a newer login may have happened meanwhile.
-      if (refreshTokenUsed && storage.getRefreshToken() === refreshTokenUsed) {
+      if (attemptedRefreshToken && storage.getRefreshToken() === attemptedRefreshToken) {
         storage.clear();
       }
       return Promise.reject(refreshError);
