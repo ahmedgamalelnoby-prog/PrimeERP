@@ -6,43 +6,6 @@ import type { AuthenticatedUser } from "../types/user";
 
 export type LoginRequest = LoginPayload;
 
-export interface RegisterRequest {
-  business_name: string;
-  owner_name: string;
-  username: string;
-  email: string;
-  mobile: string;
-  password: string;
-}
-
-export interface RegisterResponse {
-  success: boolean;
-  message: string;
-  tenant_id?: number;
-  user_id?: number;
-  tenant_slug?: string;
-}
-
-async function register(
-  payload: RegisterRequest,
-): Promise<RegisterResponse> {
-  const requestPayload: RegisterRequest = {
-    business_name: payload.business_name.trim(),
-    owner_name: payload.owner_name.trim(),
-    username: payload.username.trim(),
-    email: payload.email.trim().toLowerCase(),
-    mobile: payload.mobile.trim(),
-    password: payload.password,
-  };
-
-  const response = await client.post<RegisterResponse>(
-    "/identity/register",
-    requestPayload,
-  );
-
-  return response.data;
-}
-
 async function login(payload: LoginPayload): Promise<LoginResponse> {
   const loginValue = payload.login.trim();
 
@@ -77,15 +40,16 @@ async function login(payload: LoginPayload): Promise<LoginResponse> {
 
 async function logout(): Promise<void> {
   const refreshToken = storage.getRefreshToken();
+  storage.clear();
+
+  if (!refreshToken) return;
 
   try {
-    if (refreshToken) {
-      await client.post("/identity/logout", {
-        refresh_token: refreshToken,
-      });
-    }
-  } finally {
-    storage.clear();
+    await client.post("/identity/logout", {
+      refresh_token: refreshToken,
+    });
+  } catch {
+    // The local session is already cleared; server-side expiry remains the fallback.
   }
 }
 
@@ -95,7 +59,6 @@ async function getCurrentUser(): Promise<AuthenticatedUser> {
 }
 
 export const authService = {
-  register,
   login,
   logout,
   getCurrentUser,
