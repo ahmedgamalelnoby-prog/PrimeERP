@@ -81,8 +81,9 @@ client.interceptors.response.use(
       config.headers.Authorization = `Bearer ${accessToken}`;
       return await client.request(config);
     } catch (refreshError) {
-      // Only clear the session that failed; a newer login may have happened meanwhile.
-      if (attemptedRefreshToken && storage.getRefreshToken() === attemptedRefreshToken) {
+      // Clear only the session snapshot that failed. This also clears an
+      // access-token-only stale session, while preserving any newer login.
+      if (storage.getRefreshToken() === attemptedRefreshToken) {
         storage.clear();
       }
       return Promise.reject(refreshError);
