@@ -134,10 +134,16 @@ jobs:
             'ETA_ENABLED=false'
             'WHATSAPP_ENABLED=false'
             'FRONTEND_HOST_PORT=3001'
+            "COMPOSE_PROJECT_NAME=primeerp-ci-$env:GITHUB_RUN_ID"
+            "PRIMEERP_CONTAINER_PREFIX=primeerp-ci-$env:GITHUB_RUN_ID"
+            "PRIMEERP_POSTGRES_VOLUME_NAME=primeerp_ci_data_$env:GITHUB_RUN_ID"
           ) | Set-Content -Encoding utf8 .env
           "PRIMEERP_CI_POSTGRES_PASSWORD=$pgPassword" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "PRIMEERP_CI_SECRET_KEY=$secretKey" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "FRONTEND_HOST_PORT=3001" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "COMPOSE_PROJECT_NAME=primeerp-ci-$env:GITHUB_RUN_ID" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PRIMEERP_CONTAINER_PREFIX=primeerp-ci-$env:GITHUB_RUN_ID" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PRIMEERP_POSTGRES_VOLUME_NAME=primeerp_ci_data_$env:GITHUB_RUN_ID" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Backend compile and architecture checks
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
@@ -240,6 +246,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           npm ci
+          npm test
           npm run typecheck
           npm run lint
           npm run build
@@ -265,13 +272,16 @@ jobs:
           # Reclaim only PrimeERP-owned containers/resources left by an interrupted CI run.
           docker compose down -v --remove-orphans
 
+          $prefix = $env:PRIMEERP_CONTAINER_PREFIX
           $staleContainers = @(
-            'primeerp-db',
-            'primeerp-migrate',
-            'primeerp-backend',
-            'primeerp-backend-test',
-            'primeerp-report-worker',
-            'primeerp-frontend'
+            "$prefix-db",
+            "$prefix-migrate",
+            "$prefix-backend",
+            "$prefix-backend-test",
+            "$prefix-report-worker",
+            "$prefix-frontend",
+            "$prefix-integration-worker",
+            "$prefix-approval-escalation-worker"
           )
 
           foreach ($container in $staleContainers) {
@@ -309,9 +319,10 @@ jobs:
           docker compose up -d db migrate
           $deadline = (Get-Date).AddMinutes(10)
           while ((Get-Date) -lt $deadline) {
-            $status = docker inspect -f '{{.State.Status}}' primeerp-migrate 2>$null
+            $migrateContainer = "${env:PRIMEERP_CONTAINER_PREFIX}-migrate"
+            $status = docker inspect -f '{{.State.Status}}' $migrateContainer 2>$null
             if ($status -eq 'exited') {
-              $code = docker inspect -f '{{.State.ExitCode}}' primeerp-migrate
+              $code = docker inspect -f '{{.State.ExitCode}}' $migrateContainer
               if ($code -eq '0') { Write-Host 'Alembic migration: PASS'; exit 0 }
               docker compose logs migrate
               throw "Migration container exited with code $code"
@@ -341,9 +352,12 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $deadline = (Get-Date).AddMinutes(10)
           while ((Get-Date) -lt $deadline) {
-            $backendStatus = docker inspect -f '{{.State.Health.Status}}' primeerp-backend 2>$null
-            $frontendStatus = docker inspect -f '{{.State.Health.Status}}' primeerp-frontend 2>$null
-            $workerStatus = docker inspect -f '{{.State.Status}}' primeerp-report-worker 2>$null
+            $backendContainer = "${env:PRIMEERP_CONTAINER_PREFIX}-backend"
+            $frontendContainer = "${env:PRIMEERP_CONTAINER_PREFIX}-frontend"
+            $workerContainer = "${env:PRIMEERP_CONTAINER_PREFIX}-report-worker"
+            $backendStatus = docker inspect -f '{{.State.Health.Status}}' $backendContainer 2>$null
+            $frontendStatus = docker inspect -f '{{.State.Health.Status}}' $frontendContainer 2>$null
+            $workerStatus = docker inspect -f '{{.State.Status}}' $workerContainer 2>$null
             if ($backendStatus -eq 'healthy' -and $frontendStatus -eq 'healthy' -and $workerStatus -eq 'running') {
               Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:$env:FRONTEND_HOST_PORT/" | Out-Null
               Write-Host 'Runtime health: PASS'
