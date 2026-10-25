@@ -5,10 +5,13 @@ export function createRefreshCoordinator() {
     run(getRefreshToken, refresh) {
       if (!inFlight) {
         tokenUsed = getRefreshToken();
-        inFlight = Promise.resolve().then(refresh).finally(() => {
-          inFlight = null;
-          tokenUsed = null;
-        });
+        const refreshTokenSnapshot = tokenUsed;
+        inFlight = Promise.resolve()
+          .then(() => refresh(refreshTokenSnapshot))
+          .finally(() => {
+            inFlight = null;
+            tokenUsed = null;
+          });
       }
       return { promise: inFlight, refreshTokenUsed: tokenUsed };
     },
