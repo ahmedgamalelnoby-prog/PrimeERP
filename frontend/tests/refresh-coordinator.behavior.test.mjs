@@ -8,9 +8,11 @@ import {
 test("concurrent callers share one refresh promise and token snapshot", async () => {
   const coordinator = createRefreshCoordinator();
   let refreshCalls = 0;
+  let refreshTokenPassed;
   let resolveRefresh;
-  const refresh = () => {
+  const refresh = (token) => {
     refreshCalls += 1;
+    refreshTokenPassed = token;
     return new Promise((resolve) => { resolveRefresh = resolve; });
   };
   const getToken = () => "refresh-old";
@@ -22,10 +24,30 @@ test("concurrent callers share one refresh promise and token snapshot", async ()
   assert.equal(second.refreshTokenUsed, "refresh-old");
   await Promise.resolve();
   assert.equal(refreshCalls, 1);
+  assert.equal(refreshTokenPassed, "refresh-old");
 
   resolveRefresh("access-new");
   assert.equal(await first.promise, "access-new");
   assert.equal(await second.promise, "access-new");
+});
+
+test("refresh receives the token snapshot captured before its async start", async () => {
+  const coordinator = createRefreshCoordinator();
+  let currentToken = "refresh-before-login";
+  let tokenSent;
+  const attempt = coordinator.run(
+    () => currentToken,
+    async (snapshot) => {
+      tokenSent = snapshot;
+      return "access";
+    },
+  );
+
+  // Simulate a new login before the queued refresh callback begins.
+  currentToken = "refresh-new-login";
+  assert.equal(await attempt.promise, "access");
+  assert.equal(tokenSent, "refresh-before-login");
+  assert.equal(attempt.refreshTokenUsed, "refresh-before-login");
 });
 
 test("a settled refresh releases the coordinator for a later session", async () => {
