@@ -1,5 +1,8 @@
 export interface RefreshCoordinator {
-  run<T>(getRefreshToken: () => string | null, refresh: () => Promise<T>): {
+  run<T>(
+    getRefreshToken: () => string | null,
+    refresh: (refreshToken: string | null) => Promise<T>,
+  ): {
     promise: Promise<T>;
     refreshTokenUsed: string | null;
   };
