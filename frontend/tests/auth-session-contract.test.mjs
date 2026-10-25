@@ -7,11 +7,10 @@ const source = await readFile(
   "utf8",
 );
 
-test("concurrent unauthorized requests share one refresh promise", () => {
-  assert.match(source, /let refreshInFlight: Promise<string> \| null = null/);
-  assert.match(source, /if \(!refreshInFlight\)/);
-  assert.match(source, /await refreshInFlight/);
-  assert.match(source, /refreshInFlight = null/);
+test("interceptor delegates refresh coordination to the tested coordinator", () => {
+  assert.match(source, /createRefreshCoordinator/);
+  assert.match(source, /refreshCoordinator\.run/);
+  assert.match(source, /await refreshAttempt\.promise/);
 });
 
 test("identity session endpoints are excluded from refresh retry", () => {
@@ -30,8 +29,7 @@ test("refresh response cannot restore a changed or logged-out session", () => {
   assert.match(source, /The session changed while the token was refreshing/);
 });
 
-test("refresh failure only clears the session snapshot that failed", () => {
-  assert.match(source, /storage\.getRefreshToken\(\) === attemptedRefreshToken/);
+test("refresh failure only clears the attempted session snapshot", () => {
+  assert.match(source, /shouldClearFailedSession\(storage\.getRefreshToken\(\), attemptedRefreshToken\)/);
   assert.match(source, /storage\.clear\(\)/);
-  assert.match(source, /This also clears an access-token-only stale session/);
 });
