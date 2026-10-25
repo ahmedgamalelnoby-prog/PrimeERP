@@ -316,7 +316,7 @@ jobs:
           docker compose up -d db migrate
           $deadline = (Get-Date).AddMinutes(10)
           while ((Get-Date) -lt $deadline) {
-            $migrateContainer = "$env:PRIMEERP_CONTAINER_PREFIX-migrate"
+            $migrateContainer = "${env:PRIMEERP_CONTAINER_PREFIX}-migrate"
             $status = docker inspect -f '{{.State.Status}}' $migrateContainer 2>$null
             if ($status -eq 'exited') {
               $code = docker inspect -f '{{.State.ExitCode}}' $migrateContainer
@@ -349,9 +349,9 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $deadline = (Get-Date).AddMinutes(10)
           while ((Get-Date) -lt $deadline) {
-            $backendContainer = "$env:PRIMEERP_CONTAINER_PREFIX-backend"
-            $frontendContainer = "$env:PRIMEERP_CONTAINER_PREFIX-frontend"
-            $workerContainer = "$env:PRIMEERP_CONTAINER_PREFIX-report-worker"
+            $backendContainer = "${env:PRIMEERP_CONTAINER_PREFIX}-backend"
+            $frontendContainer = "${env:PRIMEERP_CONTAINER_PREFIX}-frontend"
+            $workerContainer = "${env:PRIMEERP_CONTAINER_PREFIX}-report-worker"
             $backendStatus = docker inspect -f '{{.State.Health.Status}}' $backendContainer 2>$null
             $frontendStatus = docker inspect -f '{{.State.Health.Status}}' $frontendContainer 2>$null
             $workerStatus = docker inspect -f '{{.State.Status}}' $workerContainer 2>$null
