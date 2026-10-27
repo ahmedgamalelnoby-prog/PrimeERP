@@ -19,7 +19,7 @@ function filterNavigation(items: NavigationItem[], query: string): NavigationIte
   });
 }
 
-function NavigationNode({ item, pathname, onNavigate, forceExpanded, depth, openTopGroup, setOpenTopGroup }: {
+function NavigationNode({ item, pathname, onNavigate, forceExpanded, depth, isArabic, openTopGroup, setOpenTopGroup }: {
   item: NavigationItem; pathname: string; onNavigate: () => void; forceExpanded: boolean; depth: number; isArabic: boolean;
   openTopGroup: string | null; setOpenTopGroup: (id: string | null) => void;
 }) {
