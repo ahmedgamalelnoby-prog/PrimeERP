@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Settings, Building2, Calculator, ShoppingCart, Boxes, Users, Workflow, MessageCircle, BarChart3, ShieldCheck, Plug, Receipt, Store, Factory, UserRound, SlidersHorizontal } from "lucide-react";
+import { Settings, Building2, Calculator, ShoppingCart, Boxes, Users, Workflow, MessageCircle, BarChart3, Plug, Receipt, Store, Factory, UserRound, SlidersHorizontal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import SettingsPage from "./SettingsPage";
 import CompanyPolicySettingsPage from "./CompanyPolicySettingsPage";
@@ -20,7 +20,6 @@ const sections = [
  {id:"Integrations",title:"التكاملات الخارجية",english:"Integrations",desc:"الأنظمة الخارجية والربط والمزامنة.",icon:Plug},
  {id:"Messaging & Notifications",title:"الرسائل وWhatsApp",english:"Messages & WhatsApp",desc:"قوالب الرسائل والمجموعات والتنبيهات.",icon:MessageCircle},
  {id:"Reporting",title:"التقارير والتصدير",english:"Reports & Export",desc:"خيارات التقارير والتصدير والجدولة.",icon:BarChart3},
- {id:"Security & Audit",title:"الأمان والمراجعة",english:"Security & Audit",desc:"الصلاحيات والجلسات وسجل التدقيق.",icon:ShieldCheck},
 ];
 
 export default function SettingsCenterPage() {
@@ -45,7 +44,7 @@ export default function SettingsCenterPage() {
     </aside>
     <section className="min-w-0 rounded-2xl border bg-card p-3 shadow-sm sm:p-5">
       <div className="mb-5 flex items-start gap-3 border-b pb-4"><span className="rounded-xl bg-primary/10 p-3 text-primary"><Icon className="size-5"/></span><div><h2 className="text-lg font-extrabold">{isArabic ? selected.title : selected.english}</h2><p className="mt-1 text-sm leading-6 text-muted-foreground">{isArabic ? selected.desc : "Configure policies and defaults for this module."}</p></div></div>
-      <div className="min-w-0">{selected.id === "General" ? <SettingsPage /> : <CompanyPolicySettingsPage key={selected.id} categoryFilter={selected.id} />}</div>
+      <div className="min-w-0">{selected.id === "General" ? <><SettingsPage /><CompanyPolicySettingsPage key={selected.id} categoryFilter={selected.id} /></> : <CompanyPolicySettingsPage key={selected.id} categoryFilter={selected.id} />}</div>
     </section>
    </div>
  </div>;
