@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Settings, Building2, Calculator, ShoppingCart, Boxes, Users, Workflow, MessageCircle, BarChart3, ShieldCheck, Plug, Receipt, Store, Factory, ContactRound, SlidersHorizontal } from "lucide-react";
+import { Settings, Building2, Calculator, ShoppingCart, Boxes, Users, Workflow, MessageCircle, BarChart3, ShieldCheck, Plug, Receipt, Store, Factory, UserRound, SlidersHorizontal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import SettingsPage from "./SettingsPage";
 import CompanyPolicySettingsPage from "./CompanyPolicySettingsPage";
@@ -16,7 +16,7 @@ const sections = [
  {id:"Approvals",title:"الموافقات وسير العمل",english:"Approvals & Workflow",desc:"مسارات الاعتماد والتفويض والتصعيد.",icon:Workflow},
  {id:"Point of Sale",title:"نقاط البيع ودرج النقدية",english:"POS & Cash Drawer",desc:"إعدادات نقاط البيع والوردية ودرج النقدية.",icon:Store},
  {id:"Manufacturing",title:"التصنيع",english:"Manufacturing",desc:"أوامر الإنتاج وقوائم المواد والتكاليف.",icon:Factory},
- {id:"CRM",title:"إدارة العملاء",english:"CRM",desc:"مراحل الفرص والعملاء والمتابعة.",icon:ContactRound},
+ {id:"CRM",title:"إدارة العملاء",english:"CRM",desc:"مراحل الفرص والعملاء والمتابعة.",icon:UserRound},
  {id:"Integrations",title:"التكاملات الخارجية",english:"Integrations",desc:"الأنظمة الخارجية والربط والمزامنة.",icon:Plug},
  {id:"Messaging & Notifications",title:"الرسائل وWhatsApp",english:"Messages & WhatsApp",desc:"قوالب الرسائل والمجموعات والتنبيهات.",icon:MessageCircle},
  {id:"Reporting",title:"التقارير والتصدير",english:"Reports & Export",desc:"خيارات التقارير والتصدير والجدولة.",icon:BarChart3},
