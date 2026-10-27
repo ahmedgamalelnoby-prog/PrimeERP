@@ -71,8 +71,6 @@ export default function CompanyPolicySettingsPage({ categoryFilter }: { category
         setValues(Object.fromEntries(data.settings.map(s=>[s.key,s.value])));
         const companyDateFormat = data.settings.find(s=>s.key==="general.date_format")?.value;
         setCompanyDateFormat(companyId, companyDateFormat);
-        const companyLanguage = data.settings.find(s=>s.key==="general.default_language")?.value;
-        if (companyLanguage === "ar" || companyLanguage === "en") void i18n.changeLanguage(companyLanguage);
         if (!categoryFilter && !data.categories.includes(activeCategory)) setActiveCategory(data.categories[0] || "General");
       })
       .catch((e:any)=>toast.error(e?.response?.data?.detail ?? (isArabic ? "تعذر تحميل سياسات الشركة" : "Unable to load company settings")))
@@ -94,8 +92,6 @@ export default function CompanyPolicySettingsPage({ categoryFilter }: { category
       setValues(Object.fromEntries(data.settings.map(s=>[s.key,s.value])));
       const companyDateFormat = data.settings.find(s=>s.key==="general.date_format")?.value;
       setCompanyDateFormat(companyId, companyDateFormat);
-      const companyLanguage = data.settings.find(s=>s.key==="general.default_language")?.value;
-      if (companyLanguage === "ar" || companyLanguage === "en") await i18n.changeLanguage(companyLanguage);
       toast.success(isArabic ? "تم حفظ سياسات الشركة" : "Company settings saved");
     } catch(e:any) { toast.error(e?.response?.data?.detail?.message ?? e?.response?.data?.detail ?? (isArabic ? "تعذر حفظ السياسات" : "Unable to save settings")); }
     finally { setSaving(false); }
