@@ -33,6 +33,16 @@ def _tenant(user: User) -> int:
     return get_effective_tenant_id(user)
 
 
+def _require_manual_attendance_source(db: Session, company_id: int) -> None:
+    """Fail closed when manual attendance writes are not the configured source."""
+    try:
+        allowed = attendance_source_allowed(db, company_id, "manual")
+    except Exception:
+        raise HTTPException(503, "Attendance source policy could not be verified; manual attendance is denied.") from None
+    if not allowed:
+        raise HTTPException(409, "Manual attendance changes are disabled by company policy; use the configured attendance source.")
+
+
 def _company_for_tenant(db: Session, company_id: int, tenant_id: int) -> Company:
     company = db.scalar(
         select(Company).where(
@@ -431,10 +441,9 @@ def create_attendance(
 ):
     tenant_id = _tenant(current_user)
     _company_for_tenant(db, company_id, tenant_id)
-    # This endpoint is the manual-entry path. If policy selects biometric/mobile/
-    # integration, do not silently accept a manual record as that source.
-    if not attendance_source_allowed(db, company_id, "manual"):
-        raise HTTPException(409, "Manual attendance is disabled by company policy; use the configured attendance source.")
+    # This endpoint is the manual-entry path. Do not silently accept it
+    # when the company has selected another source.
+    _require_manual_attendance_source(db, company_id)
     try:
         record = hr_leave_service.create_attendance(
             db, company_id=company_id, payload=payload, actor_user_id=current_user.id
@@ -468,6 +477,8 @@ def check_out_attendance(
 ):
     tenant_id = _tenant(current_user)
     _company_for_tenant(db, company_id, tenant_id)
+    # Check-out is also a manual write and follows the same source policy.
+    _require_manual_attendance_source(db, company_id)
     try:
         record = hr_leave_service.check_out_attendance(
             db,

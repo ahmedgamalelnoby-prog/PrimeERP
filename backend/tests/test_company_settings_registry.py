@@ -6,7 +6,7 @@ from app.modules.company_settings.registry import BY_KEY, CATALOG, validate_valu
 def test_company_policy_catalog_has_unique_keys_and_module_ownership():
     keys = [item["key"] for item in CATALOG]
     assert len(keys) == len(set(keys))
-    assert len(keys) == 71
+    assert len(keys) == 75
     assert all("." in item["key"] and item["module"] for item in CATALOG)
 
 
@@ -35,6 +35,8 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
         "accounting.fiscal_year_start_month",
         "tax.default_tax_inclusive_pricing",
         "workflow.allow_self_approval",
+        "workflow.approval_mode",
+        "workflow.escalation_after_hours",
         "inventory.require_bin_location",
         "general.branch_required",
         "accounting.period_lock_enabled",
@@ -52,6 +54,12 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
         "inventory.batch_tracking_default",
         "notifications.email_enabled",
         "notifications.whatsapp_enabled",
+        "reports.default_export_format",
+        "reports.allow_scheduled_delivery",
+        "reports.max_export_rows",
+        "reports.include_filters_in_export",
+        "reports.max_export_rows",
+        "reports.include_filters_in_export",
         "notifications.retry_limit",
         "tax.require_tax_code_on_invoice",
         "accounting.auto_post_sales_invoice",
@@ -88,12 +96,10 @@ def test_only_options_with_a_verified_workflow_consumer_are_marked_runtime():
 
 
 def test_policies_without_a_safe_workflow_consumer_remain_catalog_only():
-    # These policies still lack complete owning workflows. Do not advertise them as enforced.
+    # These policies still lack a complete owning workflow consumer. Do not advertise them as enforced.
     catalog_only_keys = {
         "hr.attendance_source",
         "hr.biometric_sync_interval_minutes",
-        "workflow.approval_mode",
-        "workflow.escalation_after_hours",
         "pos.allow_open_cash_drawer",
     }
     assert all(BY_KEY[key]["status"] == "catalog" for key in catalog_only_keys)
@@ -191,3 +197,23 @@ def test_notification_delivery_switches_default_to_disabled():
     assert BY_KEY["notifications.whatsapp_enabled"]["default"] is False
     assert BY_KEY["notifications.email_enabled"]["status"] == "runtime"
     assert BY_KEY["notifications.whatsapp_enabled"]["status"] == "runtime"
+
+
+def test_reporting_policies_have_a_dedicated_category_with_explicit_runtime_status():
+    reporting = {item["key"]: item for item in CATALOG if item["category"] == "Reporting"}
+    assert set(reporting) == {
+        "reports.default_export_format",
+        "reports.max_export_rows",
+        "reports.include_filters_in_export",
+        "reports.allow_scheduled_delivery",
+    }
+    assert reporting["reports.default_export_format"]["status"] == "runtime"
+    assert reporting["reports.allow_scheduled_delivery"]["status"] == "runtime"
+    assert reporting["reports.max_export_rows"]["status"] == "runtime"
+    assert reporting["reports.include_filters_in_export"]["status"] == "runtime"
+
+
+@pytest.mark.parametrize("bad_rows", [99, 100001, True, 1.5, "1000"])
+def test_report_export_row_limit_rejects_invalid_bounds(bad_rows):
+    with pytest.raises(ValueError):
+        validate_value("reports.max_export_rows", bad_rows)

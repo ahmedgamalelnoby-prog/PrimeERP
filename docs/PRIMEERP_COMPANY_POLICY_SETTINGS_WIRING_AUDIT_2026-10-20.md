@@ -5,8 +5,8 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 
 ## Result
 
-- Catalog entries audited individually: **71**.
-- Current registry classification: **66 runtime / 5 catalog-only**.
+- Catalog entries audited individually: **75**.
+- Current registry classification at the 2026-10-24 branch head: **70 runtime / 5 catalog-only**.
 - This is a source-level classification, not proof that migrations, tests, or end-to-end workflows have passed. The catalog-only list below reflects the current registry; runtime claims still require CI and workflow verification.
 - Confirmed runtime consumers: `inventory.allow_negative_stock` (stock-movement posting), `inventory.allow_below_cost_sale` (delivery posting compares net line revenue with outbound stock valuation and requires the dedicated permission plus an audit event), `accounting.require_journal_approval` (journal posting), `general.timezone`, `general.base_currency`, `general.allow_multi_currency`, `general.require_cost_center`, `general.require_project`, `sales.document_numbering` (atomic company/year, company, or global numbering sequences), `hr.leave_requires_approval` / `hr.allow_negative_leave_balance` (leave request decisions and paid-leave balance checks), `hr.require_attendance_approval` (attendance correction decisions), `hr.default_work_hours_per_day` / `hr.overtime_requires_approval` (overtime eligibility and approval), and `accounting.allow_backdated_entries` (journal/generic transaction creation), plus `integrations.retry_limit` and `integrations.webhook_signature_required` (integration retry and Salla webhook intake), `accounting.fiscal_year_start_month` (fiscal-year creation), `accounting.rounding_method` and `tax.default_tax_inclusive_pricing` (tax calculation), `workflow.allow_self_approval` (generic transaction approval and HR leave/attendance decisions), `inventory.require_bin_location` (stock movement creation), `inventory.auto_reserve_sales_orders` (sales-order confirmation reservations, partial delivery consumption, and cancellation release), `general.branch_required` (generic transaction creation), and `accounting.period_lock_enabled` (journal posting), `sales.credit_limit_enforced` (customer credit exposure check), `purchasing.require_goods_receipt` (supplier-bill creation), `sales.default_payment_terms_days` / `purchasing.default_payment_terms_days` (sales invoices and supplier bills when partner terms are unset), `crm.duplicate_customer_check` (customer creation by email/tax number), `pos.allow_discount_without_approval` / `pos.max_discount_pct_without_approval` (POS checkout discounts), `inventory.require_warehouse` (stockable/consumable commerce documents), `inventory.expiry_tracking_required`, `inventory.serial_tracking_default`, and `inventory.batch_tracking_default` (new inventory-item defaults consumed by item creation; serial/expiry imply batch tracking), `notifications.email_enabled`, `notifications.whatsapp_enabled`, and `notifications.retry_limit` (company-scoped delivery gates and bounded transient retries), `tax.require_tax_code_on_invoice` (taxable sales/purchase invoice lines), and `accounting.auto_post_sales_invoice` / `accounting.auto_post_purchase_invoice` (company-gated accounting auto-post), and the five `accounting.default_*_account` code settings (company-scoped active posting-account overrides for commerce AR, AP, sales, purchase expense, and payment/cash lines), and `purchasing.allow_invoice_price_variance` / `purchasing.price_variance_tolerance_pct` (supplier bill vs linked receipt valuation comparison at bill accounting posting), `purchasing.require_purchase_order` (bills must reference a confirmed company/vendor purchase order and line-matched receipts), `sales.require_quote_approval` / `sales.require_order_approval` / `purchasing.require_purchase_approval` (orders pause in pending approval, enforce requester separation and require an authorized separate decision before confirmation), `general.intercompany_enabled` (new intercompany transaction creation), and `tax.einvoice_required_for_sales` (sales invoices and credit notes require ETA status `valid` before confirmation), and `inventory.valuation_method` (default costing method for newly created items when no item-specific choice is submitted), and `sales.allow_negative_customer_balance` (explicitly permits overpayment of a sales invoice to create customer credit), and `sales.invoice_requires_delivery` / `sales.allow_overbilling` (order-linked stock invoice quantities are checked against posted delivery quantities and ordered quantities), plus `integrations.auto_sync_enabled` (the scheduled Salla integration worker checks the company policy before claiming due connections; manual sync remains available). FIFO negative issues remain blocked for valuation safety, and reserved quantities remain protected.
 - This is a source-level audit, not a successful runtime test. The GitHub Windows self-hosted Release Gate is currently queued; no test-pass claim is made until the run completes on the latest commit.
@@ -21,7 +21,7 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 | Option key | Type | Current status | Purpose |
 |---|---|---|---|
 | `general.default_language` | enum | **RUNTIME** | Applies the saved company interface language when the Company Policy Settings page loads or saves |
-| `general.date_format` | enum | CATALOG ONLY | Date display format |
+| `general.date_format` | enum | **RUNTIME** | Shared company date formatter preference; broader report/export coverage still requires separate verification |
 | `general.timezone` | string | **RUNTIME** | Company-local date used by journal backdating policy |
 | `general.base_currency` | string | **RUNTIME** | Default journal currency and foreign-currency policy |
 | `general.allow_multi_currency` | bool | **RUNTIME** | Allow foreign-currency journal entries |
@@ -110,9 +110,9 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 
 | Option key | Type | Current status | Purpose |
 |---|---|---|---|
-| `workflow.approval_mode` | enum | CATALOG ONLY | Approval chain mode |
+| `workflow.approval_mode` | enum | **RUNTIME** | Approval chain mode consumed by generic approvals and payroll submission |
 | `workflow.allow_self_approval` | bool | **RUNTIME** | Block requesters from approving their own generic transactions when disabled |
-| `workflow.escalation_after_hours` | int | CATALOG ONLY | Escalate pending approvals after hours |
+| `workflow.escalation_after_hours` | int | **RUNTIME** | SLA consumed by the in-app approval escalation worker |
 
 ## Point of Sale (4)
 
@@ -144,6 +144,15 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 | `integrations.retry_limit` | int | **RUNTIME** | Maximum manual integration event retries before dead-lettering |
 | `integrations.webhook_signature_required` | bool | **RUNTIME** | Require signature for public Salla webhook intake; supplied signatures are always verified |
 
+## Reporting (4)
+
+| Option key | Type | Current status | Purpose |
+|---|---|---|---|
+| `reports.default_export_format` | enum | **RUNTIME** | Supplies JSON/text format when scheduled report creation omits a format |
+| `reports.allow_scheduled_delivery` | bool | **RUNTIME** | Blocks scheduled report creation with HTTP 409 unless explicitly enabled for the company |
+| `reports.max_export_rows` | int | CATALOG ONLY | Reserved for a future tabular export service; no row-limiting consumer is claimed |
+| `reports.include_filters_in_export` | bool | CATALOG ONLY | Reserved for a future export renderer; current report manifests already include their filter metadata |
+
 ## Follow-up review fixes (2026-10-20)
 
 - Corrected purchase-bill source idempotency lookup so it no longer passes an unsupported keyword to _existing_source.
@@ -165,7 +174,7 @@ Branch: `feature/primeerp-full-system-audit-20261020-v2`
 
 1. Continue HR foundations: biometric/mobile attendance ingestion, payroll approval/posting, and a workday/holiday calendar. Manual attendance, correction approval, and overtime eligibility/approval now have working API paths.
 2. Inventory traceability: keep verifying batch, serial and expiry enforcement through receiving, transfers, sales delivery and returns. Automatic order reservation now reserves stock at confirmation, consumes reservations safely through partial deliveries, and releases remaining reservations on cancellation.
-3. Approval engine: extend the commerce single-decision flow with configurable approver chains and a reliable escalation scheduler before enabling `workflow.approval_mode` or `workflow.escalation_after_hours`.
+3. Approval engine: generic approval chains and in-app escalation are wired; continue integration testing and notification delivery hardening.
 4. Integrations: automatic Salla sync now has a dedicated worker and company-policy gate; add provider-specific scheduling only when another provider is supported.
 5. Broaden company date-format display across all relevant tables, forms, exports and reports before changing `general.date_format` from catalog-only.
 6. Review the remaining inventory policy controls (below-cost authorization and cost-layer checks) after cost and permission checks are consistently exposed to the sales workflow.
@@ -265,7 +274,7 @@ The catalog-only settings below are the remaining candidates for workflow wiring
 - `hr.default_work_hours_per_day`: use as a company fallback in schedules and overtime calculations where an employee-specific schedule is absent.
 
 ### F. Approval engine and operations (2)
-- `workflow.approval_mode`, `workflow.escalation_after_hours`: complete the approval engine (sequential/parallel/any-one decisions, due-time tracking, escalation jobs and audit trail). Do not wire these to UI labels alone.
+- `workflow.approval_mode` and `workflow.escalation_after_hours` are runtime: generic approvals and payroll use the configured mode, and the escalation worker queues idempotent in-app reminders. External escalation channels and end-to-end test evidence remain separate gaps.
 
 ### G. POS and manufacturing (4)
 - `pos.allow_open_cash_drawer`, `pos.require_shift_close`: add permission-checked cash-drawer events and enforced shift close/reconciliation before session finalization.
@@ -402,7 +411,7 @@ Regression tests cover a configured override, an unset fallback, and invalid-cod
 
 - Sales quotations and sales/purchase orders configured to require approval now enter `pending_approval` on their first confirmation request, with a company-scoped actor/time/reason event. A user with the existing commerce posting permission can approve or reject; the decision is locked, stored in the audit timeline, and exposed through company-scoped approval-event endpoints. An approved order must be confirmed again to enter the existing operational status.
 - `workflow.allow_self_approval` is enforced against the user who submitted the order for approval. Rejected documents remain rejected and require a replacement document; the current commerce module has no edit/resubmit endpoint.
-- `sales.require_quote_approval`, `sales.require_order_approval`, and `purchasing.require_purchase_approval` are now runtime. Quotation approval applies to every quotation when enabled; no threshold setting currently exists. This is a single-decision lifecycle. `workflow.approval_mode` and `workflow.escalation_after_hours` remain catalog-only until approver-chain assignments and a reliable escalation scheduler are built.
+- `sales.require_quote_approval`, `sales.require_order_approval`, and `purchasing.require_purchase_approval` are now runtime. Quotation approval applies to every quotation when enabled; no threshold setting currently exists. This is a single-decision lifecycle. `workflow.approval_mode` and `workflow.escalation_after_hours` are runtime in the current registry; payroll submission honors the selected mode and the escalation worker queues in-app reminders.
 - The approval-event table and status constraints have a migration. The exact registry contract was updated. Tests/migrations have not been executed; no pass is claimed.
 
 
@@ -632,7 +641,7 @@ Do not promote these five settings until their owning workflows, tenant/company 
 - Verified the current branch uses `useCompanyClockDate` backed by the authenticated `GET /company-settings/clock` endpoint for date defaults in HR, treasury cheque entry, and bank reconciliation. These forms start with blank date-only fields and populate from the selected company's server-resolved timezone date; they do not trust the device's calendar clock for initial values.
 - Treasury and bank reconciliation also block relevant submissions while the server clock is loading or unavailable, and surface the clock error rather than silently substituting the device date.
 - This reduces incorrect date defaults when the workstation clock is wrong, but it does not finish `general.date_format` display coverage across every screen, report, print view, and export. That policy remains catalog-only until the remaining consumers are migrated and verified.
-- Current registry count is **66 runtime / 5 catalog-only**, not the older seven-item count. The two workflow policies `workflow.approval_mode` and `workflow.escalation_after_hours` are no longer listed as catalog-only in the current registry. Static classification is not a claim that all end-to-end tests passed.
+- Current registry count is **70 runtime / 5 catalog-only** (75 total). The two workflow policies `workflow.approval_mode` and `workflow.escalation_after_hours` are no longer listed as catalog-only in the current registry. Static classification is not a claim that all end-to-end tests passed.
 
 
 ## Company date-format coverage — report schedule timestamps — 2026-10-22
@@ -643,7 +652,7 @@ Do not promote these five settings until their owning workflows, tenant/company 
 
 ## Remaining policy blockers and implementation boundary — 2026-10-22
 
-- Current registry has **5 catalog-only settings**, not 7: `general.date_format`, `hr.attendance_source`, `hr.payroll_requires_approval`, `hr.biometric_sync_interval_minutes`, and `pos.allow_open_cash_drawer`. The earlier `workflow.approval_mode` and `workflow.escalation_after_hours` settings were reclassified as runtime; approval request sequencing is implemented and an in-app escalation worker exists.
+- Current registry has **5 catalog-only settings**: `hr.attendance_source`, `hr.biometric_sync_interval_minutes`, `pos.allow_open_cash_drawer`, `reports.max_export_rows`, and `reports.include_filters_in_export`. `general.date_format`, `hr.payroll_requires_approval`, `workflow.approval_mode`, and `workflow.escalation_after_hours` are runtime-marked; this classification is not a substitute for integration test evidence.
 - HR manual attendance is explicitly blocked when the selected source is biometric/mobile/integration. A real connector still requires a supported device/provider protocol, authenticated ingestion, replay/deduplication controls, and tenant/company employee mapping. The interval helper alone is not a connector or a sync worker.
 - Payroll package entry points/models/repository/schemas/router/tests are currently empty files in this branch. A real approval setting cannot be considered wired until a payroll run lifecycle, audited approval decisions, and safe accounting posting/reversal integration are implemented; a boolean helper alone is insufficient.
 - POS has a policy helper for standalone cash-drawer opens but no standalone endpoint/device bridge. Hardware make/model/protocol or a supported POS driver is needed to actually open a physical drawer. An audit-only API would not prove hardware actuation.
@@ -656,3 +665,50 @@ Do not promote these five settings until their owning workflows, tenant/company 
 - Reason: the existing manual attendance endpoint correctly rejects manual writes when a non-manual source is selected, but no replacement ingestion adapter is currently implemented. Accepting those values could disable attendance entry without providing an alternate path.
 - This is a safe failure guard, not completion of biometric/mobile integrations. `hr.attendance_source` and `hr.biometric_sync_interval_minutes` remain catalog-only; no device connector or sync worker is claimed.
 - No backend tests or Docker runtime checks were executed for this commit in this session; CI must verify it.
+
+
+## Current branch follow-up — reporting policies (2026-10-24)
+
+The current `feature/odoo-sap-gap-audit-20261024` branch has **75 settings: 70 runtime / 5 catalog-only**. This supersedes older counts above, which describe earlier commits.
+
+- Added the dedicated `Reporting` category with `reports.default_export_format`, `reports.max_export_rows`, `reports.include_filters_in_export`, and `reports.allow_scheduled_delivery`.
+- `reports.allow_scheduled_delivery` is now enforced by the schedule-creation API and defaults to **false**. A company must explicitly enable it before creating scheduled report delivery. Invalid stored policy types fail closed.
+- `reports.default_export_format` is now consumed when a schedule omits its format. Supported values match the current worker contract: `json` and `text`. Explicit supported request formats remain respected.
+- Added focused tests for disabled scheduling, default format resolution, explicit format precedence, and invalid saved policy values. These tests are committed but **not yet confirmed passing**.
+- `reports.max_export_rows` and `reports.include_filters_in_export` remain **catalog-only** because the current report scheduler emits JSON/text manifests rather than tabular row exports. Their presence does not claim row limiting or export metadata enforcement.
+- The financial AI analysis endpoint now also requires `accounting.access`, in addition to the router-wide Reports module entitlement, because it reads tenant-scoped accounting data.
+- Latest self-hosted Release Gate run is queued. No local test/build/migration result or end-to-end release verification is claimed.
+
+
+## Current catalog-only list (2026-10-24)
+
+The seven catalog-only keys at the current branch head are: `hr.attendance_source`, `hr.biometric_sync_interval_minutes`, `pos.allow_open_cash_drawer`, `reports.max_export_rows`, and `reports.include_filters_in_export`. `hr.payroll_requires_approval` and `general.date_format` are marked runtime in the current registry; end-to-end payroll lifecycle completeness and broad date-format coverage remain separate verification gaps and must not be inferred from registry status alone.
+
+
+### Worker-level enforcement update (2026-10-24)
+
+The `reports.allow_scheduled_delivery` policy is checked both when creating/resuming a schedule and immediately before the worker sends each due delivery. If the setting is disabled or cannot be read, the worker pauses the delivery (`last_status=paused_policy`, `next_run_at=NULL`) and sends nothing. A tenant/company-scoped resume endpoint is available after an administrator enables the policy. This behavior is covered by unit tests committed to the branch; passing status is not yet confirmed.
+
+
+### Approval policy wiring update (2026-10-24)
+
+- The generic approval-request endpoint already consumes `workflow.approval_mode`; payroll submission now consumes the same company policy rather than hard-coding sequential approval. The registry marks the policy runtime, with tests for all supported modes and invalid values.
+- The approval escalation worker consumes `workflow.escalation_after_hours` to queue idempotent in-app reminders for pending approval steps; the registry now marks this policy runtime. This does not claim external email/WhatsApp escalation or prove the worker has passed integration tests.
+- The current catalog-only list is now five settings: `hr.attendance_source`, `hr.biometric_sync_interval_minutes`, `pos.allow_open_cash_drawer`, `reports.max_export_rows`, and `reports.include_filters_in_export`.
+
+
+## Follow-up status — 2026-10-24 (report export)
+
+The current branch has 75 registered company policies: **72 runtime / 3 catalog-only**. This supersedes earlier counts in the historical notes above. The remaining catalog-only settings are `hr.attendance_source`, `hr.biometric_sync_interval_minutes`, and `pos.allow_open_cash_drawer`.
+
+The centralized `POST /reports/export` endpoint now enforces `reports.max_export_rows`, `reports.include_filters_in_export`, and `reports.default_export_format`. It checks company/tenant scope, requires `company.access`, returns JSON or text attachments, rejects oversized exports, and fails closed if the policy values cannot be verified. The endpoint exports caller-supplied rows; module-specific live report query providers and real biometric ingestion remain separate gaps. The cash-drawer endpoint authorizes and audits requests only; physical device actuation still requires a terminal driver.
+
+A new unit test file covers JSON/text rendering and filter inclusion behavior. Tests/build have not been run or confirmed green in this environment; keep the release gate as the authority before merging.
+
+
+## Follow-up status — 2026-10-24 (module permissions and attendance source)
+
+- Report exports now require the owning module's tenant entitlement and the caller's `<module_code>.access` permission, in addition to Reports module access and company/tenant scope. Tests cover allowed access, missing entitlement, and missing permission.
+- Manual HR attendance check-in and check-out share one fail-closed source-policy guard. If the company selects biometric/mobile/integration, manual check-out is rejected; if the setting cannot be read, the request is denied with a service-unavailable response instead of bypassing policy.
+- These changes do **not** implement a biometric device connector or scheduled device polling. A real connector still needs an authenticated device/vendor adapter, replay protection/idempotency, device-to-employee mapping, sync cursor/health state, and integration tests. The interval setting must not be described as a functioning sync job until those pieces exist.
+- The self-hosted release gate has been triggered for the latest commits. Until the run completes successfully, test/build status remains unverified.
