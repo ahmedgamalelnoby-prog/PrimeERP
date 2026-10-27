@@ -56,7 +56,7 @@ function NavigationNode({ item, pathname, onNavigate, forceExpanded, depth, isAr
     isActive ? "bg-gradient-to-l from-cyan-400/20 to-blue-500/20 text-white ring-1 ring-inset ring-cyan-300/25 shadow-lg shadow-slate-950/10" : "text-slate-300 hover:bg-white/[0.07] hover:text-white",
   ].join(" ")}>
     {Icon && <Icon className="h-[18px] w-[18px] shrink-0 text-slate-400 transition-colors group-hover:text-cyan-300" />}
-    <span className="truncate">{item.labelAr}</span>
+    <span className="truncate">{isArabic ? item.labelAr : item.label}</span>
     {item.isNew && <span className="mr-auto rounded-full border border-cyan-300/20 bg-cyan-300/10 px-1.5 py-0.5 text-[9px] font-bold text-cyan-200">جديد</span>}
   </NavLink>;
 }
