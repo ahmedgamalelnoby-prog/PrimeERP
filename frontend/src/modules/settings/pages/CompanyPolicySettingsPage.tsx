@@ -72,7 +72,7 @@ export default function CompanyPolicySettingsPage({ categoryFilter }: { category
         setCompanyDateFormat(companyId, companyDateFormat);
         const companyLanguage = data.settings.find(s=>s.key==="general.default_language")?.value;
         if (companyLanguage === "ar" || companyLanguage === "en") void i18n.changeLanguage(companyLanguage);
-        if (!data.categories.includes(activeCategory)) setActiveCategory(data.categories[0] || "General");
+        if (!categoryFilter && !data.categories.includes(activeCategory)) setActiveCategory(data.categories[0] || "General");
       })
       .catch((e:any)=>toast.error(e?.response?.data?.detail ?? "تعذر تحميل سياسات الشركة"))
       .finally(()=>setLoading(false));
