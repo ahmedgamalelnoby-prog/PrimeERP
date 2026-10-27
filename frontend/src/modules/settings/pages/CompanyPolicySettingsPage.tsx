@@ -27,6 +27,31 @@ const categoryAr:Record<string,string> = {
   "Point of Sale":"نقاط البيع", Manufacturing:"التصنيع", CRM:"إدارة العملاء",
   Integrations:"التكاملات الخارجية", "Messaging & Notifications":"الرسائل والإشعارات", Reporting:"التقارير والتصدير", "Security & Audit":"الأمان والمراجعة"
 };
+const settingLabelAr:Record<string,string> = {
+  "general.default_language":"اللغة الافتراضية للشركة",
+  "general.date_format":"تنسيق عرض التاريخ",
+  "general.timezone":"المنطقة الزمنية للشركة",
+  "general.base_currency":"العملة الأساسية",
+  "hr.attendance_source":"مصدر الحضور والانصراف",
+  "hr.require_attendance_approval":"اعتماد تصحيحات الحضور",
+  "hr.overtime_requires_approval":"اعتماد ساعات العمل الإضافية",
+  "hr.leave_requires_approval":"اعتماد الإجازات",
+  "hr.payroll_requires_approval":"اعتماد الرواتب قبل الترحيل",
+  "hr.allow_negative_leave_balance":"السماح برصيد إجازات سالب",
+  "hr.default_work_hours_per_day":"ساعات العمل القياسية يوميًا",
+  "hr.biometric_sync_interval_minutes":"الفاصل الزمني لمزامنة البصمة بالدقائق",
+  "pos.allow_open_cash_drawer":"السماح بفتح درج النقدية",
+  "pos.require_shift_close":"إلزام إغلاق وردية نقطة البيع",
+  "pos.allow_discount_without_approval":"السماح بالخصم دون اعتماد",
+  "pos.max_discount_pct_without_approval":"أقصى خصم دون اعتماد (%)",
+  "workflow.approval_mode":"طريقة ترتيب الموافقات",
+  "workflow.allow_self_approval":"السماح للمستخدم باعتماد طلبه",
+  "workflow.escalation_after_hours":"التصعيد بعد عدد ساعات",
+};
+const choiceLabelAr:Record<string,string> = {
+  manual:"يدوي", biometric:"بصمة", mobile:"الهاتف المحمول", integration:"تكامل خارجي",
+  sequential:"بالتتابع", parallel:"بالتوازي", any_one:"أي معتمد",
+};
 const moduleAr:Record<string,string> = {
   general:"عام", accounting:"المحاسبة", taxes:"الضرائب", "egyptian-einvoice":"الفاتورة الإلكترونية",
   sales:"المبيعات", purchasing:"المشتريات", inventory:"المخزون", hr:"الموارد البشرية",
@@ -100,7 +125,7 @@ export default function CompanyPolicySettingsPage({ categoryFilter }: { category
   function renderControl(s:Setting) {
     const value=values[s.key] ?? s.default;
     if (s.type==="bool") return <button type="button" role="switch" aria-checked={Boolean(value)} onClick={()=>setValue(s.key,!value)} className={`relative h-7 w-12 rounded-full transition ${value?"bg-primary":"bg-muted"}`}><span className={`absolute top-1 size-5 rounded-full bg-white shadow transition-all ${value?"right-1":"right-6"}`}/></button>;
-    if (s.type==="enum") return <select value={String(value)} onChange={e=>setValue(s.key,e.target.value)} className="h-10 w-full rounded-lg border bg-background px-3">{(s.choices??[]).map(c=><option key={c} value={c}>{c}</option>)}</select>;
+    if (s.type==="enum") return <select value={String(value)} onChange={e=>setValue(s.key,e.target.value)} className="h-10 w-full rounded-lg border bg-background px-3">{(s.choices??[]).map(c=><option key={c} value={c}>{isArabic ? (choiceLabelAr[c] ?? c) : c}</option>)}</select>;
     if (s.type==="int"||s.type==="number") return <input type="number" step={s.type==="int"?"1":"0.01"} value={value} onChange={e=>setValue(s.key,s.type==="int"?Number.parseInt(e.target.value||"0",10):Number(e.target.value||"0"))} className="h-10 w-full rounded-lg border bg-background px-3"/>;
     return <input type="text" maxLength={200} value={String(value)} onChange={e=>setValue(s.key,e.target.value)} className="h-10 w-full rounded-lg border bg-background px-3"/>;
   }
@@ -121,7 +146,7 @@ export default function CompanyPolicySettingsPage({ categoryFilter }: { category
         <div className="grid gap-3 rounded-2xl border bg-card p-4 md:grid-cols-[minmax(0,1fr)_220px]"><label className="relative block"><Search className="pointer-events-none absolute right-3 top-3 size-4 text-muted-foreground"/><input aria-label={isArabic ? "بحث في الإعدادات" : "Search settings"} value={search} onChange={e=>setSearch(e.target.value)} placeholder={isArabic ? "ابحث باسم الإعداد أو المفتاح أو الموديول..." : "Search settings, keys, or modules..."} className="h-10 w-full rounded-xl border bg-background pr-10 pl-3 text-sm"/></label><select aria-label={isArabic ? "تصفية حالة الربط" : "Filter integration status"} value={statusFilter} onChange={e=>setStatusFilter(e.target.value as "all"|"runtime"|"catalog")} className="h-10 rounded-xl border bg-background px-3 text-sm"><option value="all">{isArabic ? "كل الحالات" : "All statuses"}</option><option value="runtime">{isArabic ? "مفعّل في النظام فقط" : "Runtime enabled only"}</option><option value="catalog">{isArabic ? "يحتاج ربطًا تشغيليًا فقط" : "Needs integration only"}</option></select></div>
         <div className="flex items-center justify-between px-1 text-xs text-muted-foreground"><span>{isArabic ? "عدد النتائج" : "Results"}: {visibleSettings.length}</span><button type="button" onClick={()=>{setSearch("");setStatusFilter("all");}} className="underline underline-offset-4">{isArabic ? "مسح البحث والتصفية" : "Clear search and filters"}</button></div>
         {visibleSettings.length===0&&<div className="rounded-2xl border border-dashed p-8 text-center text-sm text-muted-foreground">{isArabic ? "لا توجد إعدادات مطابقة للبحث والتصفية الحالية." : "No settings match the current search and filters."}</div>}
-        {visibleSettings.map(s=><article key={s.key} className="grid gap-4 rounded-2xl border bg-card p-5 md:grid-cols-[minmax(0,1fr)_220px] md:items-center"><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-bold">{s.label}</h3><span className={`rounded-full px-2 py-1 text-[11px] ${s.status==="runtime"?"bg-emerald-100 text-emerald-800":"bg-amber-100 text-amber-800"}`}>{s.status==="runtime" ? (isArabic ? "مفعّل في النظام" : "Runtime enabled") : (isArabic ? "كتالوج — يحتاج ربط تشغيلي" : "Catalog — integration needed")}</span></div><p className="mt-2 text-xs text-muted-foreground">{isArabic ? "الموديول" : "Module"}: {isArabic ? (moduleAr[s.module]??s.module) : s.module}</p><code className="mt-1 block break-all text-[11px] text-muted-foreground">{s.key}</code></div><div className="flex items-center justify-between gap-4">{renderControl(s)}</div></article>)}
+        {visibleSettings.map(s=><article key={s.key} className="grid gap-4 rounded-2xl border bg-card p-5 md:grid-cols-[minmax(0,1fr)_220px] md:items-center"><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-bold">{isArabic ? (settingLabelAr[s.key] ?? s.label) : s.label}</h3><span className={`rounded-full px-2 py-1 text-[11px] ${s.status==="runtime"?"bg-emerald-100 text-emerald-800":"bg-amber-100 text-amber-800"}`}>{s.status==="runtime" ? (isArabic ? "مفعّل في النظام" : "Runtime enabled") : (isArabic ? "كتالوج — يحتاج ربط تشغيلي" : "Catalog — integration needed")}</span></div><p className="mt-2 text-xs text-muted-foreground">{isArabic ? "الموديول" : "Module"}: {isArabic ? (moduleAr[s.module]??s.module) : s.module}</p><code className="mt-1 block break-all text-[11px] text-muted-foreground">{s.key}</code></div><div className="flex items-center justify-between gap-4">{renderControl(s)}</div></article>)}
         <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-950 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-100"><ShieldCheck className="mb-2 size-5"/>{isArabic ? "الإعدادات الحساسة مثل بيانات الدخول ومفاتيح API لا تُحفظ هنا؛ يجب إدارتها من خزنة التكاملات. لا يتم تغيير المستندات المرحلة سابقًا عند تعديل سياسة افتراضية." : "Sensitive values such as credentials and API keys are not stored here; manage them in the integrations vault. Changing a default policy does not rewrite previously posted documents."}</div>
       </section>
     </div>
