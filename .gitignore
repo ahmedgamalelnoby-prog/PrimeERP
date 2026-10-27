@@ -1,4 +1,4 @@
-﻿# Python
+# Python
 .venv/
 venv/
 env/
@@ -56,4 +56,15 @@ pip-wheel-metadata/
 # Local reports / generated files
 project_tree.txt
 
-alembic/
+/alembic/
+# Python generated cache files
+__pycache__/
+*.py[cod]
+
+# Local CI environment and generated SQLite databases
+.ci-venv/
+primeerp_new.db
+backend/primeerp_new.db
+backend/release_gate_smoke.db
+release_gate_smoke.db
+
