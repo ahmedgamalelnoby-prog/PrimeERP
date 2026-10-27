@@ -34,13 +34,13 @@ const moduleAr:Record<string,string> = {
   integrations:"التكاملات", audit:"المراجعة"
 };
 
-export default function CompanyPolicySettingsPage() {
+export default function CompanyPolicySettingsPage({ categoryFilter }: { categoryFilter?: string } = {}) {
   const [companies,setCompanies] = useState<Company[]>([]);
   const [companyId,setCompanyId] = useState<number>(getInitialCompanyId());
   const [payload,setPayload] = useState<Payload|null>(null);
   const [values,setValues] = useState<Record<string,any>>({});
   const [searchParams] = useSearchParams();
-  const [activeCategory,setActiveCategory] = useState(() => searchParams.get("category") || "General");
+  const [activeCategory,setActiveCategory] = useState(() => categoryFilter || searchParams.get("category") || "General");
   const [loading,setLoading] = useState(true);
   const [saving,setSaving] = useState(false);
   const [search,setSearch] = useState("");
