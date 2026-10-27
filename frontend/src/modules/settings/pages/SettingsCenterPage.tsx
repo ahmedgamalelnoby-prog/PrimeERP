@@ -45,7 +45,7 @@ export default function SettingsCenterPage() {
     </aside>
     <section className="min-w-0 rounded-2xl border bg-card p-3 shadow-sm sm:p-5">
       <div className="mb-5 flex items-start gap-3 border-b pb-4"><span className="rounded-xl bg-primary/10 p-3 text-primary"><Icon className="size-5"/></span><div><h2 className="text-lg font-extrabold">{isArabic ? selected.title : selected.english}</h2><p className="mt-1 text-sm leading-6 text-muted-foreground">{isArabic ? selected.desc : "Configure policies and defaults for this module."}</p></div></div>
-      <div className="min-w-0">{selected.id === "General" ? <SettingsPage /> : <CompanyPolicySettingsPage key={selected.id} />}</div>
+      <div className="min-w-0">{selected.id === "General" ? <SettingsPage /> : <CompanyPolicySettingsPage key={selected.id} categoryFilter={selected.id} />}</div>
     </section>
    </div>
  </div>;
