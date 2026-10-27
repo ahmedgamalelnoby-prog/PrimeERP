@@ -16,6 +16,8 @@ from app.modules.commerce.models import CommercePayment, SalesDocument, SalesLin
 from app.modules.commerce.schemas import DocumentCreate, DocumentLineCreate, PaymentCreate
 from app.modules.commerce.service import commerce_service
 from app.modules.identity.dependencies import get_current_user
+from app.modules.audit.service import record_audit_event
+from app.modules.company_settings.consumers.pos import cash_drawer_open_allowed
 from app.modules.identity.models.user import User
 from app.modules.saas.entitlements import require_module
 from app.modules.inventory.items.models import InventoryItem
@@ -116,6 +118,13 @@ class ShiftClose(BaseModel):
     counted_cash: Decimal = Field(ge=0)
 
 
+class CashDrawerOpenAuthorization(BaseModel):
+    company_id: int = Field(gt=0)
+    terminal_id: int = Field(gt=0)
+    # A linked sale invoice is evidence of a transaction-triggered drawer opening.
+    sales_document_id: int | None = Field(default=None, gt=0)
+
+
 
 
 def _validate_discount_policy(db: Session, company_id: int, discount_percent: Decimal) -> None:
@@ -162,6 +171,61 @@ def _terminal(db: Session, company_id: int, terminal_id: int) -> PosTerminal:
     if terminal is None:
         raise HTTPException(422, "POS terminal does not belong to the company or is inactive")
     return terminal
+
+
+@router.post("/cash-drawer/authorize-open", dependencies=[Depends(require_permission("commerce.write"))])
+def authorize_cash_drawer_open(
+    payload: CashDrawerOpenAuthorization,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Authorize a drawer-open request; hardware drivers must execute the returned authorization."""
+    company = _company(db, payload.company_id, current_user)
+    terminal = _terminal(db, payload.company_id, payload.terminal_id)
+    linked_to_transaction = False
+    if payload.sales_document_id is not None:
+        document = db.scalar(select(SalesDocument).where(
+            SalesDocument.id == payload.sales_document_id,
+            SalesDocument.company_id == payload.company_id,
+            SalesDocument.document_type == "invoice",
+        ))
+        if document is None:
+            raise HTTPException(422, "A transaction-linked drawer opening requires a sales invoice from the same company")
+        linked_to_transaction = True
+
+    try:
+        allowed = cash_drawer_open_allowed(
+            db, payload.company_id, linked_to_transaction=linked_to_transaction
+        )
+    except Exception:
+        db.rollback()
+        raise HTTPException(503, "Cash drawer policy could not be verified; opening is denied") from None
+
+    record_audit_event(
+        db,
+        action="pos.cash_drawer.open_authorized" if allowed else "pos.cash_drawer.open_denied",
+        entity_type="pos_terminal",
+        entity_id=terminal.id,
+        user_id=current_user.id,
+        tenant_id=company.tenant_id,
+        company_id=company.id,
+        branch_id=terminal.branch_id,
+        metadata={
+            "linked_to_transaction": linked_to_transaction,
+            "sales_document_id": payload.sales_document_id,
+            "authorization_only": True,
+        },
+    )
+    db.commit()
+    if not allowed:
+        raise HTTPException(403, "Company policy prohibits opening the cash drawer without a transaction")
+    return {
+        "authorized": True,
+        "terminal_id": terminal.id,
+        "linked_to_transaction": linked_to_transaction,
+        "hardware_opened": False,
+        "message": "Authorization recorded; a configured terminal driver must perform the physical opening.",
+    }
 
 
 @router.get("/shifts/current")

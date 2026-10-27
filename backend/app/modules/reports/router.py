@@ -7,24 +7,26 @@ from email.message import EmailMessage
 from typing import Any
 
 import requests
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.context import get_effective_tenant_id
+from app.core.permissions import require_permission, user_has_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
-from app.modules.saas.entitlements import require_module
+from app.modules.saas.entitlements import require_module, tenant_has_module
 from app.modules.reports.models import ReportDefinition, ReportDelivery
 from app.modules.notifications.router import send_notification
 from app.modules.notifications.schemas import SendNotificationRequest
 from app.modules.accounting.reports.service import financial_report_service
 from app.modules.reports.worker import PROVIDERS, calculate_next_run
 from app.modules.platform.module_registry import REGISTRY_VERSION, knowledge_context
+from app.modules.company_settings.consumers.common import policy
 
 router = APIRouter(prefix="/reports", tags=["reports"], dependencies=[Depends(require_module("reports"))])
 
@@ -33,6 +35,15 @@ class ReportPayload(BaseModel):
     title: str = Field(min_length=1, max_length=255)
     data: dict[str, Any]
     format: str = Field(default="json", pattern="^(json|text)$")
+
+
+class ReportExportRequest(BaseModel):
+    company_id: int = Field(gt=0)
+    module_code: str = Field(min_length=2, max_length=50, pattern=r"^[a-z][a-z0-9_-]+$")
+    title: str = Field(default="PrimeERP report", min_length=1, max_length=255)
+    rows: list[dict[str, Any]]
+    filters: dict[str, Any] = Field(default_factory=dict)
+    format: str | None = Field(default=None, pattern="^(json|text)$")
 
 
 class DeliveryRequest(BaseModel):
@@ -51,9 +62,13 @@ class ScheduleRequest(BaseModel):
     channel: str = Field(pattern="^(email|whatsapp)$")
     destination: str = Field(min_length=3, max_length=320)
     schedule: str = Field(min_length=1, max_length=120)
-    format: str = Field(default="json", pattern="^(json|text)$")
+    format: str | None = Field(default=None, pattern="^(json|text)$")
     parameters: dict[str, Any] = Field(default_factory=dict)
     filters: dict[str, Any] = Field(default_factory=dict)
+
+
+class ScheduleResumeRequest(BaseModel):
+    company_id: int = Field(gt=0)
 
 
 class AIAnalysisRequest(BaseModel):
@@ -63,6 +78,19 @@ class AIAnalysisRequest(BaseModel):
     question: str | None = Field(default=None, max_length=2000)
     from_date: str | None = None
     to_date: str | None = None
+
+
+def _resolve_schedule_format(db: Session, company_id: int, requested_format: str | None) -> str:
+    """Enforce the company scheduling switch and resolve a supported default format."""
+    enabled = policy(db, company_id, "reports.allow_scheduled_delivery")
+    if not isinstance(enabled, bool):
+        raise HTTPException(status_code=500, detail="Invalid report scheduling policy configuration")
+    if not enabled:
+        raise HTTPException(status_code=409, detail="Scheduled report delivery is disabled by company policy")
+    selected = requested_format or policy(db, company_id, "reports.default_export_format")
+    if selected not in {"json", "text"}:
+        raise HTTPException(status_code=500, detail="Invalid default report format configuration")
+    return selected
 
 
 def _company_for_user(db: Session, company_id: int, user: User) -> Company:
@@ -131,13 +159,84 @@ def _ai_analysis(request: AIAnalysisRequest) -> dict[str, Any]:
         return {**fallback, "ai_provider": "fallback_after_provider_error", "knowledge_version": REGISTRY_VERSION, "provider_error": str(exc)[:500]}
 
 
+def _require_export_module_access(db: Session, user: User, module_code: str) -> None:
+    """Require both tenant entitlement and the user's access permission for the report owner module."""
+    tenant_id = get_effective_tenant_id(user)
+    if tenant_id is None or not tenant_has_module(db, tenant_id, module_code):
+        raise HTTPException(403, "The report's owning module is not enabled for this tenant")
+    if not user_has_permission(user, f"{module_code}.access", db):
+        raise HTTPException(403, "Missing access permission for the report's owning module")
+
+
+def _render_export(
+    *,
+    title: str,
+    rows: list[dict[str, Any]],
+    filters: dict[str, Any],
+    export_format: str,
+    include_filters: bool,
+) -> tuple[str, str]:
+    """Render validated report rows and optionally include applied filters."""
+    envelope: dict[str, Any] = {"title": title, "row_count": len(rows), "rows": rows}
+    if include_filters:
+        envelope["filters"] = filters
+    if export_format == "json":
+        return json.dumps(envelope, ensure_ascii=False, indent=2, default=str), "application/json; charset=utf-8"
+    if export_format == "text":
+        lines = [title, f"Rows: {len(rows)}"]
+        if include_filters and filters:
+            lines.append("Filters: " + json.dumps(filters, ensure_ascii=False, default=str))
+        for index, row in enumerate(rows, start=1):
+            lines.append(f"[{index}] " + " | ".join(f"{key}: {value}" for key, value in row.items()))
+        return "\n".join(lines), "text/plain; charset=utf-8"
+    raise HTTPException(500, "Unsupported report export format policy")
+
+
+@router.post("/export", dependencies=[Depends(require_permission("company.access"))])
+def export_report(
+    request: ReportExportRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    _company_for_user(db, request.company_id, current_user)
+    _require_export_module_access(db, current_user, request.module_code)
+    try:
+        maximum_rows = policy(db, request.company_id, "reports.max_export_rows")
+        include_filters = policy(db, request.company_id, "reports.include_filters_in_export")
+        default_format = policy(db, request.company_id, "reports.default_export_format")
+    except Exception:
+        raise HTTPException(503, "Report export policy could not be verified; export is denied") from None
+    if isinstance(maximum_rows, bool) or not isinstance(maximum_rows, int) or not 100 <= maximum_rows <= 100000:
+        raise HTTPException(503, "Report export row-limit policy is invalid")
+    if not isinstance(include_filters, bool):
+        raise HTTPException(503, "Report export filter policy is invalid")
+    selected_format = request.format or default_format
+    if selected_format not in {"json", "text"}:
+        raise HTTPException(503, "Report export format policy is invalid")
+    if len(request.rows) > maximum_rows:
+        raise HTTPException(413, f"Export contains {len(request.rows)} rows; company limit is {maximum_rows}")
+    body, media_type = _render_export(
+        title=request.title,
+        rows=request.rows,
+        filters=request.filters,
+        export_format=selected_format,
+        include_filters=include_filters,
+    )
+    safe_filename = "report.json" if selected_format == "json" else "report.txt"
+    return Response(
+        content=body,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{safe_filename}"'},
+    )
+
+
 @router.post("/preview")
 def preview_report(payload: ReportPayload, current_user: User = Depends(get_current_user)) -> dict[str, Any]:
     body = "\n".join(f"{key}: {value}" for key, value in payload.data.items()) if payload.format == "text" else json.dumps(payload.data, ensure_ascii=False, indent=2, default=str)
     return {"title": payload.title, "format": payload.format, "body": body}
 
 
-@router.post("/deliver")
+@router.post("/deliver", dependencies=[Depends(require_permission("company.write"))])
 def deliver_report(request: DeliveryRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict[str, Any]:
     _company_for_user(db, request.company_id, current_user)
     result = send_notification(
@@ -158,9 +257,10 @@ def deliver_report(request: DeliveryRequest, current_user: User = Depends(get_cu
             "delivery_id": delivery.get("id")}
 
 
-@router.post("/schedules", status_code=201)
+@router.post("/schedules", status_code=201, dependencies=[Depends(require_permission("company.write"))])
 def create_schedule(request: ScheduleRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict[str, Any]:
-    _company_for_user(db, request.company_id, current_user)
+    company = _company_for_user(db, request.company_id, current_user)
+    schedule_format = _resolve_schedule_format(db, company.id, request.format)
     try:
         next_run = calculate_next_run(request.schedule)
     except (ValueError, TypeError) as exc:
@@ -176,20 +276,52 @@ def create_schedule(request: ScheduleRequest, current_user: User = Depends(get_c
         raise HTTPException(409, "Report definition has no registered provider")
     elif definition.report_type.lower() != request.report_type.lower():
         raise HTTPException(409, "Report code already exists with a different report type")
-    delivery = ReportDelivery(company_id=request.company_id, report_definition_id=definition.id, channel=request.channel, destination=request.destination, schedule=request.schedule, format=request.format, filters_json=json.dumps(request.filters, ensure_ascii=False), next_run_at=next_run, delivery_key=uuid.uuid4().hex)
+    delivery = ReportDelivery(company_id=request.company_id, report_definition_id=definition.id, channel=request.channel, destination=request.destination, schedule=request.schedule, format=schedule_format, filters_json=json.dumps(request.filters, ensure_ascii=False), next_run_at=next_run, delivery_key=uuid.uuid4().hex)
     db.add(delivery)
     db.commit()
     db.refresh(delivery)
     return {"id": delivery.id, "report_definition_id": definition.id, "next_run_at": delivery.next_run_at, "status": "scheduled"}
 
 
-@router.get("/schedules")
+@router.get("/schedules", dependencies=[Depends(require_permission("company.access"))])
 def list_schedules(company_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
     return list(db.scalars(select(ReportDelivery).where(ReportDelivery.company_id == company_id).order_by(ReportDelivery.id.desc()).limit(500)).all())
 
 
-@router.post("/ai/analyze")
+@router.post("/schedules/{delivery_id}/resume", dependencies=[Depends(require_permission("company.write"))])
+def resume_schedule(
+    delivery_id: int,
+    request: ScheduleResumeRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    company = _company_for_user(db, request.company_id, current_user)
+    delivery = db.scalar(
+        select(ReportDelivery).where(
+            ReportDelivery.id == delivery_id,
+            ReportDelivery.company_id == company.id,
+        )
+    )
+    if delivery is None:
+        raise HTTPException(404, "Scheduled report was not found for this company")
+    # Reuse the same fail-closed policy and format validation as schedule creation.
+    _resolve_schedule_format(db, company.id, delivery.format)
+    try:
+        delivery.next_run_at = calculate_next_run(delivery.schedule)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    delivery.is_active = True
+    delivery.last_status = None
+    delivery.last_error = None
+    delivery.locked_until = None
+    delivery.locked_by = None
+    db.commit()
+    db.refresh(delivery)
+    return {"id": delivery.id, "next_run_at": delivery.next_run_at, "status": "scheduled"}
+
+
+@router.post("/ai/analyze", dependencies=[Depends(require_permission("accounting.access"))])
 def analyze_report(
     request: AIAnalysisRequest,
     current_user: User = Depends(get_current_user),
