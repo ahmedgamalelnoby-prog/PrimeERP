@@ -45,7 +45,7 @@ function NavigationNode({ item, pathname, onNavigate, forceExpanded, depth, isAr
         <span className="flex min-w-0 items-center gap-3">{Icon && <Icon className="h-[18px] w-[18px] shrink-0 text-slate-400 group-hover:text-cyan-300" />}<span className="truncate">{isArabic ? item.labelAr : item.label}</span></span>
         <ChevronDown className={["h-4 w-4 shrink-0 text-slate-500 transition-transform", isExpanded ? "rotate-180" : ""].join(" ")} />
       </button>
-      {isExpanded && <div className="mr-4 space-y-1 border-r border-white/10 pr-3">
+      {isExpanded && <div className={["space-y-1", isArabic ? "mr-4 border-r pr-3" : "ml-4 border-l pl-3", "border-white/10"].join(" ")}>
         {item.children?.map((child) => <NavigationNode key={child.id} item={child} pathname={pathname} onNavigate={onNavigate} forceExpanded={forceExpanded} depth={depth + 1} isArabic={isArabic} openTopGroup={openTopGroup} setOpenTopGroup={setOpenTopGroup} />)}
       </div>}
     </div>;
@@ -92,9 +92,12 @@ export default function AppSidebar({ open, onClose }: AppSidebarProps) {
         <div className="mt-5 flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2"><Activity className="h-4 w-4 text-emerald-300" /><span className="text-xs font-medium text-slate-300">{isArabic ? "مساحة العمل" : "Workspace"}</span><span className="mr-auto flex items-center gap-1.5 text-[10px] text-emerald-300"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> {isArabic ? "متصل" : "Online"}</span></div>
       </div>
       <div className="px-4 pb-3 pt-4"><label htmlFor="primeerp-navigation-search" className="sr-only">{isArabic ? "ابحث في القائمة" : "Search navigation"}</label><div className="relative">
-        <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-        <Input id="primeerp-navigation-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={isArabic ? "ابحث عن شاشة أو موديول..." : "Search screens or modules..."} className="h-10 border-white/10 bg-white/[0.06] pr-9 text-xs text-white placeholder:text-slate-500 focus-visible:ring-cyan-400/50" />
-        {search && <button type="button" aria-label={isArabic ? "مسح البحث" : "Clear search"} onClick={() => setSearch("")} className="absolute left-2 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:text-white"><X className="h-3.5 w-3.5" /></button>}
+        <Search className={[
+          "pointer-events-none absolute top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500",
+          isArabic ? "right-3" : "left-3",
+        ].join(" ")} />
+        <Input id="primeerp-navigation-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={isArabic ? "ابحث عن شاشة أو موديول..." : "Search screens or modules..."} className={["h-10 border-white/10 bg-white/[0.06] text-xs text-white placeholder:text-slate-500 focus-visible:ring-cyan-400/50", isArabic ? "pr-9 pl-3" : "pl-9 pr-3"].join(" ")} />
+        {search && <button type="button" aria-label={isArabic ? "مسح البحث" : "Clear search"} onClick={() => setSearch("")} className={["absolute top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:text-white", isArabic ? "left-2" : "right-2"].join(" ")}><X className="h-3.5 w-3.5" /></button>}
       </div></div>
       <nav aria-label={isArabic ? "القائمة الرئيسية" : "Main navigation"} className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 pt-1 [scrollbar-color:rgba(148,163,184,.25)_transparent] [scrollbar-width:thin]">
         <p className="mb-3 px-3 text-[10px] font-bold tracking-[0.16em] text-slate-500">{search ? (isArabic ? "نتائج البحث" : "Search results") : (isArabic ? "إدارة الأعمال" : "Business management")}</p>
