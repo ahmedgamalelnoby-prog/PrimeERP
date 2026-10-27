@@ -57,7 +57,8 @@ export default function CompanyPolicySettingsPage({ categoryFilter }: { category
 
   useEffect(() => {
     const requestedCategory = searchParams.get("category");
-    if (categoryFilter) { setActiveCategory(categoryFilter); return; }\n    if (requestedCategory) setActiveCategory(requestedCategory);
+    if (categoryFilter) { setActiveCategory(categoryFilter); return; }
+    if (requestedCategory) setActiveCategory(requestedCategory);
   }, [searchParams, categoryFilter]);
 
   useEffect(() => {
