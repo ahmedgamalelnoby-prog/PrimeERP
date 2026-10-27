@@ -57,7 +57,7 @@ function NavigationNode({ item, pathname, onNavigate, forceExpanded, depth, isAr
   ].join(" ")}>
     {Icon && <Icon className="h-[18px] w-[18px] shrink-0 text-slate-400 transition-colors group-hover:text-cyan-300" />}
     <span className="truncate">{isArabic ? item.labelAr : item.label}</span>
-    {item.isNew && <span className="mr-auto rounded-full border border-cyan-300/20 bg-cyan-300/10 px-1.5 py-0.5 text-[9px] font-bold text-cyan-200">جديد</span>}
+    {item.isNew && <span className="mr-auto rounded-full border border-cyan-300/20 bg-cyan-300/10 px-1.5 py-0.5 text-[9px] font-bold text-cyan-200">{isArabic ? "جديد" : "New"}</span>}
   </NavLink>;
 }
 
@@ -79,7 +79,7 @@ export default function AppSidebar({ open, onClose }: AppSidebarProps) {
   }, [location.pathname, navigation]);
 
   return <>
-    {open && <button type="button" aria-label="إغلاق القائمة" className="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-sm lg:hidden" onClick={onClose} />}
+    {open && <button type="button" aria-label={isArabic ? "إغلاق القائمة" : "Close navigation"} className="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-sm lg:hidden" onClick={onClose} />}
     <aside className={["fixed top-0 z-50 flex h-screen w-[286px] flex-col overflow-hidden border-slate-800 bg-[#0b1730] text-white shadow-2xl shadow-slate-950/20 transition-transform duration-300", isArabic ? "right-0 border-l" : "left-0 border-r", open ? "translate-x-0" : isArabic ? "translate-x-full" : "-translate-x-full", "lg:translate-x-0"].join(" ")}>
       <div className="relative overflow-hidden border-b border-white/10 px-5 pb-5 pt-5">
         <div className="absolute -left-10 -top-14 h-32 w-32 rounded-full bg-cyan-400/10 blur-3xl" />
@@ -87,16 +87,16 @@ export default function AppSidebar({ open, onClose }: AppSidebarProps) {
           <div className="flex items-center gap-3"><div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-200/20 bg-gradient-to-br from-blue-500 to-cyan-400 shadow-lg shadow-blue-950/40"><Command className="h-6 w-6 text-white" /></div>
             <div><div className="text-xl font-black tracking-tight">Prime<span className="text-cyan-300">ERP</span></div><div className="mt-0.5 text-[10px] font-semibold tracking-[0.16em] text-slate-400">BUSINESS OPERATING SYSTEM</div></div>
           </div>
-          <button type="button" className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-white/10 hover:text-white lg:hidden" onClick={onClose} aria-label="إغلاق القائمة"><X className="h-5 w-5" /></button>
+          <button type="button" className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-white/10 hover:text-white lg:hidden" onClick={onClose} aria-label={isArabic ? "إغلاق القائمة" : "Close navigation"}><X className="h-5 w-5" /></button>
         </div>
         <div className="mt-5 flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2"><Activity className="h-4 w-4 text-emerald-300" /><span className="text-xs font-medium text-slate-300">{isArabic ? "مساحة العمل" : "Workspace"}</span><span className="mr-auto flex items-center gap-1.5 text-[10px] text-emerald-300"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> {isArabic ? "متصل" : "Online"}</span></div>
       </div>
-      <div className="px-4 pb-3 pt-4"><label htmlFor="primeerp-navigation-search" className="sr-only">ابحث في القائمة</label><div className="relative">
+      <div className="px-4 pb-3 pt-4"><label htmlFor="primeerp-navigation-search" className="sr-only">{isArabic ? "ابحث في القائمة" : "Search navigation"}</label><div className="relative">
         <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
         <Input id="primeerp-navigation-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={isArabic ? "ابحث عن شاشة أو موديول..." : "Search screens or modules..."} className="h-10 border-white/10 bg-white/[0.06] pr-9 text-xs text-white placeholder:text-slate-500 focus-visible:ring-cyan-400/50" />
-        {search && <button type="button" aria-label="مسح البحث" onClick={() => setSearch("")} className="absolute left-2 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:text-white"><X className="h-3.5 w-3.5" /></button>}
+        {search && <button type="button" aria-label={isArabic ? "مسح البحث" : "Clear search"} onClick={() => setSearch("")} className="absolute left-2 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:text-white"><X className="h-3.5 w-3.5" /></button>}
       </div></div>
-      <nav aria-label="القائمة الرئيسية" className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 pt-1 [scrollbar-color:rgba(148,163,184,.25)_transparent] [scrollbar-width:thin]">
+      <nav aria-label={isArabic ? "القائمة الرئيسية" : "Main navigation"} className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 pt-1 [scrollbar-color:rgba(148,163,184,.25)_transparent] [scrollbar-width:thin]">
         <p className="mb-3 px-3 text-[10px] font-bold tracking-[0.16em] text-slate-500">{search ? (isArabic ? "نتائج البحث" : "Search results") : (isArabic ? "إدارة الأعمال" : "Business management")}</p>
         <div className="space-y-1">{navigation.map((item) => <NavigationNode key={item.id} item={item} pathname={location.pathname} onNavigate={onClose} forceExpanded={Boolean(search)} depth={0} isArabic={isArabic} openTopGroup={openTopGroup} setOpenTopGroup={setOpenTopGroup} />)}
           {navigation.length === 0 && <p className="rounded-xl border border-dashed border-white/10 px-3 py-5 text-center text-xs text-slate-500">{isArabic ? "لا توجد نتائج مطابقة." : "No matching results."}</p>}</div>
