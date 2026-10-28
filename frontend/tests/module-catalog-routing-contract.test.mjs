@@ -13,6 +13,11 @@ const entitlementGuard = readRepoFile("frontend/src/app/router/EntitlementGuard.
 const moduleWorkbench = readRepoFile("frontend/src/modules/platform/pages/ModuleWorkbenchPage.tsx");
 const moduleRegistry = readRepoFile("backend/app/modules/platform/module_registry.py");
 const settingsRegistry = readRepoFile("backend/app/modules/company_settings/registry.py");
+const authSchema = readRepoFile("backend/app/modules/identity/schemas/auth.py");
+const authRouter = readRepoFile("backend/app/modules/identity/api/router.py");
+const authService = readRepoFile("backend/app/modules/identity/services/authentication_service.py");
+const navigation = readRepoFile("frontend/src/app/navigation.ts");
+const sidebar = readRepoFile("frontend/src/components/layout/AppSidebar.tsx");
 
 function registryKeys(source) {
   return [...source.matchAll(/\{"key": "([^"]+)"/g)].map((match) => match[1]);
@@ -88,4 +93,15 @@ test("module workbench normalizes catalog aliases before registry lookup", () =>
     "the registry API lookup must use the normalized key");
   assert.ok(moduleWorkbench.includes('},[registryKey]);'),
     "the effect must refresh when the normalized registry key changes");
+});
+
+
+test("navigation filters permission-tagged entries using authenticated role grants", () => {
+  assert.ok(authSchema.includes("permissions: list[str] = Field(default_factory=list)"));
+  assert.ok(authRouter.includes('"permissions": permissions'));
+  assert.ok(authService.includes('"permissions": permission_names'));
+  assert.ok(navigation.includes("if (item.permission && !grantedNames.has(item.permission.toLowerCase())) return false"));
+  assert.ok(navigation.includes("permissionNames: string[] = []"));
+  assert.ok(sidebar.includes("user?.permissions ?? []"));
+  assert.ok(sidebar.includes("user?.permissions, user?.is_platform_admin"));
 });
