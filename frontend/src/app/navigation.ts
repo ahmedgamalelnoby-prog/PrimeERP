@@ -9,7 +9,7 @@ export const navigationItems: NavigationItem[] = [
  {id:"module-catalog",label:"Module Catalog",labelAr:"كتالوج الموديولات",type:"item",path:"/modules",icon:Boxes,module:"platform",visible:true,isNew:true,order:2},
  {id:"helpdesk",label:"AI Help Desk",labelAr:"الدعم الفني بالـAI",type:"item",path:"/helpdesk",icon:Contact,module:"helpdesk",visible:true,isNew:true,order:3},
  {id:"identity",label:"Identity & Access",labelAr:"المستخدمون والصلاحيات",type:"group",icon:ShieldCheck,module:"identity",visible:true,order:4,children:[
-  {id:"users",label:"Users",labelAr:"المستخدمون",type:"item",path:"/identity/users",icon:Users,permission:"users.view",module:"identity",visible:true,order:1},
+  {id:"users",label:"Users",labelAr:"المستخدمون",type:"item",path:"/identity/users",icon:Users,permission:"users.access",module:"identity",visible:true,order:1},
   {id:"roles",label:"Roles",labelAr:"الأدوار",type:"item",path:"/identity/roles",icon:UserCog,permission:"roles.view",module:"identity",visible:true,order:2},
   {id:"permissions",label:"Permissions",labelAr:"الصلاحيات",type:"item",path:"/identity/permissions",icon:CheckSquare,permission:"permissions.view",module:"identity",visible:true,order:3}]},
  {id:"organization",label:"Organization",labelAr:"إدارة المؤسسة",type:"group",icon:Building2,module:"organization",visible:true,order:5,children:[
