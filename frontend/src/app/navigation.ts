@@ -95,6 +95,17 @@ export function getVisibleNavigationItems(enabledModuleCodes: string[] = [], isP
     .filter((item) => item.type !== "group" || Boolean(item.children?.length));
 }
 
+export function getRequiredNavigationPermission(pathname: string): string | undefined {
+  const normalizedPath = pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
+  return flattenNavigationItems()
+    .filter((item) => item.path && item.permission)
+    .filter((item) => {
+      const itemPath = item.path!.length > 1 ? item.path!.replace(/\/+$/, "") : item.path!;
+      return normalizedPath === itemPath || normalizedPath.startsWith(itemPath + "/");
+    })
+    .sort((a, b) => (b.path?.length ?? 0) - (a.path?.length ?? 0))[0]?.permission;
+}
+
 export function findNavigationItemByPath(
   path: string,
   items: NavigationItem[] = navigationItems,
