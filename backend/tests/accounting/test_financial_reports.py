@@ -6,6 +6,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.modules.accounting.reports.service import FinancialReportService
+from app.modules.accounting.reports.router import validate_date_range
 
 from app.modules.accounting.reports.schemas import FinancialSummaryResponse, TrialBalanceRow
 
@@ -88,3 +89,18 @@ def test_financial_summary_uses_period_activity_and_cumulative_balance_sheet(mon
         (__import__("datetime").date(2026, 1, 1), __import__("datetime").date(2026, 1, 31)),
         (None, __import__("datetime").date(2026, 1, 31)),
     ]
+
+
+
+def test_financial_report_rejects_reversed_date_range():
+    with pytest.raises(HTTPException) as error:
+        validate_date_range(date(2026, 2, 1), date(2026, 1, 31))
+
+    assert error.value.status_code == 422
+    assert error.value.detail == "from_date must be on or before to_date"
+
+
+def test_financial_report_accepts_open_ended_date_ranges():
+    validate_date_range(date(2026, 1, 1), None)
+    validate_date_range(None, date(2026, 1, 31))
+    validate_date_range(date(2026, 1, 31), date(2026, 1, 31))
