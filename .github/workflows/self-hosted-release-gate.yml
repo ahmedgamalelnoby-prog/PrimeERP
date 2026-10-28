@@ -14,7 +14,7 @@ permissions:
 # One Windows runner is the canonical CI executor. If another commit arrives
 # while validation is running, the older run is obsolete and is cancelled.
 concurrency:
-  group: primeerp-self-hosted-release-gate-${{ github.event.pull_request.head.ref || github.ref }}
+  group: primeerp-self-hosted-release-gate-${{ github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
