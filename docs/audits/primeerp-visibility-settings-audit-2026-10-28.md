@@ -14,6 +14,7 @@ Reviewed GitHub branch `feature/primeerp-modern-ui-i18n-theme-settings-20261027`
 
 ### Follow-up required
 - Frontend entitlement guard now treats `/modules` (the catalog) as platform-only while checking `/modules/:moduleKey` against the tenant's enabled modules. It normalizes common hyphen/underscore aliases and fails closed for unknown workbench keys.
+- Added a backend contract test asserting both module-registry GET routes declare the `get_current_user` authentication dependency. This verifies route wiring at source level, not HTTP 401 behavior or role-specific authorization.
 - Continue authorization auditing at the API level, and add live platform-admin/tenant session tests. The navigation helper filters by enabled modules but does not itself evaluate each item's `permission` field; frontend checks are not a substitute for backend authorization.
 - Several routes still use generic pages or the registry workbench. These are explicitly marked as in progress from the catalog, and need domain-specific screens and workflow tests before being described as complete.
 - Browser smoke tests must cover platform-admin and tenant users, direct URL entry, refresh on nested routes, and denied module entitlements.
@@ -51,3 +52,9 @@ The local commit `3a5e17b2` was not present on the GitHub feature branch at the 
 - Reverted those two statuses to `catalog` and updated the frontend registry-count contract to **72 runtime / 3 catalog**. This preserves the existing backend policy contract instead of weakening tests to match an unverified status.
 - The Windows self-hosted release gate passed on commit `2e6c59e4`, including backend unit tests, Salla/shipping contracts, Alembic graph/import smoke, frontend install/build, Compose validation, production image builds, PostgreSQL effective-date guard tests, service startup, and runtime health checks.
 - After workbench alias normalization and its contract test were added, the release gate passed again on commit `dd3f53bf` (workflow run `40674285261`). The separate browser/API authorization smoke tests remain outstanding.
+
+
+## Latest authorization contract check — 2026-10-28
+- Added `test_module_registry_api_requires_authenticated_user_dependency` to ensure `/platform/modules` and `/platform/modules/{module_key}` both retain the authenticated-user dependency in FastAPI route metadata.
+- CI was queued for commit `fad7d83efbf99e684bfbe7f4ac1012696fac46a1` after this test was added. Do not treat the new test as passed until that workflow finishes.
+- This test does not yet exercise an unauthenticated HTTP request, a tenant session, or a platform-admin session. Those require live/request-level coverage.
