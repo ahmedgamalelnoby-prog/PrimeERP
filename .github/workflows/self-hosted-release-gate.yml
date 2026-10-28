@@ -117,6 +117,22 @@ jobs:
           }
           docker run --rm hello-world
 
+      - name: Reclaim stale PrimeERP CI containers
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # A previous cancelled run can leave containers attached to networks.
+          # Remove only containers explicitly owned by older PrimeERP CI runs.
+          $currentPrefix = "primeerp-ci-$env:GITHUB_RUN_ID"
+          $containers = @(docker ps -a --format '{{.Names}}' | Where-Object {
+            $_ -like 'primeerp-ci-*' -and $_ -notlike "$currentPrefix*"
+          })
+          foreach ($container in $containers) {
+            Write-Host "Removing stale PrimeERP CI container: $container"
+            docker rm -f $container
+            if ($LASTEXITCODE -ne 0) { Write-Warning "Could not remove container $container; continuing." }
+          }
+
       - name: Reclaim stale PrimeERP CI networks
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
