@@ -4,7 +4,7 @@ import { useAuth } from "@/modules/identity/hooks/useAuth";
 const CORE_PATHS = ["/dashboard", "/users", "/roles", "/permissions", "/identity", "/companies", "/branches", "/settings", "/helpdesk"];
 // The catalog itself is platform administration. Individual /modules/:moduleKey
 // workbench routes are tenant module pages and must use normal entitlements.
-const PLATFORM_PATHS = ["/modules", "/saas", "/platform/plans", "/developer", "/roles", "/permissions"];
+const PLATFORM_PATHS = ["/modules", "/saas", "/platform/plans", "/developer", "/roles", "/permissions", "/identity/roles", "/identity/permissions"];
 
 const PERMISSION_PATHS: Array<[string, string]> = [
   // The user API explicitly uses users.access for tenant-scoped user administration.
