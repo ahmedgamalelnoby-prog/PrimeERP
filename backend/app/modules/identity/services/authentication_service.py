@@ -56,6 +56,12 @@ class AuthenticationService:
             self._ensure_subscription_allows_login(tenant, subscription)
             enabled_modules = self._get_enabled_modules(db, tenant.id)
 
+        permission_names = [
+            permission.name
+            for permission in (user.role.permissions if user.role and user.role.is_active else [])
+            if permission.is_active
+        ]
+
         user.last_login = datetime.now(timezone.utc)
         access_token, expires_in = token_service.create_access_token(user)
         refresh_token = refresh_token_service.issue(db, user.id)
@@ -85,6 +91,7 @@ class AuthenticationService:
                 "tenant_status": tenant.status if tenant else None,
                 "subscription_status": subscription.status if subscription else None,
                 "enabled_modules": enabled_modules,
+                "permissions": permission_names,
             },
         }
 
