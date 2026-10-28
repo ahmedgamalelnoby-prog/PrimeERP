@@ -9,6 +9,7 @@ const readRepoFile = (path) => readFileSync(resolve(here, "../../", path), "utf8
 
 const catalogPage = readRepoFile("frontend/src/modules/platform/pages/ModuleCatalogPage.tsx");
 const router = readRepoFile("frontend/src/app/router/AppRouter.tsx");
+const entitlementGuard = readRepoFile("frontend/src/app/router/EntitlementGuard.tsx");
 const moduleRegistry = readRepoFile("backend/app/modules/platform/module_registry.py");
 const settingsRegistry = readRepoFile("backend/app/modules/company_settings/registry.py");
 
@@ -59,4 +60,17 @@ test("company settings registry counts and integration status remain explicit", 
     "hr.biometric_sync_interval_minutes",
   ]);
   assert.equal(new Set(keys).size, keys.length, "company setting keys must be unique");
+});
+
+test("tenant module workbench routes enforce module entitlements without blocking enabled tenants", () => {
+  assert.ok(entitlementGuard.includes('pathname === path || (path !== "/modules" && matchesPath(pathname, path))'),
+    "the module catalog must be platform-only without treating every workbench path as the catalog");
+  assert.ok(entitlementGuard.includes('if (pathname.startsWith("/modules/"))'),
+    "generic module routes need their own entitlement decision");
+  assert.ok(entitlementGuard.includes('WORKBENCH_ALIASES[decodedKey] || decodedKey.replace(/-/g, "_")'),
+    "hyphenated module aliases must resolve to the backend entitlement key");
+  assert.ok(entitlementGuard.includes('user.enabled_modules?.includes(moduleCode) || user.enabled_modules?.includes(decodedKey)'),
+    "a tenant with the matching module entitlement must be able to open its workbench");
+  assert.ok(entitlementGuard.includes('if (isPlatformAdmin) return <Outlet />'),
+    "platform administrators retain access to module workbench routes");
 });
