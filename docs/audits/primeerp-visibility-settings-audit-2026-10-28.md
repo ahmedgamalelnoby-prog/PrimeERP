@@ -108,3 +108,25 @@ This pass is a source-code review, not a live end-to-end certification.
 - Both summary and trial-balance endpoints now reject `from_date > to_date` with HTTP 422 instead of returning misleading empty or partial report data.
 - Regression tests cover reversed dates and valid open-ended/equal-date ranges.
 - The latest release-gate run must complete before these additional changes are considered CI-verified.
+
+
+
+### Core backend file-integrity inventory (2026-10-28)
+A recursive Git tree inventory was run against branch `feature/primeerp-completion-visibility-20261028`. This is a file-presence/size scan, not a claim that every zero-byte file is a defect; package markers and intentional placeholders may legitimately be empty. The scan is useful for prioritizing workflow verification because empty domain entry points cannot implement a transaction by themselves.
+
+| Domain folder | Tracked Python/files scanned | Zero-byte files | Zero-byte domain entry points (router/service/models/schemas/repository/api) |
+|---|---:|---:|---:|
+| `backend/app/modules/sales/` | 47 | 42 | 32 |
+| `backend/app/modules/inventory/` | 194 | 122 | 55 |
+| `backend/app/modules/accounting/` | 312 | 245 | 112 |
+
+- Sales invoice, sales order, quotation, return, and price-list folders include zero-byte core files. Do not treat those submodules as complete without tracing the actual mounted API routes and their working implementation elsewhere.
+- Inventory has numerous zero-byte core entry points across stock, categories, units, recipes, food cost, transfers, and waste. Verify the actual router registration and API implementation before claiming stock movement lifecycle support.
+- Accounting also contains many empty submodule scaffolds. The financial-report implementation under review is separate from these scaffolds; its passing report tests do not certify journal entry, general ledger, payments, bank reconciliation, fixed assets, tax, or depreciation lifecycles.
+- These counts are source-tree measurements for this branch and may include intentional scaffolding. They must be reconciled against application router registration and existing alternate implementations before deleting files or generating replacement code.
+
+### Next implementation gate
+1. Trace the actual FastAPI router registration for sales, inventory, and accounting; distinguish mounted endpoints from unused scaffolds.
+2. For each mounted workflow, identify its concrete service/model/database transaction path and test the full lifecycle with tenant isolation.
+3. Implement one workflow at a time only where the current implementation is demonstrably missing, preserving existing models/migrations and avoiding parallel duplicate APIs.
+4. Keep the PR unmerged until the release gate passes for the latest commit and live role-based/browser smoke tests are recorded.
