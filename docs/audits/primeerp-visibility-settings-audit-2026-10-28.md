@@ -37,6 +37,9 @@ The local commit `3a5e17b2` was not present on the GitHub feature branch at the 
 ## Verification status
 - Static source review: completed for the module registry, catalog, navigation, routes, and company-settings registry.
 - Frontend build/test/audit: previously passed on the user's local checkout after the dependency upgrade, but those results do not apply to this branch's older dependency manifest.
+- Authenticated-user responses now expose active permission names assigned through the user's active role; the navigation uses these names to filter permission-tagged entries.
+- The route guard now checks required permissions for core and module URLs before rendering protected screens. This is UI defense-in-depth only; backend API dependencies remain the security boundary.
+- Release-gate run `40719154712` failed at Docker Compose network creation, not application tests: Docker reported `all predefined address pools have been fully subnetted`. A workflow preflight now removes only empty stale networks named `primeerp-ci-*`; a fresh CI run must verify this fix.
 - Live browser/API authorization tests: not run.
 - Merge: not performed; keep changes in a reviewable pull request until CI and smoke tests pass.
 
