@@ -79,14 +79,14 @@ export default function EntitlementGuard() {
   }
 
   const navigationPermission = getRequiredNavigationPermission(pathname);
-  if (navigationPermission && !isPlatformAdmin && !user.permissions?.includes(navigationPermission)) {
+  if (navigationPermission && !isPlatformAdmin && !user.permissions?.some((permission) => permission.trim().toLowerCase() === navigationPermission.toLowerCase())) {
     return <AccessDenied title="لا تملك الصلاحية المطلوبة" detail="حسابك لا يملك الإذن اللازم لفتح هذه الشاشة. اطلب من مسؤول النظام مراجعة صلاحيات دورك." />;
   }
 
   const permissionRule = PERMISSION_PATHS.find(([prefix]) => matchesPath(pathname, prefix));
   if (permissionRule && !isPlatformAdmin) {
     const [, requiredPermission] = permissionRule;
-    if (!user.permissions?.includes(requiredPermission)) {
+    if (!user.permissions?.some((permission) => permission.trim().toLowerCase() === requiredPermission.toLowerCase())) {
       return <AccessDenied title="لا تملك الصلاحية المطلوبة" detail="حسابك لا يملك الإذن اللازم لفتح هذه الشاشة. اطلب من مسؤول النظام مراجعة صلاحيات دورك." />;
     }
   }
