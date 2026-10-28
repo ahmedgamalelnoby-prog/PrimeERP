@@ -12,7 +12,7 @@ This is a static Git tree audit of branch `feature/primeerp-completion-visibilit
 | `backend/app/modules/inventory/` | 194 | 122 | 72 |
 | `backend/app/modules/purchases/` | 0 | 0 | 0 |
 
-The purchases path does not exist under `backend/app/modules/purchases/` on this branch. Before implementation, confirm whether purchasing is implemented under another module path rather than assuming it is absent from the whole system.
+The purchases path does not exist under `backend/app/modules/purchases/` on this branch. A repository-tree search found purchase-related migrations and contract tests under `backend/app/modules/commerce/` and `backend/tests/commerce/`; treat Commerce as the current canonical implementation candidate and audit its real order/receipt/bill lifecycle before creating a duplicate purchases module.
 
 At least **89 zero-byte files** in Sales and Inventory have core implementation names such as `router.py`, `service.py`, `models.py`, `schemas.py`, `repository.py`, or `api.py`. Examples include:
 - Sales invoices: `backend/app/modules/sales/invoices/{models.py,router.py,schemas.py,service.py}`
@@ -24,7 +24,7 @@ Accounting also contains many zero-byte submodule files. However, a separate acc
 
 ## Priority and release implications
 1. **P0 — avoid false completion claims:** keep Sales invoice/order and Inventory stock/transfer/adjustment workflows marked in progress until their real API, persistence, authorization, and lifecycle tests are verified.
-2. **P1 — locate canonical purchasing implementation:** search module registration and router mounting for purchasing/procurement paths, then audit that actual implementation.
+2. **P1 — purchasing under Commerce:** audit the existing Commerce purchase order → receipt → supplier bill → accounting path, including company isolation, partial receipts, duplicate posting/idempotency, and reversal. Do not create a second purchases module until the canonical ownership is confirmed.
 3. **P1 — select one vertical slice at a time:** implement and test invoice lifecycle (draft → validated/posted → reversal/credit note), including company isolation, totals/tax validation, idempotent posting, and GL integration before broad scaffolding work.
 4. **P1 — inventory lifecycle:** prove stock movement invariants, non-negative-stock policy, warehouse/company isolation, and ledger/costing impact with DB-backed tests.
 5. **P2 — scaffold hygiene:** once canonical implementations are identified, remove unused empty placeholders or replace them with explicit, documented adapters. Do not bulk-fill files with stubs just to change the byte count.
