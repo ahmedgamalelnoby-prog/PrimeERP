@@ -96,3 +96,9 @@ This pass is a source-code review, not a live end-to-end certification.
 - The financial reporting service previously raised a plain `ValueError` when a requested company did not belong to the current tenant, which could surface as HTTP 500 rather than an authorization response.
 - The service now returns HTTP 403 for that cross-tenant access attempt, and a regression test asserts the status and detail.
 - This is a targeted authorization/error-contract fix; it does not replace the required live multi-tenant API integration tests.
+
+
+### Financial summary period semantics correction (2026-10-28)
+- Fixed a reporting defect where balance-sheet totals were calculated from only the selected period's movements whenever `from_date` was set. Profit-and-loss totals now use the selected period, while assets, liabilities, and equity use cumulative posted activity through `to_date`.
+- Added a regression test asserting period P&L totals and cumulative as-of balance-sheet totals use distinct date scopes.
+- Release-gate validation is required for this follow-up commit; it has not yet been certified by CI at the time of this note.
