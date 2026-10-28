@@ -57,5 +57,6 @@ The local commit `3a5e17b2` was not present on the GitHub feature branch at the 
 ## Latest authorization contract check — 2026-10-28
 - Added `test_module_registry_api_requires_authenticated_user_dependency` to ensure `/platform/modules` and `/platform/modules/{module_key}` both retain the authenticated-user dependency in FastAPI route metadata.
 - Added a request-level TestClient regression test requiring HTTP 401 from the list and detail endpoints when no access token is supplied.
-- CI is queued/running for the new test changes; do not treat the new tests as passed until the latest workflow finishes.
-- The new TestClient check covers unauthenticated requests, but tenant and platform-admin session behavior, entitlements, direct URL entry, and nested-route refresh still require role-specific/browser smoke coverage.
+- Windows self-hosted release gate passed on commit `405912bcd506284738c2808fac68ac0d9289cc70` (workflow run `40712260595`), including the new request-level authentication test.
+- The new TestClient check covers unauthenticated requests. Tenant and platform-admin session behavior, entitlement denial at the UI/API boundary, direct URL entry, and nested-route refresh still require role-specific/browser smoke coverage.
+- Code review confirmed the current `AuthenticatedUser` frontend contract contains `enabled_modules` but no permission list, and navigation entries' `permission` strings are not evaluated by `getVisibleNavigationItems`. Do not treat hidden navigation as security enforcement; backend endpoints must enforce permissions. Adding UI permission filtering requires a trustworthy permission payload or a dedicated permissions endpoint and should be tested against actual role assignments.
