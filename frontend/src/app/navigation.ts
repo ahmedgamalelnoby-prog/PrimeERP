@@ -68,8 +68,9 @@ export const navigationItems: NavigationItem[] = [
 
 const TENANT_CORE_NAVIGATION = new Set(["dashboard", "users", "companies", "branches", "settings", "company-policies", "helpdesk", "notifications"]);
 
-function isNavigationAllowed(item: NavigationItem, enabledModules: Set<string>, isPlatformAdmin: boolean): boolean {
+function isNavigationAllowed(item: NavigationItem, enabledModules: Set<string>, grantedNames: Set<string>, isPlatformAdmin: boolean): boolean {
   if (isPlatformAdmin) return true;
+  if (item.permission && !grantedNames.has(item.permission.toLowerCase())) return false;
   if (TENANT_CORE_NAVIGATION.has(item.id)) return true;
   if (item.id === "module-catalog" || item.id === "saas") return false;
   if (item.id === "reports") return enabledModules.has("reports");
@@ -79,15 +80,16 @@ function isNavigationAllowed(item: NavigationItem, enabledModules: Set<string>, 
   return true;
 }
 
-export function getVisibleNavigationItems(enabledModuleCodes: string[] = [], isPlatformAdmin = false): NavigationItem[] {
+export function getVisibleNavigationItems(enabledModuleCodes: string[] = [], isPlatformAdmin = false, permissionNames: string[] = []): NavigationItem[] {
   const enabledModules = new Set(enabledModuleCodes.map((code) => code.trim().toLowerCase()).filter(Boolean));
+  const grantedNames = new Set(permissionNames.map((name) => name.trim().toLowerCase()).filter(Boolean));
   return navigationItems
-    .filter((item) => item.visible !== false && isNavigationAllowed(item, enabledModules, isPlatformAdmin))
+    .filter((item) => item.visible !== false && isNavigationAllowed(item, enabledModules, grantedNames, isPlatformAdmin))
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
     .map((item) => ({
       ...item,
       children: item.children
-        ?.filter((child) => child.visible !== false && isNavigationAllowed(child, enabledModules, isPlatformAdmin))
+        ?.filter((child) => child.visible !== false && isNavigationAllowed(child, enabledModules, grantedNames, isPlatformAdmin))
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
     }))
     .filter((item) => item.type !== "group" || Boolean(item.children?.length));
