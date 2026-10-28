@@ -113,3 +113,14 @@ test("protected route metadata includes role grants before rendering pages", () 
   assert.ok(entitlementGuard.includes("user.permissions"));
   assert.ok(entitlementGuard.indexOf("permissionRule") < entitlementGuard.indexOf("if (CORE_PATHS.some"));
 });
+
+
+test("direct navigation to a permission-tagged screen checks the same role grant as the sidebar", () => {
+  assert.ok(navigation.includes("export function getRequiredNavigationPermission(pathname: string)"));
+  assert.ok(navigation.includes('normalizedPath.startsWith(itemPath + "/")'),
+    "nested paths should inherit the most specific navigation permission");
+  assert.ok(entitlementGuard.includes("getRequiredNavigationPermission(pathname)"),
+    "the route guard must enforce navigation permission metadata on direct URL entry");
+  assert.ok(entitlementGuard.includes("!user.permissions?.includes(navigationPermission)"),
+    "a user without the route grant must not render a permission-tagged page");
+});
