@@ -63,3 +63,30 @@ The local commit `3a5e17b2` was not present on the GitHub feature branch at the 
 - Windows self-hosted release gate passed on commit `405912bcd506284738c2808fac68ac0d9289cc70` (workflow run `40712260595`), including the new request-level authentication test.
 - The new TestClient check covers unauthenticated requests. Tenant and platform-admin session behavior, entitlement denial at the UI/API boundary, direct URL entry, and nested-route refresh still require role-specific/browser smoke coverage.
 - Code review confirmed the current `AuthenticatedUser` frontend contract contains `enabled_modules` but no permission list, and navigation entries' `permission` strings are not evaluated by `getVisibleNavigationItems`. Do not treat hidden navigation as security enforcement; backend endpoints must enforce permissions. Adding UI permission filtering requires a trustworthy permission payload or a dedicated permissions endpoint and should be tested against actual role assignments.
+
+## Targeted functional-gap pass — 2026-10-28
+
+This pass is a source-code review, not a live end-to-end certification.
+
+### Confirmed UI/workflow gaps
+- The generic `ModuleWorkbenchPage` is a module-registry information page (description, group, status, AI-help link); it does not itself implement the module's domain transactions. Catalog targets using this fallback must remain explicitly marked as in progress.
+- The report center deliberately disables several report entries because their concrete report pages are not present yet: general ledger/trial balance, treasury, sales, purchasing, profitability, inventory, stock counts, HR attendance/payroll, hospitality, leasing, and audit log. These must not be represented as operational reports until implemented and tested.
+- The router contains a generic fallback page for unknown routes. A successful SPA route render is not evidence of a working business workflow.
+- CRM, HR, POS, manufacturing, and common commerce screens do call backend APIs, but this source review did not execute their full create/edit/approve/post/report lifecycles against a live database. These workflows remain unverified rather than certified complete.
+
+### Authorization correction
+- Added a route-permission resolver that derives the required grant from the same navigation metadata used by the sidebar.
+- The route guard now checks that grant on direct URL entry as well as the existing tenant-module entitlement checks. Nested routes use the most specific matching navigation path.
+- Permission-name comparison is case-insensitive and trims whitespace.
+- Added a frontend contract test for direct route permission enforcement. This is a frontend UX/defense-in-depth check only; backend endpoint authorization remains authoritative.
+
+### CI reliability correction
+- The latest failing release-gate run had passed backend tests, frontend build, Compose validation, and production image builds. It failed before migrations because Docker reported `all predefined address pools have been fully subnetted`; the migration container was never created. This was an infrastructure/network allocation failure, not a migration assertion failure.
+- The workflow now removes only stale containers named with the dedicated `primeerp-ci-*` prefix before reclaiming empty stale networks with that same prefix. It does not prune unrelated Docker networks or containers.
+- The latest changes require a fresh release-gate run before the CI result can be considered verified.
+
+### Remaining verification required
+1. Run role-based browser checks for platform admin, tenant admin, and restricted tenant roles: sidebar visibility, direct URL entry, refresh, and API denial.
+2. Execute CRUD and lifecycle tests for sales/purchases, accounting posting, inventory movements, payroll approvals, attendance corrections, POS cash drawer/shift, and integration retries.
+3. Verify each company setting changes its owning workflow end-to-end; keep the three catalog-only settings listed above unverified until then.
+4. Replace generic workbench routes with domain-specific screens only after each workflow has a documented API contract and regression tests.
