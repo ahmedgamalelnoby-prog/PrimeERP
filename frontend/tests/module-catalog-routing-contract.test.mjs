@@ -121,6 +121,6 @@ test("direct navigation to a permission-tagged screen checks the same role grant
     "nested paths should inherit the most specific navigation permission");
   assert.ok(entitlementGuard.includes("getRequiredNavigationPermission(pathname)"),
     "the route guard must enforce navigation permission metadata on direct URL entry");
-  assert.ok(entitlementGuard.includes("!user.permissions?.includes(navigationPermission)"),
+  assert.ok(entitlementGuard.includes("permission.trim().toLowerCase() === navigationPermission.toLowerCase()"),
     "a user without the route grant must not render a permission-tagged page");
 });
