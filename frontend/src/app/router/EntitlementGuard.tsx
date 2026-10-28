@@ -2,6 +2,8 @@ import { Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "@/modules/identity/hooks/useAuth";
 
 const CORE_PATHS = ["/dashboard", "/users", "/roles", "/permissions", "/identity", "/companies", "/branches", "/settings", "/helpdesk"];
+// The catalog itself is platform administration. Individual /modules/:moduleKey
+// workbench routes are tenant module pages and must use normal entitlements.
 const PLATFORM_PATHS = ["/modules", "/saas", "/platform/plans", "/developer"];
 
 const PREFIX_TO_MODULE: Array<[string, string]> = [
@@ -25,6 +27,20 @@ const PREFIX_TO_MODULE: Array<[string, string]> = [
   ["/commerce", "commerce"],
   ["/treasury", "treasury"],
 ];
+
+const WORKBENCH_ALIASES: Record<string, string> = {
+  "cost-centers": "cost_centers",
+  cost_centers: "cost_centers",
+  einvoice: "einvoice",
+  "egyptian-einvoice": "einvoice",
+  "time-tracking": "time_tracking",
+  time_tracking: "time_tracking",
+  "work-orders": "work_orders",
+  work_orders: "work_orders",
+  "commercial-leasing": "commercial_leasing",
+  "real-estate": "real_estate",
+  real_estate: "real_estate",
+};
 
 function matchesPath(pathname: string, prefix: string): boolean {
   return pathname === prefix || pathname.startsWith(prefix + "/");
@@ -51,7 +67,7 @@ export default function EntitlementGuard() {
   const pathname = location.pathname;
   const isPlatformAdmin = Boolean(user.is_platform_admin || user.is_superuser);
 
-  if (PLATFORM_PATHS.some((path) => matchesPath(pathname, path)) && !isPlatformAdmin) {
+  if (PLATFORM_PATHS.some((path) => pathname === path || (path !== "/modules" && matchesPath(pathname, path))) && !isPlatformAdmin) {
     return <AccessDenied title="هذه المنطقة مخصصة لإدارة المنصة" detail="حساب العميل لا يملك صلاحية إدارة كتالوج PrimeERP أو الباقات والاستحقاقات." />;
   }
 
@@ -59,16 +75,32 @@ export default function EntitlementGuard() {
     return <Outlet />;
   }
 
+  // Resolve generic workbench pages through the same module entitlement as
+  // their dedicated-screen equivalents. Unknown keys fail closed for tenants.
+  if (pathname.startsWith("/modules/")) {
+    if (isPlatformAdmin) return <Outlet />;
+    const rawKey = pathname.slice("/modules/".length).split("/")[0];
+    let decodedKey = rawKey;
+    try {
+      decodedKey = decodeURIComponent(rawKey);
+    } catch {
+      return <AccessDenied title="الموديول غير معروف" detail="تعذر التحقق من الموديول المطلوب." />;
+    }
+    const moduleCode = WORKBENCH_ALIASES[decodedKey] || decodedKey.replace(/-/g, "_");
+    if (user.enabled_modules?.includes(moduleCode) || user.enabled_modules?.includes(decodedKey)) return <Outlet />;
+    return <AccessDenied title="الموديول غير متاح في باقتك" detail="هذا الموديول غير مفعّل لمساحة عملك الحالية، أو أن مفتاحه غير معروف. تواصل مع مسؤول الحساب لتفعيل الموديول." />;
+  }
+
   const rule = PREFIX_TO_MODULE.find(([prefix]) => matchesPath(pathname, prefix));
   if (!rule || isPlatformAdmin) return <Outlet />;
 
-  const [_, moduleCode] = rule;
+  const [, moduleCode] = rule;
   if (user.enabled_modules?.includes(moduleCode)) return <Outlet />;
 
   return (
     <AccessDenied
       title="الموديول غير متاح في باقتك"
-      detail={`هذا الموديول غير مفعّل لمساحة عملك الحالية. يمكنك التواصل مع مسؤول الحساب لترقية الباقة أو تفعيل الموديول.`}
+      detail="هذا الموديول غير مفعّل لمساحة عملك الحالية. يمكنك التواصل مع مسؤول الحساب لترقية الباقة أو تفعيل الموديول."
     />
   );
 }
