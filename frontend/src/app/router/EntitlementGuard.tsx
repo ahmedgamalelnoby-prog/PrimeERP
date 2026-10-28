@@ -6,6 +6,39 @@ const CORE_PATHS = ["/dashboard", "/users", "/roles", "/permissions", "/identity
 // workbench routes are tenant module pages and must use normal entitlements.
 const PLATFORM_PATHS = ["/modules", "/saas", "/platform/plans", "/developer"];
 
+const PERMISSION_PATHS: Array<[string, string]> = [
+  ["/users", "users.view"],
+  ["/identity/users", "users.view"],
+  ["/roles", "roles.view"],
+  ["/identity/roles", "roles.view"],
+  ["/permissions", "permissions.view"],
+  ["/identity/permissions", "permissions.view"],
+  ["/companies", "companies.view"],
+  ["/branches", "branches.view"],
+  ["/settings", "settings.view"],
+  ["/notifications", "company.write"],
+  ["/helpdesk", "helpdesk.view"],
+  ["/accounting", "accounting.view"],
+  ["/treasury", "treasury.view"],
+  ["/sales", "sales.view"],
+  ["/customers", "customers.view"],
+  ["/purchases", "purchase_orders.view"],
+  ["/purchasing", "purchase_orders.view"],
+  ["/inventory", "inventory.view"],
+  ["/products", "products.view"],
+  ["/shipping", "shipping.view"],
+  ["/crm", "crm.view"],
+  ["/hr", "hr.view"],
+  ["/pos", "pos.view"],
+  ["/manufacturing", "manufacturing.view"],
+  ["/commerce", "commerce.view"],
+  ["/mobile", "mobile.view"],
+  ["/reports", "reports.view"],
+  ["/enterprise", "enterprise.view"],
+  ["/commercial-leasing", "commercial_leasing.view"],
+  ["/hospitality", "hospitality.view"],
+];
+
 const PREFIX_TO_MODULE: Array<[string, string]> = [
   ["/accounting", "accounting"],
   ["/inventory", "inventory"],
@@ -69,6 +102,14 @@ export default function EntitlementGuard() {
 
   if (PLATFORM_PATHS.some((path) => pathname === path || (path !== "/modules" && matchesPath(pathname, path))) && !isPlatformAdmin) {
     return <AccessDenied title="هذه المنطقة مخصصة لإدارة المنصة" detail="حساب العميل لا يملك صلاحية إدارة كتالوج PrimeERP أو الباقات والاستحقاقات." />;
+  }
+
+  const permissionRule = PERMISSION_PATHS.find(([prefix]) => matchesPath(pathname, prefix));
+  if (permissionRule && !isPlatformAdmin) {
+    const [, requiredPermission] = permissionRule;
+    if (!user.permissions?.includes(requiredPermission)) {
+      return <AccessDenied title="لا تملك الصلاحية المطلوبة" detail="حسابك لا يملك الإذن اللازم لفتح هذه الشاشة. اطلب من مسؤول النظام مراجعة صلاحيات دورك." />;
+    }
   }
 
   if (CORE_PATHS.some((path) => matchesPath(pathname, path)) || pathname === "/") {
