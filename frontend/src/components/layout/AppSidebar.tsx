@@ -69,8 +69,8 @@ export default function AppSidebar({ open, onClose }: AppSidebarProps) {
   const [search, setSearch] = useState("");
   const [openTopGroup, setOpenTopGroup] = useState<string | null>(null);
   const navigation = useMemo(() => filterNavigation(
-    getVisibleNavigationItems(user?.enabled_modules ?? [], Boolean(user?.is_platform_admin || user?.is_superuser)), search,
-  ), [user?.enabled_modules, user?.is_platform_admin, user?.is_superuser, search]);
+    getVisibleNavigationItems(user?.enabled_modules ?? [], Boolean(user?.is_platform_admin || user?.is_superuser), user?.permissions ?? []), search,
+  ), [user?.enabled_modules, user?.permissions, user?.is_platform_admin, user?.is_superuser, search]);
   const isPlatformAdmin = Boolean(user?.is_platform_admin || user?.is_superuser);
 
   useEffect(() => {
