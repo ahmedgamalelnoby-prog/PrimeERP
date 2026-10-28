@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -73,8 +74,8 @@ def test_financial_summary_uses_period_activity_and_cumulative_balance_sheet(mon
         None,
         tenant_id=12,
         company_id=99,
-        from_date=__import__("datetime").date(2026, 1, 1),
-        to_date=__import__("datetime").date(2026, 1, 31),
+        from_date=date(2026, 1, 1),
+        to_date=date(2026, 1, 31),
     )
 
     assert summary.revenue == Decimal("100")
