@@ -90,3 +90,9 @@ This pass is a source-code review, not a live end-to-end certification.
 2. Execute CRUD and lifecycle tests for sales/purchases, accounting posting, inventory movements, payroll approvals, attendance corrections, POS cash drawer/shift, and integration retries.
 3. Verify each company setting changes its owning workflow end-to-end; keep the three catalog-only settings listed above unverified until then.
 4. Replace generic workbench routes with domain-specific screens only after each workflow has a documented API contract and regression tests.
+
+
+### Financial-report tenant isolation hardening (2026-10-28)
+- The financial reporting service previously raised a plain `ValueError` when a requested company did not belong to the current tenant, which could surface as HTTP 500 rather than an authorization response.
+- The service now returns HTTP 403 for that cross-tenant access attempt, and a regression test asserts the status and detail.
+- This is a targeted authorization/error-contract fix; it does not replace the required live multi-tenant API integration tests.
