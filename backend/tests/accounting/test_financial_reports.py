@@ -5,10 +5,9 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from app.modules.accounting.reports.service import FinancialReportService
 from app.modules.accounting.reports.router import validate_date_range
-
 from app.modules.accounting.reports.schemas import FinancialSummaryResponse, TrialBalanceRow
+from app.modules.accounting.reports.service import FinancialReportService
 
 
 def test_trial_balance_row_contract():
@@ -50,7 +49,6 @@ def test_financial_report_rejects_company_outside_tenant_with_forbidden_status()
     assert error.value.detail == "Company is outside the current tenant"
 
 
-
 def test_financial_summary_uses_period_activity_and_cumulative_balance_sheet(monkeypatch):
     service = FinancialReportService()
     calls = []
@@ -86,10 +84,9 @@ def test_financial_summary_uses_period_activity_and_cumulative_balance_sheet(mon
     assert summary.liabilities == Decimal("100")
     assert summary.equity == Decimal("200")
     assert calls == [
-        (__import__("datetime").date(2026, 1, 1), __import__("datetime").date(2026, 1, 31)),
+        (date(2026, 1, 1), date(2026, 1, 31)),
         (None, __import__("datetime").date(2026, 1, 31)),
     ]
-
 
 
 def test_financial_report_rejects_reversed_date_range():
