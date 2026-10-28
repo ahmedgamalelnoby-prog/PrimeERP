@@ -102,3 +102,9 @@ This pass is a source-code review, not a live end-to-end certification.
 - Fixed a reporting defect where balance-sheet totals were calculated from only the selected period's movements whenever `from_date` was set. Profit-and-loss totals now use the selected period, while assets, liabilities, and equity use cumulative posted activity through `to_date`.
 - Added a regression test asserting period P&L totals and cumulative as-of balance-sheet totals use distinct date scopes.
 - Release-gate validation is required for this follow-up commit; it has not yet been certified by CI at the time of this note.
+
+
+### Financial report date-range validation (2026-10-28)
+- Both summary and trial-balance endpoints now reject `from_date > to_date` with HTTP 422 instead of returning misleading empty or partial report data.
+- Regression tests cover reversed dates and valid open-ended/equal-date ranges.
+- The latest release-gate run must complete before these additional changes are considered CI-verified.
