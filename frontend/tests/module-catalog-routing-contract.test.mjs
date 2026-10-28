@@ -55,9 +55,11 @@ test("company settings registry counts and integration status remain explicit", 
   const catalogKeys = catalog.map((line) => line.match(/^\s*\("([^"]+)"/)?.[1]);
 
   assert.equal(entries.length, 75, "update this contract when settings are intentionally added or removed");
-  assert.equal(runtime.length, 74);
+  assert.equal(runtime.length, 72);
   assert.deepEqual(catalogKeys, [
+    "hr.attendance_source",
     "hr.biometric_sync_interval_minutes",
+    "pos.allow_open_cash_drawer",
   ]);
   assert.equal(new Set(keys).size, keys.length, "company setting keys must be unique");
 });
