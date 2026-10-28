@@ -4,39 +4,12 @@ import { useAuth } from "@/modules/identity/hooks/useAuth";
 const CORE_PATHS = ["/dashboard", "/users", "/roles", "/permissions", "/identity", "/companies", "/branches", "/settings", "/helpdesk"];
 // The catalog itself is platform administration. Individual /modules/:moduleKey
 // workbench routes are tenant module pages and must use normal entitlements.
-const PLATFORM_PATHS = ["/modules", "/saas", "/platform/plans", "/developer"];
+const PLATFORM_PATHS = ["/modules", "/saas", "/platform/plans", "/developer", "/roles", "/permissions"];
 
 const PERMISSION_PATHS: Array<[string, string]> = [
-  ["/users", "users.view"],
-  ["/identity/users", "users.view"],
-  ["/roles", "roles.view"],
-  ["/identity/roles", "roles.view"],
-  ["/permissions", "permissions.view"],
-  ["/identity/permissions", "permissions.view"],
-  ["/companies", "companies.view"],
-  ["/branches", "branches.view"],
-  ["/settings", "settings.view"],
-  ["/notifications", "company.write"],
-  ["/helpdesk", "helpdesk.view"],
-  ["/accounting", "accounting.view"],
-  ["/treasury", "treasury.view"],
-  ["/sales", "sales.view"],
-  ["/customers", "customers.view"],
-  ["/purchases", "purchase_orders.view"],
-  ["/purchasing", "purchase_orders.view"],
-  ["/inventory", "inventory.view"],
-  ["/products", "products.view"],
-  ["/shipping", "shipping.view"],
-  ["/crm", "crm.view"],
-  ["/hr", "hr.view"],
-  ["/pos", "pos.view"],
-  ["/manufacturing", "manufacturing.view"],
-  ["/commerce", "commerce.view"],
-  ["/mobile", "mobile.view"],
-  ["/reports", "reports.view"],
-  ["/enterprise", "enterprise.view"],
-  ["/commercial-leasing", "commercial_leasing.view"],
-  ["/hospitality", "hospitality.view"],
+  // The user API explicitly uses users.access for tenant-scoped user administration.
+  ["/users", "users.access"],
+  ["/identity/users", "users.access"],
 ];
 
 const PREFIX_TO_MODULE: Array<[string, string]> = [
@@ -100,7 +73,7 @@ export default function EntitlementGuard() {
   const pathname = location.pathname;
   const isPlatformAdmin = Boolean(user.is_platform_admin || user.is_superuser);
 
-  if (PLATFORM_PATHS.some((path) => pathname === path || (path !== "/modules" && matchesPath(pathname, path))) && !isPlatformAdmin) {
+  if (PLATFORM_PATHS.some((path) => pathname === path || (path !== "/modules" && matchesPath(pathname, path))) && !user.is_platform_admin) {
     return <AccessDenied title="هذه المنطقة مخصصة لإدارة المنصة" detail="حساب العميل لا يملك صلاحية إدارة كتالوج PrimeERP أو الباقات والاستحقاقات." />;
   }
 
