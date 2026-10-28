@@ -13,7 +13,8 @@ Reviewed GitHub branch `feature/primeerp-modern-ui-i18n-theme-settings-20261027`
 - Backend module status and UI screen readiness are separate signals. A registry status of `active` is not proof that every related workflow is complete.
 
 ### Follow-up required
-- Audit authorization at the route/API level, not only menu visibility. The current navigation helper filters by enabled modules; it does not itself evaluate each item's `permission` field.
+- Frontend entitlement guard now treats `/modules` (the catalog) as platform-only while checking `/modules/:moduleKey` against the tenant's enabled modules. It normalizes common hyphen/underscore aliases and fails closed for unknown workbench keys.
+- Continue authorization auditing at the API level, and add live platform-admin/tenant session tests. The navigation helper filters by enabled modules but does not itself evaluate each item's `permission` field; frontend checks are not a substitute for backend authorization.
 - Several routes still use generic pages or the registry workbench. These are explicitly marked as in progress from the catalog, and need domain-specific screens and workflow tests before being described as complete.
 - Browser smoke tests must cover platform-admin and tenant users, direct URL entry, refresh on nested routes, and denied module entitlements.
 
@@ -35,3 +36,8 @@ The local commit `3a5e17b2` was not present on the GitHub feature branch at the 
 - Frontend build/test/audit: previously passed on the user's local checkout after the dependency upgrade, but those results do not apply to this branch's older dependency manifest.
 - Live browser/API authorization tests: not run.
 - Merge: not performed; keep changes in a reviewable pull request until CI and smoke tests pass.
+
+## Follow-up implementation — tenant workbench entitlement fix
+- Fixed a route-guard conflict where the broad `/modules` platform-only rule also blocked every `/modules/:moduleKey` workbench from tenant users, even when the tenant had that module enabled.
+- Kept the catalog itself platform-only; workbench routes now resolve their module entitlement, support hyphen/underscore aliases, allow platform admins, and deny unknown/unentitled keys.
+- Added a source-contract test for the guard behavior. This is a static contract test; it is not a substitute for running the frontend test suite and real authenticated browser/API smoke tests.
