@@ -1,5 +1,8 @@
 from app.modules.identity.dependencies import get_current_user
+from fastapi.testclient import TestClient
+
 from app.modules.platform.api.router import router as module_registry_router
+from main import app
 from app.modules.platform.module_registry import REGISTRY_VERSION, get_module, list_modules
 
 
@@ -29,3 +32,11 @@ def test_module_registry_api_requires_authenticated_user_dependency():
     for route in protected_routes.values():
         dependency_calls = {dependency.call for dependency in route.dependant.dependencies}
         assert get_current_user in dependency_calls
+
+
+def test_module_registry_api_rejects_requests_without_access_token():
+    client = TestClient(app)
+
+    for path in ("/api/v1/platform/modules", "/api/v1/platform/modules/accounting"):
+        response = client.get(path)
+        assert response.status_code == 401, (path, response.status_code, response.text)
