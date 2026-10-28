@@ -1,5 +1,6 @@
 import { Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "@/modules/identity/hooks/useAuth";
+import { getRequiredNavigationPermission } from "@/app/navigation";
 
 const CORE_PATHS = ["/dashboard", "/users", "/roles", "/permissions", "/identity", "/companies", "/branches", "/settings", "/helpdesk"];
 // The catalog itself is platform administration. Individual /modules/:moduleKey
@@ -75,6 +76,11 @@ export default function EntitlementGuard() {
 
   if (PLATFORM_PATHS.some((path) => pathname === path || (path !== "/modules" && matchesPath(pathname, path))) && !user.is_platform_admin) {
     return <AccessDenied title="هذه المنطقة مخصصة لإدارة المنصة" detail="حساب العميل لا يملك صلاحية إدارة كتالوج PrimeERP أو الباقات والاستحقاقات." />;
+  }
+
+  const navigationPermission = getRequiredNavigationPermission(pathname);
+  if (navigationPermission && !isPlatformAdmin && !user.permissions?.includes(navigationPermission)) {
+    return <AccessDenied title="لا تملك الصلاحية المطلوبة" detail="حسابك لا يملك الإذن اللازم لفتح هذه الشاشة. اطلب من مسؤول النظام مراجعة صلاحيات دورك." />;
   }
 
   const permissionRule = PERMISSION_PATHS.find(([prefix]) => matchesPath(pathname, prefix));
