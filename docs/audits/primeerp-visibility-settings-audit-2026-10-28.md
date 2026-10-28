@@ -19,15 +19,13 @@ Reviewed GitHub branch `feature/primeerp-modern-ui-i18n-theme-settings-20261027`
 
 ## Company settings registry
 The live source registry currently defines **75 settings**, not 68:
-- **72** are marked `runtime`.
-- **3** remain `catalog`, meaning persisted/visible but not yet consumed by the owning workflow.
+- **74** are marked `runtime`.
+- **1** remains `catalog`, meaning persisted/visible but not yet consumed by the owning workflow.
 
-The remaining catalog settings are:
-- `hr.attendance_source`
+The remaining catalog setting is:
 - `hr.biometric_sync_interval_minutes`
-- `pos.allow_open_cash_drawer`
 
-Do not change a setting from `catalog` to `runtime` solely to improve the count. It should only be promoted after its owning workflow reads it and tests prove that the behavior changes accordingly.
+The attendance-source and cash-drawer policies were promoted to `runtime` because the HR attendance guard and POS cash-drawer authorization endpoint already consume them. Do not promote the remaining biometric polling interval until a real scheduled/connector workflow consumes it and tests prove the interval controls polling.
 
 ## Dependency/security commit
 The local commit `3a5e17b2` was not present on the GitHub feature branch at the time of this audit. Its Vite/React Router dependency changes must be pushed from the user's local checkout, then verified on GitHub and tested in CI before merge.
