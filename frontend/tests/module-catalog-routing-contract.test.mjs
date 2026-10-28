@@ -10,6 +10,7 @@ const readRepoFile = (path) => readFileSync(resolve(here, "../../", path), "utf8
 const catalogPage = readRepoFile("frontend/src/modules/platform/pages/ModuleCatalogPage.tsx");
 const router = readRepoFile("frontend/src/app/router/AppRouter.tsx");
 const entitlementGuard = readRepoFile("frontend/src/app/router/EntitlementGuard.tsx");
+const moduleWorkbench = readRepoFile("frontend/src/modules/platform/pages/ModuleWorkbenchPage.tsx");
 const moduleRegistry = readRepoFile("backend/app/modules/platform/module_registry.py");
 const settingsRegistry = readRepoFile("backend/app/modules/company_settings/registry.py");
 
@@ -75,4 +76,16 @@ test("tenant module workbench routes enforce module entitlements without blockin
     "a tenant with the matching module entitlement must be able to open its workbench");
   assert.ok(entitlementGuard.includes('if (isPlatformAdmin) return <Outlet />'),
     "platform administrators retain access to module workbench routes");
+});
+
+
+test("module workbench normalizes catalog aliases before registry lookup", () => {
+  assert.ok(moduleWorkbench.includes('"egyptian-einvoice":"einvoice"'),
+    "Egyptian e-invoice catalog aliases must resolve to the canonical registry key");
+  assert.ok(moduleWorkbench.includes('moduleKey.replace(/-/g,"_")'),
+    "hyphenated module keys must normalize to registry underscore keys");
+  assert.ok(moduleWorkbench.includes('encodeURIComponent(registryKey)'),
+    "the registry API lookup must use the normalized key");
+  assert.ok(moduleWorkbench.includes('},[registryKey]);'),
+    "the effect must refresh when the normalized registry key changes");
 });
