@@ -108,32 +108,55 @@ class FinancialReportService:
         from_date: date | None = None,
         to_date: date | None = None,
     ) -> FinancialSummaryResponse:
-        trial = self.trial_balance(
+        # Profit-and-loss values are period activity; balance-sheet values are
+        # cumulative balances as of the end date, not just activity in the period.
+        period_trial = self.trial_balance(
             db,
             tenant_id=tenant_id,
             company_id=company_id,
             from_date=from_date,
             to_date=to_date,
         )
+        balance_trial = period_trial
+        if from_date is not None:
+            balance_trial = self.trial_balance(
+                db,
+                tenant_id=tenant_id,
+                company_id=company_id,
+                from_date=None,
+                to_date=to_date,
+            )
+
         revenue = Decimal("0")
         expenses = Decimal("0")
         assets = Decimal("0")
         liabilities = Decimal("0")
         equity = Decimal("0")
 
-        for row in trial.rows:
+        for row in period_trial.rows:
             if row.financial_statement == "profit_and_loss":
-                if row.account_category in {"revenue", "income"} or row.normal_balance == "credit":
+                if row.account_category in {"revenue", "income"}:
+                    revenue += row.balance
+                elif row.account_category in {"expense", "expenses", "cost", "cost_of_sales"}:
+                    expenses += row.balance
+                elif row.normal_balance == "credit":
                     revenue += row.balance
                 else:
                     expenses += row.balance
-            elif row.financial_statement == "balance_sheet":
-                if row.account_category in {"asset", "assets"} or row.normal_balance == "debit":
-                    assets += row.balance
-                elif row.account_category in {"liability", "liabilities"}:
-                    liabilities += row.balance
-                else:
-                    equity += row.balance
+
+        for row in balance_trial.rows:
+            if row.financial_statement != "balance_sheet":
+                continue
+            if row.account_category in {"asset", "assets"}:
+                assets += row.balance
+            elif row.account_category in {"liability", "liabilities"}:
+                liabilities += row.balance
+            elif row.account_category in {"equity", "capital"}:
+                equity += row.balance
+            elif row.normal_balance == "debit":
+                assets += row.balance
+            else:
+                equity += row.balance
 
         return FinancialSummaryResponse(
             company_id=company_id,
@@ -144,6 +167,5 @@ class FinancialReportService:
             liabilities=liabilities,
             equity=equity,
         )
-
 
 financial_report_service = FinancialReportService()
