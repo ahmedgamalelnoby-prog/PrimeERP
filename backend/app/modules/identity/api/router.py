@@ -52,6 +52,11 @@ def get_me(
 
     subscription_status = None
     enabled_modules: list[str] = []
+    permissions = [
+        permission.name
+        for permission in (current_user.role.permissions if current_user.role and current_user.role.is_active else [])
+        if permission.is_active
+    ]
 
     if tenant:
         subscription = authentication_service._get_valid_subscription(
@@ -80,6 +85,7 @@ def get_me(
         "tenant_status": tenant.status if tenant else None,
         "subscription_status": subscription_status,
         "enabled_modules": enabled_modules,
+        "permissions": permissions,
     }
 
 
