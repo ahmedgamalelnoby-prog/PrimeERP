@@ -20,13 +20,15 @@ Reviewed GitHub branch `feature/primeerp-modern-ui-i18n-theme-settings-20261027`
 
 ## Company settings registry
 The live source registry currently defines **75 settings**, not 68:
-- **74** are marked `runtime`.
-- **1** remains `catalog`, meaning persisted/visible but not yet consumed by the owning workflow.
+- **72** are marked `runtime`.
+- **3** remain `catalog`, meaning visible/persistable but not proven to be consumed by a complete owning workflow.
 
-The remaining catalog setting is:
+The remaining catalog settings are:
+- `hr.attendance_source`
 - `hr.biometric_sync_interval_minutes`
+- `pos.allow_open_cash_drawer`
 
-The attendance-source and cash-drawer policies were promoted to `runtime` because the HR attendance guard and POS cash-drawer authorization endpoint already consume them. Do not promote the remaining biometric polling interval until a real scheduled/connector workflow consumes it and tests prove the interval controls polling.
+The release-gate backend tests explicitly require these three policies to remain catalog-only until a verified end-to-end consumer exists. A route guard or authorization endpoint alone does not prove that the selected attendance source changes the attendance workflow or that a physical cash drawer is opened through a configured terminal driver. Keep these statuses conservative until integration tests prove the full behavior.
 
 ## Dependency/security commit
 The local commit `3a5e17b2` was not present on the GitHub feature branch at the time of this audit. Its Vite/React Router dependency changes must be pushed from the user's local checkout, then verified on GitHub and tested in CI before merge.
@@ -41,3 +43,9 @@ The local commit `3a5e17b2` was not present on the GitHub feature branch at the 
 - Fixed a route-guard conflict where the broad `/modules` platform-only rule also blocked every `/modules/:moduleKey` workbench from tenant users, even when the tenant had that module enabled.
 - Kept the catalog itself platform-only; workbench routes now resolve their module entitlement, support hyphen/underscore aliases, allow platform admins, and deny unknown/unentitled keys.
 - Added a source-contract test for the guard behavior. This is a static contract test; it is not a substitute for running the frontend test suite and real authenticated browser/API smoke tests.
+
+
+## CI failure analysis and correction
+- The Windows release gate ran **761 passed, 2 failed, 2 skipped** backend tests. Both failures were in `tests/test_company_settings_registry.py` because attendance source and standalone cash-drawer opening were marked runtime despite the explicit catalog-only contract.
+- Reverted those two statuses to `catalog` and updated the frontend registry-count contract to **72 runtime / 3 catalog**. This preserves the existing backend policy contract instead of weakening tests to match an unverified status.
+- CI must be rerun against the new head to confirm the correction; this edit alone is not a passing test result.
