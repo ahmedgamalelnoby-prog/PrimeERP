@@ -105,3 +105,11 @@ test("navigation filters permission-tagged entries using authenticated role gran
   assert.ok(sidebar.includes("user?.permissions ?? []"));
   assert.ok(sidebar.includes("user?.permissions, user?.is_platform_admin"));
 });
+
+
+test("protected route metadata includes role grants before rendering pages", () => {
+  assert.ok(entitlementGuard.includes("PERMISSION_PATHS"));
+  assert.ok(entitlementGuard.includes("requiredPermission"));
+  assert.ok(entitlementGuard.includes("user.permissions"));
+  assert.ok(entitlementGuard.indexOf("permissionRule") < entitlementGuard.indexOf("if (CORE_PATHS.some"));
+});
