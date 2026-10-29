@@ -1,12 +1,12 @@
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import func, select, select
+from fastapi import HTTPException
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.modules.accounting.chart_of_accounts.models import AccountCombination, NaturalAccount
 from app.modules.accounting.journals.models import JournalEntry, JournalEntryLine
-from app.modules.companies.models import Company
 from app.modules.companies.models import Company
 from app.modules.accounting.reports.schemas import (
     FinancialSummaryResponse,
@@ -21,7 +21,7 @@ class FinancialReportService:
     def _assert_company(self, db: Session, *, tenant_id: int, company_id: int) -> None:
         company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == tenant_id))
         if company is None:
-            raise ValueError("Company is outside the current tenant")
+            raise HTTPException(status_code=403, detail="Company is outside the current tenant")
 
     def trial_balance(
         self,
@@ -108,32 +108,55 @@ class FinancialReportService:
         from_date: date | None = None,
         to_date: date | None = None,
     ) -> FinancialSummaryResponse:
-        trial = self.trial_balance(
+        # Profit-and-loss values are period activity; balance-sheet values are
+        # cumulative balances as of the end date, not just activity in the period.
+        period_trial = self.trial_balance(
             db,
             tenant_id=tenant_id,
             company_id=company_id,
             from_date=from_date,
             to_date=to_date,
         )
+        balance_trial = period_trial
+        if from_date is not None:
+            balance_trial = self.trial_balance(
+                db,
+                tenant_id=tenant_id,
+                company_id=company_id,
+                from_date=None,
+                to_date=to_date,
+            )
+
         revenue = Decimal("0")
         expenses = Decimal("0")
         assets = Decimal("0")
         liabilities = Decimal("0")
         equity = Decimal("0")
 
-        for row in trial.rows:
+        for row in period_trial.rows:
             if row.financial_statement == "profit_and_loss":
-                if row.account_category in {"revenue", "income"} or row.normal_balance == "credit":
+                if row.account_category in {"revenue", "income"}:
+                    revenue += row.balance
+                elif row.account_category in {"expense", "expenses", "cost", "cost_of_sales"}:
+                    expenses += row.balance
+                elif row.normal_balance == "credit":
                     revenue += row.balance
                 else:
                     expenses += row.balance
-            elif row.financial_statement == "balance_sheet":
-                if row.account_category in {"asset", "assets"} or row.normal_balance == "debit":
-                    assets += row.balance
-                elif row.account_category in {"liability", "liabilities"}:
-                    liabilities += row.balance
-                else:
-                    equity += row.balance
+
+        for row in balance_trial.rows:
+            if row.financial_statement != "balance_sheet":
+                continue
+            if row.account_category in {"asset", "assets"}:
+                assets += row.balance
+            elif row.account_category in {"liability", "liabilities"}:
+                liabilities += row.balance
+            elif row.account_category in {"equity", "capital"}:
+                equity += row.balance
+            elif row.normal_balance == "debit":
+                assets += row.balance
+            else:
+                equity += row.balance
 
         return FinancialSummaryResponse(
             company_id=company_id,
@@ -144,6 +167,5 @@ class FinancialReportService:
             liabilities=liabilities,
             equity=equity,
         )
-
 
 financial_report_service = FinancialReportService()

@@ -14,7 +14,7 @@ permissions:
 # One Windows runner is the canonical CI executor. If another commit arrives
 # while validation is running, the older run is obsolete and is cancelled.
 concurrency:
-  group: primeerp-self-hosted-release-gate-${{ github.event.pull_request.number || github.ref }}
+  group: primeerp-self-hosted-release-gate-${{ github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
@@ -116,6 +116,39 @@ jobs:
             throw 'Docker Desktop Linux engine is unavailable. Start Docker Desktop and switch to the desktop-linux context, then rerun the release gate.'
           }
           docker run --rm hello-world
+
+      - name: Reclaim stale PrimeERP CI containers
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # A previous cancelled run can leave containers attached to networks.
+          # Remove only containers explicitly owned by older PrimeERP CI runs.
+          $currentPrefix = "primeerp-ci-$env:GITHUB_RUN_ID"
+          $containers = @(docker ps -a --format '{{.Names}}' | Where-Object {
+            $_ -like 'primeerp-ci-*' -and $_ -notlike "$currentPrefix*"
+          })
+          foreach ($container in $containers) {
+            Write-Host "Removing stale PrimeERP CI container: $container"
+            docker rm -f $container
+            if ($LASTEXITCODE -ne 0) { Write-Warning "Could not remove container $container; continuing." }
+          }
+
+      - name: Reclaim stale PrimeERP CI networks
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Remove only empty networks left by interrupted PrimeERP CI runs.
+          $networks = @(docker network ls --format '{{.Name}}' | Where-Object { $_ -like 'primeerp-ci-*' -and $_ -ne "primeerp-ci-$env:GITHUB_RUN_ID" })
+          foreach ($network in $networks) {
+            $attached = docker network inspect -f '{{len .Containers}}' $network 2>$null
+            if ($LASTEXITCODE -eq 0 -and $attached -eq '0') {
+              Write-Host "Removing stale empty CI network: $network"
+              docker network rm $network
+              if ($LASTEXITCODE -ne 0) { Write-Warning "Could not remove network $network; continuing." }
+            } else {
+              Write-Host "Keeping network with attached containers or unavailable metadata: $network"
+            }
+          }
 
       - name: Prepare CI environment
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"

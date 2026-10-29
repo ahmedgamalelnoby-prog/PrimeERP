@@ -9,7 +9,7 @@ export const navigationItems: NavigationItem[] = [
  {id:"module-catalog",label:"Module Catalog",labelAr:"كتالوج الموديولات",type:"item",path:"/modules",icon:Boxes,module:"platform",visible:true,isNew:true,order:2},
  {id:"helpdesk",label:"AI Help Desk",labelAr:"الدعم الفني بالـAI",type:"item",path:"/helpdesk",icon:Contact,module:"helpdesk",visible:true,isNew:true,order:3},
  {id:"identity",label:"Identity & Access",labelAr:"المستخدمون والصلاحيات",type:"group",icon:ShieldCheck,module:"identity",visible:true,order:4,children:[
-  {id:"users",label:"Users",labelAr:"المستخدمون",type:"item",path:"/identity/users",icon:Users,permission:"users.view",module:"identity",visible:true,order:1},
+  {id:"users",label:"Users",labelAr:"المستخدمون",type:"item",path:"/identity/users",icon:Users,permission:"users.access",module:"identity",visible:true,order:1},
   {id:"roles",label:"Roles",labelAr:"الأدوار",type:"item",path:"/identity/roles",icon:UserCog,permission:"roles.view",module:"identity",visible:true,order:2},
   {id:"permissions",label:"Permissions",labelAr:"الصلاحيات",type:"item",path:"/identity/permissions",icon:CheckSquare,permission:"permissions.view",module:"identity",visible:true,order:3}]},
  {id:"organization",label:"Organization",labelAr:"إدارة المؤسسة",type:"group",icon:Building2,module:"organization",visible:true,order:5,children:[
@@ -54,6 +54,12 @@ export const navigationItems: NavigationItem[] = [
   {id:"saas-dashboard",label:"SaaS Overview",labelAr:"نظرة عامة",type:"item",path:"/saas",icon:Gauge,module:"saas",visible:true,order:1,isNew:true},
   {id:"plans",label:"Plans & Entitlements",labelAr:"الباقات والاستحقاقات",type:"item",path:"/platform/plans",icon:BadgeDollarSign,permission:"plans.view",module:"saas",visible:true,order:2},
  ]},
+ {id:"crm",label:"CRM",labelAr:"إدارة العملاء",type:"item",path:"/crm",icon:Contact,permission:"crm.view",module:"crm",visible:true,order:13},
+ {id:"hr",label:"Human Resources",labelAr:"الموارد البشرية",type:"item",path:"/hr",icon:Users,permission:"hr.view",module:"hr",visible:true,order:13},
+ {id:"pos",label:"Point of Sale",labelAr:"نقطة البيع",type:"item",path:"/pos",icon:Store,permission:"pos.view",module:"pos",visible:true,order:13},
+ {id:"manufacturing",label:"Manufacturing",labelAr:"التصنيع",type:"item",path:"/manufacturing",icon:Boxes,permission:"manufacturing.view",module:"manufacturing",visible:true,order:13},
+ {id:"commerce",label:"Commerce",labelAr:"التجارة",type:"item",path:"/commerce",icon:ShoppingCart,permission:"commerce.view",module:"commerce",visible:true,order:13},
+ {id:"mobile",label:"Mobile",labelAr:"الموبايل",type:"item",path:"/mobile",icon:Package,permission:"mobile.view",module:"mobile",visible:true,order:13},
  {id:"reports",label:"Reports",labelAr:"التقارير",type:"item",path:"/reports",icon:BarChart3,permission:"reports.view",module:"reports",visible:true,order:14},
  {id:"notifications",label:"Messages & Notifications",labelAr:"الرسائل والإشعارات",type:"item",path:"/notifications",icon:Bell,permission:"company.write",module:"settings",visible:true,order:14},
  {id:"settings",label:"Settings",labelAr:"الإعدادات",type:"item",path:"/settings/center",icon:Settings,permission:"settings.view",module:"settings",visible:true,order:15},
@@ -62,8 +68,9 @@ export const navigationItems: NavigationItem[] = [
 
 const TENANT_CORE_NAVIGATION = new Set(["dashboard", "users", "companies", "branches", "settings", "company-policies", "helpdesk", "notifications"]);
 
-function isNavigationAllowed(item: NavigationItem, enabledModules: Set<string>, isPlatformAdmin: boolean): boolean {
+function isNavigationAllowed(item: NavigationItem, enabledModules: Set<string>, grantedNames: Set<string>, isPlatformAdmin: boolean): boolean {
   if (isPlatformAdmin) return true;
+  if (item.permission && !grantedNames.has(item.permission.toLowerCase())) return false;
   if (TENANT_CORE_NAVIGATION.has(item.id)) return true;
   if (item.id === "module-catalog" || item.id === "saas") return false;
   if (item.id === "reports") return enabledModules.has("reports");
@@ -73,18 +80,30 @@ function isNavigationAllowed(item: NavigationItem, enabledModules: Set<string>, 
   return true;
 }
 
-export function getVisibleNavigationItems(enabledModuleCodes: string[] = [], isPlatformAdmin = false): NavigationItem[] {
+export function getVisibleNavigationItems(enabledModuleCodes: string[] = [], isPlatformAdmin = false, permissionNames: string[] = []): NavigationItem[] {
   const enabledModules = new Set(enabledModuleCodes.map((code) => code.trim().toLowerCase()).filter(Boolean));
+  const grantedNames = new Set(permissionNames.map((name) => name.trim().toLowerCase()).filter(Boolean));
   return navigationItems
-    .filter((item) => item.visible !== false && isNavigationAllowed(item, enabledModules, isPlatformAdmin))
+    .filter((item) => item.visible !== false && isNavigationAllowed(item, enabledModules, grantedNames, isPlatformAdmin))
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
     .map((item) => ({
       ...item,
       children: item.children
-        ?.filter((child) => child.visible !== false && isNavigationAllowed(child, enabledModules, isPlatformAdmin))
+        ?.filter((child) => child.visible !== false && isNavigationAllowed(child, enabledModules, grantedNames, isPlatformAdmin))
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
     }))
     .filter((item) => item.type !== "group" || Boolean(item.children?.length));
+}
+
+export function getRequiredNavigationPermission(pathname: string): string | undefined {
+  const normalizedPath = pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
+  return flattenNavigationItems()
+    .filter((item) => item.path && item.permission)
+    .filter((item) => {
+      const itemPath = item.path!.length > 1 ? item.path!.replace(/\/+$/, "") : item.path!;
+      return normalizedPath === itemPath || normalizedPath.startsWith(itemPath + "/");
+    })
+    .sort((a, b) => (b.path?.length ?? 0) - (a.path?.length ?? 0))[0]?.permission;
 }
 
 export function findNavigationItemByPath(

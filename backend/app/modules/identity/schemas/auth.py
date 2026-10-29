@@ -69,6 +69,7 @@ class AuthenticatedUserResponse(BaseModel):
     enabled_modules: list[str] = Field(
         default_factory=list,
     )
+    permissions: list[str] = Field(default_factory=list)
 
 
 class LoginResponse(BaseModel):

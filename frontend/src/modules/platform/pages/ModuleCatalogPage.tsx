@@ -1,12 +1,88 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Boxes, Calculator, ChevronDown, HelpCircle, Headphones, LayoutGrid, Search, ShieldCheck, ShoppingCart, Users2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import client from "@/shared/api/client";
 type Item={key:string;en:string;ar:string;description:string;status?:string;group?:string}; type Group={en:string;ar:string;icon:string;items:Item[]};
 const groupMeta:Record<string,{en:string;ar:string;icon:string}>={platform:{en:"Platform & Governance",ar:"المنصة والحوكمة",icon:"ShieldCheck"},finance:{en:"Finance & Control",ar:"المالية والرقابة",icon:"Calculator"},commercial:{en:"Sales & Customer",ar:"المبيعات والعملاء",icon:"ShoppingCart"},operations:{en:"Supply Chain & Operations",ar:"سلاسل الإمداد والتشغيل",icon:"Boxes"},enterprise:{en:"Enterprise & People",ar:"المؤسسة والموارد البشرية",icon:"Users2"},industry:{en:"Industry & Services",ar:"القطاعات والخدمات",icon:"Headphones"},intelligence:{en:"Intelligence",ar:"الذكاء والتحليلات",icon:"Headphones"}};
 const catalog:Group[]=[{"en":"Platform & Governance","ar":"المنصة والحوكمة","icon":"ShieldCheck","items":[{"key":"approvals","en":"Approvals","ar":"الموافقات","description":"طلبات الموافقة وسير اعتماد العمليات."},{"key":"audit","en":"Audit","ar":"سجل التدقيق","description":"تتبع التغييرات والعمليات الحساسة."},{"key":"companies","en":"Companies","ar":"الشركات","description":"إدارة الشركات والكيانات."},{"key":"branches","en":"Branches","ar":"الفروع","description":"إدارة الفروع وربطها بالشركات."},{"key":"identity","en":"Identity & Access","ar":"الهوية والوصول","description":"المستخدمون وتسجيل الدخول وإدارة الهوية."},{"key":"language","en":"Language","ar":"اللغات","description":"العربية والإنجليزية وRTL/LTR."},{"key":"legal","en":"Legal","ar":"الشؤون القانونية","description":"المستندات والسياسات والسجلات القانونية."},{"key":"notifications","en":"Notifications","ar":"الإشعارات","description":"التنبيهات وإشعارات العمليات."},{"key":"permissions","en":"Permissions","ar":"الصلاحيات","description":"تحديد صلاحيات المستخدمين والأدوار."},{"key":"platform","en":"Platform","ar":"المنصة","description":"الخدمات المشتركة وإدارة المنصة."},{"key":"roles","en":"Roles","ar":"الأدوار","description":"تعريف الأدوار وربطها بالصلاحيات."},{"key":"saas","en":"SaaS","ar":"إدارة SaaS","description":"الباقات والاشتراكات والتجارب والاستحقاقات."},{"key":"settings","en":"Settings","ar":"الإعدادات","description":"إعدادات النظام والتهيئة العامة."},{"key":"workflow","en":"Workflow","ar":"سير العمل","description":"تدفقات العمل والموافقات."}]},{"en":"Finance & Control","ar":"المالية والرقابة","icon":"Calculator","items":[{"key":"accounting","en":"Accounting","ar":"المحاسبة","description":"دليل الحسابات والقيود والدفاتر والتقارير المالية."},{"key":"cost-centers","en":"Cost Centers","ar":"مراكز التكلفة","description":"تحليل التكلفة حسب المركز."},{"key":"egyptian-einvoice","en":"Egyptian E-Invoice","ar":"الفاتورة الإلكترونية المصرية","description":"التكامل مع منظومة الفاتورة الإلكترونية."},{"key":"expenses","en":"Expenses","ar":"المصروفات","description":"تسجيل ومتابعة المصروفات."},{"key":"installments","en":"Installments","ar":"الأقساط والاستحقاقات","description":"إدارة الاستحقاقات وجدولتها."},{"key":"taxes","en":"Taxes","ar":"الضرائب","description":"قواعد ومعدلات الضرائب."},{"key":"transactions","en":"Transactions","ar":"المعاملات","description":"دورة المعاملات المالية والتجارية."},{"key":"treasury","en":"Treasury","ar":"الخزينة والبنوك","description":"النقدية والبنوك والشيكات والتحويلات."},{"key":"assets","en":"Assets","ar":"الأصول","description":"الأصول الثابتة والحركة والاستهلاك."}]},{"en":"Sales & Customer","ar":"المبيعات والعملاء","icon":"ShoppingCart","items":[{"key":"crm","en":"CRM","ar":"إدارة العملاء","description":"العملاء المحتملون والفرص ومسار البيع."},{"key":"customers","en":"Customers","ar":"العملاء","description":"ملفات العملاء وحركاتهم."},{"key":"loyalty","en":"Loyalty","ar":"ولاء العملاء","description":"برامج الولاء والنقاط."},{"key":"pos","en":"POS","ar":"نقطة البيع","description":"جلسات البيع والمدفوعات والإيصالات."},{"key":"promotions","en":"Promotions","ar":"العروض","description":"العروض التجارية والحوافز."},{"key":"sales","en":"Sales","ar":"المبيعات","description":"عروض الأسعار وأوامر البيع والفواتير."},{"key":"subscriptions","en":"Subscriptions","ar":"الاشتراكات","description":"الاشتراكات الدورية والتجديدات."},{"key":"commissions","en":"Commissions","ar":"العمولات","description":"قواعد وحساب ومتابعة العمولات."},{"key":"commerce","en":"Commerce","ar":"التجارة الإلكترونية","description":"الطلبات والمنتجات والعمليات الرقمية."}]},{"en":"Supply Chain & Operations","ar":"سلاسل الإمداد والتشغيل","icon":"Boxes","items":[{"key":"inventory","en":"Inventory","ar":"المخزون","description":"الأصناف والمخازن والمواقع والتحويلات والجرد والتكلفة."},{"key":"products","en":"Products","ar":"المنتجات","description":"كتالوج المنتجات والأنواع والحزم والتسعير."},{"key":"purchasing","en":"Purchasing","ar":"المشتريات","description":"الموردون وأوامر الشراء والاستلام والفواتير."},{"key":"shipping","en":"Shipping","ar":"الشحن","description":"التوصيل والتسويات والأثر المحاسبي."},{"key":"manufacturing","en":"Manufacturing","ar":"التصنيع","description":"أوامر الإنتاج واستهلاك المواد."},{"key":"operations","en":"Operations","ar":"التشغيل","description":"العمليات التشغيلية وسير تنفيذها."},{"key":"work-orders","en":"Work Orders","ar":"أوامر العمل","description":"إنشاء ومتابعة أوامر العمل."},{"key":"uom","en":"UOM","ar":"وحدات القياس","description":"وحدات القياس والتحويلات."},{"key":"reservations","en":"Reservations","ar":"الحجوزات","description":"إدارة الحجوزات والاستحقاقات."}]},{"en":"Enterprise & People","ar":"المؤسسة والموارد البشرية","icon":"Users2","items":[{"key":"enterprise","en":"Enterprise","ar":"إدارة المؤسسة","description":"الوظائف والموارد المؤسسية."},{"key":"hr","en":"HR","ar":"الموارد البشرية","description":"ملفات الموظفين والعمليات البشرية."},{"key":"time-tracking","en":"Time Tracking","ar":"تتبع الوقت","description":"تسجيل ساعات العمل والوقت التشغيلي."},{"key":"projects","en":"Projects","ar":"المشروعات","description":"المشروعات والمهام والمراحل."},{"key":"documents","en":"Documents","ar":"المستندات","description":"إدارة المستندات وربطها بالسجلات."},{"key":"contracts","en":"Contracts","ar":"العقود","description":"إدارة العقود ودوراتها."}]},{"en":"Industry, Service & Intelligence","ar":"القطاعات والخدمات والذكاء","icon":"Headphones","items":[{"key":"hotels","en":"Hotels","ar":"الفنادق","description":"عمليات الضيافة وإيرادات الفنادق."},{"key":"restaurant","en":"Restaurant","ar":"المطاعم","description":"الطاولات والطلبات وربط المطعم بنقطة البيع."},{"key":"real-estate","en":"Real Estate","ar":"العقارات","description":"العمليات العقارية والوحدات والعقود."},{"key":"rentals","en":"Rentals","ar":"التأجير","description":"عقود وفترات وأسعار التأجير."},{"key":"helpdesk","en":"Help Desk + Prime AI","ar":"الدعم الفني + Prime AI","description":"مساعد ذكي لأسئلة العملاء وشرح النظام."},{"key":"reports","en":"Reports & Analytics","ar":"التقارير والتحليلات","description":"التقارير المالية والتشغيلية والإدارية."},{"key":"mobile","en":"Mobile","ar":"الموبايل","description":"تجهيزات الاستخدام عبر تطبيقات الموبايل."},{"key":"insurance","en":"Insurance","ar":"التأمين","description":"وظائف التأمين والعمليات المرتبطة به."}]}];
+
+type ModuleTarget = { path: string; operational: boolean };
+// Explicit routes for screens that exist today. Modules without a dedicated screen
+// open the registry workbench and are visibly marked as still in progress.
+const moduleTargets: Record<string, ModuleTarget> = {
+  accounting: { path: "/accounting", operational: true },
+  treasury: { path: "/treasury/cash", operational: true },
+  cost_centers: { path: "/accounting/cost-centers", operational: false },
+  "cost-centers": { path: "/accounting/cost-centers", operational: false },
+  installments: { path: "/commercial-leasing/installments", operational: false },
+  transactions: { path: "/modules/transactions", operational: false },
+  taxes: { path: "/modules/taxes", operational: false },
+  einvoice: { path: "/modules/einvoice", operational: false },
+  "egyptian-einvoice": { path: "/modules/einvoice", operational: false },
+  inventory: { path: "/inventory", operational: true },
+  catalog: { path: "/products", operational: true },
+  products: { path: "/products", operational: true },
+  sales: { path: "/sales/orders", operational: true },
+  purchasing: { path: "/purchases/orders", operational: true },
+  commerce: { path: "/commerce", operational: true },
+  operations: { path: "/modules/operations", operational: false },
+  shipping: { path: "/shipping", operational: true },
+  enterprise: { path: "/enterprise", operational: false },
+  hr: { path: "/hr", operational: true },
+  time_tracking: { path: "/modules/time_tracking", operational: false },
+  "time-tracking": { path: "/modules/time_tracking", operational: false },
+  identity: { path: "/users", operational: true },
+  platform: { path: "/modules/platform", operational: false },
+  language: { path: "/settings/center", operational: false },
+  roles: { path: "/roles", operational: true },
+  permissions: { path: "/permissions", operational: true },
+  settings: { path: "/settings/center", operational: true },
+  organization: { path: "/companies", operational: true },
+  companies: { path: "/companies", operational: true },
+  branches: { path: "/branches", operational: true },
+  saas: { path: "/saas", operational: true },
+  integrations: { path: "/modules/integrations", operational: false },
+  audit: { path: "/modules/audit", operational: false },
+  legal: { path: "/settings/legal", operational: true },
+  reports: { path: "/reports", operational: true },
+  helpdesk: { path: "/helpdesk", operational: true },
+  uom: { path: "/modules/uom", operational: false },
+  commissions: { path: "/modules/commissions", operational: false },
+  subscriptions: { path: "/modules/subscriptions", operational: false },
+  pos: { path: "/pos", operational: true },
+  restaurant: { path: "/modules/restaurant", operational: false },
+  hospitality: { path: "/hospitality/hotels", operational: false },
+  hotels: { path: "/hospitality/hotels", operational: false },
+  commercial_leasing: { path: "/commercial-leasing/contracts", operational: false },
+  "commercial-leasing": { path: "/commercial-leasing/contracts", operational: false },
+  real_estate: { path: "/modules/real_estate", operational: false },
+  "real-estate": { path: "/modules/real_estate", operational: false },
+  crm: { path: "/crm", operational: true },
+  projects: { path: "/enterprise/projects", operational: false },
+  documents: { path: "/modules/documents", operational: false },
+  contracts: { path: "/enterprise/contracts", operational: false },
+  notifications: { path: "/notifications", operational: true },
+  workflow: { path: "/modules/workflow", operational: false },
+  approvals: { path: "/modules/approvals", operational: false },
+  assets: { path: "/enterprise/assets", operational: false },
+  expenses: { path: "/modules/expenses", operational: false },
+  budgets: { path: "/enterprise/budgets", operational: false },
+  manufacturing: { path: "/manufacturing", operational: true },
+  quality: { path: "/modules/quality", operational: false },
+  maintenance: { path: "/modules/maintenance", operational: false },
+  work_orders: { path: "/modules/work_orders", operational: false },
+  "work-orders": { path: "/modules/work_orders", operational: false },
+  loyalty: { path: "/modules/loyalty", operational: false },
+  promotions: { path: "/modules/promotions", operational: false },
+  rentals: { path: "/modules/rentals", operational: false },
+  mobile: { path: "/mobile", operational: true },
+  insurance: { path: "/modules/insurance", operational: false },
+};
+
 const icons:any={ShieldCheck,Calculator,ShoppingCart,Boxes,Users2,Headphones};
 export default function ModuleCatalogPage(){
+  const navigate = useNavigate();
   const [search,setSearch]=useState("");
   const [open,setOpen]=useState<string[]>([]);
   const [remote,setRemote]=useState<Item[]|null>(null);
@@ -21,7 +97,7 @@ export default function ModuleCatalogPage(){
   return <div className="min-h-[calc(100vh-4rem)] bg-slate-50 p-4 sm:p-6 lg:p-8" dir="rtl"><div className="mx-auto max-w-7xl">
     <div className="mb-7 rounded-3xl bg-slate-950 p-6 text-white shadow-xl sm:p-8"><div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div><div className="mb-3 inline-flex items-center gap-2 rounded-full bg-blue-500/10 px-3 py-1.5 text-xs font-bold text-blue-300"><LayoutGrid className="size-4"/>PrimeERP Architecture Registry</div><h1 className="text-3xl font-black sm:text-4xl">كتالوج PrimeERP الديناميكي</h1><p className="mt-3 max-w-4xl text-sm leading-7 text-slate-300">الكتالوج يُقرأ من Module Registry موحد، لذلك يمكن إضافة أو تحديث الموديولات من مكان واحد بدل تكرار تعريفاتها داخل الواجهة.</p></div><div className="rounded-2xl bg-white/5 px-5 py-4 text-center"><div className="text-3xl font-black">{total}</div><div className="text-xs text-slate-400">{loading?"جارٍ مزامنة الكتالوج":version?"Registry "+version:"modules"}</div></div></div></div>
     <div className="mb-6 flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"><Search className="size-5 text-slate-400"/><Input value={search} onChange={e=>setSearch(e.target.value)} placeholder="ابحث عن موديول أو وظيفة..." className="border-0 shadow-none focus-visible:ring-0"/><span className="whitespace-nowrap text-xs font-bold text-slate-400">{total} نتيجة</span></div>
-    <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">{groups.map(g=>{const Icon=icons[g.icon]||Boxes;const expanded=open.length===0||open.includes(g.en);return <div key={g.en} className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm"><button type="button" onClick={()=>toggle(g.en)} className="flex w-full items-center justify-between p-5 text-start hover:bg-slate-50"><div className="flex items-center gap-3"><div className="flex size-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600"><Icon className="size-5"/></div><div><div className="font-black">{g.ar}</div><div className="text-xs text-slate-400">{g.en}</div></div></div><ChevronDown className={expanded?"size-5 rotate-180 text-slate-400":"size-5 text-slate-400"}/></button>{expanded&&<div className="border-t border-slate-100 p-3">{g.items.map(i=><div key={i.key} className="block rounded-2xl p-3 hover:bg-slate-50"><div className="flex items-start gap-3"><div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500"><HelpCircle className="size-4"/></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><div className="text-sm font-bold text-slate-800">{i.ar}</div><span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-500">{statusLabel(i.status)}</span></div><div className="text-[11px] font-semibold text-blue-600">{i.en}</div><p className="mt-1 text-xs leading-5 text-slate-500">{i.description}</p><span className="mt-2 inline-flex rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-500">Module key: {i.key}</span></div></div></div>)}</div>}</div>})}</div>
+    <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">{groups.map(g=>{const Icon=icons[g.icon]||Boxes;const expanded=open.length===0||open.includes(g.en);return <div key={g.en} className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm"><button type="button" onClick={()=>toggle(g.en)} className="flex w-full items-center justify-between p-5 text-start hover:bg-slate-50"><div className="flex items-center gap-3"><div className="flex size-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600"><Icon className="size-5"/></div><div><div className="font-black">{g.ar}</div><div className="text-xs text-slate-400">{g.en}</div></div></div><ChevronDown className={expanded?"size-5 rotate-180 text-slate-400":"size-5 text-slate-400"}/></button>{expanded&&<div className="border-t border-slate-100 p-3">{g.items.map(i=><div key={i.key} className="block rounded-2xl p-3 hover:bg-slate-50"><div className="flex items-start gap-3"><div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500"><HelpCircle className="size-4"/></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><div className="text-sm font-bold text-slate-800">{i.ar}</div><span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-500">{statusLabel(i.status)}</span></div><div className="text-[11px] font-semibold text-blue-600">{i.en}</div><p className="mt-1 text-xs leading-5 text-slate-500">{i.description}</p><span className="mt-2 inline-flex rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-500">Module key: {i.key}</span><div className="mt-3 flex flex-wrap items-center gap-2"><span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${moduleTargets[i.key]?.operational?"bg-emerald-50 text-emerald-700":"bg-amber-50 text-amber-700"}`}>{moduleTargets[i.key]?.operational?"واجهة مخصصة":"قيد الاستكمال"}</span><button type="button" onClick={()=>navigate(moduleTargets[i.key]?.path||("/modules/"+encodeURIComponent(i.key)))} className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2" aria-label={`فتح موديول ${i.ar}`}>فتح الموديول</button></div></div></div></div>)}</div>}</div>})}</div>
     {!groups.length&&<div className="rounded-3xl border border-dashed bg-white p-12 text-center text-sm text-slate-500">لا توجد نتائج مطابقة.</div>}
   </div></div>;
 }

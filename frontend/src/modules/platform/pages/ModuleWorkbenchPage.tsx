@@ -9,19 +9,20 @@ type ModuleInfo={key:string;name:string;name_ar:string;group:string;status:strin
 export default function ModuleWorkbenchPage({moduleKey: explicitModuleKey}:{moduleKey?:string}){
   const params=useParams<{moduleKey:string}>();
   const moduleKey=explicitModuleKey||params.moduleKey||"";
+  const registryKey=({ "cost-centers":"cost_centers", "egyptian-einvoice":"einvoice", "time-tracking":"time_tracking", "work-orders":"work_orders", "commercial-leasing":"commercial_leasing", "real-estate":"real_estate" } as Record<string,string>)[moduleKey]||moduleKey.replace(/-/g,"_");
   const [module,setModule]=useState<ModuleInfo|null>(null);
   const [loading,setLoading]=useState(true);
 
   useEffect(()=>{
-    if(!moduleKey){setModule(null);setLoading(false);return;}
+    if(!registryKey){setModule(null);setLoading(false);return;}
     let alive=true;
     setLoading(true);
-    client.get("/platform/modules/"+encodeURIComponent(moduleKey))
+    client.get("/platform/modules/"+encodeURIComponent(registryKey))
       .then(r=>{if(alive)setModule(r.data?.module||null);})
       .catch(()=>{if(alive)setModule(null);})
       .finally(()=>{if(alive)setLoading(false);});
     return()=>{alive=false;};
-  },[moduleKey]);
+  },[registryKey]);
 
   const status=module?.status;
   const statusText=status==="active"?"تشغيلي":status==="foundation"?"أساس وقيد الاستكمال":"خارطة طريق";

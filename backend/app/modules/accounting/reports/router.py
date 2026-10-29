@@ -1,6 +1,6 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.context import get_effective_tenant_id
@@ -22,6 +22,11 @@ def tenant_id(current_user: User) -> int:
     return get_effective_tenant_id(current_user)
 
 
+def validate_date_range(from_date: date | None, to_date: date | None) -> None:
+    if from_date is not None and to_date is not None and from_date > to_date:
+        raise HTTPException(status_code=422, detail="from_date must be on or before to_date")
+
+
 @router.get("/trial-balance", response_model=TrialBalanceResponse)
 def trial_balance(
     company_id: int = Query(gt=0),
@@ -30,6 +35,7 @@ def trial_balance(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    validate_date_range(from_date, to_date)
     return financial_report_service.trial_balance(db, tenant_id=tenant_id(current_user), company_id=company_id, from_date=from_date, to_date=to_date)
 
 
@@ -41,4 +47,5 @@ def financial_summary(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    validate_date_range(from_date, to_date)
     return financial_report_service.financial_summary(db, tenant_id=tenant_id(current_user), company_id=company_id, from_date=from_date, to_date=to_date)
