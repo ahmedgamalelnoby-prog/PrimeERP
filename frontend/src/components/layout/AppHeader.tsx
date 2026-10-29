@@ -1,74 +1,58 @@
-import { Bell, ChevronLeft, Command, LogOut, Menu, Settings2, ShieldCheck, UserCircle2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Bell, ChevronLeft, Command, Languages, LogOut, Menu, Moon, Settings2, ShieldCheck, Sun, UserCircle2 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/modules/identity/context/AuthContext";
 import { findNavigationItemByPath, findNavigationParent } from "@/app/navigation";
 
 interface AppHeaderProps { onMenuClick: () => void; }
+const THEME_KEY = "primeerp_theme";
 
 export default function AppHeader({ onMenuClick }: AppHeaderProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuth();
-  const handleLogout = () => {
-    logout();
-    navigate("/login", { replace: true });
-  };
+  const { i18n } = useTranslation();
+  const [dark, setDark] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem(THEME_KEY) === "dark";
+  });
+  const language = i18n.resolvedLanguage?.startsWith("ar") ? "ar" : "en";
+  const isArabic = language === "ar";
 
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", dark);
+    localStorage.setItem(THEME_KEY, dark ? "dark" : "light");
+    document.documentElement.style.colorScheme = dark ? "dark" : "light";
+  }, [dark]);
+
+  const handleLogout = () => { logout(); navigate("/login", { replace: true }); };
   const currentItem = findNavigationItemByPath(location.pathname);
   const parentItem = findNavigationParent(location.pathname);
-  const userName = user?.full_name || user?.username || user?.email || "مستخدم";
-  const roleName = user?.is_platform_admin || user?.is_superuser
-    ? "مسؤول المنصة"
-    : user?.role_name || user?.role || "مستخدم النظام";
+  const userName = user?.full_name || user?.username || user?.email || (isArabic ? "مستخدم" : "User");
+  const roleName = user?.is_platform_admin || user?.is_superuser ? (isArabic ? "مسؤول المنصة" : "Platform administrator") : user?.role_name || user?.role || (isArabic ? "مستخدم النظام" : "System user");
 
-  return (
-    <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
-      <div className="flex h-[76px] items-center justify-between gap-3 px-4 sm:px-6 xl:px-8">
-        <div className="flex min-w-0 items-center gap-3">
-          <Button type="button" variant="outline" size="icon" className="h-10 w-10 shrink-0 rounded-xl border-slate-200 bg-white lg:hidden" onClick={onMenuClick} aria-label="فتح القائمة">
-            <Menu className="h-5 w-5" />
-          </Button>
-          <div className="min-w-0">
-            <div className="mb-1 hidden items-center gap-1.5 text-[11px] font-medium text-slate-400 sm:flex">
-              <Command className="h-3.5 w-3.5" />
-              <span>PrimeERP</span>
-              {parentItem && <><ChevronLeft className="h-3 w-3" /><span>{parentItem.labelAr}</span></>}
-              {currentItem && <><ChevronLeft className="h-3 w-3" /><span className="text-slate-600">{currentItem.labelAr}</span></>}
-            </div>
-            <h1 className="truncate text-base font-extrabold tracking-tight text-slate-900 sm:text-lg">
-              {currentItem?.labelAr || (location.pathname === "/dashboard" ? "لوحة التحكم" : "مساحة العمل")}
-            </h1>
-            <p className="mt-0.5 hidden max-w-[44vw] truncate text-xs text-slate-500 md:block">
-              {user?.tenant_name || "منصة إدارة الأعمال المتكاملة"} · متابعة مترابطة للأعمال والعمليات
-            </p>
-          </div>
-        </div>
-
-        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-          <Button type="button" variant="outline" size="icon" className="hidden h-10 w-10 rounded-xl border-slate-200 text-slate-600 hover:bg-blue-50 hover:text-blue-700 sm:inline-flex" onClick={() => navigate("/settings")} aria-label="الإعدادات" title="الإعدادات">
-            <Settings2 className="h-4 w-4" />
-          </Button>
-          <Button type="button" variant="outline" size="icon" className="relative h-10 w-10 rounded-xl border-slate-200 text-slate-600 hover:bg-blue-50 hover:text-blue-700" onClick={() => navigate("/notifications")} aria-label="الرسائل والإشعارات" title="الرسائل والإشعارات">
-            <Bell className="h-4 w-4" />
-            <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-cyan-500 ring-2 ring-white" />
-          </Button>
-          <div className="hidden h-9 w-px bg-slate-200 sm:block" />
-          <div className="hidden items-center gap-2.5 sm:flex">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-cyan-500 text-white shadow-md shadow-blue-500/20">
-              {user?.is_platform_admin || user?.is_superuser ? <ShieldCheck className="h-5 w-5" /> : <UserCircle2 className="h-5 w-5" />}
-            </div>
-            <div className="max-w-36">
-              <p className="truncate text-xs font-bold text-slate-800">{userName}</p>
-              <p className="mt-1 truncate text-[10px] text-slate-500">{roleName}</p>
-            </div>
-          </div>
-          <Button type="button" variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-slate-500 hover:bg-rose-50 hover:text-rose-600" onClick={handleLogout} aria-label="تسجيل الخروج" title="تسجيل الخروج">
-            <LogOut className="h-4 w-4" />
-          </Button>
+  return <header className="sticky top-0 z-30 border-b border-border/80 bg-background/90 text-foreground backdrop-blur-xl">
+    <div className="flex h-[76px] items-center justify-between gap-3 px-4 sm:px-6 xl:px-8">
+      <div className="flex min-w-0 items-center gap-3">
+        <Button type="button" variant="outline" size="icon" className="h-10 w-10 shrink-0 rounded-xl lg:hidden" onClick={onMenuClick} aria-label={isArabic ? "فتح القائمة" : "Open navigation"}><Menu className="h-5 w-5" /></Button>
+        <div className="min-w-0">
+          <div className="mb-1 hidden items-center gap-1.5 text-[11px] font-medium text-muted-foreground sm:flex"><Command className="h-3.5 w-3.5" /><span>PrimeERP</span>{parentItem && <><ChevronLeft className="h-3 w-3" /><span>{isArabic ? parentItem.labelAr : parentItem.label}</span></>}{currentItem && <><ChevronLeft className="h-3 w-3" /><span className="text-foreground">{isArabic ? currentItem.labelAr : currentItem.label}</span></>}</div>
+          <h1 className="truncate text-base font-extrabold tracking-tight sm:text-lg">{currentItem ? (isArabic ? currentItem.labelAr : currentItem.label) : location.pathname === "/dashboard" ? (isArabic ? "لوحة التحكم" : "Dashboard") : (isArabic ? "مساحة العمل" : "Workspace")}</h1>
+          <p className="mt-0.5 hidden max-w-[44vw] truncate text-xs text-muted-foreground md:block">{user?.tenant_name || (isArabic ? "منصة إدارة الأعمال المتكاملة" : "Integrated business management")} · {isArabic ? "متابعة مترابطة للأعمال والعمليات" : "Connected business operations"}</p>
         </div>
       </div>
-      <div className="h-[2px] bg-gradient-to-l from-blue-700 via-blue-500 to-cyan-400" />
-    </header>
-  );
+      <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+        <Button type="button" variant="outline" size="icon" className="h-9 w-9 rounded-xl" onClick={() => void i18n.changeLanguage(isArabic ? "en" : "ar")} aria-label={isArabic ? "Switch to English" : "التبديل إلى العربية"} title={isArabic ? "English" : "العربية"}><Languages className="h-4 w-4" /><span className="sr-only">{isArabic ? "English" : "العربية"}</span></Button>
+        <Button type="button" variant="outline" size="icon" className="h-9 w-9 rounded-xl" onClick={() => setDark((value) => !value)} aria-label={dark ? (isArabic ? "الوضع الفاتح" : "Light mode") : (isArabic ? "الوضع الداكن" : "Dark mode")} title={dark ? (isArabic ? "الوضع الفاتح" : "Light mode") : (isArabic ? "الوضع الداكن" : "Dark mode")}>{dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}</Button>
+        <Button type="button" variant="outline" size="icon" className="hidden h-9 w-9 rounded-xl sm:inline-flex" onClick={() => navigate("/settings/center")} aria-label={isArabic ? "الإعدادات" : "Settings"} title={isArabic ? "الإعدادات" : "Settings"}><Settings2 className="h-4 w-4" /></Button>
+        <Button type="button" variant="outline" size="icon" className="relative h-9 w-9 rounded-xl" onClick={() => navigate("/notifications")} aria-label={isArabic ? "الرسائل والإشعارات" : "Notifications"} title={isArabic ? "الرسائل والإشعارات" : "Notifications"}><Bell className="h-4 w-4" /><span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-cyan-500 ring-2 ring-background" /></Button>
+        <div className="hidden h-9 w-px bg-border sm:block" />
+        <div className="hidden items-center gap-2.5 sm:flex"><div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-cyan-500 text-white shadow-md shadow-blue-500/20">{user?.is_platform_admin || user?.is_superuser ? <ShieldCheck className="h-5 w-5" /> : <UserCircle2 className="h-5 w-5" />}</div><div className="max-w-36"><p className="truncate text-xs font-bold">{userName}</p><p className="mt-1 truncate text-[10px] text-muted-foreground">{roleName}</p></div></div>
+        <Button type="button" variant="ghost" size="icon" className="h-9 w-9 rounded-xl text-muted-foreground hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40" onClick={handleLogout} aria-label={isArabic ? "تسجيل الخروج" : "Sign out"} title={isArabic ? "تسجيل الخروج" : "Sign out"}><LogOut className="h-4 w-4" /></Button>
+      </div>
+    </div>
+    <div className="h-[2px] bg-gradient-to-l from-blue-700 via-blue-500 to-cyan-400" />
+  </header>;
 }
