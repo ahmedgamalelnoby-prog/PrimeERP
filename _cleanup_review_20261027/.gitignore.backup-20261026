@@ -1,0 +1,59 @@
+﻿# Python
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+dist/
+build/
+.vite/
+coverage/
+
+# IDE
+.vscode/
+.idea/
+
+# Logs / runtime
+*.log
+*.pid
+*.sqlite
+*.sqlite3
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local databases / backups
+*.backup
+*.bak
+
+# Temporary files
+*.tmp
+*.temp
+
+# Python tooling
+.pyre/
+.tox/
+.nox/
+
+# Build artifacts
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Local reports / generated files
+project_tree.txt
+
+alembic/
