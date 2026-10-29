@@ -18,6 +18,9 @@ def test_claim_next_event_marks_event_processing():
         def scalar(self, _stmt):
             return self.event
 
+        def flush(self):
+            return None
+
     event = SimpleNamespace(
         status="received",
         attempts=0,
