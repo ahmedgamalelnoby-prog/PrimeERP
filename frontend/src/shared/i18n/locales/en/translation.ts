@@ -134,6 +134,57 @@ const enTranslation = {
     }
   },
 
+  roles: {
+    title: "Roles & Permissions",
+    description: "Create roles and define what each user can view or perform in PrimeERP.",
+    newRole: "New role",
+    total: "Total roles",
+    active: "Active roles",
+    assignedUsers: "Assigned users",
+    searchPlaceholder: "Search by role name or description...",
+    confirmDelete: "Do you want to delete the role "{{name}}"?",
+    errors: {
+      deleteAssigned: "This role cannot be deleted because it is assigned to {{count}} users."
+    }
+  },
+  roleForm: {
+    titleCreate: "Create role",
+    titleEdit: "Edit role",
+    description: "Set the role name and the permissions granted to users assigned to it.",
+    name: "Role name",
+    namePlaceholder: "Example: Branch Manager",
+    active: "Role is active",
+    descriptionLabel: "Description",
+    descriptionPlaceholder: "Briefly describe this role's responsibilities",
+    permissions: "Role permissions",
+    selectedCount: "{{selected}} of {{total}} permissions selected",
+    selectAll: "Select or clear all",
+    searchPermissions: "Search permissions...",
+    loadingPermissions: "Loading permissions...",
+    noPermissions: "No permissions available.",
+    permissionCount_one: "{{count}} permission",
+    permissionCount_other: "{{count}} permissions",
+    selectSection: "Select entire section",
+    unselectSection: "Clear section selection",
+    save: "Save changes",
+    create: "Create role",
+    cancel: "Cancel",
+    resources: {
+      users: "Users", roles: "Roles", permissions: "Permissions",
+      companies: "Companies", branches: "Branches", sales: "Sales",
+      customers: "Customers", suppliers: "Suppliers", products: "Products",
+      inventory: "Inventory", purchasing: "Purchasing", accounting: "Accounting",
+      restaurant: "Restaurants", pos: "Point of Sale", hr: "Human Resources",
+      reports: "Reports", shipping: "Shipping", settings: "Settings",
+      other: "Other"
+    },
+    actions: {
+      view: "View", read: "Read", create: "Create", update: "Update",
+      delete: "Delete", approve: "Approve", manage: "Full management",
+      print: "Print", export: "Export", cancel: "Cancel"
+    }
+  },
+
   permissions: {
     title: "Permissions",
     description: "View and manage system permissions and their role assignments.",
