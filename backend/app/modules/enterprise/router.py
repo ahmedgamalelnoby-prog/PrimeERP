@@ -11,6 +11,7 @@ from app.core.context import get_effective_tenant_id, get_optional_request_conte
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
+from app.modules.branches.models import Branch
 from app.modules.companies.membership import CompanyUserMembership
 from app.modules.commerce.models import BusinessPartner
 from app.modules.enterprise.models import FixedAsset, Budget, BudgetLine, Employee, PayrollRun, PayrollLine, Project, ProjectContract
@@ -227,6 +228,14 @@ def submit_payroll_run(
     current_user: User = Depends(get_current_user),
 ):
     company = company_for_user(db, company_id, current_user)
+    branch = db.scalar(select(Branch).where(
+        Branch.id == payload.branch_id,
+        Branch.company_id == company_id,
+        Branch.tenant_id == company.tenant_id,
+        Branch.is_active.is_(True),
+    ))
+    if branch is None:
+        raise HTTPException(422, "Payroll posting branch does not belong to the active company")
     run = db.scalar(select(PayrollRun).where(
         PayrollRun.id == run_id,
         PayrollRun.company_id == company_id,
