@@ -12,6 +12,7 @@ from app.modules.identity.services.token_service import token_service
 from app.modules.platform.subscriptions.service import subscription_service
 from app.modules.saas.models import Tenant
 from app.modules.companies.models import Company
+from app.modules.companies.membership import CompanyUserMembership
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/identity/login")
 TENANT_CONTEXT_HEADER = "X-Tenant-ID"
@@ -73,6 +74,24 @@ def _resolve_company_context(request_context, request_company_id: str | None, te
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Company not found or inactive in the selected tenant",
         )
+
+    # Platform administrators operate within an explicitly selected tenant.
+    # Regular users additionally need an active membership grant.
+    if request_context.user_id is not None:
+        from app.modules.identity.models import User
+        authenticated_user = db.get(User, request_context.user_id)
+        if authenticated_user is None or not authenticated_user.is_platform_admin:
+            membership = db.query(CompanyUserMembership.id).filter(
+                CompanyUserMembership.company_id == company.id,
+                CompanyUserMembership.user_id == request_context.user_id,
+                CompanyUserMembership.is_active.is_(True),
+            ).first()
+            if membership is None:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You do not have access to the selected company",
+                )
+
     request_context.company_id = company.id
 
 
