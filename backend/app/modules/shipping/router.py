@@ -2,7 +2,7 @@ from datetime import date, datetime, time
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
@@ -10,7 +10,6 @@ from app.database.session import get_db
 from app.modules.accounting.chart_of_accounts.models import AccountCombination
 from app.modules.accounting.journals.models import AccountingJournal
 from app.modules.branches.access import accessible_branch_ids, can_manage_all_branches, require_branch_access
-from app.modules.branches.models import Branch
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
@@ -50,16 +49,8 @@ def _validate_account(db: Session, company_id: int, account_id: int | None, labe
 
 def _require_carrier_branch_access(db: Session, user: User, carrier_obj: ShippingCarrier) -> None:
     if carrier_obj.branch_id is None:
-        allowed = accessible_branch_ids(db, user)
-        has_company_membership = db.scalar(
-            select(Branch.id).where(
-                Branch.id.in_(allowed),
-                Branch.company_id == carrier_obj.company_id,
-                Branch.is_active.is_(True),
-            ).limit(1)
-        ) if allowed else None
-        if not can_manage_all_branches(db, user) and has_company_membership is None:
-            raise HTTPException(403, "Branch membership is required to use this company-wide carrier")
+        if not can_manage_all_branches(db, user):
+            raise HTTPException(403, "Tenant-wide branch management permission is required for a company-wide carrier")
         return
     branch = require_branch_access(db, user, carrier_obj.branch_id)
     if branch.company_id != carrier_obj.company_id:
@@ -116,22 +107,7 @@ def carriers(company_id: int = Query(..., gt=0), current_user: User = Depends(ge
     )
     if not can_manage_all_branches(db, current_user):
         allowed = accessible_branch_ids(db, current_user)
-        has_company_membership = db.scalar(
-            select(Branch.id).where(
-                Branch.id.in_(allowed),
-                Branch.company_id == company_id,
-                Branch.is_active.is_(True),
-            ).limit(1)
-        ) if allowed else None
-        if has_company_membership is None:
-            stmt = stmt.where(ShippingCarrier.id == -1)
-        else:
-            stmt = stmt.where(
-                or_(
-                    ShippingCarrier.branch_id.is_(None),
-                    ShippingCarrier.branch_id.in_(allowed),
-                )
-            )
+        stmt = stmt.where(ShippingCarrier.branch_id.in_(allowed)) if allowed else stmt.where(ShippingCarrier.id == -1)
     return list(db.scalars(stmt.order_by(ShippingCarrier.name)).all())
 
 
