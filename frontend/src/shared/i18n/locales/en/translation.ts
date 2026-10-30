@@ -434,6 +434,44 @@ const enTranslation = {
     }
   },
 
+  accountingHome: {
+    title: "Accounting & Finance",
+    description: "The financial operations center in PrimeERP.",
+    areas: {
+      chartOfAccounts: { title: "Chart of Accounts", description: "Accounts, departments, and cost centers" },
+      journalEntries: { title: "Journal Entries", description: "Create, review, and post journal entries" },
+      financialReports: { title: "Financial Reports", description: "Financial reports and analytics" },
+      arApAging: { title: "AR/AP Aging", description: "Analyze receivables and payables by due date" },
+      partnerStatements: { title: "Customer & Supplier Statements", description: "Receivable/payable movements, payments, and running balances" }
+    }
+  },
+  productsHome: {
+    title: "Product Catalog & Pricing",
+    description: "Operational workspace connected to the catalog API: categories, price lists, recipes, and margin impact.",
+    activeCompanyRequired: "Select an active company first.",
+    loadFailed: "Could not load the product catalog.",
+    loading: "Loading catalog...",
+    categories: "Categories",
+    priceLists: "Price lists",
+    recipes: "Recipes",
+    belowMargin: "Below 30% margin",
+    emptyPriceLists: "No price lists found.",
+    recipeSku: "Recipes linked to SKU",
+    emptyRecipes: "No recipes found.",
+    version: "Version",
+    unitCost: "Unit cost",
+    components: "components",
+    pricingImpact: "Pricing & Margin Impact",
+    pricingImpactDescription: "Products below a 30% margin based on current catalog data.",
+    product: "Product",
+    cost: "Cost",
+    price: "Price",
+    margin: "Margin",
+    recommendedPrice: "Recommended price",
+    default: "Default",
+    skuCode: "SKU/Code"
+  },
+
   register: {
     workspaceLabel:
       "Create your workspace",
