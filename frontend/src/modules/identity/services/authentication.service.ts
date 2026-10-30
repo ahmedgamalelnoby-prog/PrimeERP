@@ -20,8 +20,12 @@ async function login(payload: LoginPayload): Promise<LoginResponse> {
   const requestPayload: LoginPayload = {
     login: loginValue,
     password: payload.password,
-    tenant_slug: payload.tenant_slug?.trim() || null,
-    tenant_name: payload.tenant_name?.trim() || null,
+    ...(payload.tenant_slug?.trim()
+      ? { tenant_slug: payload.tenant_slug.trim() }
+      : {}),
+    ...(payload.tenant_name?.trim()
+      ? { tenant_name: payload.tenant_name.trim() }
+      : {}),
   };
 
   const response = await client.post<LoginResponse>(
