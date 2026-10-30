@@ -83,7 +83,7 @@ export default function RoleTable({
                 {t("rolesTable.role")}
               </TableHead>
 
-              <TableHead className="text-right">
+              <TableHead className="text-start">
                 {t("rolesTable.permissions")}
               </TableHead>
 
