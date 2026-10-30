@@ -1,4 +1,4 @@
-import { Building2, Loader2, ShieldCheck, UserRound, UserRoundX } from "lucide-react";
+import { Building2, Loader2, ShieldCheck, UserRoundX } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "react-hot-toast";
 import { useTranslation } from "react-i18next";
@@ -85,7 +85,7 @@ export default function UserCompanyAccessDialog({
       const current = members.find((item) => item.user_id === user.id) ?? null;
       setMember(current);
       setRoles(assignableRoles);
-      setRoleId(current?.role_id ? String(current.role_id) : "");
+      setRoleId(current?.role_id && assignableRoles.some((role) => role.id === current.role_id) ? String(current.role_id) : "");
     } catch (requestError: any) {
       setError(requestError?.response?.data?.detail || t("users.companyAccess.loadDetailsFailed"));
       setMember(null);
@@ -204,7 +204,7 @@ export default function UserCompanyAccessDialog({
                       <p className="text-xs text-muted-foreground">{selectedCompany.name}</p>
                     </div>
                   </div>
-                  {member && !member.user_is_active && (
+                  {(!user?.is_active || (member && !member.user_is_active)) && (
                     <span className="text-xs text-destructive">{t("users.companyAccess.userDisabled")}</span>
                   )}
                 </div>
@@ -232,7 +232,7 @@ export default function UserCompanyAccessDialog({
                 {error && <p className="mt-3 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
 
                 <div className="mt-4 flex flex-wrap gap-2">
-                  <Button type="button" onClick={() => void saveMembership()} disabled={saving || loading || Boolean(member && !member.user_is_active)}>
+                  <Button type="button" onClick={() => void saveMembership()} disabled={saving || loading || !user?.is_active}>
                     {saving && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
                     {active ? t("users.companyAccess.saveChanges") : t("users.companyAccess.grantAccess")}
                   </Button>
