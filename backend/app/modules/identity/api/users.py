@@ -86,6 +86,24 @@ def build_user_response(user: User) -> UserResponse:
     )
 
 
+@router.get("/{user_id}/companies/available", dependencies=[Depends(require_permission("users.access"))])
+def get_available_user_companies(user_id: int, service: UserService = Depends(get_user_service)):
+    current_user = require_admin(service)
+    target = service.get_by_id(user_id)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User was not found.")
+    tenant_id = target.tenant_id
+    if tenant_id is None or (not current_user.is_platform_admin and tenant_id != current_user.tenant_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User was not found.")
+    db = service.require_db()
+    companies = db.scalars(
+        select(Company)
+        .where(Company.tenant_id == tenant_id, Company.is_active.is_(True))
+        .order_by(Company.name, Company.id)
+    ).all()
+    return [{"id": company.id, "name": company.name, "code": company.code} for company in companies]
+
+
 @router.get("/{user_id}/companies", dependencies=[Depends(require_permission("users.access"))])
 def get_user_company_access(user_id: int, service: UserService = Depends(get_user_service)):
     current_user = require_admin(service)
