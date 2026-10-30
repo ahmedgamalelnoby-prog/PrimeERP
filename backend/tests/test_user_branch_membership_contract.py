@@ -110,3 +110,26 @@ def test_warehouse_creation_validates_branch_company_and_user_membership():
     create = router.split("def create_warehouse(", 1)[1].split("@router.patch", 1)[0]
     assert "require_branch_access(db, current_user, payload.branch_id)" in create
     assert "branch.company_id != company.id" in create
+
+
+def test_stock_move_create_post_and_reverse_validate_both_location_branches():
+    router = source("app/modules/inventory/stock_moves/router.py")
+    assert "def _authorize_stock_move_locations(" in router
+    assert "for branch_id in branch_ids:" in router
+    assert "require_branch_access(db, user, branch_id)" in router
+    assert "_authorize_stock_move_locations(" in router
+    assert "_authorize_existing_stock_move(db, user, company_id, move_id)" in router
+
+
+def test_stock_move_list_excludes_unassigned_branch_endpoints():
+    router = source("app/modules/inventory/stock_moves/router.py")
+    assert "source_warehouse.branch_id.in_(allowed)" in router
+    assert "destination_warehouse.branch_id.in_(allowed)" in router
+    assert "or_(source_warehouse.branch_id.in_(allowed), destination_warehouse.branch_id.in_(allowed))" in router
+
+
+def test_inventory_accounting_configuration_requires_branch_membership():
+    router = source("app/modules/inventory/stock_moves/router.py")
+    save = router.split("def save_accounting_config(", 1)[1].split("@router.post", 1)[0]
+    assert "require_branch_access(db, user, payload.branch_id)" in save
+    assert "branch.company_id != payload.company_id" in save
