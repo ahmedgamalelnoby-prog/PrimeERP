@@ -364,7 +364,7 @@ const arTranslation = {
       loadCompaniesFailed: "تعذر تحميل الشركات المتاحة.",
       loadDetailsFailed: "تعذر تحميل عضوية المستخدم وأدواره.",
       saveFailed: "تعذر حفظ صلاحية الشركة.",
-      revokeFailed: "تعذر إلغاء صلاحية الشركة."
+      revokeFailed: "تعذر إلغاء صلاحية الشركة.",
       loadBranchesFailed: "تعذر تحميل الفروع المتاحة أو لا تملك صلاحية إدارتها.",
       loadBranchDetailsFailed: "تعذر تحميل عضوية المستخدم وأدواره على الفرع.",
       branchAccessTitle: "صلاحيات الفروع",
