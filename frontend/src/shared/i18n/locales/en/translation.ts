@@ -94,6 +94,85 @@ const enTranslation = {
     user: "User",
   },
 
+  users: {
+    "title": "User Management",
+    "description": "Create users, update their details, and manage their status and roles.",
+    "newUser": "New user",
+    "totalUsers": "Total users",
+    "activeUsers": "Active users",
+    "searchPlaceholder": "Search by name, username, or email...",
+    "confirmDelete": "Do you want to delete user \"{{name}}\"?"
+  },
+
+  settingsCenter: {
+    "controlCenter": "Control Center",
+    "title": "System Settings",
+    "description": "Choose a module to display all of its settings. Only one module menu stays expanded at a time.",
+    "moduleSettings": "Module settings",
+    "selectModule": "Select a module to view its options",
+    "settingsModules": "Settings modules",
+    "sectionSettings": "{{title}} settings",
+    "footer": "PrimeERP · Settings Center",
+    "sections": {
+      "General": {
+        "title": "General",
+        "description": "Company details, language, date, time zone, and currency."
+      },
+      "Accounting": {
+        "title": "Accounting",
+        "description": "Fiscal periods, accounts, and posting policies."
+      },
+      "Taxes": {
+        "title": "Taxes & e-Invoicing",
+        "description": "Taxes, returns, and electronic invoicing."
+      },
+      "Sales": {
+        "title": "Sales & Customers",
+        "description": "Pricing, discounts, credit, and sales."
+      },
+      "Purchasing": {
+        "title": "Purchasing & Suppliers",
+        "description": "Purchasing, approvals, and supplier policies."
+      },
+      "Inventory": {
+        "title": "Inventory & Warehouses",
+        "description": "Valuation, reservations, stocktaking, and replenishment."
+      },
+      "Human Resources": {
+        "title": "HR, Attendance & Payroll",
+        "description": "Biometrics, attendance, leave, payroll, and approvals."
+      },
+      "Approvals": {
+        "title": "Approvals & Workflow",
+        "description": "Approval workflows, delegation, and escalation."
+      },
+      "Point of Sale": {
+        "title": "POS & Cash Drawer",
+        "description": "POS, shifts, and cash drawer settings."
+      },
+      "Manufacturing": {
+        "title": "Manufacturing",
+        "description": "Production orders, bills of materials, and costs."
+      },
+      "CRM": {
+        "title": "CRM",
+        "description": "Lead stages, customers, and follow-ups."
+      },
+      "Integrations": {
+        "title": "Integrations",
+        "description": "External systems, connections, and synchronization."
+      },
+      "Messaging & Notifications": {
+        "title": "Messages & WhatsApp",
+        "description": "Message templates, groups, and alerts."
+      },
+      "Reporting": {
+        "title": "Reports & Export",
+        "description": "Report, export, and scheduling options."
+      }
+    }
+  },
+
   register: {
     workspaceLabel:
       "Create your workspace",
