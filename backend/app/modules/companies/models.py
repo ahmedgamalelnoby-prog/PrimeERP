@@ -9,7 +9,6 @@ from sqlalchemy import (
     Text,
     TIMESTAMP,
     UniqueConstraint,
-    text,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -29,6 +28,7 @@ Index(
     user_company_access.c.user_id,
     unique=True,
     postgresql_where=user_company_access.c.is_default.is_(True),
+    sqlite_where=user_company_access.c.is_default.is_(True),
 )
 
 
