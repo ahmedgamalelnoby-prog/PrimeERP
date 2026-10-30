@@ -1094,7 +1094,6 @@ class CommerceService:
                 document_query = document_query.outerjoin(
                     InventoryWarehouse, InventoryWarehouse.id == model.warehouse_id
                 ).where(or_(
-                    model.warehouse_id.is_(None),
                     InventoryWarehouse.is_central.is_(True),
                     InventoryWarehouse.branch_id == branch_id,
                 ))
@@ -1150,7 +1149,6 @@ class CommerceService:
                 offset_query = offset_query.outerjoin(
                     InventoryWarehouse, InventoryWarehouse.id == model.warehouse_id
                 ).where(or_(
-                    model.warehouse_id.is_(None),
                     InventoryWarehouse.is_central.is_(True),
                     InventoryWarehouse.branch_id == branch_id,
                 ))
@@ -1219,7 +1217,6 @@ class CommerceService:
             docs_query = docs_query.outerjoin(
                 InventoryWarehouse, InventoryWarehouse.id == model.warehouse_id
             ).where(or_(
-                model.warehouse_id.is_(None),
                 InventoryWarehouse.is_central.is_(True),
                 InventoryWarehouse.branch_id == branch_id,
             ))
