@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.services.base_service import BaseService
@@ -73,13 +73,18 @@ class UserService(BaseService[UserRepository]):
         self._enforce_user_limit(effective_tenant_id)
         normalized_username = username.strip().lower()
         normalized_email = email.strip().lower()
-        if repository.get_by_username(db, normalized_username, include_deleted=True):
-            raise ValueError("Username already exists. Choose a unique username across PrimeERP.")
-        if repository.get_by_email(db, normalized_email, tenant_id=effective_tenant_id, include_deleted=True):
-            raise ValueError("Email already exists for this tenant.")
         user_data: dict[str, Any] = {"username": normalized_username, "email": normalized_email, "hashed_password": password_service.hash_password(password), "full_name": full_name, "phone": phone, "role_id": role_id, "tenant_id": effective_tenant_id, "is_active": is_active, "is_superuser": is_superuser, **extra_data}
         user_data = {key: value for key, value in user_data.items() if value is not None}
         with self.uow as uow:
+            # Serialize username reservation across tenants to avoid a race
+            # between the uniqueness check and the insert.
+            db.execute(
+                select(func.pg_advisory_xact_lock(func.hashtext(f"primeerp:username:{normalized_username}")))
+            )
+            if repository.get_by_username(db, normalized_username, include_deleted=True):
+                raise ValueError("Username already exists. Choose a unique username across PrimeERP.")
+            if repository.get_by_email(db, normalized_email, tenant_id=effective_tenant_id, include_deleted=True):
+                raise ValueError("Email already exists for this tenant.")
             user = repository.create(db, data=user_data)
             record_audit_event(db, action="user.create", entity_type="user", entity_id=user.id, user_id=getattr(current_user, "id", None), tenant_id=effective_tenant_id, metadata={"username": user.username, "role_id": user.role_id, "is_active": user.is_active})
             uow.commit()
