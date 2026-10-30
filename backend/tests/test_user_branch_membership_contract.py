@@ -248,3 +248,29 @@ def test_accounting_financial_reports_are_scoped_to_accessible_branches():
     assert "branch_ids=accessible_branch_ids(db, current_user)" in router
     assert "JournalEntry.branch_id.in_(branch_ids)" in service
     assert "branch_ids: list[int] | None = None" in service
+
+
+def test_business_transactions_are_limited_to_accessible_branches():
+    service = source("app/modules/transactions/services/transaction_service.py")
+    repository = source("app/modules/transactions/repositories/transaction_repository.py")
+    assert "from app.modules.branches.access import accessible_branch_ids, require_branch_access" in service
+    assert "visible_branch_ids = accessible_branch_ids(db, current_user)" in service
+    assert "branch_ids=visible_branch_ids" in service
+    assert "BusinessTransaction.branch_id.in_(branch_ids)" in repository
+
+
+def test_business_transaction_reads_and_mutations_recheck_branch_membership():
+    service = source("app/modules/transactions/services/transaction_service.py")
+    assert "def _require_transaction_branch_access(" in service
+    assert "require_branch_access(db, current_user, transaction.branch_id)" in service
+    assert "self._require_transaction_branch_access(db, current_user, transaction)" in service
+    assert "self._require_transaction_branch_access(db, current_user, original)" in service
+    assert "require_branch_access(db, current_user, payload.branch_id)" in service
+
+
+def test_transaction_numbering_endpoints_are_branch_membership_scoped():
+    router = source("app/modules/transactions/api/router.py")
+    assert "allowed_branch_ids = accessible_branch_ids(db, current_user)" in router
+    assert "sequence.branch_id in allowed_branch_ids" in router
+    assert "require_branch_access(db, current_user, payload.branch_id)" in router
+    assert "require_branch_access(db, current_user, sequence.branch_id)" in router
