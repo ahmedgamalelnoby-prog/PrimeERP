@@ -47,8 +47,12 @@ def _assert_location_pair_access(db: Session, company_id: int, location_ids, use
     if user.is_platform_admin or not branch_ids:
         return
     context = get_optional_request_context()
-    if context is None or context.branch_id not in branch_ids:
-        raise HTTPException(403, "Select one of the stock movement branches using X-Branch-ID")
+    if context is None:
+        raise HTTPException(403, "Company context is required")
+    if context.branch_id is None:
+        return
+    if context.branch_id not in branch_ids:
+        raise HTTPException(403, "Stock movement is outside the active branch context")
     for branch_id in branch_ids:
         require_branch_access(db, company_id, branch_id, user, require_selected=False)
 
