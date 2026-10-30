@@ -264,7 +264,7 @@ export default function PosPage() {
         </div>}
         {cashierShift?.status === "closed" && <div className="space-y-1 text-sm">
           <p>{t("pos.shiftClosed", { id: cashierShift.id })}</p>
-          <p>{t("{t("pos.expectedCash")}:")} {cashierShift.expected_cash} · {t("{t("pos.counted")}:")} {cashierShift.counted_cash} · {t("{t("pos.variance")}:")} {cashierShift.variance}</p>
+          <p>{t("pos.expectedCash")}: {cashierShift.expected_cash} · {t("pos.counted")}: {cashierShift.counted_cash} · {t("pos.variance")}: {cashierShift.variance}</p>
           <button type="button" onClick={() => void openCashierShift()} className="rounded-lg border px-4 py-2">{t("pos.openShift")} {t("pos.newShift")}</button>
         </div>}
       </div>
@@ -276,7 +276,7 @@ export default function PosPage() {
           <select required value={selectedTerminal} onChange={e => { const id=e.target.value; setSelectedTerminal(id); const terminal=terminals.find(x=>String(x.id)===id); const outlet=outlets.find(x=>String(x.id)===String(terminal?.outlet_id)); setWarehouseId(outlet?.warehouse_id ? String(outlet.warehouse_id) : ""); }} className="rounded-lg border px-3 py-2"><option value="">{t("pos.posOutlet")}</option>{terminals.map(x => <option key={x.id} value={x.id}>{x.name} — Outlet {x.outlet_id}</option>)}</select>
           <select required value={selectedMenu} onChange={e => {setSelectedMenu(e.target.value);setSelectedMenuItem("")}} className="rounded-lg border px-3 py-2"><option value="">Menu</option>{menus.map(x => <option key={x.id} value={x.id}>{x.name_ar}</option>)}</select>
           <select required value={selectedMenuItem} onChange={e => setSelectedMenuItem(e.target.value)} className="rounded-lg border px-3 py-2 md:col-span-2"><option value="">{t("pos.chooseMenuItem")}</option>{activeMenu?.items?.map((x:AnyRow) => <option key={x.id} value={x.id}>#{x.id} Product {x.product_id}{x.sale_price_override != null ? ` — ${x.sale_price_override}` : ""}</option>)}</select>
-          <input required type="number" min="0.01" step="0.01" value={qty} onChange={e => setQty(e.target.value)} placeholder="{t("pos.quantity")}" className="rounded-lg border px-3 py-2"/>
+          <input required type="number" min="0.01" step="0.01" value={qty} onChange={e => setQty(e.target.value)} placeholder={t("pos.quantity")} className="rounded-lg border px-3 py-2"/>
           <select value={method} onChange={e => setMethod(e.target.value)} className="rounded-lg border px-3 py-2"><option value="cash">{t("pos.paymentMethods.cash")}</option><option value="card">{t("pos.paymentMethods.card")}</option><option value="bank">{t("pos.paymentMethods.bank")}</option><option value="wallet">{t("pos.paymentMethods.wallet")}</option></select>
         </div>
         <button className="rounded-lg bg-primary px-4 py-2 text-primary-foreground">{t("pos.submitOrder")} {t("pos.tabs.sale")}</button>
