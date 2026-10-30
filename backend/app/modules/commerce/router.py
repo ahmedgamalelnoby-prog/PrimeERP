@@ -228,6 +228,8 @@ def create_purchase(payload: DocumentCreate, current_user: User = Depends(get_cu
 @router.get("/ar-ap/aging", response_model=AgingSummary)
 def ar_ap_aging(company_id: int = Query(..., gt=0), as_of: date | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
+    if not can_manage_all_branches(db, current_user):
+        raise HTTPException(status_code=403, detail="Tenant-wide branch management permission is required for company-wide AR/AP aging")
     cutoff = as_of or date.today()
     rows = commerce_service.ar_ap_aging(db, company_id, cutoff)
     receivable = sum((r["outstanding"] for r in rows if r["direction"] == "receivable"), 0)
@@ -246,6 +248,8 @@ def partner_statement(
     db: Session = Depends(get_db),
 ):
     _company_for_user(db, company_id, current_user)
+    if not can_manage_all_branches(db, current_user):
+        raise HTTPException(status_code=403, detail="Tenant-wide branch management permission is required for company-wide partner statements")
     if from_date and to_date and from_date > to_date:
         raise HTTPException(400, "from_date cannot be later than to_date")
     cutoff = as_of or to_date or date.today()
@@ -367,6 +371,15 @@ def receive_purchase(document_id: int, company_id: int = Query(..., gt=0), curre
 def list_payments(company_id: int = Query(..., gt=0), document_kind: str | None = Query(default=None, pattern="^(sale|purchase)$"), document_id: int | None = Query(default=None, gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
     query = select(CommercePayment).where(CommercePayment.company_id == company_id)
+    if not can_manage_all_branches(db, current_user):
+        sale_ids = _visible_document_ids(db, current_user, company_id, "sale") or set()
+        purchase_ids = _visible_document_ids(db, current_user, company_id, "purchase") or set()
+        visible_conditions = []
+        if sale_ids:
+            visible_conditions.append(and_(CommercePayment.document_kind == "sale", CommercePayment.document_id.in_(sale_ids)))
+        if purchase_ids:
+            visible_conditions.append(and_(CommercePayment.document_kind == "purchase", CommercePayment.document_id.in_(purchase_ids)))
+        query = query.where(or_(*visible_conditions)) if visible_conditions else query.where(CommercePayment.id == -1)
     if document_kind:
         query = query.where(CommercePayment.document_kind == document_kind)
     if document_id:
@@ -391,4 +404,13 @@ def reverse_payment(payment_id: int, payload: PaymentReverse, current_user: User
     _company_for_user(db, payload.company_id, current_user)
     original = db.scalar(select(CommercePayment).where(CommercePayment.id == payment_id, CommercePayment.company_id == payload.company_id))
     if original is None: raise HTTPException(404, "Payment not found")
+    if original.document_kind not in {"sale", "purchase"}:
+        raise HTTPException(409, "Payment document kind is not supported for branch authorization")
+    _authorize_commerce_document(
+        db,
+        current_user,
+        payload.company_id,
+        original.document_id,
+        original.document_kind,
+    )
     obj, original, reversal = _run(lambda: commerce_service.reverse_payment(db, payload.company_id, payment_id, payload.reversal_date, payload.notes, current_user.id)); db.commit(); db.refresh(obj); return obj
