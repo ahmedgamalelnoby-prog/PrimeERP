@@ -460,8 +460,7 @@ export default function UserForm({
               />
 
               <p className="text-xs text-muted-foreground">
-                يجب أن تتكون كلمة المرور من 8 أحرف
-                على الأقل.
+                {t("userForm.passwordHint")}
               </p>
             </div>
 
