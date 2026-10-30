@@ -106,7 +106,7 @@ def create_branch(payload: BranchCreate, db: Session = Depends(get_db), current_
                 user_id=current_user.id,
                 branch_id=branch.id,
                 assigned_by_user_id=current_user.id,
-                is_active=branch.is_active,
+                is_active=True,
             )
         )
         db.commit()
