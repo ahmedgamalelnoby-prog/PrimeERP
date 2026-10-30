@@ -42,6 +42,6 @@ def create_location(payload: LocationCreate, db: Session = Depends(get_db), user
 @router.patch("/{location_id}", response_model=LocationResponse, dependencies=[Depends(require_permission("inventory.write"))])
 def update_location(location_id: int, payload: LocationUpdate, company_id: int = Query(gt=0), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _company_for_user(db, company_id, user)
-    require_location_access(db, user, company_id, location_id)
+    require_location_access(db, user, company_id, location_id, require_active=False)
     try: return location_service.update(db, company_id=company_id, location_id=location_id, payload=payload)
     except ValueError as exc: raise HTTPException(status_code=404, detail=str(exc)) from exc
