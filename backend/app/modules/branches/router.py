@@ -221,6 +221,7 @@ def revoke_branch_membership(
     )
     if membership is None:
         raise HTTPException(status_code=404, detail="Branch membership not found")
+    previous_role_id = membership.role_id
     membership.is_active = False
     record_audit_event(
         db,
@@ -260,7 +261,7 @@ def clear_branch_member_role(
         entity_id=membership.id,
         user_id=current_user.id,
         tenant_id=branch.tenant_id,
-        metadata={"branch_id": branch.id, "member_user_id": user_id},
+        metadata={"branch_id": branch.id, "member_user_id": user_id, "previous_role_id": previous_role_id},
     )
     db.commit()
     return None
