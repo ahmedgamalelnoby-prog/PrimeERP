@@ -4,7 +4,8 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.context import get_effective_tenant_id
+from app.core.context import get_optional_request_context
+from app.core.context.access import require_company_access
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.audit.service import record_audit_event
@@ -32,13 +33,10 @@ class SettingsUpdate(BaseModel):
 
 
 def _company(db: Session, company_id: int, user: User) -> Company:
-    tenant_id = get_effective_tenant_id(user)
-    company = db.scalar(select(Company).where(
-        Company.id == company_id, Company.tenant_id == tenant_id, Company.is_active.is_(True)
-    ))
-    if company is None:
-        raise HTTPException(status_code=404, detail="Active company not found in current tenant")
-    return company
+    context = get_optional_request_context()
+    if context is None or context.branch_id is not None:
+        raise HTTPException(400, "Company settings are company-wide; omit X-Branch-ID")
+    return require_company_access(db, company_id, user)
 
 
 @router.get("", dependencies=[Depends(require_permission("company.access"))])
