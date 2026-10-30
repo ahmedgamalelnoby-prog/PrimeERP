@@ -68,40 +68,6 @@ const initialState: FormState = {
   permission_ids: [],
 };
 
-const resourceNames: Record<string, string> = {
-  users: "المستخدمون",
-  roles: "الأدوار",
-  permissions: "الصلاحيات",
-  companies: "الشركات",
-  branches: "الفروع",
-  sales: "المبيعات",
-  customers: "العملاء",
-  suppliers: "الموردون",
-  products: "المنتجات",
-  inventory: "المخزون",
-  purchasing: "المشتريات",
-  accounting: "الحسابات",
-  restaurant: "المطاعم",
-  pos: "نقاط البيع",
-  hr: "الموارد البشرية",
-  reports: "التقارير",
-  shipping: "شركات الشحن",
-  settings: "الإعدادات",
-};
-
-const actionNames: Record<string, string> = {
-  view: "عرض",
-  read: "عرض",
-  create: "إضافة",
-  update: "تعديل",
-  delete: "حذف",
-  approve: "اعتماد",
-  manage: "إدارة كاملة",
-  print: "طباعة",
-  export: "تصدير",
-  cancel: "إلغاء",
-};
-
 export default function RoleForm({
   open,
   role,
