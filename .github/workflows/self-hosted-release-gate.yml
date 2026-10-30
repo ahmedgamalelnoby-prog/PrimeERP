@@ -317,11 +317,23 @@ jobs:
           }
           Write-Host "Frontend host port $env:FRONTEND_HOST_PORT is available."
 
-      - name: Start database and run migrations
+      - name: Start database for pre-migration audit
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
           $ErrorActionPreference = 'Stop'
-          docker compose up -d db migrate
+          docker compose up -d db
+
+      - name: Audit global user identity constraints before migrations (read-only)
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+        run: |
+          $ErrorActionPreference = 'Stop'
+          docker compose run --rm --no-deps backend python scripts/audit_user_identity_preflight.py
+
+      - name: Run database migrations
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+        run: |
+          $ErrorActionPreference = 'Stop'
+          docker compose up -d migrate
           $deadline = (Get-Date).AddMinutes(10)
           while ((Get-Date) -lt $deadline) {
             $migrateContainer = "${env:PRIMEERP_CONTAINER_PREFIX}-migrate"
@@ -336,12 +348,6 @@ jobs:
           }
           docker compose logs migrate
           throw 'Migration container did not finish within 10 minutes.'
-
-      - name: Audit global user identity constraints (read-only)
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
-        run: |
-          $ErrorActionPreference = 'Stop'
-          docker compose run --rm backend python scripts/audit_user_identity_preflight.py
 
       - name: Execute PostgreSQL effective-date guard tests
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
