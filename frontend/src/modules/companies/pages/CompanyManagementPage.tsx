@@ -132,7 +132,7 @@ export default function CompanyManagementPage() {
   async function deactivate(id: number) {
     if (!window.confirm("هل تريد تعطيل هذا السجل؟")) return;
     try {
-      await client.delete(`${branches ? "/branches" : "/companies"}/${id}`, { headers: { "X-Company-ID": branches ? storage.getCompanyId() || "" : String(id), "X-Branch-ID": "" } });
+      await client.delete(`${branches ? "/branches" : "/companies"}/${id}`, { headers: { "X-Company-ID": branches ? String(companyId) : String(id), "X-Branch-ID": "" } });
       await loadRows();
     } catch (requestError: any) {
       setError(requestError?.response?.data?.detail || "تعذر التعطيل");
