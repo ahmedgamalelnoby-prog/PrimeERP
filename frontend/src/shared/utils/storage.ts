@@ -17,5 +17,6 @@ export const storage = {
     localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
     localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
     localStorage.removeItem(STORAGE_KEYS.TENANT_ID);
+    localStorage.removeItem("company_id");
   },
 };
