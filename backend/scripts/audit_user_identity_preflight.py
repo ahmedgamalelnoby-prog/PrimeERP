@@ -122,6 +122,21 @@ def main() -> int:
             connection.exec_driver_sql("SET LOCAL enable_indexonlyscan = off")
             connection.exec_driver_sql("SET LOCAL enable_bitmapscan = off")
 
+            # A brand-new database has no application tables yet. The preflight
+            # runs before Alembic in CI/deployment, so absence of users is a
+            # valid not-yet-initialized state, not an identity-integrity failure.
+            # The migration performs its own duplicate checks once the table
+            # exists in the migration sequence.
+            if not inspect(connection).has_table("users", schema="public"):
+                report = {
+                    "status": "skipped",
+                    "reason": "public.users does not exist yet; database is not initialized",
+                    "mutations_performed": False,
+                }
+                print(json.dumps(report, ensure_ascii=False, indent=2))
+                print("Preflight skipped: public.users will be checked by the migration after schema creation.")
+                return 0
+
             duplicate_usernames = _duplicate_groups(connection, "username")
             duplicate_emails = _duplicate_groups(connection, "email")
             duplicate_primary_keys = _duplicate_primary_keys(connection)
