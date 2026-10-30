@@ -35,6 +35,8 @@ class AuthenticationService:
         )
         if not users:
             self._reject_login(db, login_key, "unknown_account")
+        if len(users) > 50:
+            self._reject_login(db, login_key, "too_many_matching_accounts")
 
         # Resolve the tenant from the matched identity and password. A company
         # name/slug is deliberately not required at sign-in. If legacy data has
