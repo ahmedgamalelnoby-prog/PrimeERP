@@ -67,20 +67,14 @@ def list_transfers(
     transfers = inventory_transfer_service.list(db, company_id=company_id, status=status)
     if current_user.is_platform_admin:
         return transfers
-    visible_branch_ids = set(db.scalars(
-        select(BranchUserMembership.branch_id).where(
-            BranchUserMembership.user_id == current_user.id,
-            BranchUserMembership.is_active.is_(True),
-        )
-    ).all())
     visible = []
     for transfer in transfers:
-        source = db.get(InventoryWarehouse, transfer.source_warehouse_id)
-        destination = db.get(InventoryWarehouse, transfer.destination_warehouse_id)
-        if source is None or destination is None:
-            continue
-        if all(w.branch_id is None or w.branch_id in visible_branch_ids for w in (source, destination)):
+        try:
+            _assert_transfer_access(db, company_id, transfer, current_user)
             visible.append(transfer)
+        except HTTPException as exc:
+            if exc.status_code not in {403, 404}:
+                raise
     return visible
 
 
