@@ -67,6 +67,9 @@ def _branch_for_membership_admin(db: Session, branch_id: int, user: User) -> Bra
 
 
 def _branch(db: Session, branch_id: int, user: User) -> Branch:
+    context = get_optional_request_context()
+    if context is None or context.branch_id != branch_id:
+        raise HTTPException(status_code=403, detail="Select the requested branch using X-Branch-ID")
     branch = db.scalar(select(Branch).where(
         Branch.id == branch_id,
         Branch.tenant_id == _tenant_id(user),
