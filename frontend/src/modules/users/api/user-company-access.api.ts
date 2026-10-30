@@ -15,6 +15,22 @@ export interface CompanyMember {
   role_id: number | null;
 }
 
+export interface AccessibleBranch {
+  id: number;
+  company_id: number;
+  name: string;
+  code: string | null;
+}
+
+export interface BranchMember {
+  user_id: number;
+  username: string;
+  full_name: string | null;
+  user_is_active: boolean;
+  membership_is_active: boolean;
+  role_id: number | null;
+}
+
 export interface AssignableCompanyRole {
   id: number;
   name: string;
@@ -36,6 +52,55 @@ export const userCompanyAccessApi = {
       headers: { "X-Branch-ID": "" },
     });
     return response.data;
+  },
+
+  async getBranches(companyId: number) {
+    const response = await apiClient.get<AccessibleBranch[]>("/branches", {
+      ...companyConfig(companyId),
+      params: { company_id: companyId, active_only: true },
+    });
+    return response.data;
+  },
+
+  async getBranchMembers(companyId: number, branchId: number) {
+    const response = await apiClient.get<BranchMember[]>(
+      `/branches/${branchId}/members`,
+      companyConfig(companyId),
+    );
+    return response.data;
+  },
+
+  async getAssignableBranchRoles(companyId: number, branchId: number) {
+    const response = await apiClient.get<AssignableCompanyRole[]>(
+      `/branches/${branchId}/assignable-roles`,
+      companyConfig(companyId),
+    );
+    return response.data;
+  },
+
+  async grantBranch(companyId: number, branchId: number, userId: number, roleId: number | null) {
+    await apiClient.put(
+      `/branches/${branchId}/members/${userId}`,
+      null,
+      {
+        ...companyConfig(companyId),
+        params: roleId ? { role_id: roleId } : undefined,
+      },
+    );
+  },
+
+  async revokeBranch(companyId: number, branchId: number, userId: number) {
+    await apiClient.delete(
+      `/branches/${branchId}/members/${userId}`,
+      companyConfig(companyId),
+    );
+  },
+
+  async clearBranchRole(companyId: number, branchId: number, userId: number) {
+    await apiClient.delete(
+      `/branches/${branchId}/members/${userId}/role`,
+      companyConfig(companyId),
+    );
   },
 
   async getMembers(companyId: number) {
