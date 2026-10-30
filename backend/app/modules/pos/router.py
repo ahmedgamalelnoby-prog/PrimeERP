@@ -178,6 +178,22 @@ def _branch(db: Session, company_id: int, branch_id: int, user: User):
     return branch
 
 
+def _visible_branch_ids(db: Session, company_id: int, user: User) -> list[int] | None:
+    """Return branch grants for list endpoints; None means platform-wide access."""
+    if user.is_platform_admin:
+        return None
+    return list(db.scalars(
+        select(BranchUserMembership.branch_id)
+        .join(Branch, Branch.id == BranchUserMembership.branch_id)
+        .where(
+            Branch.company_id == company_id,
+            Branch.is_active.is_(True),
+            BranchUserMembership.user_id == user.id,
+            BranchUserMembership.is_active.is_(True),
+        )
+    ).all())
+
+
 def _terminal(db: Session, company_id: int, terminal_id: int, user: User) -> PosTerminal:
     terminal = db.scalar(select(PosTerminal).where(
         PosTerminal.id == terminal_id,
@@ -348,13 +364,33 @@ def sales(
     db: Session = Depends(get_db),
 ):
     _company(db, company_id, current_user)
+    visible_branches = _visible_branch_ids(db, company_id, current_user)
+    if visible_branches == []:
+        return []
+    if visible_branches is not None:
+        return list(db.scalars(
+            select(SalesDocument)
+            .join(InventoryWarehouse, InventoryWarehouse.id == SalesDocument.warehouse_id)
+            .where(
+                SalesDocument.company_id == company_id,
+                SalesDocument.document_type == "invoice",
+                InventoryWarehouse.branch_id.in_(visible_branches),
+            )
+            .order_by(SalesDocument.document_date.desc(), SalesDocument.id.desc())
+        ).all())
     return commerce_service.list_documents(db, company_id, "sale", "invoice")
 
 
 @router.get("/outlets")
 def list_outlets(company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company(db, company_id, current_user)
-    return list(db.scalars(select(PosOutlet).where(PosOutlet.company_id == company_id).order_by(PosOutlet.name)).all())
+    q = select(PosOutlet).where(PosOutlet.company_id == company_id)
+    visible_branches = _visible_branch_ids(db, company_id, current_user)
+    if visible_branches is not None:
+        if not visible_branches:
+            return []
+        q = q.where(PosOutlet.branch_id.in_(visible_branches))
+    return list(db.scalars(q.order_by(PosOutlet.name)).all())
 
 
 @router.post("/outlets", status_code=201, dependencies=[Depends(require_permission("commerce.write"))])
@@ -390,7 +426,13 @@ def assign_outlet_warehouse(outlet_id: int, warehouse_id: int = Query(..., gt=0)
 @router.get("/warehouses")
 def list_warehouses(company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company(db, company_id, current_user)
-    return list(db.scalars(select(InventoryWarehouse).where(InventoryWarehouse.company_id == company_id, InventoryWarehouse.is_active.is_(True)).order_by(InventoryWarehouse.is_central.desc(), InventoryWarehouse.name)).all())
+    q = select(InventoryWarehouse).where(InventoryWarehouse.company_id == company_id, InventoryWarehouse.is_active.is_(True))
+    visible_branches = _visible_branch_ids(db, company_id, current_user)
+    if visible_branches is not None:
+        if not visible_branches:
+            return []
+        q = q.where(InventoryWarehouse.branch_id.in_(visible_branches))
+    return list(db.scalars(q.order_by(InventoryWarehouse.is_central.desc(), InventoryWarehouse.name)).all())
 
 
 @router.get("/stations")
@@ -400,6 +442,11 @@ def list_stations(company_id: int = Query(..., gt=0), outlet_id: int | None = Qu
         Branch.company_id == company_id,
         PreparationStation.is_active.is_(True),
     )
+    visible_branches = _visible_branch_ids(db, company_id, current_user)
+    if visible_branches is not None:
+        if not visible_branches:
+            return []
+        q = q.where(PreparationStation.branch_id.in_(visible_branches))
     if outlet_id:
         q = q.join(PosOutletStation, PosOutletStation.station_id == PreparationStation.id).where(
             PosOutletStation.outlet_id == outlet_id,
@@ -456,6 +503,11 @@ def link_outlet_station(payload: OutletStationLink, company_id: int = Query(...,
 def list_terminals(company_id: int = Query(..., gt=0), outlet_id: int | None = Query(default=None, gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company(db, company_id, current_user)
     q = select(PosTerminal).where(PosTerminal.company_id == company_id, PosTerminal.is_active.is_(True))
+    visible_branches = _visible_branch_ids(db, company_id, current_user)
+    if visible_branches is not None:
+        if not visible_branches:
+            return []
+        q = q.where(PosTerminal.branch_id.in_(visible_branches))
     if outlet_id:
         q = q.where(PosTerminal.outlet_id == outlet_id)
     return list(db.scalars(q.order_by(PosTerminal.name)).all())
@@ -725,7 +777,41 @@ def station_queue(
         )
         .order_by(SalesDocument.document_date.desc(), SalesDocument.id.desc(), SalesLine.id.asc())
         .limit(500)
-    ).all()
+    )
+    visible_branches = _visible_branch_ids(db, company_id, current_user)
+    if visible_branches is not None:
+        if not visible_branches:
+            return []
+        rows = db.execute(
+            select(PosOrderLineRoute, SalesLine, SalesDocument)
+            .join(SalesLine, SalesLine.id == PosOrderLineRoute.sales_line_id)
+            .join(SalesDocument, SalesDocument.id == SalesLine.document_id)
+            .join(PreparationStation, PreparationStation.id == PosOrderLineRoute.station_id)
+            .join(Branch, Branch.id == PreparationStation.branch_id)
+            .where(
+                PosOrderLineRoute.station_id == station_id,
+                PosOrderLineRoute.status == status,
+                Branch.company_id == company_id,
+                Branch.id.in_(visible_branches),
+            )
+            .order_by(SalesDocument.document_date.desc(), SalesDocument.id.desc(), SalesLine.id.asc())
+            .limit(500)
+        ).all()
+    else:
+        rows = db.execute(
+            select(PosOrderLineRoute, SalesLine, SalesDocument)
+            .join(SalesLine, SalesLine.id == PosOrderLineRoute.sales_line_id)
+            .join(SalesDocument, SalesDocument.id == SalesLine.document_id)
+            .join(PreparationStation, PreparationStation.id == PosOrderLineRoute.station_id)
+            .join(Branch, Branch.id == PreparationStation.branch_id)
+            .where(
+                PosOrderLineRoute.station_id == station_id,
+                PosOrderLineRoute.status == status,
+                Branch.company_id == company_id,
+            )
+            .order_by(SalesDocument.document_date.desc(), SalesDocument.id.desc(), SalesLine.id.asc())
+            .limit(500)
+        ).all()
     return [{
         "route_id": route.id,
         "order_id": doc.id,
