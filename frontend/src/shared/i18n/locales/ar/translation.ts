@@ -66,9 +66,7 @@ const arTranslation = {
     appName: "برايم ERP",
     appDescription: "منصة إدارة الأعمال",
 
-    loading: "جاري التحميل...",
     save: "حفظ",
-    cancel: "إلغاء",
     submit: "إرسال",
 
     english: "English",
