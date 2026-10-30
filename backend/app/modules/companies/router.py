@@ -24,6 +24,9 @@ def _tenant_id(user: User) -> int:
 
 
 def _get_company(db: Session, company_id: int, user: User) -> Company:
+    context = get_optional_request_context()
+    if context is None or context.company_id != company_id:
+        raise HTTPException(status_code=403, detail="Select the requested company using X-Company-ID")
     company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == _tenant_id(user)))
     if company is None:
         raise HTTPException(status_code=404, detail="Company not found")
