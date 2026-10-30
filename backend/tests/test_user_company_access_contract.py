@@ -17,7 +17,7 @@ def test_company_access_table_has_one_default_per_user():
 
 def test_company_list_is_limited_to_assigned_companies():
     source = read("app/modules/companies/router.py")
-    assert "assigned_company_ids(db, current_user.id, tenant_id)" in source
+    assert "user_company_access.c.user_id == current_user.id" in source
 
 
 def test_company_settings_reject_unassigned_company():
