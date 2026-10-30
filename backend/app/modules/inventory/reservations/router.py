@@ -35,7 +35,13 @@ def _authorize_reservation(db: Session, user: User, company_id: int, reservation
     )
     if reservation is None:
         raise HTTPException(status_code=404, detail="Reservation not found")
-    require_location_access(db, user, company_id, reservation.location_id)
+    require_location_access(
+        db,
+        user,
+        company_id,
+        reservation.location_id,
+        require_active=False,
+    )
     return reservation
 
 
