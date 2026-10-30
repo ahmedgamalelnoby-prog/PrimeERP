@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { useTranslation } from "react-i18next";
 
 interface RoleStatusProps {
   isActive: boolean;
@@ -6,7 +7,8 @@ interface RoleStatusProps {
 
 export default function RoleStatus({
   isActive,
-}: RoleStatusProps) {
+} : RoleStatusProps) {
+  const { t } = useTranslation();
   return (
     <Badge
       variant="secondary"
@@ -18,14 +20,14 @@ export default function RoleStatus({
     >
       <span
         className={[
-          "ml-1.5 h-1.5 w-1.5 rounded-full",
+          "ms-1.5 h-1.5 w-1.5 rounded-full",
           isActive
             ? "bg-emerald-500"
             : "bg-slate-400",
         ].join(" ")}
       />
 
-      {isActive ? "نشط" : "معطل"}
+      {isActive ? t("rolesTable.active") : t("rolesTable.inactive")}
     </Badge>
   );
 }
