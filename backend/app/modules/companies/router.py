@@ -126,6 +126,7 @@ def grant_company_membership(
     else:
         membership.is_active = True
         membership.assigned_by = current_user.id
+    db.flush()
     record_audit_event(
         db,
         action="company.membership.grant",
