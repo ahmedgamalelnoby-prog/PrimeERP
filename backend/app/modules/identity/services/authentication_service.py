@@ -41,14 +41,10 @@ class AuthenticationService:
         # Resolve the tenant from the matched identity and password. A company
         # name/slug is deliberately not required at sign-in. If legacy data has
         # the same username and password in more than one tenant, fail closed.
-        matching_users = [
-            candidate
-            for candidate in users
-            if password_service.verify_password(
-                payload.password,
-                candidate.hashed_password,
-            )
-        ]
+        matching_users = self._matching_users_by_password(
+            users,
+            payload.password,
+        )
         if len(matching_users) != 1:
             reason = "ambiguous_credentials" if matching_users else "invalid_password"
             self._reject_login(db, login_key, reason)
@@ -96,6 +92,18 @@ class AuthenticationService:
                 "enabled_modules": enabled_modules,
             },
         }
+
+    @staticmethod
+    def _matching_users_by_password(users: list, password: str) -> list:
+        """Return only identities whose password hash verifies the supplied password."""
+        return [
+            candidate
+            for candidate in users
+            if password_service.verify_password(
+                password,
+                candidate.hashed_password,
+            )
+        ]
 
     def _login_key(self, payload: LoginRequest) -> str:
         tenant = (payload.tenant_slug or "").strip().lower()
