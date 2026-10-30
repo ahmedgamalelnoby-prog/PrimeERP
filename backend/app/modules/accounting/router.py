@@ -5,12 +5,13 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.context import get_effective_tenant_id
+from app.core.context import get_effective_tenant_id, get_optional_request_context
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.accounting.models import TaxRate
 from app.modules.accounting.tax_engine import calculate_taxes
 from app.modules.companies.models import Company
+from app.modules.companies.membership import CompanyUserMembership
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.saas.entitlements import require_module
@@ -19,13 +20,26 @@ router = APIRouter(prefix="/accounting", tags=["accounting"], dependencies=[Depe
 
 
 def _company_for_user(db: Session, company_id: int, user: User):
-    if get_effective_tenant_id(user) is None:
-        raise HTTPException(403, "User is not assigned to a tenant")
-    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == get_effective_tenant_id(user)))
+    """Require the active company context and an explicit company membership."""
+    tenant_id = get_effective_tenant_id(user)
+    context = get_optional_request_context()
+    if context is None or context.company_id != company_id:
+        raise HTTPException(403, "Select this company using X-Company-ID before accessing accounting data")
+    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == tenant_id))
     if company is None:
-        raise HTTPException(403, "Company is outside the current tenant")
+        raise HTTPException(404, "Company not found")
     if not company.is_active:
         raise HTTPException(409, "Company is inactive")
+    if not user.is_platform_admin:
+        membership = db.scalar(
+            select(CompanyUserMembership.id).where(
+                CompanyUserMembership.company_id == company_id,
+                CompanyUserMembership.user_id == user.id,
+                CompanyUserMembership.is_active.is_(True),
+            )
+        )
+        if membership is None:
+            raise HTTPException(404, "Company not found")
     return company
 
 
