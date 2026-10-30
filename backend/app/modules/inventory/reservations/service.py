@@ -5,13 +5,27 @@ from sqlalchemy.orm import Session
 from app.modules.catalog.models import ProductVariant
 from app.modules.inventory.items.models import InventoryItem, InventoryStock
 from app.modules.inventory.locations.models import InventoryLocation
+from app.modules.inventory.warehouses.models import InventoryWarehouse
 from app.modules.inventory.stock_moves.location_stock import InventoryLocationStock
 from app.modules.inventory.reservations.models import InventoryReservation
 
 
 class InventoryReservationService:
-    def list(self, db: Session, company_id: int, item_id: int | None = None, location_id: int | None = None, variant_id: int | None = None):
-        stmt = select(InventoryReservation).where(InventoryReservation.company_id == company_id)
+    def list(self, db: Session, company_id: int, item_id: int | None = None, location_id: int | None = None, variant_id: int | None = None, *, branch_id: int | None = None):
+        stmt = (
+            select(InventoryReservation)
+            .join(InventoryLocation, InventoryLocation.id == InventoryReservation.location_id)
+            .join(InventoryWarehouse, InventoryWarehouse.id == InventoryLocation.warehouse_id)
+            .where(
+                InventoryReservation.company_id == company_id,
+                InventoryWarehouse.company_id == company_id,
+                InventoryWarehouse.is_active.is_(True),
+            )
+        )
+        if branch_id is not None:
+            stmt = stmt.where(
+                (InventoryWarehouse.branch_id == branch_id) | InventoryWarehouse.is_central.is_(True)
+            )
         if item_id:
             stmt = stmt.where(InventoryReservation.item_id == item_id)
         if location_id:
