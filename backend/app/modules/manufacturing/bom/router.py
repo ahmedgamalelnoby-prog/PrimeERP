@@ -12,7 +12,7 @@ from app.modules.companies.models import Company
 from app.modules.company_settings.service import get_company_setting
 from app.modules.catalog.service import catalog_service
 from app.modules.inventory.access import require_location_access
-from app.modules.branches.access import accessible_branch_ids
+from app.modules.branches.access import accessible_branch_ids, can_manage_all_branches
 from app.modules.inventory.stock_moves.schemas import StockMoveCreate
 from app.modules.inventory.stock_moves.service import inventory_stock_move_service
 from app.modules.manufacturing.production_orders.schemas import WorkOrderComplete, WorkOrderCreate, WorkOrderResponse
@@ -158,6 +158,7 @@ def list_work_orders(
         db,
         company_id=company_id,
         allowed_branch_ids=accessible_branch_ids(db, current_user),
+        include_central_warehouses=can_manage_all_branches(db, current_user),
     )
 
 
