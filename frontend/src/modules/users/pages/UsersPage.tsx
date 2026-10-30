@@ -93,7 +93,7 @@ export default function UsersPage() {
             type="button"
             onClick={handleNewUser}
           >
-            <Plus className={isArabic ? "ml-2 h-4 w-4" : "mr-2 h-4 w-4"} />
+            <Plus className="me-2 h-4 w-4" />
             {t("users.newUser")}
           </Button>
         }
@@ -139,7 +139,7 @@ export default function UsersPage() {
 
       <section className="rounded-2xl border bg-card p-4 shadow-sm">
         <div className="relative max-w-md">
-          <Search className={`pointer-events-none absolute ${isArabic ? "right-3" : "left-3"} top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground`} />
+          <Search className={`pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground`} />
 
           <Input
             value={filters.search || ""}
@@ -152,7 +152,7 @@ export default function UsersPage() {
               }))
             }
             placeholder={t("users.searchPlaceholder")}
-            className={isArabic ? "pr-10" : "pl-10"}
+            className="ps-10"
           />
         </div>
       </section>
