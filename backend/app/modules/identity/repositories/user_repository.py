@@ -107,10 +107,10 @@ class UserRepository(BaseRepository[User]):
         tenant_name: str | None = None,
     ) -> list[User]:
         """
-        Returns up to two matching users.
+        Returns up to three matching users.
 
-        The service layer decides whether multiple matches
-        represent a business conflict.
+        The service layer fails closed when more than two candidates
+        exist, because the username/password pair cannot safely resolve them.
         """
         normalized_login = login.strip().lower()
 
