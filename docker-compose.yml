@@ -199,8 +199,8 @@ services:
     healthcheck:
       disable: true
     depends_on:
-      migrate:
-        condition: service_completed_successfully
+      db:
+        condition: service_healthy
     networks:
       - primeerp
 
@@ -222,8 +222,8 @@ services:
     healthcheck:
       disable: true
     depends_on:
-      migrate:
-        condition: service_completed_successfully
+      db:
+        condition: service_healthy
     networks:
       - primeerp
 
