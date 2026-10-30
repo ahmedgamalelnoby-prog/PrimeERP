@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
+from app.modules.branches.access import accessible_branch_ids, can_manage_all_branches, require_branch_access
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
@@ -24,18 +25,53 @@ def _company_for_user(db: Session, company_id: int, user: User) -> Company:
 
 @router.get("", response_model=list[WarehouseResponse], dependencies=[Depends(require_permission("inventory.access"))])
 def list_warehouses(company_id: int = Query(gt=0), branch_id: int | None = Query(default=None, gt=0), include_central: bool = True, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    _company_for_user(db, company_id, current_user); return warehouse_service.list(db, company_id=company_id, branch_id=branch_id, include_central=include_central)
+    _company_for_user(db, company_id, current_user)
+    if branch_id is not None:
+        branch = require_branch_access(db, current_user, branch_id)
+        if branch.company_id != company_id:
+            raise HTTPException(status_code=404, detail="Branch not found for company")
+        allowed = None
+    elif can_manage_all_branches(db, current_user):
+        allowed = None
+    else:
+        allowed = accessible_branch_ids(db, current_user)
+    return warehouse_service.list(
+        db,
+        company_id=company_id,
+        branch_id=branch_id,
+        include_central=include_central,
+        allowed_branch_ids=allowed,
+    )
 
 
 @router.get("/central", response_model=WarehouseResponse | None, dependencies=[Depends(require_permission("inventory.access"))])
 def get_central_warehouse(company_id: int = Query(gt=0), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    _company_for_user(db, company_id, current_user); return warehouse_service.get_central(db, company_id=company_id)
+    _company_for_user(db, company_id, current_user)
+    if not can_manage_all_branches(db, current_user):
+        branch_ids = accessible_branch_ids(db, current_user)
+        from app.modules.branches.models import Branch
+        has_company_membership = db.scalar(
+            select(Branch.id).where(
+                Branch.id.in_(branch_ids),
+                Branch.company_id == company_id,
+                Branch.tenant_id == get_effective_tenant_id(current_user),
+            ).limit(1)
+        ) if branch_ids else None
+        if has_company_membership is None:
+            raise HTTPException(status_code=403, detail="You are not assigned to this company's branches")
+    return warehouse_service.get_central(db, company_id=company_id)
 
 
 @router.post("", response_model=WarehouseResponse, status_code=201, dependencies=[Depends(require_permission("inventory.write"))])
 def create_warehouse(payload: WarehouseCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     company = _company_for_user(db, payload.company_id, current_user)
     if payload.tenant_id != company.tenant_id: raise HTTPException(status_code=422, detail="Warehouse tenant does not match company tenant")
+    if payload.branch_id is not None:
+        branch = require_branch_access(db, current_user, payload.branch_id)
+        if branch.company_id != company.id:
+            raise HTTPException(status_code=404, detail="Branch not found for company")
+    elif not can_manage_all_branches(db, current_user):
+        raise HTTPException(status_code=403, detail="Tenant-wide branch management permission is required for a central warehouse")
     try:
         return warehouse_service.create(db, tenant_id=company.tenant_id, company_id=company.id, branch_id=payload.branch_id, code=payload.code, name=payload.name, description=payload.description, is_central=payload.is_central)
     except ValueError as exc: raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -46,6 +82,10 @@ def update_warehouse(warehouse_id: int, payload: WarehouseUpdate, company_id: in
     _company_for_user(db, company_id, current_user)
     warehouse = warehouse_service.get(db, company_id=company_id, warehouse_id=warehouse_id)
     if warehouse is None: raise HTTPException(status_code=404, detail="Warehouse not found")
+    if warehouse.branch_id is not None:
+        require_branch_access(db, current_user, warehouse.branch_id)
+    elif not can_manage_all_branches(db, current_user):
+        raise HTTPException(status_code=403, detail="Tenant-wide branch management permission is required for a central warehouse")
     if payload.name is not None: warehouse.name = payload.name.strip()
     if payload.description is not None: warehouse.description = payload.description
     if payload.is_active is not None: warehouse.is_active = payload.is_active
