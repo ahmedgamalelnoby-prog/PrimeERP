@@ -202,6 +202,7 @@ def revoke_company_membership(
     )
     if membership is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company membership not found")
+    previous_role_id = membership.role_id
     membership.is_active = False
     record_audit_event(
         db,
@@ -241,7 +242,7 @@ def clear_company_member_role(
         entity_id=membership.id,
         user_id=current_user.id,
         tenant_id=company.tenant_id,
-        metadata={"company_id": company.id, "member_user_id": user_id},
+        metadata={"company_id": company.id, "member_user_id": user_id, "previous_role_id": previous_role_id},
     )
     db.commit()
     return None
