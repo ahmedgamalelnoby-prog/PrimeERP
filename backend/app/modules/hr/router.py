@@ -92,22 +92,19 @@ def workforce(
     tenant_id = _tenant(current_user)
     _company_for_tenant(db, company_id, tenant_id, current_user)
 
-    users = list(
-        db.scalars(
-            select(User)
-            .join(
-                CompanyUserMembership,
-                CompanyUserMembership.user_id == User.id,
-            )
-            .where(
-                User.tenant_id == tenant_id,
-                User.is_deleted.is_(False),
-                CompanyUserMembership.company_id == company_id,
-                CompanyUserMembership.is_active.is_(True),
-            )
-            .order_by(User.full_name, User.id)
-        ).all()
+    users_query = select(User).where(
+        User.tenant_id == tenant_id,
+        User.is_deleted.is_(False),
     )
+    if not current_user.is_platform_admin:
+        users_query = users_query.join(
+            CompanyUserMembership,
+            CompanyUserMembership.user_id == User.id,
+        ).where(
+            CompanyUserMembership.company_id == company_id,
+            CompanyUserMembership.is_active.is_(True),
+        )
+    users = list(db.scalars(users_query.order_by(User.full_name, User.id)).all())
     return [
         {
             "id": user.id,
@@ -137,20 +134,20 @@ def update_workforce(
     tenant_id = _tenant(current_user)
     _company_for_tenant(db, company_id, tenant_id, current_user)
 
-    obj = db.scalar(
-        select(User)
-        .join(
+    user_query = select(User).where(
+        User.id == user_id,
+        User.tenant_id == tenant_id,
+        User.is_deleted.is_(False),
+    )
+    if not current_user.is_platform_admin:
+        user_query = user_query.join(
             CompanyUserMembership,
             CompanyUserMembership.user_id == User.id,
-        )
-        .where(
-            User.id == user_id,
-            User.tenant_id == tenant_id,
-            User.is_deleted.is_(False),
+        ).where(
             CompanyUserMembership.company_id == company_id,
             CompanyUserMembership.is_active.is_(True),
         )
-    )
+    obj = db.scalar(user_query)
     if obj is None:
         raise HTTPException(404, "Employee/user not found")
 
