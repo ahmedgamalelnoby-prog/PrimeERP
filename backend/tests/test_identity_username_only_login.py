@@ -129,3 +129,43 @@ def test_refresh_token_revalidates_user_and_tenant_before_issuing_new_tokens():
     assert "self._validate_user(user)" in refresh
     assert "self._get_auth_tenant(db, user.tenant_id)" in refresh
     assert "self._ensure_subscription_allows_login(tenant, subscription)" in refresh
+
+
+def test_revoked_permission_is_not_granted_from_stale_loaded_role_relationship():
+    from app.core.permissions.checker import user_has_permission
+
+    stale_permission = SimpleNamespace(name="users.write", code="users.write", is_active=True)
+    stale_role = SimpleNamespace(is_active=True, permissions=[stale_permission])
+    user = SimpleNamespace(
+        is_platform_admin=False,
+        is_superuser=False,
+        role_id=7,
+        role=stale_role,
+        permissions=[],
+    )
+
+    class RevokedPermissionDatabase:
+        @staticmethod
+        def scalar(statement):
+            return None
+
+    assert user_has_permission(user, "users.write", RevokedPermissionDatabase()) is False
+
+
+def test_active_permission_is_confirmed_from_database():
+    from app.core.permissions.checker import user_has_permission
+
+    user = SimpleNamespace(
+        is_platform_admin=False,
+        is_superuser=False,
+        role_id=7,
+        role=SimpleNamespace(is_active=True, permissions=[]),
+        permissions=[],
+    )
+
+    class ActivePermissionDatabase:
+        @staticmethod
+        def scalar(statement):
+            return 123
+
+    assert user_has_permission(user, "users.write", ActivePermissionDatabase()) is True
