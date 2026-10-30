@@ -13,9 +13,28 @@ export const storage = {
     if (tenantId && tenantId > 0) localStorage.setItem(STORAGE_KEYS.TENANT_ID, String(tenantId));
     else localStorage.removeItem(STORAGE_KEYS.TENANT_ID);
   },
+  getCompanyId() { return localStorage.getItem(STORAGE_KEYS.COMPANY_ID); },
+  setCompanyId(companyId: number | string | null | undefined) {
+    const value = Number(companyId);
+    if (Number.isInteger(value) && value > 0) localStorage.setItem(STORAGE_KEYS.COMPANY_ID, String(value));
+    else localStorage.removeItem(STORAGE_KEYS.COMPANY_ID);
+  },
+  getBranchId() { return localStorage.getItem(STORAGE_KEYS.BRANCH_ID); },
+  setBranchId(branchId: number | string | null | undefined) {
+    const value = Number(branchId);
+    if (Number.isInteger(value) && value > 0) localStorage.setItem(STORAGE_KEYS.BRANCH_ID, String(value));
+    else localStorage.removeItem(STORAGE_KEYS.BRANCH_ID);
+  },
+  clearBranchContext() { localStorage.removeItem(STORAGE_KEYS.BRANCH_ID); },
+  clearCompanyContext() {
+    localStorage.removeItem(STORAGE_KEYS.COMPANY_ID);
+    localStorage.removeItem(STORAGE_KEYS.BRANCH_ID);
+  },
   clear() {
     localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
     localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
     localStorage.removeItem(STORAGE_KEYS.TENANT_ID);
+    localStorage.removeItem(STORAGE_KEYS.COMPANY_ID);
+    localStorage.removeItem(STORAGE_KEYS.BRANCH_ID);
   },
 };
