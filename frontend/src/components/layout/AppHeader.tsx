@@ -55,25 +55,34 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
 
     let cancelled = false;
     const loadContext = async () => {
+      let available: CompanyOption[];
       try {
         const response = await client.get<CompanyOption[]>("/companies?active_only=true");
         if (cancelled) return;
-        const available = response.data;
-        setCompanies(available);
-        const savedCompanyId = storage.getCompanyId() || "";
-        const savedCompany = available.find((company) => String(company.id) === savedCompanyId);
-        const selectedCompany = savedCompany || (!user.is_platform_admin ? available[0] : undefined);
-
-        if (!selectedCompany) {
-          storage.clearCompanyContext();
-          setSelectedCompanyId("");
-          setSelectedBranchId("");
+        available = response.data;
+      } catch {
+        if (!cancelled) {
+          setCompanies([]);
           setBranches([]);
-          return;
         }
+        return;
+      }
+      setCompanies(available);
+      const savedCompanyId = storage.getCompanyId() || "";
+      const savedCompany = available.find((company) => String(company.id) === savedCompanyId);
+      const selectedCompany = savedCompany || (!user.is_platform_admin ? available[0] : undefined);
 
-        storage.setCompanyId(selectedCompany.id);
-        setSelectedCompanyId(String(selectedCompany.id));
+      if (!selectedCompany) {
+        storage.clearCompanyContext();
+        setSelectedCompanyId("");
+        setSelectedBranchId("");
+        setBranches([]);
+        return;
+      }
+
+      storage.setCompanyId(selectedCompany.id);
+      setSelectedCompanyId(String(selectedCompany.id));
+      try {
         const branchResponse = await client.get<BranchOption[]>("/branches", {
           params: { company_id: selectedCompany.id, active_only: true },
         });
@@ -90,8 +99,9 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
         }
       } catch {
         if (!cancelled) {
-          setCompanies([]);
           setBranches([]);
+          storage.clearBranchContext();
+          setSelectedBranchId("");
         }
       }
     };
@@ -142,7 +152,7 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
         {companies.length > 0 && <select
           value={selectedCompanyId}
           onChange={(event) => changeCompanyContext(event.target.value)}
-          className="hidden max-w-40 rounded-xl border border-border bg-background px-2 py-2 text-xs font-semibold text-foreground md:inline-flex"
+          className="inline-flex max-w-24 rounded-xl border border-border bg-background px-1.5 py-2 text-[10px] font-semibold text-foreground md:max-w-40 md:px-2 md:text-xs"
           aria-label={isArabic ? "الشركة النشطة" : "Active company"}
           title={isArabic ? "الشركة النشطة" : "Active company"}
         >
@@ -152,7 +162,7 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
         {selectedCompanyId && branches.length > 0 && <select
           value={selectedBranchId}
           onChange={(event) => changeBranchContext(event.target.value)}
-          className="hidden max-w-36 rounded-xl border border-border bg-background px-2 py-2 text-xs font-semibold text-foreground lg:inline-flex"
+          className="inline-flex max-w-24 rounded-xl border border-border bg-background px-1.5 py-2 text-[10px] font-semibold text-foreground lg:max-w-36 lg:px-2 lg:text-xs"
           aria-label={isArabic ? "نطاق الفرع" : "Branch scope"}
           title={isArabic ? "نطاق الفرع" : "Branch scope"}
         >
