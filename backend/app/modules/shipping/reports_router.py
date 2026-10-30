@@ -46,7 +46,9 @@ def _filtered_shipments(db: Session, company_id: int, carrier_id: int | None, da
             if not can_manage_all_branches(db, user):
                 raise HTTPException(403, "Central carrier access requires tenant-wide branch management permission")
         else:
-            require_branch_access(db, user, carrier.branch_id)
+            branch = require_branch_access(db, user, carrier.branch_id)
+            if branch.company_id != company_id:
+                raise HTTPException(404, "Carrier not found for company")
         stmt = stmt.where(Shipment.carrier_id == carrier_id)
     if not can_manage_all_branches(db, user):
         stmt = stmt.where(ShippingCarrier.branch_id.in_(accessible_branch_ids(db, user)))
