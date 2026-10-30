@@ -11,6 +11,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 
@@ -110,7 +111,9 @@ export default function RoleForm({
   onOpenChange,
   onCreate,
   onUpdate,
-}: RoleFormProps) {
+} : RoleFormProps) {
+  const { t, i18n } = useTranslation();
+  const direction = i18n.dir();
   const [form, setForm] =
     useState<FormState>(initialState);
 
@@ -292,18 +295,17 @@ export default function RoleForm({
     >
       <DialogContent
         className="max-h-[92vh] overflow-y-auto sm:max-w-4xl"
-        dir="rtl"
+        dir={direction}
       >
-        <DialogHeader className="text-right">
+        <DialogHeader className="text-start">
           <DialogTitle>
             {isEditing
-              ? "تعديل الدور"
-              : "إضافة دور جديد"}
+              ? t("roleForm.titleEdit")
+              : t("roleForm.titleCreate")}
           </DialogTitle>
 
           <DialogDescription>
-            حدد اسم الدور والصلاحيات التي سيتم
-            منحها للمستخدمين المرتبطين به.
+            {t("roleForm.description")}
           </DialogDescription>
         </DialogHeader>
 
@@ -314,7 +316,7 @@ export default function RoleForm({
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="role-name">
-                اسم الدور *
+                {t("roleForm.name")} *
               </Label>
 
               <Input
@@ -327,7 +329,7 @@ export default function RoleForm({
                       event.target.value,
                   }))
                 }
-                placeholder="مثال: مدير الفرع"
+                placeholder={t("roleForm.namePlaceholder")}
                 required
               />
             </div>
@@ -335,7 +337,7 @@ export default function RoleForm({
             <div className="flex items-end">
               <div className="flex w-full items-center justify-between rounded-xl border p-3">
                 <Label htmlFor="role-active">
-                  الدور نشط
+                  {t("roleForm.active")}
                 </Label>
 
                 <Switch
@@ -353,7 +355,7 @@ export default function RoleForm({
 
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="role-description">
-                الوصف
+                {t("roleForm.descriptionLabel")}
               </Label>
 
               <Input
@@ -366,7 +368,7 @@ export default function RoleForm({
                       event.target.value,
                   }))
                 }
-                placeholder="وصف مختصر لمسؤوليات هذا الدور"
+                placeholder={t("roleForm.descriptionPlaceholder")}
               />
             </div>
           </div>
@@ -376,13 +378,11 @@ export default function RoleForm({
               <div>
                 <h3 className="flex items-center gap-2 font-semibold">
                   <ShieldCheck className="h-5 w-5 text-primary" />
-                  صلاحيات الدور
+                  {t("roleForm.permissions")}
                 </h3>
 
                 <p className="mt-1 text-xs text-muted-foreground">
-                  تم اختيار{" "}
-                  {form.permission_ids.length} من{" "}
-                  {permissions.length} صلاحية
+                  {t("roleForm.selectedCount", { selected: form.permission_ids.length, total: permissions.length })}
                 </p>
               </div>
 
@@ -392,14 +392,14 @@ export default function RoleForm({
                 size="sm"
                 onClick={selectAll}
               >
-                <CheckCheck className="ml-2 h-4 w-4" />
-                تحديد أو إلغاء الكل
+                <CheckCheck className="me-2 h-4 w-4" />
+                {t("roleForm.selectAll")}
               </Button>
             </div>
 
             <div className="border-b p-4">
               <div className="relative">
-                <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
 
                 <Input
                   value={permissionSearch}
@@ -408,8 +408,8 @@ export default function RoleForm({
                       event.target.value,
                     )
                   }
-                  placeholder="البحث في الصلاحيات..."
-                  className="pr-10"
+                  placeholder={t("roleForm.searchPermissions")}
+                  className="ps-10"
                 />
               </div>
             </div>
@@ -426,7 +426,7 @@ export default function RoleForm({
                   <ShieldCheck className="mx-auto h-10 w-10 text-muted-foreground" />
 
                   <p className="mt-3 text-sm text-muted-foreground">
-                    لا توجد صلاحيات متاحة.
+                    {t("roleForm.noPermissions")}
                   </p>
                 </div>
               ) : (
@@ -453,16 +453,13 @@ export default function RoleForm({
                         <div className="flex items-center justify-between border-b px-4 py-3">
                           <div>
                             <h4 className="text-sm font-semibold">
-                              {resourceNames[
-                                resource
-                              ] || resource}
+                              {t(`roleForm.resources.${resource}`, { defaultValue: resource })}
                             </h4>
 
                             <p className="mt-1 text-xs text-muted-foreground">
                               {
                                 resourcePermissions.length
-                              }{" "}
-                              صلاحية
+                              {t("roleForm.permissionCount", { count: resourcePermissions.length })}
                             </p>
                           </div>
 
@@ -476,8 +473,8 @@ export default function RoleForm({
                             className="text-xs font-medium text-primary hover:underline"
                           >
                             {allSelected
-                              ? "إلغاء تحديد القسم"
-                              : "تحديد القسم بالكامل"}
+                              ? t("roleForm.unselectSection")
+                              : t("roleForm.selectSection")}
                           </button>
                         </div>
 
@@ -516,11 +513,7 @@ export default function RoleForm({
 
                                   <div>
                                     <p className="text-sm font-medium">
-                                      {actionNames[
-                                        permission
-                                          .action
-                                      ] ||
-                                        permission.action}
+                                      {t(`roleForm.actions.${permission.action}`, { defaultValue: permission.action })}
                                     </p>
 
                                     <p className="mt-1 text-xs text-muted-foreground">
@@ -547,12 +540,12 @@ export default function RoleForm({
               disabled={loading}
             >
               {loading && (
-                <Loader2 className="ml-2 h-4 w-4 animate-spin" />
+                <Loader2 className="me-2 h-4 w-4 animate-spin" />
               )}
 
               {isEditing
-                ? "حفظ التعديلات"
-                : "إنشاء الدور"}
+                ? t("roleForm.save")
+                : t("roleForm.create")}
             </Button>
 
             <Button
@@ -563,7 +556,7 @@ export default function RoleForm({
               }
               disabled={loading}
             >
-              إلغاء
+              {t("common.cancel")}
             </Button>
           </DialogFooter>
         </form>
