@@ -98,8 +98,10 @@ def test_warehouse_list_is_filtered_to_assigned_branches_for_regular_users():
     assert "accessible_branch_ids(db, current_user)" in router
     assert "allowed_branch_ids=allowed" in router
     assert "InventoryWarehouse.branch_id.in_(allowed_branch_ids)" in service
-    assert "include_central_warehouses=can_manage_all_branches(db, current_user)" in router
-    assert "or_(warehouse_scope, InventoryWarehouse.branch_id.is_(None))" in service
+    assert "include_central=include_central and can_manage_all_branches(db, current_user)" in router
+    assert "InventoryWarehouse.is_central.is_(True)" in service
+    assert "include_central and allowed_branch_ids" in service
+    assert "Tenant-wide branch management permission is required for the central warehouse" in router
 
 
 def test_central_warehouse_requires_tenant_wide_permission_for_creation_and_update():
@@ -343,3 +345,11 @@ def test_shipping_settlement_posting_requires_carrier_branch_access():
     assert "ShippingCarrier.company_id == company_id" in router
     assert "require_branch_access(db, current_user, carrier.branch_id)" in router
     assert "Central carrier access requires tenant-wide branch management permission" in router
+
+
+def test_central_warehouse_list_requires_tenant_wide_branch_permission():
+    router = source("app/modules/inventory/warehouses/router.py")
+    central = router.split('def get_central_warehouse(', 1)[1].split('@router.post', 1)[0]
+    assert "if not can_manage_all_branches(db, current_user):" in central
+    assert "status_code=403" in central
+    assert "warehouse_service.get_central(db, company_id=company_id)" in central
