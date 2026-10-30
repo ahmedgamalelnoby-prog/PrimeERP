@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.context import get_effective_tenant_id, get_optional_request_context
 from app.core.permissions import require_permission
-from app.core.permissions.checker import can_assign_role
+from app.core.permissions.checker import can_assign_role, effective_role_id
 from app.database.session import get_db
 from app.modules.companies.models import Company
 from app.modules.companies.membership import CompanyUserMembership
@@ -106,8 +106,13 @@ def grant_company_membership(
     current_user: User = Depends(get_current_user),
 ):
     company = _get_company(db, company_id, current_user)
-    if role_id is not None:
-        if not can_assign_role(current_user, role_id, db):
+    assigned_role_id = role_id
+    if assigned_role_id is None and not current_user.is_platform_admin:
+        # New grants inherit the actor's effective company role, never the
+        # target user's global role (which could be more privileged).
+        assigned_role_id = effective_role_id(current_user, db)
+    if assigned_role_id is not None:
+        if not can_assign_role(current_user, assigned_role_id, db):
             raise HTTPException(status_code=403, detail="You cannot assign a role beyond your own permissions")
     member_user = db.scalar(
         select(User).where(
@@ -133,14 +138,14 @@ def grant_company_membership(
             user_id=member_user.id,
             is_active=True,
             assigned_by=current_user.id,
-            role_id=role_id if role_id is not None else member_user.role_id,
+            role_id=assigned_role_id,
         )
         db.add(membership)
     else:
         membership.is_active = True
         membership.assigned_by = current_user.id
-    if role_id is not None:
-        membership.role_id = role_id
+    if assigned_role_id is not None:
+        membership.role_id = assigned_role_id
     db.flush()
     record_audit_event(
         db,
