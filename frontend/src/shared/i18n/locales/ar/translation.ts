@@ -134,6 +134,48 @@ const arTranslation = {
     }
   },
 
+  sales: {
+    title: "المبيعات",
+    description: "إنشاء مستندات البيع واعتمادها وترحيل المخزون والتحصيل ضمن دورة البيع.",
+    customer: "العميل",
+    autoNumber: "يتم إنشاء رقم المستند تلقائيًا وفق إعدادات الشركة.",
+    sourceOrderOptional: "أمر بيع (اختياري حسب السياسة)",
+    sourceOrderLine: "بند أمر البيع",
+    itemQuantity: "الصنف {{item}} · الكمية {{quantity}}",
+    warehouse: "مخزن الصرف / التسليم",
+    price: "السعر",
+    quantity: "الكمية",
+    itemId: "رقم الصنف",
+    loadingCompanyDate: "جارٍ جلب تاريخ الشركة...",
+    createDocument: "إنشاء مستند",
+    types: {
+      quotation: "عرض سعر",
+      order: "طلب بيع",
+      delivery: "إذن تسليم",
+      invoice: "فاتورة"
+    },
+    columns: {
+      number: "رقم",
+      date: "التاريخ",
+      type: "النوع",
+      status: "الحالة",
+      total: "الإجمالي",
+      actions: "الإجراءات"
+    },
+    actions: {
+      confirm: "تأكيد",
+      cancelRelease: "إلغاء الطلب وتحرير الحجز",
+      approve: "موافقة",
+      reject: "رفض",
+      postInventory: "ترحيل المخزون",
+      collectFull: "تحصيل كامل",
+      details: "تفاصيل"
+    },
+    confirmCancelOrder: "سيتم إلغاء أمر البيع وتحرير الكميات المحجوزة. هل تريد المتابعة؟",
+    documentNumber: "المستند رقم {{number}}",
+    detailsSummary: "العميل: {{customer}} — الإجمالي: {{total}} — المدفوع: {{paid}}"
+  },
+
   roles: {
     notifications: {
       created: "تم إنشاء الدور بنجاح.",
