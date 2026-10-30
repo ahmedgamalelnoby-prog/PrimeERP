@@ -44,6 +44,28 @@ def _company(db: Session, company_id: int, user: User) -> Company:
     return company
 
 
+def _branch_for_membership_admin(db: Session, branch_id: int, user: User) -> Branch:
+    """Allow company members to administer branch grants without branch data access."""
+    branch = db.scalar(select(Branch).where(
+        Branch.id == branch_id,
+        Branch.tenant_id == _tenant_id(user),
+        Branch.company_id == _selected_company_id(),
+    ))
+    if branch is None:
+        raise HTTPException(status_code=404, detail="Branch not found")
+    if not user.is_platform_admin:
+        company_membership = db.scalar(
+            select(CompanyUserMembership.id).where(
+                CompanyUserMembership.company_id == branch.company_id,
+                CompanyUserMembership.user_id == user.id,
+                CompanyUserMembership.is_active.is_(True),
+            )
+        )
+        if company_membership is None:
+            raise HTTPException(status_code=404, detail="Branch not found")
+    return branch
+
+
 def _branch(db: Session, branch_id: int, user: User) -> Branch:
     branch = db.scalar(select(Branch).where(
         Branch.id == branch_id,
@@ -71,7 +93,7 @@ def list_branch_members(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    branch = _branch(db, branch_id, current_user)
+    branch = _branch_for_membership_admin(db, branch_id, current_user)
     rows = db.execute(
         select(BranchUserMembership, User)
         .join(User, User.id == BranchUserMembership.user_id)
@@ -99,7 +121,7 @@ def grant_branch_membership(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    branch = _branch(db, branch_id, current_user)
+    branch = _branch_for_membership_admin(db, branch_id, current_user)
     if role_id is not None:
         if not can_assign_role(current_user, role_id, db):
             raise HTTPException(status_code=403, detail="You cannot assign a role beyond your own permissions")
@@ -160,7 +182,7 @@ def revoke_branch_membership(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    branch = _branch(db, branch_id, current_user)
+    branch = _branch_for_membership_admin(db, branch_id, current_user)
     membership = db.scalar(
         select(BranchUserMembership).where(
             BranchUserMembership.branch_id == branch.id,
