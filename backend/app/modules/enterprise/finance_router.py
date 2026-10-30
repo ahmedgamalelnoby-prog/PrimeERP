@@ -28,6 +28,8 @@ def company_ok(db, cid, user):
     context = get_optional_request_context()
     if tenant_id is None or context is None or context.company_id is None:
         raise HTTPException(400, "Select an active company using X-Company-ID")
+    if context.branch_id is not None:
+        raise HTTPException(400, "Enterprise consolidation is company-wide; omit X-Branch-ID")
     if not db.scalar(
         select(Company.id).where(
             Company.id == cid,
