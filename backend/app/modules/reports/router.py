@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission, user_has_permission
+from app.modules.branches.access import accessible_branch_ids, can_manage_all_branches
 from app.database.session import get_db
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
@@ -99,6 +100,13 @@ def _company_for_user(db: Session, company_id: int, user: User) -> Company:
     if company is None:
         raise HTTPException(403, "Company is outside the current tenant or inactive")
     return company
+
+def _require_company_wide_reporting_access(db: Session, user: User) -> None:
+    if not can_manage_all_branches(db, user):
+        raise HTTPException(
+            status_code=403,
+            detail="Company-wide scheduled reports require tenant-wide branch management permission",
+        )
 
 
 def _send_email(destination: str, title: str, body: str) -> None:
@@ -260,6 +268,7 @@ def deliver_report(request: DeliveryRequest, current_user: User = Depends(get_cu
 @router.post("/schedules", status_code=201, dependencies=[Depends(require_permission("company.write"))])
 def create_schedule(request: ScheduleRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict[str, Any]:
     company = _company_for_user(db, request.company_id, current_user)
+    _require_company_wide_reporting_access(db, current_user)
     schedule_format = _resolve_schedule_format(db, company.id, request.format)
     try:
         next_run = calculate_next_run(request.schedule)
@@ -286,6 +295,7 @@ def create_schedule(request: ScheduleRequest, current_user: User = Depends(get_c
 @router.get("/schedules", dependencies=[Depends(require_permission("company.access"))])
 def list_schedules(company_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
+    _require_company_wide_reporting_access(db, current_user)
     return list(db.scalars(select(ReportDelivery).where(ReportDelivery.company_id == company_id).order_by(ReportDelivery.id.desc()).limit(500)).all())
 
 
@@ -297,6 +307,7 @@ def resume_schedule(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     company = _company_for_user(db, request.company_id, current_user)
+    _require_company_wide_reporting_access(db, current_user)
     delivery = db.scalar(
         select(ReportDelivery).where(
             ReportDelivery.id == delivery_id,
@@ -344,6 +355,7 @@ def analyze_report(
         company_id=request.company_id,
         from_date=from_date,
         to_date=to_date,
+        branch_ids=accessible_branch_ids(db, current_user),
     )
     actual_metrics = {
         "revenue": float(summary.revenue),
