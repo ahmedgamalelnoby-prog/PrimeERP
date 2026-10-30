@@ -172,11 +172,25 @@ class UserService(BaseService[UserRepository]):
         return users, total
 
     def _resolve_tenant_id(self, tenant_id: int | None) -> int | None:
-        if tenant_id is not None:
+        current_user = self.current_user
+        if getattr(current_user, "is_platform_admin", False):
             return tenant_id
+
         tenant = self.current_tenant
-        if tenant is None:
-            return None
-        if isinstance(tenant, int):
-            return tenant
-        return getattr(tenant, "id", None)
+        current_tenant_id = (
+            tenant if isinstance(tenant, int)
+            else getattr(tenant, "id", None)
+        )
+        if current_tenant_id is None:
+            current_tenant_id = getattr(current_user, "tenant_id", None)
+        if current_tenant_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Current user is not assigned to a tenant.",
+            )
+        if tenant_id is not None and tenant_id != current_tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cross-tenant identity access is not allowed.",
+            )
+        return current_tenant_id
