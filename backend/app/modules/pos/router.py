@@ -491,7 +491,7 @@ def list_terminals(company_id: int = Query(..., gt=0), outlet_id: int | None = Q
 @router.post("/terminals", status_code=201, dependencies=[Depends(require_permission("commerce.write"))])
 def create_terminal(payload: TerminalCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company(db, payload.company_id, current_user)
-    _branch(db, payload.company_id, payload.branch_id)
+    _branch(db, payload.company_id, payload.branch_id, current_user)
     outlet = db.scalar(select(PosOutlet).where(PosOutlet.id == payload.outlet_id, PosOutlet.company_id == payload.company_id, PosOutlet.branch_id == payload.branch_id, PosOutlet.is_active.is_(True)))
     if outlet is None:
         raise HTTPException(422, "Outlet does not belong to the company/branch")
@@ -507,7 +507,7 @@ def create_terminal(payload: TerminalCreate, current_user: User = Depends(get_cu
 @router.get("/menus")
 def terminal_menus(terminal_id: int = Query(..., gt=0), company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company(db, company_id, current_user)
-    terminal = _terminal(db, company_id, terminal_id)
+    terminal = _terminal(db, company_id, terminal_id, current_user)
     rows = db.execute(select(PosTerminalMenu, Menu).join(Menu, Menu.id == PosTerminalMenu.menu_id).where(
         PosTerminalMenu.terminal_id == terminal.id,
         PosTerminalMenu.is_active.is_(True),
@@ -519,7 +519,7 @@ def terminal_menus(terminal_id: int = Query(..., gt=0), company_id: int = Query(
 @router.post("/terminals/menus", status_code=201, dependencies=[Depends(require_permission("commerce.write"))])
 def link_terminal_menu(payload: TerminalMenuLink, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company(db, company_id, current_user)
-    terminal = _terminal(db, company_id, payload.terminal_id)
+    terminal = _terminal(db, company_id, payload.terminal_id, current_user)
     menu = db.scalar(select(Menu).where(Menu.id == payload.menu_id, Menu.company_id == company_id, Menu.is_active.is_(True)))
     if payload.price_list_id is not None and db.scalar(select(ProductPrice.id).where(ProductPrice.company_id == company_id, ProductPrice.price_list_id == payload.price_list_id).limit(1)) is None:
         raise HTTPException(422, "Price list does not belong to the company")
