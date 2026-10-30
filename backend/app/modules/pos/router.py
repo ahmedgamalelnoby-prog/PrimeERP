@@ -658,6 +658,11 @@ def _menu_price(db: Session, company_id: int, menu_item: MenuItem, price_list_id
 @router.post("/checkout", dependencies=[Depends(require_permission("commerce.payment"))])
 def checkout(payload: Checkout, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company(db, payload.company_id, current_user)
+    if not current_user.is_platform_admin:
+        context = get_optional_request_context()
+        if context is None or context.branch_id is None:
+            raise HTTPException(400, "Select a branch using X-Branch-ID before POS checkout")
+        require_branch_access(db, payload.company_id, context.branch_id, current_user)
     # Offline replay can happen after the original request committed but its
     # response was lost. Reuse the existing invoice by company + POS number.
     existing = db.scalar(select(SalesDocument).where(
