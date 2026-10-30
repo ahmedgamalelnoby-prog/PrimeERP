@@ -58,27 +58,6 @@ const enTranslation = {
   },
 
   common: {
-    "new": "New",
-    "closeNavigation": "Close navigation",
-    "workspace": "Workspace",
-    "online": "Online",
-    "searchNavigation": "Search navigation",
-    "searchScreens": "Search screens or modules...",
-    "clearSearch": "Clear search",
-    "mainNavigation": "Main navigation",
-    "searchResults": "Search results",
-    "businessManagement": "Business management",
-    "noMatchingResults": "No matching results.",
-    "platformAdministrator": "Platform administrator",
-    "secureWorkspace": "Secure workspace",
-    "organizationAccess": "Organization-level access and data isolation",
-    "integratedBusinessManagement": "Integrated business management",
-    "connectedBusinessOperations": "Connected business operations",
-    "systemUser": "System user",
-    "user": "User"
-  },
-
-  commonExisting: {
     appName: "PrimeERP",
     appDescription: "Business Management Platform",
 
@@ -95,6 +74,24 @@ const enTranslation = {
 
     secured:
       "Protected by secure authentication and encrypted communication.",
+    new: "New",
+    closeNavigation: "Close navigation",
+    workspace: "Workspace",
+    online: "Online",
+    searchNavigation: "Search navigation",
+    searchScreens: "Search screens or modules...",
+    clearSearch: "Clear search",
+    mainNavigation: "Main navigation",
+    searchResults: "Search results",
+    businessManagement: "Business management",
+    noMatchingResults: "No matching results.",
+    platformAdministrator: "Platform administrator",
+    secureWorkspace: "Secure workspace",
+    organizationAccess: "Organization-level access and data isolation",
+    integratedBusinessManagement: "Integrated business management",
+    connectedBusinessOperations: "Connected business operations",
+    systemUser: "System user",
+    user: "User",
   },
 
   register: {
