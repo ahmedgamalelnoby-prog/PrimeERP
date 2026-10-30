@@ -139,6 +139,8 @@ def grant_company_membership(
     )
     if member_user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found in this tenant")
+    if not member_user.is_active:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot grant company access to a disabled user")
     if current_user.is_platform_admin and assigned_role_id is None:
         assigned_role_id = member_user.role_id
 
