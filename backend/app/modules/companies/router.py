@@ -236,6 +236,30 @@ def list_companies(active_only: bool = Query(False), db: Session = Depends(get_d
     return list(db.scalars(stmt).unique().all())
 
 
+@router.get("/accessible")
+def list_accessible_companies(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return only active companies the authenticated user may select."""
+    stmt = select(Company).where(
+        Company.tenant_id == _tenant_id(current_user),
+        Company.is_active.is_(True),
+    )
+    if not current_user.is_platform_admin:
+        stmt = stmt.join(
+            CompanyUserMembership,
+            CompanyUserMembership.company_id == Company.id,
+        ).where(
+            CompanyUserMembership.user_id == current_user.id,
+            CompanyUserMembership.is_active.is_(True),
+        )
+    return [
+        {"id": company.id, "name": company.name, "code": company.code}
+        for company in db.scalars(stmt.order_by(Company.name, Company.id)).unique().all()
+    ]
+
+
 @router.get("/{company_id}", response_model=CompanyResponse, dependencies=[Depends(require_permission("company.access"))])
 def get_company(company_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return _get_company(db, company_id, current_user)
