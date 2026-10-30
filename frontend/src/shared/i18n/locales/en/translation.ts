@@ -329,7 +329,8 @@ const enTranslation = {
     "resetPassword": "Reset password",
     "deleteUser": "Delete user",
     "unavailable": "Unavailable",
-    "neverLoggedIn": "Never logged in"
+    "neverLoggedIn": "Never logged in",
+    "manageCompanyAccess": "Manage company access"
   },
 
   users: {
@@ -339,6 +340,31 @@ const enTranslation = {
       deactivated: "User deactivated.",
       activated: "User activated.",
       deleted: "User deleted successfully."
+    },
+    companyAccess: {
+      title: "User company access",
+      company: "Company",
+      selectCompany: "Select a company",
+      noCompanies: "No companies are available to manage with your permissions.",
+      activeMembership: "User can access this company",
+      noMembership: "User has no access to this company",
+      userDisabled: "User account is disabled",
+      role: "Role within this company",
+      selectRole: "Select a role",
+      noAssignableRoles: "No roles can be assigned with your current permissions.",
+      roleSecurityHint: "Only roles your permissions allow you to grant are listed. The server validates permissions again when saving.",
+      grantAccess: "Grant company access",
+      saveChanges: "Save changes",
+      revokeAccess: "Revoke company access",
+      clearRole: "Clear role",
+      confirmRevoke: "Revoke this user's access to {{company}}?",
+      granted: "Company access updated.",
+      revoked: "Company access revoked.",
+      roleCleared: "Company role cleared.",
+      loadCompaniesFailed: "Unable to load available companies.",
+      loadDetailsFailed: "Unable to load the user's membership and roles.",
+      saveFailed: "Unable to save company access.",
+      revokeFailed: "Unable to revoke company access."
     },
     resetPassword: {
       title: "Reset password",
