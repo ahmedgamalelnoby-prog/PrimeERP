@@ -213,6 +213,11 @@ class UserService(BaseService[UserRepository]):
             if not user.is_deleted:
                 raise ValueError("User is not deleted.")
 
+            db.execute(
+                select(func.pg_advisory_xact_lock(
+                    func.hashtext(f"primeerp:username:{user.username.strip().lower()}")
+                ))
+            )
             duplicate_username_id = db.scalar(
                 select(User.id)
                 .where(
