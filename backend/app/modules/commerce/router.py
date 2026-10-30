@@ -143,6 +143,7 @@ def configure_accounting(payload: CommerceAccountingSettingsCreate, current_user
     company = _company_for_user(db, payload.company_id, current_user)
     branch = db.scalar(select(Branch).where(Branch.id == payload.default_branch_id, Branch.company_id == company.id, Branch.tenant_id == company.tenant_id, Branch.is_active.is_(True)))
     if branch is None: raise HTTPException(422, "Default branch does not belong to the company")
+    require_branch_access(db, company.id, branch.id, current_user)
     _validate_accounting_configuration(db, company, payload)
     values = payload.model_dump(); obj = db.scalar(select(CommerceAccountingSettings).where(CommerceAccountingSettings.company_id == company.id))
     if obj is None: obj = CommerceAccountingSettings(**values); db.add(obj)
@@ -179,6 +180,7 @@ def create_sale(payload: DocumentCreate, current_user: User = Depends(get_curren
 @router.post("/sales/returns", response_model=DocumentResponse, status_code=201, dependencies=[Depends(require_permission("commerce.post"))])
 def create_sales_return(payload: SalesReturnCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, payload.company_id, current_user)
+    _assert_warehouse_access(db, payload.company_id, payload.warehouse_id, current_user)
     try: obj = sales_return_service.create_and_post(db, payload, current_user.id); db.commit(); db.refresh(obj); return obj
     except ValueError as exc: db.rollback(); raise HTTPException(status_code=400, detail=str(exc)) from exc
     except IntegrityError as exc: db.rollback(); raise HTTPException(status_code=409, detail="The sales return conflicts with an existing allocation or document") from exc
