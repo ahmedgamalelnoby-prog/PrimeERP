@@ -3,10 +3,10 @@ from sqlalchemy import (
     Column,
     ForeignKey,
     Integer,
+    Index,
     String,
     Text,
     TIMESTAMP,
-    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -153,16 +153,8 @@ class User(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint(
-            "tenant_id",
-            "username",
-            name="uq_users_tenant_username",
-        ),
-        UniqueConstraint(
-            "tenant_id",
-            "email",
-            name="uq_users_tenant_email",
-        ),
+        Index("uq_users_username_global_ci", func.lower(username), unique=True),
+        Index("uq_users_email_global_ci", func.lower(email), unique=True),
     )
 
     def __repr__(self) -> str:
