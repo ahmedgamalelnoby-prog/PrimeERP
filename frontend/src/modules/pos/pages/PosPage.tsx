@@ -128,7 +128,7 @@ export default function PosPage() {
     catch (e: any) { setError(e?.response?.data?.detail || {t("pos.routeItemFailed")}); }
   }
   async function openCashierShift() {
-    if (!selectedTerminal) return setError({t("pos.selectTerminal")});
+    if (!selectedTerminal) return setError(t("pos.selectTerminal")});
     try {
       const { data } = await client.post("/pos/shifts/open", {
         company_id: cid, terminal_id: Number(selectedTerminal), opening_cash: Number(openingCash || 0),
@@ -137,8 +137,8 @@ export default function PosPage() {
     } catch (e: any) { setError(e?.response?.data?.detail || {t("pos.openShiftFailed")}); }
   }
   async function closeCashierShift() {
-    if (!cashierShift || !countedCash) return setError({t("pos.enterCountedCash")});
-    if (offlineQueue.length) return setError({t("pos.syncBeforeClose")});
+    if (!cashierShift || !countedCash) return setError(t("pos.enterCountedCash")});
+    if (offlineQueue.length) return setError(t("pos.syncBeforeClose")});
     try {
       const { data } = await client.post(`/pos/shifts/${cashierShift.id}/close`, { counted_cash: Number(countedCash) }, { params: { company_id: cid } });
       setCashierShift(data); setError("");
@@ -147,7 +147,7 @@ export default function PosPage() {
   async function checkout(e: any) {
     e.preventDefault();
     if (!companyDate) return setError(clockError || {t("pos.companyDateRequired")});
-    if (!activeMenuItem) return setError({t("pos.selectMenuItem")});
+    if (!activeMenuItem) return setError(t("pos.selectMenuItem")});
     try {
       const payload: PosCheckoutPayload = {
         company_id: cid, partner_id: Number(partnerId), warehouse_id: Number(warehouseId),
@@ -157,13 +157,13 @@ export default function PosPage() {
       };
       if (!navigator.onLine) {
         await enqueueCheckout(payload); await refreshOfflineQueue();
-        setError({t("pos.savedOffline")});
+        setError(t("pos.savedOffline")});
       } else {
         try { await client.post("/pos/checkout", payload); setError(""); await load(); }
         catch (error: any) {
           if (!error?.response) {
             await enqueueCheckout(payload); await refreshOfflineQueue();
-            setError({t("pos.connectionSavedOffline")});
+            setError(t("pos.connectionSavedOffline")});
           } else throw error;
         }
       }
