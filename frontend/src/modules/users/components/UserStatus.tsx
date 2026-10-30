@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { useTranslation } from "react-i18next";
 
 interface UserStatusProps {
   isActive: boolean;
@@ -6,7 +7,9 @@ interface UserStatusProps {
 
 export default function UserStatus({
   isActive,
-}: UserStatusProps) {
+} : UserStatusProps) {
+  const { t } = useTranslation();
+
   return (
     <Badge
       variant={
@@ -27,7 +30,7 @@ export default function UserStatus({
         ].join(" ")}
       />
 
-      {isActive ? "نشط" : "معطل"}
+      {isActive ? t("usersTable.active") : t("usersTable.inactive")}
     </Badge>
   );
 }
