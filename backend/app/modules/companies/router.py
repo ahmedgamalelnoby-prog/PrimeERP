@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.context import get_effective_tenant_id
+from app.core.context import get_effective_tenant_id, get_optional_request_context
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
@@ -23,6 +23,31 @@ def _get_company(db: Session, company_id: int, user: User) -> Company:
     company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == _tenant_id(user)))
     if company is None:
         raise HTTPException(status_code=404, detail="Company not found")
+    return company
+
+
+@router.get("/current", response_model=CompanyResponse, dependencies=[Depends(require_permission("company.access"))])
+def get_current_company(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return the active company selected for this request via X-Company-ID."""
+    context = get_optional_request_context()
+    company_id = context.company_id if context is not None else None
+    if company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No company is selected. Send a valid X-Company-ID header.",
+        )
+    company = db.scalar(
+        select(Company).where(
+            Company.id == company_id,
+            Company.tenant_id == _tenant_id(current_user),
+            Company.is_active.is_(True),
+        )
+    )
+    if company is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Selected company is no longer available")
     return company
 
 
