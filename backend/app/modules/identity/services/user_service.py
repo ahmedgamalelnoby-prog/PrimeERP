@@ -40,19 +40,14 @@ class UserService(BaseService[UserRepository]):
         return role
 
     def _validate_role_assignment(self, role_id: int | None) -> None:
-        """Prevent a non-platform user from granting permissions they do not possess."""
-        if role_id is None or getattr(self.current_user, "is_platform_admin", False):
+        """Validate grants against the actor's effective company/branch role."""
+        if role_id is None:
             return
-        target_role = self._load_role(role_id)
-        if target_role is None:
-            return
-        current_role = getattr(self.current_user, "role", None)
-        if current_role is None or not getattr(current_role, "is_active", False):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="An active role is required to assign roles.")
-        current_permissions = {p.name for p in getattr(current_role, "permissions", []) if getattr(p, "is_active", False)}
-        target_permissions = {p.name for p in getattr(target_role, "permissions", []) if getattr(p, "is_active", False)}
-        if not target_permissions.issubset(current_permissions):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You cannot assign a role with permissions beyond your own authority.")
+        if not can_assign_role(self.current_user, role_id, self.require_db()):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You cannot assign a role with permissions beyond your own authority.",
+            )
 
     def _resolve_write_tenant_id(self, tenant_id: int | None) -> int | None:
         current_user = self.current_user
