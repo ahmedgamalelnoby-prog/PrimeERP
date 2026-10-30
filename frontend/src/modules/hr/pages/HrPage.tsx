@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import client from "@/shared/api/client";
 import { formatCompanyDate, useCompanyClockDate, useCompanyDateFormat } from "@/utils/format-date";
 
@@ -25,6 +26,7 @@ const selectedCompany = () => {
 };
 
 export default function HrPage() {
+  const { t, i18n } = useTranslation();
   const companyId = selectedCompany();
   const dateFormat = useCompanyDateFormat(companyId);
   const { companyDate, error: clockError } = useCompanyClockDate(companyId);
@@ -50,7 +52,7 @@ export default function HrPage() {
 
   const load = useCallback(async () => {
     if (!companyId) {
-      setError("اختر شركة فعالة أولاً.");
+      setError("{t("hr.activeCompanyRequired")}");
       return;
     }
     setError("");
@@ -79,7 +81,7 @@ export default function HrPage() {
         setCompanyTimezone("Africa/Cairo");
       }
     } catch (e: any) {
-      setError(e?.response?.data?.detail || "تعذر تحميل بيانات الموارد البشرية.");
+      setError(e?.response?.data?.detail || "{t("hr.loadFailed")}");
     }
   }, [companyId]);
 
@@ -94,7 +96,7 @@ export default function HrPage() {
 
   function displayDateTime(value?: string | null) {
     if (!value) return "—";
-    try { return new Intl.DateTimeFormat("ar-EG", { timeZone: companyTimezone, dateStyle: "short", timeStyle: "short" }).format(new Date(value)); }
+    try { return new Intl.DateTimeFormat(i18n.language.startsWith("ar") ? "ar-EG" : "en-US", { timeZone: companyTimezone, dateStyle: "short", timeStyle: "short" }).format(new Date(value)); }
     catch { return value; }
   }
 
@@ -110,7 +112,7 @@ export default function HrPage() {
         check_out_time: attendanceForm.check_out_time || null,
       }, { params: { company_id: companyId } });
       await load();
-    } catch (e: any) { setError(e?.response?.data?.detail || "تعذر تسجيل الحضور."); }
+    } catch (e: any) { setError(e?.response?.data?.detail || "{t("hr.attendanceFailed")}"); }
     finally { setBusy(false); }
   }
 
@@ -140,7 +142,7 @@ export default function HrPage() {
       }, { params: { company_id: companyId } });
       setCorrectionTarget(null);
       await load();
-    } catch (e: any) { setError(e?.response?.data?.detail || "تعذر إرسال تصحيح الحضور."); }
+    } catch (e: any) { setError(e?.response?.data?.detail || "{t("hr.correctionSubmitFailed")}"); }
     finally { setBusy(false); }
   }
 
@@ -156,7 +158,7 @@ export default function HrPage() {
       }, { params: { company_id: companyId } });
       setOvertimeForm({ ...overtimeForm, reason: "" });
       await load();
-    } catch (e: any) { setError(e?.response?.data?.detail || "تعذر إرسال طلب الساعات الإضافية."); }
+    } catch (e: any) { setError(e?.response?.data?.detail || "{t("hr.overtimeSubmitFailed")}"); }
     finally { setBusy(false); }
   }
 
@@ -166,7 +168,7 @@ export default function HrPage() {
     try {
       await client.post(`/hr/overtime-requests/${id}/decision`, { decision }, { params: { company_id: companyId } });
       await load();
-    } catch (e: any) { setError(e?.response?.data?.detail || "تعذر اتخاذ قرار الساعات الإضافية."); }
+    } catch (e: any) { setError(e?.response?.data?.detail || "{t("hr.overtimeDecisionFailed")}"); }
     finally { setBusy(false); }
   }
 
@@ -176,7 +178,7 @@ export default function HrPage() {
     try {
       await client.post(`/hr/attendance-corrections/${id}/decision`, { decision }, { params: { company_id: companyId } });
       await load();
-    } catch (e: any) { setError(e?.response?.data?.detail || "تعذر اعتماد تصحيح الحضور."); }
+    } catch (e: any) { setError(e?.response?.data?.detail || "{t("hr.correctionDecisionFailed")}"); }
     finally { setBusy(false); }
   }
 
@@ -191,7 +193,7 @@ export default function HrPage() {
         preferred_language: user.preferred_language || "ar",
       }, { params: { company_id: companyId } });
       await load();
-    } catch (e: any) { setError(e?.response?.data?.detail || "تعذر حفظ ملف المستخدم."); }
+    } catch (e: any) { setError(e?.response?.data?.detail || "{t("hr.saveWorkforceFailed")}"); }
     finally { setBusy(false); }
   }
 
@@ -203,7 +205,7 @@ export default function HrPage() {
       await client.post("/enterprise/employees", { ...employeeForm, company_id: companyId, basic_salary: Number(employeeForm.basic_salary) });
       setEmployeeForm({ employee_no: "", name: "", hire_date: companyDate || "", basic_salary: "0" });
       await load();
-    } catch (e: any) { setError(e?.response?.data?.detail || "تعذر إضافة الموظف."); }
+    } catch (e: any) { setError(e?.response?.data?.detail || "{t("hr.addEmployeeFailed")}"); }
     finally { setBusy(false); }
   }
 
@@ -218,7 +220,7 @@ export default function HrPage() {
         entitled_days: Number(balanceForm.entitled_days),
       }, { params: { company_id: companyId } });
       await load();
-    } catch (e: any) { setError(e?.response?.data?.detail || "تعذر حفظ رصيد الإجازة."); }
+    } catch (e: any) { setError(e?.response?.data?.detail || "{t("hr.saveLeaveBalanceFailed")}"); }
     finally { setBusy(false); }
   }
 
@@ -235,7 +237,7 @@ export default function HrPage() {
       }, { params: { company_id: companyId } });
       setLeaveForm({ ...leaveForm, reason: "" });
       await load();
-    } catch (e: any) { setError(e?.response?.data?.detail || "تعذر إرسال طلب الإجازة."); }
+    } catch (e: any) { setError(e?.response?.data?.detail || "{t("hr.leaveSubmitFailed")}"); }
     finally { setBusy(false); }
   }
 
@@ -245,119 +247,119 @@ export default function HrPage() {
     try {
       await client.post(`/hr/leave-requests/${requestId}/decision`, { decision }, { params: { company_id: companyId } });
       await load();
-    } catch (e: any) { setError(e?.response?.data?.detail || "تعذر اتخاذ قرار الإجازة."); }
+    } catch (e: any) { setError(e?.response?.data?.detail || "{t("hr.leaveDecisionFailed")}"); }
     finally { setBusy(false); }
   }
 
   const employeeName = (employeeId: number) => employees.find((employee) => employee.id === employeeId)?.name || `#${employeeId}`;
   const fieldClass = "w-full rounded-lg border bg-background px-3 py-2";
-  const leaveTypeLabel: Record<string, string> = { annual: "سنوية", sick: "مرضية", unpaid: "بدون أجر", other: "أخرى" };
+  const leaveTypeLabel: Record<string, string> = { annual: t("hr.leaveTypes.annual"), sick: t("hr.leaveTypes.sick"), unpaid: t("hr.leaveTypes.unpaid"), other: t("hr.leaveTypes.other") };
 
-  return <section className="space-y-6 p-6" dir="rtl">
+  return <section className="space-y-6 p-6" dir={i18n.dir()}>
     <header>
-      <h1 className="text-2xl font-bold">الموارد البشرية</h1>
-      <p className="mt-1 text-sm text-muted-foreground">ملفات الموظفين، أرصدة الإجازات، ودورة اعتماد الطلبات.</p>
+      <h1 className="text-2xl font-bold">{t("hr.title")}</h1>
+      <p className="mt-1 text-sm text-muted-foreground">{t("hr.description")}</p>
     </header>
     {(error || clockError) && <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm">{error || clockError}</div>}
 
     <div className="grid gap-6 xl:grid-cols-3">
       <form onSubmit={submitEmployee} className="space-y-3 rounded-2xl border bg-card p-5">
-        <h2 className="font-semibold">إضافة موظف</h2>
-        <input required value={employeeForm.employee_no} onChange={e => setEmployeeForm({ ...employeeForm, employee_no: e.target.value })} placeholder="الرقم الوظيفي" className={fieldClass} />
-        <input required value={employeeForm.name} onChange={e => setEmployeeForm({ ...employeeForm, name: e.target.value })} placeholder="اسم الموظف" className={fieldClass} />
+        <h2 className="font-semibold">{t("hr.addEmployee")}</h2>
+        <input required value={employeeForm.employee_no} onChange={e => setEmployeeForm({ ...employeeForm, employee_no: e.target.value })} placeholder="{t("hr.employeeNumber")}" className={fieldClass} />
+        <input required value={employeeForm.name} onChange={e => setEmployeeForm({ ...employeeForm, name: e.target.value })} placeholder="{t("hr.employeeName")}" className={fieldClass} />
         <input required type="date" value={employeeForm.hire_date} onChange={e => setEmployeeForm({ ...employeeForm, hire_date: e.target.value })} className={fieldClass} />
-        <input required type="number" min="0" step="0.01" value={employeeForm.basic_salary} onChange={e => setEmployeeForm({ ...employeeForm, basic_salary: e.target.value })} placeholder="الراتب الأساسي" className={fieldClass} />
-        <button disabled={busy || !companyId} className="w-full rounded-lg bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50">حفظ الموظف</button>
+        <input required type="number" min="0" step="0.01" value={employeeForm.basic_salary} onChange={e => setEmployeeForm({ ...employeeForm, basic_salary: e.target.value })} placeholder="{t("hr.basicSalary")}" className={fieldClass} />
+        <button disabled={busy || !companyId} className="w-full rounded-lg bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50">{t("hr.saveEmployee")}</button>
       </form>
 
       <form onSubmit={saveBalance} className="space-y-3 rounded-2xl border bg-card p-5">
-        <h2 className="font-semibold">إعداد رصيد إجازة</h2>
+        <h2 className="font-semibold">{t("hr.setLeaveBalance")}</h2>
         <select required value={balanceForm.employee_id} onChange={e => setBalanceForm({ ...balanceForm, employee_id: e.target.value })} className={fieldClass}>
-          <option value="">الموظف</option>{employees.map(employee => <option key={employee.id} value={employee.id}>{employee.employee_no} · {employee.name}</option>)}
+          <option value="">{t("hr.employee")}</option>{employees.map(employee => <option key={employee.id} value={employee.id}>{employee.employee_no} · {employee.name}</option>)}
         </select>
         <select value={balanceForm.leave_type} onChange={e => setBalanceForm({ ...balanceForm, leave_type: e.target.value })} className={fieldClass}>
-          <option value="annual">سنوية</option><option value="sick">مرضية</option><option value="other">أخرى</option>
+          <option value="annual">{t("hr.leaveTypes.annual")}</option><option value="sick">{t("hr.leaveTypes.sick")}</option><option value="other">{t("hr.leaveTypes.other")}</option>
         </select>
-        <input required type="number" min="0" step="0.01" value={balanceForm.entitled_days} onChange={e => setBalanceForm({ ...balanceForm, entitled_days: e.target.value })} placeholder="الرصيد المستحق بالأيام" className={fieldClass} />
-        <button disabled={busy || !companyId || !employees.length} className="w-full rounded-lg border px-4 py-2 disabled:opacity-50">حفظ الرصيد</button>
+        <input required type="number" min="0" step="0.01" value={balanceForm.entitled_days} onChange={e => setBalanceForm({ ...balanceForm, entitled_days: e.target.value })} placeholder="{t("hr.entitledDays")}" className={fieldClass} />
+        <button disabled={busy || !companyId || !employees.length} className="w-full rounded-lg border px-4 py-2 disabled:opacity-50">{t("hr.saveBalance")}</button>
       </form>
 
       <form onSubmit={submitLeave} className="space-y-3 rounded-2xl border bg-card p-5">
-        <h2 className="font-semibold">طلب إجازة</h2>
+        <h2 className="font-semibold">{t("hr.leaveRequest")}</h2>
         <select required value={leaveForm.employee_id} onChange={e => setLeaveForm({ ...leaveForm, employee_id: e.target.value })} className={fieldClass}>
-          <option value="">الموظف</option>{employees.map(employee => <option key={employee.id} value={employee.id}>{employee.employee_no} · {employee.name}</option>)}
+          <option value="">{t("hr.employee")}</option>{employees.map(employee => <option key={employee.id} value={employee.id}>{employee.employee_no} · {employee.name}</option>)}
         </select>
         <select value={leaveForm.leave_type} onChange={e => setLeaveForm({ ...leaveForm, leave_type: e.target.value })} className={fieldClass}>
-          <option value="annual">سنوية</option><option value="sick">مرضية</option><option value="unpaid">بدون أجر</option><option value="other">أخرى</option>
+          <option value="annual">{t("hr.leaveTypes.annual")}</option><option value="sick">{t("hr.leaveTypes.sick")}</option><option value="unpaid">{t("hr.leaveTypes.unpaid")}</option><option value="other">{t("hr.leaveTypes.other")}</option>
         </select>
         <div className="grid grid-cols-2 gap-2">
-          <label className="text-xs">من<input required type="date" value={leaveForm.start_date} onChange={e => setLeaveForm({ ...leaveForm, start_date: e.target.value })} className={fieldClass} /></label>
-          <label className="text-xs">إلى<input required type="date" value={leaveForm.end_date} onChange={e => setLeaveForm({ ...leaveForm, end_date: e.target.value })} className={fieldClass} /></label>
+          <label className="text-xs">{t("hr.from")}<input required type="date" value={leaveForm.start_date} onChange={e => setLeaveForm({ ...leaveForm, start_date: e.target.value })} className={fieldClass} /></label>
+          <label className="text-xs">{t("hr.to")}<input required type="date" value={leaveForm.end_date} onChange={e => setLeaveForm({ ...leaveForm, end_date: e.target.value })} className={fieldClass} /></label>
         </div>
-        <input required type="number" min="0.01" step="0.01" value={leaveForm.requested_days} onChange={e => setLeaveForm({ ...leaveForm, requested_days: e.target.value })} placeholder="عدد الأيام" className={fieldClass} />
-        <textarea value={leaveForm.reason} onChange={e => setLeaveForm({ ...leaveForm, reason: e.target.value })} placeholder="السبب (اختياري)" className={fieldClass} />
-        <button disabled={busy || !companyId || !employees.length} className="w-full rounded-lg bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50">إرسال الطلب</button>
+        <input required type="number" min="0.01" step="0.01" value={leaveForm.requested_days} onChange={e => setLeaveForm({ ...leaveForm, requested_days: e.target.value })} placeholder="{t("hr.daysCount")}" className={fieldClass} />
+        <textarea value={leaveForm.reason} onChange={e => setLeaveForm({ ...leaveForm, reason: e.target.value })} placeholder="{t("hr.optionalReason")}" className={fieldClass} />
+        <button disabled={busy || !companyId || !employees.length} className="w-full rounded-lg bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50">{t("hr.submitRequest")}</button>
       </form>
     </div>
 
     <form onSubmit={submitAttendance} className="grid gap-3 rounded-2xl border bg-card p-5 md:grid-cols-6">
-      <h2 className="font-semibold md:col-span-6">تسجيل حضور يدوي</h2>
-      <p className="text-xs text-muted-foreground md:col-span-6">الإدخال اليدوي متاح عندما يكون مصدر الحضور في إعدادات الشركة «يدوي». موصلات البصمة والموبايل لم تُربط بعد.</p>
+      <h2 className="font-semibold md:col-span-6">{t("hr.manualAttendance")}</h2>
+      <p className="text-xs text-muted-foreground md:col-span-6">{t("hr.manualAttendanceHelp")}</p>
       <select required value={attendanceForm.employee_id} onChange={e => setAttendanceForm({ ...attendanceForm, employee_id: e.target.value })} className={fieldClass}>
-        <option value="">الموظف</option>{employees.map(employee => <option key={employee.id} value={employee.id}>{employee.employee_no} · {employee.name}</option>)}
+        <option value="">{t("hr.employee")}</option>{employees.map(employee => <option key={employee.id} value={employee.id}>{employee.employee_no} · {employee.name}</option>)}
       </select>
       <input required type="date" value={attendanceForm.attendance_date} onChange={e => setAttendanceForm({ ...attendanceForm, attendance_date: e.target.value })} className={fieldClass} />
       <label className="text-xs">حضور<input required type="datetime-local" value={attendanceForm.check_in_time} onChange={e => setAttendanceForm({ ...attendanceForm, check_in_time: e.target.value })} className={fieldClass} /></label>
       <label className="text-xs">انصراف<input type="datetime-local" value={attendanceForm.check_out_time} onChange={e => setAttendanceForm({ ...attendanceForm, check_out_time: e.target.value })} className={fieldClass} /></label>
-      <button disabled={busy || !companyId || !employees.length} className="rounded-lg bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50">تسجيل</button>
+      <button disabled={busy || !companyId || !employees.length} className="rounded-lg bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50">{t("hr.record")}</button>
     </form>
 
     <section className="space-y-3 rounded-2xl border bg-card p-5">
-      <h2 className="font-semibold">سجل الحضور</h2>
-      {attendance.length === 0 ? <p className="text-sm text-muted-foreground">لا توجد سجلات حضور.</p> : <div className="overflow-auto"><table className="w-full text-sm"><thead><tr className="border-b"><th className="p-2 text-right">الموظف</th><th className="p-2 text-right">التاريخ</th><th className="p-2 text-right">الحضور</th><th className="p-2 text-right">الانصراف</th><th className="p-2 text-right">المصدر</th><th className="p-2 text-right">إجراء</th></tr></thead><tbody>{attendance.map(record => <tr key={record.id} className="border-b"><td className="p-2">{employeeName(record.employee_id)}</td><td className="p-2">{formatCompanyDate(record.attendance_date, dateFormat)}</td><td className="p-2">{displayDateTime(record.check_in_at)}</td><td className="p-2">{displayDateTime(record.check_out_at)}</td><td className="p-2">{record.source}</td><td className="p-2"><button type="button" onClick={() => editCorrection(record)} className="rounded border px-2 py-1">طلب تصحيح</button></td></tr>)}</tbody></table></div>}
+      <h2 className="font-semibold">{t("hr.attendanceLog")}</h2>
+      {attendance.length === 0 ? <p className="text-sm text-muted-foreground">{t("hr.noAttendance")}</p> : <div className="overflow-auto"><table className="w-full text-sm"><thead><tr className="border-b"><th className="p-2 text-right">{t("hr.employee")}</th><th className="p-2 text-right">التاريخ</th><th className="p-2 text-right">الحضور</th><th className="p-2 text-right">الانصراف</th><th className="p-2 text-right">المصدر</th><th className="p-2 text-right">إجراء</th></tr></thead><tbody>{attendance.map(record => <tr key={record.id} className="border-b"><td className="p-2">{employeeName(record.employee_id)}</td><td className="p-2">{formatCompanyDate(record.attendance_date, dateFormat)}</td><td className="p-2">{displayDateTime(record.check_in_at)}</td><td className="p-2">{displayDateTime(record.check_out_at)}</td><td className="p-2">{t(`hr.attendanceSources.${record.source}`, { defaultValue: record.source })}</td><td className="p-2"><button type="button" onClick={() => editCorrection(record)} className="rounded border px-2 py-1">{t("hr.requestCorrection")}</button></td></tr>)}</tbody></table></div>}
       {correctionTarget !== null && <form onSubmit={submitCorrection} className="grid gap-3 rounded-xl border p-4 md:grid-cols-4">
-        <h3 className="font-medium md:col-span-4">تصحيح السجل #{correctionTarget}</h3>
-        <label className="text-xs">وقت الحضور<input required type="datetime-local" value={correctionForm.check_in_time} onChange={e => setCorrectionForm({ ...correctionForm, check_in_time: e.target.value })} className={fieldClass} /></label>
-        <label className="text-xs">وقت الانصراف<input type="datetime-local" value={correctionForm.check_out_time} onChange={e => setCorrectionForm({ ...correctionForm, check_out_time: e.target.value })} className={fieldClass} /></label>
-        <input required value={correctionForm.reason} onChange={e => setCorrectionForm({ ...correctionForm, reason: e.target.value })} placeholder="سبب التصحيح" className={fieldClass} />
-        <div className="flex gap-2"><button disabled={busy} className="rounded bg-primary px-3 py-2 text-primary-foreground">إرسال</button><button type="button" onClick={() => setCorrectionTarget(null)} className="rounded border px-3 py-2">إلغاء</button></div>
+        <h3 className="font-medium md:col-span-4">{t("hr.correctRecord")} #{correctionTarget}</h3>
+        <label className="text-xs">{t("hr.checkIn")}<input required type="datetime-local" value={correctionForm.check_in_time} onChange={e => setCorrectionForm({ ...correctionForm, check_in_time: e.target.value })} className={fieldClass} /></label>
+        <label className="text-xs">{t("hr.checkOut")}<input type="datetime-local" value={correctionForm.check_out_time} onChange={e => setCorrectionForm({ ...correctionForm, check_out_time: e.target.value })} className={fieldClass} /></label>
+        <input required value={correctionForm.reason} onChange={e => setCorrectionForm({ ...correctionForm, reason: e.target.value })} placeholder="{t("hr.correctionReason")}" className={fieldClass} />
+        <div className="flex gap-2"><button disabled={busy} className="rounded bg-primary px-3 py-2 text-primary-foreground">{t("hr.send")}</button><button type="button" onClick={() => setCorrectionTarget(null)} className="rounded border px-3 py-2">{t("hr.cancel")}</button></div>
       </form>}
     </section>
 
     <section className="space-y-3 rounded-2xl border bg-card p-5">
-      <h2 className="font-semibold">طلبات تصحيح الحضور</h2>
-      {corrections.length === 0 ? <p className="text-sm text-muted-foreground">لا توجد طلبات تصحيح.</p> : <div className="overflow-auto"><table className="w-full text-sm"><thead><tr className="border-b"><th className="p-2 text-right">السجل</th><th className="p-2 text-right">الحضور المقترح</th><th className="p-2 text-right">الانصراف المقترح</th><th className="p-2 text-right">السبب</th><th className="p-2 text-right">الحالة</th><th className="p-2 text-right">قرار</th></tr></thead><tbody>{corrections.map(item => <tr key={item.id} className="border-b"><td className="p-2">#{item.attendance_record_id}</td><td className="p-2">{displayDateTime(item.proposed_check_in_at)}</td><td className="p-2">{displayDateTime(item.proposed_check_out_at)}</td><td className="p-2">{item.reason}</td><td className="p-2">{item.status}</td><td className="p-2">{item.status === "pending" ? <div className="flex gap-2"><button type="button" disabled={busy} onClick={() => void decideCorrection(item.id, "approve")} className="rounded border px-2 py-1">موافقة</button><button type="button" disabled={busy} onClick={() => void decideCorrection(item.id, "reject")} className="rounded border px-2 py-1 text-destructive">رفض</button></div> : "—"}</td></tr>)}</tbody></table></div>}
+      <h2 className="font-semibold">{t("hr.correctionRequests")}</h2>
+      {corrections.length === 0 ? <p className="text-sm text-muted-foreground">{t("hr.noCorrectionRequests")}</p> : <div className="overflow-auto"><table className="w-full text-sm"><thead><tr className="border-b"><th className="p-2 text-right">{t("hr.record")}</th><th className="p-2 text-right">{t("hr.proposedCheckIn")}</th><th className="p-2 text-right">{t("hr.proposedCheckOut")}</th><th className="p-2 text-right">{t("hr.reason")}</th><th className="p-2 text-right">{t("hr.status")}</th><th className="p-2 text-right">{t("hr.decision")}</th></tr></thead><tbody>{corrections.map(item => <tr key={item.id} className="border-b"><td className="p-2">#{item.attendance_record_id}</td><td className="p-2">{displayDateTime(item.proposed_check_in_at)}</td><td className="p-2">{displayDateTime(item.proposed_check_out_at)}</td><td className="p-2">{item.reason}</td><td className="p-2">{t(`hr.statuses.${item.status}`, { defaultValue: item.status })}</td><td className="p-2">{item.status === "pending" ? <div className="flex gap-2"><button type="button" disabled={busy} onClick={() => void decideCorrection(item.id, "approve")} className="rounded border px-2 py-1">{t("hr.approve")}</button><button type="button" disabled={busy} onClick={() => void decideCorrection(item.id, "reject")} className="rounded border px-2 py-1 text-destructive">{t("hr.reject")}</button></div> : "—"}</td></tr>)}</tbody></table></div>}
     </section>
 
     <form onSubmit={submitOvertime} className="grid gap-3 rounded-2xl border bg-card p-5 md:grid-cols-4">
-      <h2 className="font-semibold md:col-span-4">طلب ساعات إضافية</h2>
-      <p className="text-xs text-muted-foreground md:col-span-4">الحد المتاح يُحسب من وقت الحضور والانصراف مطروحًا منه ساعات العمل اليومية في إعدادات الشركة. الطلبات المنتظرة تُحجز حتى لا تتجاوز الطلبات إجمالي الساعات المسجلة.</p>
+      <h2 className="font-semibold md:col-span-4">{t("hr.overtimeRequest")}</h2>
+      <p className="text-xs text-muted-foreground md:col-span-4">الحد {t("hr.available")} يُحسب {t("hr.from")} {t("hr.checkIn")} والانصراف مطروحًا {t("hr.from")}ه ساعات العمل اليومية في إعدادات الشركة. الطلبات ال{t("hr.from")}تظرة تُحجز حتى لا تتجاوز الطلبات إجمالي {t("hr.hours")} المسجلة.</p>
       <select required value={overtimeForm.attendance_record_id} onChange={e => setOvertimeForm({ ...overtimeForm, attendance_record_id: e.target.value })} className={fieldClass}>
-        <option value="">سجل الحضور</option>{attendance.filter(record => record.check_out_at).map(record => <option key={record.id} value={record.id}>{employeeName(record.employee_id)} · {formatCompanyDate(record.attendance_date, dateFormat)}</option>)}
+        <option value="">{t("hr.attendanceLog")}</option>{attendance.filter(record => record.check_out_at).map(record => <option key={record.id} value={record.id}>{employeeName(record.employee_id)} · {formatCompanyDate(record.attendance_date, dateFormat)}</option>)}
       </select>
-      <input required type="number" min="0.01" step="0.01" value={overtimeForm.requested_hours} onChange={e => setOvertimeForm({ ...overtimeForm, requested_hours: e.target.value })} placeholder="الساعات" className={fieldClass} />
-      <input required value={overtimeForm.reason} onChange={e => setOvertimeForm({ ...overtimeForm, reason: e.target.value })} placeholder="سبب العمل الإضافي" className={fieldClass} />
-      <button disabled={busy || !companyId || !attendance.some(record => record.check_out_at)} className="rounded-lg bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50">إرسال الطلب</button>
+      <input required type="number" min="0.01" step="0.01" value={overtimeForm.requested_hours} onChange={e => setOvertimeForm({ ...overtimeForm, requested_hours: e.target.value })} placeholder="{t("hr.hours")}" className={fieldClass} />
+      <input required value={overtimeForm.reason} onChange={e => setOvertimeForm({ ...overtimeForm, reason: e.target.value })} placeholder="{t("hr.overtimeReason")}" className={fieldClass} />
+      <button disabled={busy || !companyId || !attendance.some(record => record.check_out_at)} className="rounded-lg bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50">{t("hr.submitRequest")}</button>
     </form>
 
     <section className="space-y-3 rounded-2xl border bg-card p-5">
-      <h2 className="font-semibold">طلبات الساعات الإضافية</h2>
-      {overtimeRequests.length === 0 ? <p className="text-sm text-muted-foreground">لا توجد طلبات.</p> : <div className="overflow-auto"><table className="w-full text-sm"><thead><tr className="border-b"><th className="p-2 text-right">الموظف</th><th className="p-2 text-right">التاريخ</th><th className="p-2 text-right">الساعات</th><th className="p-2 text-right">السبب</th><th className="p-2 text-right">الحالة</th><th className="p-2 text-right">القرار</th></tr></thead><tbody>{overtimeRequests.map(request => { const record = attendance.find(item => item.id === request.attendance_record_id); return <tr key={request.id} className="border-b"><td className="p-2">{record ? employeeName(record.employee_id) : "—"}</td><td className="p-2">{record ? formatCompanyDate(record.attendance_date, dateFormat) : "—"}</td><td className="p-2">{request.requested_hours}</td><td className="p-2">{request.reason}</td><td className="p-2">{request.status}</td><td className="p-2">{request.status === "pending" ? <div className="flex gap-2"><button type="button" disabled={busy} onClick={() => void decideOvertime(request.id, "approve")} className="rounded border px-2 py-1">موافقة</button><button type="button" disabled={busy} onClick={() => void decideOvertime(request.id, "reject")} className="rounded border px-2 py-1 text-destructive">رفض</button></div> : "—"}</td></tr>; })}</tbody></table></div>}
+      <h2 className="font-semibold">طلبات {t("hr.hours")} الإضافية</h2>
+      {overtimeRequests.length === 0 ? <p className="text-sm text-muted-foreground">{t("hr.noRequests")}</p> : <div className="overflow-auto"><table className="w-full text-sm"><thead><tr className="border-b"><th className="p-2 text-right">{t("hr.employee")}</th><th className="p-2 text-right">التاريخ</th><th className="p-2 text-right">{t("hr.hours")}</th><th className="p-2 text-right">{t("hr.reason")}</th><th className="p-2 text-right">{t("hr.status")}</th><th className="p-2 text-right">ال{t("hr.decision")}</th></tr></thead><tbody>{overtimeRequests.map(request => { const record = attendance.find(item => item.id === request.attendance_record_id); return <tr key={request.id} className="border-b"><td className="p-2">{record ? employeeName(record.employee_id) : "—"}</td><td className="p-2">{record ? formatCompanyDate(record.attendance_date, dateFormat) : "—"}</td><td className="p-2">{request.requested_hours}</td><td className="p-2">{request.reason}</td><td className="p-2">{t(`hr.statuses.${request.status}`, { defaultValue: request.status })}</td><td className="p-2">{request.status === "pending" ? <div className="flex gap-2"><button type="button" disabled={busy} onClick={() => void decideOvertime(request.id, "approve")} className="rounded border px-2 py-1">{t("hr.approve")}</button><button type="button" disabled={busy} onClick={() => void decideOvertime(request.id, "reject")} className="rounded border px-2 py-1 text-destructive">{t("hr.reject")}</button></div> : "—"}</td></tr>; })}</tbody></table></div>}
     </section>
 
     <section className="space-y-3 rounded-2xl border bg-card p-5">
-      <h2 className="font-semibold">أرصدة الإجازات</h2>
-      {balances.length === 0 ? <p className="text-sm text-muted-foreground">لا توجد أرصدة مسجلة.</p> : <div className="overflow-auto"><table className="w-full text-sm"><thead><tr className="border-b"><th className="p-2 text-right">الموظف</th><th className="p-2 text-right">النوع</th><th className="p-2 text-right">المستحق</th><th className="p-2 text-right">المستخدم</th><th className="p-2 text-right">المتاح</th></tr></thead><tbody>{balances.map(balance => <tr key={balance.id} className="border-b"><td className="p-2">{employeeName(balance.employee_id)}</td><td className="p-2">{leaveTypeLabel[balance.leave_type] || balance.leave_type}</td><td className="p-2">{balance.entitled_days}</td><td className="p-2">{balance.consumed_days}</td><td className="p-2">{balance.available_days}</td></tr>)}</tbody></table></div>}
+      <h2 className="font-semibold">{t("hr.leaveBalances")}</h2>
+      {balances.length === 0 ? <p className="text-sm text-muted-foreground">{t("hr.noLeaveBalances")}</p> : <div className="overflow-auto"><table className="w-full text-sm"><thead><tr className="border-b"><th className="p-2 text-right">{t("hr.employee")}</th><th className="p-2 text-right">{t("hr.type")}</th><th className="p-2 text-right">{t("hr.entitled")}</th><th className="p-2 text-right">{t("hr.consumed")}</th><th className="p-2 text-right">{t("hr.available")}</th></tr></thead><tbody>{balances.map(balance => <tr key={balance.id} className="border-b"><td className="p-2">{employeeName(balance.employee_id)}</td><td className="p-2">{leaveTypeLabel[balance.leave_type] || balance.leave_type}</td><td className="p-2">{balance.entitled_days}</td><td className="p-2">{balance.consumed_days}</td><td className="p-2">{balance.available_days}</td></tr>)}</tbody></table></div>}
     </section>
 
     <section className="space-y-3 rounded-2xl border bg-card p-5">
-      <div className="flex items-center justify-between"><h2 className="font-semibold">طلبات الإجازة</h2><button type="button" onClick={() => void load()} className="rounded-lg border px-3 py-1.5 text-sm">تحديث</button></div>
-      {requests.length === 0 ? <p className="text-sm text-muted-foreground">لا توجد طلبات.</p> : <div className="overflow-auto"><table className="w-full text-sm"><thead><tr className="border-b"><th className="p-2 text-right">الموظف</th><th className="p-2 text-right">النوع</th><th className="p-2 text-right">الفترة</th><th className="p-2 text-right">الأيام</th><th className="p-2 text-right">الحالة</th><th className="p-2 text-right">السبب</th><th className="p-2 text-right">الإجراء</th></tr></thead><tbody>{requests.map(request => <tr key={request.id} className="border-b"><td className="p-2">{employeeName(request.employee_id)}</td><td className="p-2">{leaveTypeLabel[request.leave_type] || request.leave_type}</td><td className="p-2">{formatCompanyDate(request.start_date, dateFormat)} → {formatCompanyDate(request.end_date, dateFormat)}</td><td className="p-2">{request.requested_days}</td><td className="p-2">{request.status}</td><td className="max-w-48 truncate p-2" title={request.reason || ""}>{request.reason || "—"}</td><td className="p-2">{request.status === "pending" ? <div className="flex gap-2"><button disabled={busy} onClick={() => void decide(request.id, "approve")} className="rounded border px-2 py-1">موافقة</button><button disabled={busy} onClick={() => void decide(request.id, "reject")} className="rounded border px-2 py-1 text-destructive">رفض</button></div> : request.decision_reason || "—"}</td></tr>)}</tbody></table></div>}
+      <div className="flex items-center justify-between"><h2 className="font-semibold">{t("hr.leaveRequests")}</h2><button type="button" onClick={() => void load()} className="rounded-lg border px-3 py-1.5 text-sm">{t("hr.refresh")}</button></div>
+      {requests.length === 0 ? <p className="text-sm text-muted-foreground">{t("hr.noRequests")}</p> : <div className="overflow-auto"><table className="w-full text-sm"><thead><tr className="border-b"><th className="p-2 text-right">{t("hr.employee")}</th><th className="p-2 text-right">{t("hr.type")}</th><th className="p-2 text-right">{t("hr.period")}</th><th className="p-2 text-right">{t("hr.days")}</th><th className="p-2 text-right">{t("hr.status")}</th><th className="p-2 text-right">{t("hr.reason")}</th><th className="p-2 text-right">{t("hr.action")}</th></tr></thead><tbody>{requests.map(request => <tr key={request.id} className="border-b"><td className="p-2">{employeeName(request.employee_id)}</td><td className="p-2">{leaveTypeLabel[request.leave_type] || request.leave_type}</td><td className="p-2">{formatCompanyDate(request.start_date, dateFormat)} → {formatCompanyDate(request.end_date, dateFormat)}</td><td className="p-2">{request.requested_days}</td><td className="p-2">{request.status}</td><td className="max-w-48 truncate p-2" title={request.reason || ""}>{request.reason || "—"}</td><td className="p-2">{request.status === "pending" ? <div className="flex gap-2"><button disabled={busy} onClick={() => void decide(request.id, "approve")} className="rounded border px-2 py-1">{t("hr.approve")}</button><button disabled={busy} onClick={() => void decide(request.id, "reject")} className="rounded border px-2 py-1 text-destructive">{t("hr.reject")}</button></div> : request.decision_reason || "—"}</td></tr>)}</tbody></table></div>}
     </section>
 
     <section className="space-y-3 rounded-2xl border bg-card p-5">
-      <h2 className="font-semibold">ملفات مستخدمي الشركة</h2>
-      {workforce.length === 0 ? <p className="text-sm text-muted-foreground">لا يوجد مستخدمون مسجلون.</p> : <div className="overflow-auto"><table className="w-full text-sm"><thead><tr className="border-b"><th className="p-2 text-right">المستخدم</th><th className="p-2 text-right">الاسم</th><th className="p-2 text-right">الهاتف</th><th className="p-2 text-right">العنوان</th><th className="p-2 text-right">إجراء</th></tr></thead><tbody>{workforce.map((user:any) => <tr key={user.id} className="border-b"><td className="p-2">{user.username}</td><td className="p-2"><input value={user.full_name || ""} onChange={e => setWorkforce(workforce.map(row => row.id === user.id ? { ...row, full_name: e.target.value } : row))} className="rounded border px-2 py-1" /></td><td className="p-2"><input value={user.phone || ""} onChange={e => setWorkforce(workforce.map(row => row.id === user.id ? { ...row, phone: e.target.value } : row))} className="rounded border px-2 py-1" /></td><td className="p-2"><input value={user.address || ""} onChange={e => setWorkforce(workforce.map(row => row.id === user.id ? { ...row, address: e.target.value } : row))} className="rounded border px-2 py-1" /></td><td className="p-2"><button disabled={busy} onClick={() => void saveWorkforce(user)} className="rounded border px-3 py-1">حفظ</button></td></tr>)}</tbody></table></div>}
+      <h2 className="font-semibold">{t("hr.companyUserProfiles")}</h2>
+      {workforce.length === 0 ? <p className="text-sm text-muted-foreground">{t("hr.noCompanyUsers")}</p> : <div className="overflow-auto"><table className="w-full text-sm"><thead><tr className="border-b"><th className="p-2 text-right">{t("hr.consumed")}</th><th className="p-2 text-right">الاسم</th><th className="p-2 text-right">{t("hr.phone")}</th><th className="p-2 text-right">{t("hr.address")}</th><th className="p-2 text-right">إجراء</th></tr></thead><tbody>{workforce.map((user:any) => <tr key={user.id} className="border-b"><td className="p-2">{user.username}</td><td className="p-2"><input value={user.full_name || ""} onChange={e => setWorkforce(workforce.map(row => row.id === user.id ? { ...row, full_name: e.target.value } : row))} className="rounded border px-2 py-1" /></td><td className="p-2"><input value={user.phone || ""} onChange={e => setWorkforce(workforce.map(row => row.id === user.id ? { ...row, phone: e.target.value } : row))} className="rounded border px-2 py-1" /></td><td className="p-2"><input value={user.address || ""} onChange={e => setWorkforce(workforce.map(row => row.id === user.id ? { ...row, address: e.target.value } : row))} className="rounded border px-2 py-1" /></td><td className="p-2"><button disabled={busy} onClick={() => void saveWorkforce(user)} className="rounded border px-3 py-1">{t("hr.save")}</button></td></tr>)}</tbody></table></div>}
     </section>
   </section>;
 }
