@@ -57,7 +57,7 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
     const loadContext = async () => {
       let available: CompanyOption[];
       try {
-        const response = await client.get<CompanyOption[]>("/companies?active_only=true");
+        const response = await client.get<CompanyOption[]>("/companies?active_only=true", { headers: { "X-Branch-ID": "" } });
         if (cancelled) return;
         available = response.data;
       } catch {
@@ -85,6 +85,7 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
       try {
         const branchResponse = await client.get<BranchOption[]>("/branches", {
           params: { company_id: selectedCompany.id, active_only: true },
+          headers: { "X-Branch-ID": "" },
         });
         if (cancelled) return;
         const availableBranches = branchResponse.data;
