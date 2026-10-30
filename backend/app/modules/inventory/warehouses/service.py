@@ -18,6 +18,8 @@ class WarehouseService:
                 )
             else:
                 query = query.filter(InventoryWarehouse.branch_id == branch_id)
+        elif allowed_branch_ids is None and not include_central:
+            query = query.filter(InventoryWarehouse.is_central.is_(False))
         elif allowed_branch_ids is not None:
             if include_central and allowed_branch_ids:
                 query = query.filter(
