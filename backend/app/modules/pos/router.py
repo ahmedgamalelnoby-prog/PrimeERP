@@ -251,6 +251,11 @@ def authorize_cash_drawer_open(
         ))
         if document is None:
             raise HTTPException(422, "A transaction-linked drawer opening requires a sales invoice from the same company")
+        _assert_warehouse_access(db, payload.company_id, document.warehouse_id, current_user)
+        if document.warehouse_id is not None:
+            document_warehouse = db.get(InventoryWarehouse, document.warehouse_id)
+            if document_warehouse is None or document_warehouse.branch_id != terminal.branch_id:
+                raise HTTPException(422, "Sales invoice belongs to another POS branch")
         linked_to_transaction = True
 
     try:
