@@ -7,7 +7,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.services.base_service import BaseService
+from app.core.context import get_optional_request_context
+from app.core.permissions.checker import can_assign_role, effective_role_id
 from app.modules.audit.service import record_audit_event
+from app.modules.companies.membership import CompanyUserMembership
 from app.modules.identity.models.user import User
 from app.modules.identity.repositories.user_repository import UserRepository, user_repository
 from app.modules.identity.services.password_service import password_service
@@ -82,7 +85,39 @@ class UserService(BaseService[UserRepository]):
         user_data = {key: value for key, value in user_data.items() if value is not None}
         with self.uow as uow:
             user = repository.create(db, data=user_data)
-            record_audit_event(db, action="user.create", entity_type="user", entity_id=user.id, user_id=getattr(current_user, "id", None), tenant_id=effective_tenant_id, metadata={"username": user.username, "role_id": user.role_id, "is_active": user.is_active})
+            request_context = get_optional_request_context()
+            company_id = request_context.company_id if request_context is not None else None
+            membership_role_id = role_id
+            if company_id is not None:
+                if membership_role_id is None and not getattr(current_user, "is_platform_admin", False):
+                    membership_role_id = effective_role_id(current_user, db)
+                if membership_role_id is not None and not can_assign_role(current_user, membership_role_id, db):
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="You cannot assign a company role beyond your own permissions.",
+                    )
+                db.add(CompanyUserMembership(
+                    company_id=company_id,
+                    user_id=user.id,
+                    is_active=is_active,
+                    assigned_by=getattr(current_user, "id", None),
+                    role_id=membership_role_id,
+                ))
+            record_audit_event(
+                db,
+                action="user.create",
+                entity_type="user",
+                entity_id=user.id,
+                user_id=getattr(current_user, "id", None),
+                tenant_id=effective_tenant_id,
+                metadata={
+                    "username": user.username,
+                    "role_id": user.role_id,
+                    "company_id": company_id,
+                    "company_role_id": membership_role_id,
+                    "is_active": user.is_active,
+                },
+            )
             uow.commit()
         repository.refresh(db, user)
         return user
