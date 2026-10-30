@@ -764,20 +764,6 @@ def station_queue(
     db: Session = Depends(get_db),
 ):
     _company(db, company_id, current_user)
-    rows = db.execute(
-        select(PosOrderLineRoute, SalesLine, SalesDocument)
-        .join(SalesLine, SalesLine.id == PosOrderLineRoute.sales_line_id)
-        .join(SalesDocument, SalesDocument.id == SalesLine.document_id)
-        .join(PreparationStation, PreparationStation.id == PosOrderLineRoute.station_id)
-        .join(Branch, Branch.id == PreparationStation.branch_id)
-        .where(
-            PosOrderLineRoute.station_id == station_id,
-            PosOrderLineRoute.status == status,
-            Branch.company_id == company_id,
-        )
-        .order_by(SalesDocument.document_date.desc(), SalesDocument.id.desc(), SalesLine.id.asc())
-        .limit(500)
-    )
     visible_branches = _visible_branch_ids(db, company_id, current_user)
     if visible_branches is not None:
         if not visible_branches:
@@ -830,10 +816,27 @@ def station_queue(
 @router.patch("/order-routes/{route_id}", dependencies=[Depends(require_permission("commerce.post"))])
 def update_route(route_id: int, payload: RouteStatusUpdate, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company(db, company_id, current_user)
-    route = db.scalar(select(PosOrderLineRoute).join(SalesLine, SalesLine.id == PosOrderLineRoute.sales_line_id).join(SalesDocument, SalesDocument.id == SalesLine.document_id).where(
-        PosOrderLineRoute.id == route_id,
-        SalesDocument.company_id == company_id,
-    ).with_for_update())
+    route_query = (
+        select(PosOrderLineRoute)
+        .join(SalesLine, SalesLine.id == PosOrderLineRoute.sales_line_id)
+        .join(SalesDocument, SalesDocument.id == SalesLine.document_id)
+        .join(PreparationStation, PreparationStation.id == PosOrderLineRoute.station_id)
+        .join(Branch, Branch.id == PreparationStation.branch_id)
+        .where(
+            PosOrderLineRoute.id == route_id,
+            SalesDocument.company_id == company_id,
+            Branch.company_id == company_id,
+        )
+    )
+    if not current_user.is_platform_admin:
+        route_query = route_query.join(
+            BranchUserMembership,
+            BranchUserMembership.branch_id == Branch.id,
+        ).where(
+            BranchUserMembership.user_id == current_user.id,
+            BranchUserMembership.is_active.is_(True),
+        )
+    route = db.scalar(route_query.with_for_update())
     if route is None:
         raise HTTPException(404, "POS production route not found")
     allowed = {
