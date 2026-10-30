@@ -364,7 +364,7 @@ const enTranslation = {
       loadCompaniesFailed: "Unable to load available companies.",
       loadDetailsFailed: "Unable to load the user's membership and roles.",
       saveFailed: "Unable to save company access.",
-      revokeFailed: "Unable to revoke company access."
+      revokeFailed: "Unable to revoke company access.",
       loadBranchesFailed: "Unable to load available branches or you do not have permission to manage them.",
       loadBranchDetailsFailed: "Unable to load the user's branch membership and roles.",
       branchAccessTitle: "Branch access",
