@@ -41,7 +41,7 @@ export default function ProductsPage() {
     {error&&<div className="rounded-xl border bg-destructive/10 p-3 text-sm">{error}</div>}
     {loading?<div className="rounded-2xl border bg-card p-10 text-center">{t("productsHome.loading")}</div>:
     <><div className="grid gap-4 md:grid-cols-4">
-      {[["{t("productsHome.categories")}",categories.length],["{t("productsHome.priceLists")}",priceLists.length],["{t("productsHome.recipes")}",recipes.length],["{t("productsHome.belowMargin")}",impact?.count??0]].map(([label,value])=>
+      {[[t("productsHome.categories"),categories.length],[t("productsHome.priceLists"),priceLists.length],[t("productsHome.recipes"),recipes.length],[t("productsHome.belowMargin"),impact?.count??0]].map(([label,value])=>
         <div key={String(label)} className="rounded-2xl border bg-card p-5 shadow-sm"><div className="text-sm text-muted-foreground">{label}</div><div className="mt-2 text-3xl font-black">{value}</div></div>)}
     </div>
     <div className="grid gap-6 lg:grid-cols-2">
