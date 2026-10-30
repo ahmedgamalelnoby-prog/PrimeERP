@@ -13,6 +13,7 @@ from app.modules.branches.access import accessible_branch_ids, can_manage_all_br
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
+from app.modules.inventory.warehouses.models import InventoryWarehouse
 from app.modules.saas.entitlements import require_module
 from app.modules.commerce.models import SalesDocument
 from app.modules.shipping.models import ShippingCarrier, ShippingMethod, Shipment
@@ -163,6 +164,20 @@ def shipment(payload: ShipmentCreate, current_user: User = Depends(get_current_u
             raise HTTPException(422, "Only sales orders, deliveries, or invoices can be linked to a shipment")
         if sales_document.status in {"cancelled"}:
             raise HTTPException(409, "Cannot create a shipment for a cancelled sales document")
+        sales_warehouse = db.scalar(
+            select(InventoryWarehouse).where(
+                InventoryWarehouse.id == sales_document.warehouse_id,
+                InventoryWarehouse.company_id == payload.company_id,
+                InventoryWarehouse.tenant_id == _tenant_id(current_user),
+            )
+        ) if sales_document.warehouse_id is not None else None
+        if sales_document.warehouse_id is not None and sales_warehouse is None:
+            raise HTTPException(404, "Sales document warehouse not found")
+        if carrier_obj.branch_id is not None:
+            if sales_warehouse is None or sales_warehouse.branch_id != carrier_obj.branch_id:
+                raise HTTPException(422, "Sales document and shipping carrier must belong to the same branch")
+        elif sales_warehouse is not None and sales_warehouse.branch_id is not None:
+            require_branch_access(db, current_user, sales_warehouse.branch_id)
     if payload.cod_amount and method_obj.payment_method == "prepaid":
         raise HTTPException(422, "COD amount is not allowed for prepaid shipping")
     fee = payload.shipping_fee if payload.shipping_fee > 0 else method_obj.base_fee
