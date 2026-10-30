@@ -159,3 +159,27 @@ def test_shipping_carriers_and_shipments_are_branch_scoped():
     assert "ShippingCarrier.branch_id.in_(allowed)" in router
     assert "_require_carrier_branch_access(db, current_user, carrier_obj)" in router
     assert "_require_carrier_branch_access(db, current_user, carrier_obj)" in router
+
+
+def test_commerce_document_creation_and_listing_are_branch_scoped_by_warehouse():
+    router = source("app/modules/commerce/router.py")
+    assert "_authorize_warehouse_branch(db, current_user, payload.company_id, payload.warehouse_id)" in router
+    assert "_filter_visible_documents(db, current_user, company_id, documents, \"sale\")" in router
+    assert "_filter_visible_documents(db, current_user, company_id, documents, \"purchase\")" in router
+
+
+def test_commerce_document_mutations_approval_and_payments_check_document_branch():
+    router = source("app/modules/commerce/router.py")
+    assert "def _authorize_commerce_document(" in router
+    assert '_authorize_commerce_document(db, current_user, company_id, document_id, "sale")' in router
+    assert '_authorize_commerce_document(db, current_user, company_id, document_id, "purchase")' in router
+    assert '_authorize_commerce_document(db, current_user, payload.company_id, document_id, "sale")' in router
+    assert '_authorize_commerce_document(db, current_user, payload.company_id, document_id, "purchase")' in router
+    assert "original.document_kind" in router
+
+
+def test_company_wide_commerce_aging_and_partner_statements_require_tenant_wide_scope():
+    router = source("app/modules/commerce/router.py")
+    assert "company-wide AR/AP aging" in router
+    assert "company-wide partner statements" in router
+    assert "if not can_manage_all_branches(db, current_user)" in router
