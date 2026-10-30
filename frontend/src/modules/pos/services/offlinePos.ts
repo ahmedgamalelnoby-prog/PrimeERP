@@ -1,4 +1,5 @@
 import client from "@/shared/api/client";
+import { storage } from "@/shared/utils/storage";
 
 export type PosCheckoutPayload = {
   company_id: number;
@@ -24,6 +25,8 @@ export type OfflineQueueItem = {
   attempts: number;
   status: "pending" | "syncing" | "failed";
   lastError?: string;
+  companyId?: number;
+  branchId?: number;
   payload: PosCheckoutPayload;
 };
 
@@ -95,11 +98,21 @@ export async function readPosCache<T>(key: string): Promise<T | null> {
 }
 
 export async function enqueueCheckout(payload: PosCheckoutPayload): Promise<OfflineQueueItem> {
+  const companyId = Number(storage.getCompanyId());
+  const branchId = Number(storage.getBranchId());
+  if (!Number.isInteger(companyId) || companyId <= 0 || companyId !== payload.company_id) {
+    throw new Error("Select the checkout company before saving an offline POS transaction.");
+  }
+  if (!Number.isInteger(branchId) || branchId <= 0) {
+    throw new Error("Select the checkout branch before saving an offline POS transaction.");
+  }
   const item: OfflineQueueItem = {
     id: uuid(),
     createdAt: new Date().toISOString(),
     attempts: 0,
     status: "pending",
+    companyId,
+    branchId,
     payload,
   };
   await transaction<void>(QUEUE_STORE, "readwrite", (store, resolve, reject) => {
@@ -145,7 +158,15 @@ export async function flushCheckoutQueue(): Promise<{ synced: number; failed: nu
     item.attempts += 1;
     await updateQueueItem(item);
     try {
-      await client.post("/pos/checkout", item.payload);
+      if (!item.companyId || !item.branchId) {
+        throw new Error("This queued transaction has no saved company/branch context. Recreate it from the original branch.");
+      }
+      await client.post("/pos/checkout", item.payload, {
+        headers: {
+          "X-Company-ID": String(item.companyId),
+          "X-Branch-ID": String(item.branchId),
+        },
+      });
       await removeQueueItem(item.id);
       synced += 1;
     } catch (error: any) {
