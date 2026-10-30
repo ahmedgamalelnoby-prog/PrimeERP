@@ -317,3 +317,11 @@ def test_company_wide_scheduled_reports_require_tenant_wide_branch_management():
     assert "def _require_company_wide_reporting_access(" in router
     assert "can_manage_all_branches(db, user)" in router
     assert router.count("_require_company_wide_reporting_access(db, current_user)") >= 3
+
+
+def test_shipping_reports_filter_shipments_to_assigned_carrier_branches():
+    router = source("app/modules/shipping/reports_router.py")
+    assert "ShippingCarrier.branch_id.in_(accessible_branch_ids(db, user))" in router
+    assert "require_branch_access(db, user, carrier.branch_id)" in router
+    assert "Central carrier access requires tenant-wide branch management permission" in router
+    assert router.count("_filtered_shipments(db, company_id, carrier_id, date_from, date_to, date_basis, current_user)") == 2
