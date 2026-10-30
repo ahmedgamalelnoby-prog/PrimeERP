@@ -1,4 +1,5 @@
 import {
+  ClipboardList,
   Plus,
   Search,
   UserRound,
@@ -13,7 +14,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 import ResetPasswordDialog from "../components/ResetPasswordDialog";
-import UserCompanyAccessDialog from "../components/UserCompanyAccessDialog";\nimport UserAccessAuditDialog from "../components/UserAccessAuditDialog";
+import UserCompanyAccessDialog from "../components/UserCompanyAccessDialog";
+import UserAccessAuditDialog from "../components/UserAccessAuditDialog";
 import UserForm from "../components/UserForm";
 import UserTable from "../components/UserTable";
 import { useUsers } from "../hooks/useUsers";
