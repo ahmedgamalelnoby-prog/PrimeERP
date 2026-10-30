@@ -1079,17 +1079,26 @@ class CommerceService:
         return document, payment, reversal
 
 
-    def ar_ap_aging(self, db, company_id: int, as_of):
+    def ar_ap_aging(self, db, company_id: int, as_of, branch_id: int | None = None):
         rows = []
         for model, direction in ((SalesDocument, "receivable"), (PurchaseDocument, "payable")):
             positive_type = "invoice" if direction == "receivable" else "bill"
             offset_type = "credit_note" if direction == "receivable" else "debit_note"
-            documents = list(db.scalars(select(model).where(
+            document_query = select(model).where(
                 model.company_id == company_id,
                 model.document_type == positive_type,
                 model.status.in_({"confirmed", "posted"}),
                 model.document_date <= as_of,
-            ).order_by(model.due_date, model.id)).all())
+            )
+            if branch_id is not None:
+                document_query = document_query.outerjoin(
+                    InventoryWarehouse, InventoryWarehouse.id == model.warehouse_id
+                ).where(or_(
+                    model.warehouse_id.is_(None),
+                    InventoryWarehouse.is_central.is_(True),
+                    InventoryWarehouse.branch_id == branch_id,
+                ))
+            documents = list(db.scalars(document_query.order_by(model.due_date, model.id)).all())
 
             # Aging is an as-of report. Never use current paid_total and never
             # assume the payment's primary document is its accounting target:
@@ -1131,12 +1140,21 @@ class CommerceService:
                         )
 
             offsets = {}
-            for note in db.scalars(select(model).where(
+            offset_query = select(model).where(
                 model.company_id == company_id,
                 model.document_type == offset_type,
                 model.status.in_({"confirmed", "posted"}),
                 model.document_date <= as_of,
-            )).all():
+            )
+            if branch_id is not None:
+                offset_query = offset_query.outerjoin(
+                    InventoryWarehouse, InventoryWarehouse.id == model.warehouse_id
+                ).where(or_(
+                    model.warehouse_id.is_(None),
+                    InventoryWarehouse.is_central.is_(True),
+                    InventoryWarehouse.branch_id == branch_id,
+                ))
+            for note in db.scalars(offset_query).all():
                 offsets[note.partner_id] = offsets.get(note.partner_id, Decimal("0")) + Decimal(note.total or 0)
 
             for document in documents:
@@ -1173,7 +1191,7 @@ class CommerceService:
                 })
         return rows
 
-    def partner_statement(self, db, company_id: int, partner_id: int, direction: str, from_date=None, to_date=None, as_of=None):
+    def partner_statement(self, db, company_id: int, partner_id: int, direction: str, from_date=None, to_date=None, as_of=None, branch_id: int | None = None):
         if direction not in {"customer", "vendor"}:
             raise ValueError("Invalid statement direction")
         model = SalesDocument if direction == "customer" else PurchaseDocument
@@ -1190,13 +1208,22 @@ class CommerceService:
         if partner is None:
             raise ValueError("Partner not found")
 
-        docs = list(db.scalars(select(model).where(
+        docs_query = select(model).where(
             model.company_id == company_id,
             model.partner_id == partner_id,
             model.document_type.in_({positive_type, offset_type}),
             model.status.in_({"confirmed", "posted"}),
             model.document_date <= cutoff,
-        ).order_by(model.document_date, model.id)).all())
+        )
+        if branch_id is not None:
+            docs_query = docs_query.outerjoin(
+                InventoryWarehouse, InventoryWarehouse.id == model.warehouse_id
+            ).where(or_(
+                model.warehouse_id.is_(None),
+                InventoryWarehouse.is_central.is_(True),
+                InventoryWarehouse.branch_id == branch_id,
+            ))
+        docs = list(db.scalars(docs_query.order_by(model.document_date, model.id)).all())
         doc_ids = {d.id for d in docs}
 
         events = []
