@@ -1,6 +1,8 @@
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import delete, select
 
+from app.modules.audit.service import record_audit_event
+
 from fastapi import (
     APIRouter,
     Depends,
@@ -151,6 +153,18 @@ def update_user_company_access(
                 }
                 for company_id in payload.company_ids
             ],
+        )
+        record_audit_event(
+            db,
+            action="user.company_access_updated",
+            entity_type="user",
+            entity_id=target.id,
+            user_id=current_user.id,
+            tenant_id=tenant_id,
+            metadata={
+                "company_ids": sorted(payload.company_ids),
+                "default_company_id": payload.default_company_id,
+            },
         )
         db.commit()
     except Exception:
