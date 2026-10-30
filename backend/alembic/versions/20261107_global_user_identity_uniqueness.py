@@ -16,6 +16,22 @@ depends_on = None
 def upgrade() -> None:
     connection = op.get_bind()
 
+    # This migration must never rely on potentially inconsistent indexes when
+    # checking the physical user rows. Keep all preflight reads heap-based and
+    # stop before any DDL if the primary key itself is duplicated.
+    connection.exec_driver_sql("SET LOCAL enable_indexscan = off")
+    connection.exec_driver_sql("SET LOCAL enable_indexonlyscan = off")
+    connection.exec_driver_sql("SET LOCAL enable_bitmapscan = off")
+
+    duplicate_primary_keys = connection.execute(sa.text("""
+        SELECT id, array_agg(ctid::text ORDER BY ctid) AS physical_tuples,
+               count(*) AS row_count
+        FROM users
+        GROUP BY id
+        HAVING count(*) > 1
+        ORDER BY id
+    """)).mappings().all()
+
     duplicate_usernames = connection.execute(sa.text("""
         SELECT lower(trim(username)) AS normalized, array_agg(id ORDER BY id) AS user_ids
         FROM users
@@ -31,8 +47,13 @@ def upgrade() -> None:
         ORDER BY normalized
     """)).mappings().all()
 
-    if duplicate_usernames or duplicate_emails:
+    if duplicate_primary_keys or duplicate_usernames or duplicate_emails:
         details = []
+        if duplicate_primary_keys:
+            details.append("duplicate primary keys: " + "; ".join(
+                f"user ID {row['id']} at physical tuples {row['physical_tuples']}"
+                for row in duplicate_primary_keys
+            ))
         if duplicate_usernames:
             details.append("duplicate usernames: " + "; ".join(
                 f"{row['normalized']} (user IDs {row['user_ids']})" for row in duplicate_usernames
