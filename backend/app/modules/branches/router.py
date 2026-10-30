@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
-from app.core.permissions.checker import user_has_permission
+from app.modules.branches.access import accessible_branch_ids, can_manage_all_branches, require_branch_access
 from app.database.session import get_db
 from app.modules.branches.models import Branch, UserBranchMembership
 from app.modules.branches.schemas import (
@@ -36,48 +36,15 @@ def _company(db: Session, company_id: int, user: User) -> Company:
     return company
 
 
-def _can_manage_all_branches(db: Session, user: User) -> bool:
-    return bool(
-        user.is_platform_admin
-        or user_has_permission(user, "branch.manage_all", db)
-    )
-
-
 def _branch(db: Session, branch_id: int, user: User) -> Branch:
-    branch = db.scalar(
-        select(Branch).where(
-            Branch.id == branch_id,
-            Branch.tenant_id == _tenant_id(user),
-        )
-    )
-    if branch is None:
-        raise HTTPException(status_code=404, detail="Branch not found")
-    if not _can_manage_all_branches(db, user):
-        membership = db.scalar(
-            select(UserBranchMembership.id).where(
-                UserBranchMembership.tenant_id == branch.tenant_id,
-                UserBranchMembership.user_id == user.id,
-                UserBranchMembership.branch_id == branch.id,
-                UserBranchMembership.is_active.is_(True),
-            )
-        )
-        if membership is None:
-            raise HTTPException(status_code=403, detail="You are not assigned to this branch")
-    return branch
+    return require_branch_access(db, user, branch_id, require_active=False)
 
 
 @router.get("", response_model=list[BranchResponse], dependencies=[Depends(require_permission("branch.access"))])
 def list_branches(company_id: int | None = Query(default=None, gt=0), active_only: bool = Query(False), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     stmt = select(Branch).where(Branch.tenant_id == _tenant_id(current_user))
-    if not _can_manage_all_branches(db, current_user):
-        stmt = stmt.join(
-            UserBranchMembership,
-            UserBranchMembership.branch_id == Branch.id,
-        ).where(
-            UserBranchMembership.tenant_id == _tenant_id(current_user),
-            UserBranchMembership.user_id == current_user.id,
-            UserBranchMembership.is_active.is_(True),
-        )
+    if not can_manage_all_branches(db, current_user):
+        stmt = stmt.where(Branch.id.in_(accessible_branch_ids(db, current_user)))
     stmt = stmt.order_by(Branch.name, Branch.id)
     if company_id is not None:
         _company(db, company_id, current_user)
