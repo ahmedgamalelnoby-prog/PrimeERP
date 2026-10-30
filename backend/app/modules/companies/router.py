@@ -32,11 +32,18 @@ def list_companies(active_only: bool = Query(False), db: Session = Depends(get_d
     tenant_id = _tenant_id(current_user)
     stmt = select(Company).where(Company.tenant_id == tenant_id)
     if not current_user.is_platform_admin:
-        allowed_ids = assigned_company_ids(db, current_user.id, tenant_id)
-        stmt = stmt.where(Company.id.in_(allowed_ids))
+        stmt = (
+            select(Company)
+            .join(user_company_access, user_company_access.c.company_id == Company.id)
+            .where(
+                Company.tenant_id == tenant_id,
+                user_company_access.c.user_id == current_user.id,
+            )
+            .order_by(user_company_access.c.is_default.desc(), Company.name, Company.id)
+        )
     if active_only:
         stmt = stmt.where(Company.is_active.is_(True))
-    return list(db.scalars(stmt.order_by(Company.name, Company.id)).all())
+    return list(db.scalars(stmt.order_by(Company.name, Company.id) if current_user.is_platform_admin else stmt).all())
 
 
 @router.get("/{company_id}", response_model=CompanyResponse, dependencies=[Depends(require_permission("company.access"))])
