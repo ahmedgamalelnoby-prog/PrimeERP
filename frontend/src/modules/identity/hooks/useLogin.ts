@@ -6,7 +6,6 @@ import { useAuth } from "./useAuth";
 interface LoginFormValues {
   login: string;
   password: string;
-  tenantSlug: string;
 }
 
 export function useLogin() {
@@ -20,7 +19,6 @@ export function useLogin() {
   const submitLogin = async ({
     login: loginValue,
     password,
-    tenantSlug,
   }: LoginFormValues) => {
     setIsSubmitting(true);
     setErrorMessage(null);
@@ -28,8 +26,7 @@ export function useLogin() {
     try {
       await login(
         loginValue.trim(),
-        password,
-        tenantSlug.trim() || null
+        password
       );
     } catch (error) {
       if (axios.isAxiosError(error)) {
