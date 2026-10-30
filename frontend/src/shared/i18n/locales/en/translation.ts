@@ -134,6 +134,19 @@ const enTranslation = {
     }
   },
 
+  inventory: {
+    home: {
+      title: "Inventory & Warehouses",
+      description: "Manage company and branch warehouses and storage locations in one workspace.",
+      warehouses: "Warehouses",
+      warehousesDescription: "Manage central and branch warehouses.",
+      locations: "Storage locations",
+      locationsDescription: "Manage receiving, storage and shipping locations within each warehouse.",
+      items: "Items & stock",
+      itemsDescription: "Item catalog, stock balances and costing."
+    }
+  },
+
   sales: {
     title: "Sales",
     description: "Create sales documents, approve them, post inventory and collect payments within the sales cycle.",
