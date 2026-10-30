@@ -197,6 +197,14 @@ def authorize_cash_drawer_open(
         ))
         if document is None:
             raise HTTPException(422, "A transaction-linked drawer opening requires a sales invoice from the same company")
+        document_branch_id = db.scalar(
+            select(InventoryWarehouse.branch_id).where(
+                InventoryWarehouse.id == document.warehouse_id,
+                InventoryWarehouse.company_id == payload.company_id,
+            )
+        )
+        if document_branch_id != terminal.branch_id:
+            raise HTTPException(422, "The linked sales invoice must belong to the terminal branch")
         linked_to_transaction = True
 
     try:
@@ -338,7 +346,17 @@ def sales(
     db: Session = Depends(get_db),
 ):
     _company(db, company_id, current_user)
-    return commerce_service.list_documents(db, company_id, "sale", "invoice")
+    documents = commerce_service.list_documents(db, company_id, "sale", "invoice")
+    allowed = _branch_scope_ids(db, current_user)
+    if allowed is None:
+        return documents
+    warehouse_ids = set(db.scalars(
+        select(InventoryWarehouse.id).where(
+            InventoryWarehouse.company_id == company_id,
+            InventoryWarehouse.branch_id.in_(allowed),
+        )
+    ).all())
+    return [document for document in documents if document.warehouse_id in warehouse_ids]
 
 
 @router.get("/outlets")
@@ -375,6 +393,7 @@ def assign_outlet_warehouse(outlet_id: int, warehouse_id: int = Query(..., gt=0)
     warehouse = db.scalar(select(InventoryWarehouse).where(InventoryWarehouse.id == warehouse_id, InventoryWarehouse.company_id == company_id, InventoryWarehouse.is_active.is_(True)))
     if outlet is None or warehouse is None or outlet.branch_id != warehouse.branch_id:
         raise HTTPException(422, "Outlet and warehouse must belong to the same company and branch")
+    _branch(db, company_id, outlet.branch_id, current_user)
     outlet.warehouse_id = warehouse.id
     db.commit()
     db.refresh(outlet)
@@ -445,6 +464,7 @@ def link_outlet_station(payload: OutletStationLink, company_id: int = Query(...,
     station = db.scalar(select(PreparationStation).join(Branch, Branch.id == PreparationStation.branch_id).where(PreparationStation.id == payload.station_id, Branch.company_id == company_id, PreparationStation.is_active.is_(True)))
     if outlet is None or station is None or outlet.branch_id != station.branch_id:
         raise HTTPException(422, "Outlet and preparation station must belong to the same company and branch")
+    _branch(db, company_id, outlet.branch_id, current_user)
     obj = db.scalar(select(PosOutletStation).where(PosOutletStation.outlet_id == outlet.id, PosOutletStation.station_id == station.id))
     if obj is None:
         obj = PosOutletStation(outlet_id=outlet.id, station_id=station.id)
@@ -603,12 +623,24 @@ def checkout(payload: Checkout, current_user: User = Depends(get_current_user), 
         ).with_for_update())
         if require_shift_close and shift is None:
             raise HTTPException(409, "Open a cashier shift on this terminal before checkout")
+    warehouse = db.scalar(select(InventoryWarehouse).where(
+        InventoryWarehouse.id == payload.warehouse_id,
+        InventoryWarehouse.company_id == payload.company_id,
+        InventoryWarehouse.is_active.is_(True),
+    ))
+    if warehouse is None:
+        raise HTTPException(404, "Active POS warehouse not found")
+    if warehouse.branch_id is None:
+        if not can_manage_all_branches(db, current_user):
+            raise HTTPException(403, "Central warehouse checkout requires tenant-wide branch management permission")
+    else:
+        _branch(db, payload.company_id, warehouse.branch_id, current_user)
     if terminal is not None:
         outlet = db.get(PosOutlet, terminal.outlet_id)
         if outlet is None or outlet.warehouse_id is None:
             raise HTTPException(422, "The POS outlet must have a consumption warehouse before selling")
-        if payload.warehouse_id != outlet.warehouse_id:
-            raise HTTPException(422, "POS consumption warehouse must match the terminal outlet warehouse")
+        if payload.warehouse_id != outlet.warehouse_id or warehouse.branch_id != terminal.branch_id:
+            raise HTTPException(422, "POS consumption warehouse must match the terminal outlet branch warehouse")
     lines: list[DocumentLineCreate] = []
     routes: list[int | None] = []
     for line in payload.lines:
@@ -719,6 +751,16 @@ def station_queue(
     db: Session = Depends(get_db),
 ):
     _company(db, company_id, current_user)
+    station_branch_id = db.scalar(
+        select(PreparationStation.branch_id).join(Branch, Branch.id == PreparationStation.branch_id).where(
+            PreparationStation.id == station_id,
+            Branch.company_id == company_id,
+            PreparationStation.is_active.is_(True),
+        )
+    )
+    if station_branch_id is None:
+        raise HTTPException(404, "Preparation station not found")
+    _branch(db, company_id, station_branch_id, current_user)
     rows = db.execute(
         select(PosOrderLineRoute, SalesLine, SalesDocument)
         .join(SalesLine, SalesLine.id == PosOrderLineRoute.sales_line_id)
@@ -757,6 +799,12 @@ def update_route(route_id: int, payload: RouteStatusUpdate, company_id: int = Qu
     ).with_for_update())
     if route is None:
         raise HTTPException(404, "POS production route not found")
+    station_branch_id = db.scalar(
+        select(PreparationStation.branch_id).where(PreparationStation.id == route.station_id)
+    )
+    if station_branch_id is None:
+        raise HTTPException(404, "POS production route not found")
+    _branch(db, company_id, station_branch_id, current_user)
     allowed = {
         "queued": {"preparing", "cancelled"},
         "preparing": {"ready", "cancelled"},
