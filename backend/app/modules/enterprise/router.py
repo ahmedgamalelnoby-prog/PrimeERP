@@ -7,10 +7,11 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.context import get_effective_tenant_id
+from app.core.context import get_effective_tenant_id, get_optional_request_context
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
+from app.modules.companies.membership import CompanyUserMembership
 from app.modules.commerce.models import BusinessPartner
 from app.modules.enterprise.models import FixedAsset, Budget, BudgetLine, Employee, PayrollRun, PayrollLine, Project, ProjectContract
 from app.modules.enterprise.schemas import AssetCreate, AssetResponse, EmployeeCreate, EmployeeResponse, PayrollRunCreate, PayrollResponse, BudgetCreate, BudgetLineCreate, BudgetResponse, ProjectCreate, ProjectResponse, ContractCreate, ContractResponse
@@ -55,7 +56,11 @@ class PayrollSubmit(BaseModel):
 
 
 def company_for_user(db: Session, company_id: int, user: User) -> Company:
+    """Require the active company context and explicit membership before enterprise access."""
     tenant_id = get_effective_tenant_id(user)
+    context = get_optional_request_context()
+    if context is None or context.company_id != company_id:
+        raise HTTPException(403, "Select this company using X-Company-ID before accessing enterprise data")
     company = db.scalar(
         select(Company).where(
             Company.id == company_id,
@@ -65,6 +70,16 @@ def company_for_user(db: Session, company_id: int, user: User) -> Company:
     )
     if company is None:
         raise HTTPException(404, "Company not found")
+    if not user.is_platform_admin:
+        membership = db.scalar(
+            select(CompanyUserMembership.id).where(
+                CompanyUserMembership.company_id == company_id,
+                CompanyUserMembership.user_id == user.id,
+                CompanyUserMembership.is_active.is_(True),
+            )
+        )
+        if membership is None:
+            raise HTTPException(404, "Company not found")
     return company
 
 
