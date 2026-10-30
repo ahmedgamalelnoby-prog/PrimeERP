@@ -174,7 +174,7 @@ export async function flushCheckoutQueue(): Promise<{ synced: number; failed: nu
       item.lastError = error?.response?.data?.detail || error?.message || "Sync failed";
       await updateQueueItem(item);
       failed += 1;
-      if (!error?.response) break;
+      if (!error?.response && item.companyId && item.branchId) break;
     }
   }
   return { synced, failed };
