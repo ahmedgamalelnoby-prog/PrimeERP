@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 
 import ResetPasswordDialog from "../components/ResetPasswordDialog";
 import UserForm from "../components/UserForm";
+import UserCompanyAccessDialog from "../components/UserCompanyAccessDialog";
 import UserTable from "../components/UserTable";
 import { useUsers } from "../hooks/useUsers";
 import type { User } from "../types/user";
@@ -39,6 +40,9 @@ export default function UsersPage() {
     useState(false);
 
   const [selectedUser, setSelectedUser] =
+    useState<User | null>(null);
+
+  const [companyAccessUser, setCompanyAccessUser] =
     useState<User | null>(null);
 
   const [
@@ -166,6 +170,7 @@ export default function UsersPage() {
         onResetPassword={(user) =>
           setResetPasswordUser(user)
         }
+        onManageCompanies={(user) => setCompanyAccessUser(user)}
       />
 
       <UserForm
@@ -186,6 +191,15 @@ export default function UsersPage() {
         }}
         onCreate={createUser}
         onUpdate={updateUser}
+      />
+
+      <UserCompanyAccessDialog
+        open={Boolean(companyAccessUser)}
+        user={companyAccessUser}
+        onOpenChange={(open) => {
+          if (!open) setCompanyAccessUser(null);
+        }}
+        onSaved={reload}
       />
 
       <ResetPasswordDialog
