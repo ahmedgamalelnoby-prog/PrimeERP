@@ -207,7 +207,8 @@ def test_user_restore_service_is_implemented_and_tenant_scoped():
     assert "_resolve_write_tenant_id(tenant_id)" in restore
     assert "pg_advisory_xact_lock" in restore
     assert "repository.restore(db, user)" in restore
-    assert 'user.is_active = True' in restore
+    assert 'user.is_active = False' in restore
+    assert "must not silently grant access" in restore
     assert 'action="user.restore"' in restore
 
 
