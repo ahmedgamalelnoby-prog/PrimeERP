@@ -3,6 +3,7 @@ from __future__ import annotations
 import getpass
 import os
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 # Always load the central model registry before using ORM queries. This is
@@ -55,6 +56,39 @@ def bootstrap_super_admin(
     email = email.strip().lower()
     username = username.strip().lower()
 
+    # Serialize every first-admin bootstrap path. Without this transaction-scoped
+    # lock, two concurrent invocations can both observe an empty identity set
+    # and insert the same platform administrator.
+    db.execute(text("SELECT pg_advisory_xact_lock(726190314, 1)"))
+
+    # Inspect physical matches before ORM materialization: SQLAlchemy's identity
+    # map can collapse duplicate rows that share the same primary-key value.
+    matching_rows = db.execute(
+        text(
+            """
+            SELECT id
+            FROM users
+            WHERE lower(trim(email)) = :email
+               OR lower(trim(username)) = :username
+            ORDER BY id
+            """
+        ),
+        {"email": email, "username": username},
+    ).scalars().all()
+    if len(matching_rows) > 1:
+        raise RuntimeError(
+            "Refusing Super Admin bootstrap: multiple physical user rows match "
+            "the configured administrator identity. Run the read-only identity "
+            "preflight and reconcile the duplicate records before retrying."
+        )
+
+    user_id = matching_rows[0] if matching_rows else None
+    user = db.get(User, user_id) if user_id is not None else None
+    if user_id is not None and user is None:
+        raise RuntimeError(
+            "Refusing Super Admin bootstrap: the matching user row could not be loaded."
+        )
+
     role = db.query(Role).filter(Role.name == ROLE_NAME).first()
     if role is None:
         role = Role(
@@ -64,10 +98,6 @@ def bootstrap_super_admin(
         )
         db.add(role)
         db.flush()
-
-    user = db.query(User).filter(User.email == email).first()
-    if user is None:
-        user = db.query(User).filter(User.username == username).first()
 
     if user is None:
         user = User(
@@ -96,7 +126,9 @@ def bootstrap_super_admin(
         user.is_platform_admin = True
         user.is_deleted = False
         user.must_change_password = False
-        user.hashed_password = password_service.hash_password(password)
+        # Existing administrator credentials are never silently replaced by
+        # an idempotent bootstrap run. Use the authenticated password-reset
+        # workflow when a credential change is actually required.
 
     db.commit()
     db.refresh(user)

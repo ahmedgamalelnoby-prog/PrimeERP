@@ -317,24 +317,52 @@ jobs:
           }
           Write-Host "Frontend host port $env:FRONTEND_HOST_PORT is available."
 
-      - name: Start database and run migrations
+      - name: Start database for pre-migration audit
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
           $ErrorActionPreference = 'Stop'
-          docker compose up -d db migrate
-          $deadline = (Get-Date).AddMinutes(10)
+          docker compose up -d db
+          $deadline = (Get-Date).AddMinutes(3)
+          $dbContainer = docker compose ps -q db
+          if (-not $dbContainer) { throw 'PostgreSQL container was not created.' }
           while ((Get-Date) -lt $deadline) {
-            $migrateContainer = "${env:PRIMEERP_CONTAINER_PREFIX}-migrate"
+            $dbHealth = docker inspect -f '{{.State.Health.Status}}' $dbContainer
+            if ($dbHealth -eq 'healthy') { Write-Host 'PostgreSQL is healthy.'; exit 0 }
+            $dbState = docker inspect -f '{{.State.Status}}' $dbContainer
+            if ($dbState -ne 'running') {
+              docker compose logs db
+              throw "PostgreSQL container state is $dbState."
+            }
+            Start-Sleep -Seconds 3
+          }
+          docker compose logs db
+          throw 'PostgreSQL did not become healthy within 3 minutes.'
+
+      - name: Audit global user identity constraints before migrations (read-only)
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+        run: |
+          $ErrorActionPreference = 'Stop'
+          docker compose run --rm --no-deps backend sh -lc 'PYTHONPATH=/app python scripts/audit_user_identity_preflight.py'
+
+      - name: Run database migrations
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+        run: |
+          $ErrorActionPreference = 'Stop'
+          docker compose --profile manual-migrations up -d migrate
+          $deadline = (Get-Date).AddMinutes(10)
+          $migrateContainer = docker compose --profile manual-migrations ps -q migrate
+          if (-not $migrateContainer) { throw 'Migration container was not created.' }
+          while ((Get-Date) -lt $deadline) {
             $status = docker inspect -f '{{.State.Status}}' $migrateContainer 2>$null
             if ($status -eq 'exited') {
               $code = docker inspect -f '{{.State.ExitCode}}' $migrateContainer
               if ($code -eq '0') { Write-Host 'Alembic migration: PASS'; exit 0 }
-              docker compose logs migrate
+              docker compose --profile manual-migrations logs migrate
               throw "Migration container exited with code $code"
             }
             Start-Sleep -Seconds 5
           }
-          docker compose logs migrate
+          docker compose --profile manual-migrations logs migrate
           throw 'Migration container did not finish within 10 minutes.'
 
       - name: Execute PostgreSQL effective-date guard tests

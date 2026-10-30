@@ -1,7 +1,6 @@
 services:
   db:
     image: postgres:17-alpine
-    container_name: primeerp-db
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-primeerp_clean}
@@ -19,10 +18,10 @@ services:
       - primeerp
 
   migrate:
+    profiles: ["manual-migrations"]
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: primeerp-migrate
     restart: "no"
     environment:
       APP_ENV: ${APP_ENV:-production}
@@ -30,7 +29,7 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-primeerp}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-primeerp_clean}
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set}
       CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set}
-    command: ["alembic", "upgrade", "head"]
+    command: ["sh", "-lc", "PYTHONPATH=/app python scripts/audit_user_identity_preflight.py && alembic upgrade head"]
     depends_on:
       db:
         condition: service_healthy
@@ -41,7 +40,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: primeerp-backend
     restart: unless-stopped
     environment:
       APP_NAME: ${APP_NAME:-PrimeERP}
@@ -78,8 +76,8 @@ services:
       AI_MODEL: ${AI_MODEL:-gpt-5.6-luna}
     command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]
     depends_on:
-      migrate:
-        condition: service_completed_successfully
+      db:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/ready', timeout=4)"]
       interval: 15s
@@ -148,7 +146,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: primeerp-report-worker
     restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-production}
@@ -174,8 +171,8 @@ services:
     healthcheck:
       disable: true
     depends_on:
-      migrate:
-        condition: service_completed_successfully
+      db:
+        condition: service_healthy
     networks:
       - primeerp
 
@@ -183,7 +180,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: primeerp-integration-worker
     restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-production}
@@ -198,8 +194,8 @@ services:
     healthcheck:
       disable: true
     depends_on:
-      migrate:
-        condition: service_completed_successfully
+      db:
+        condition: service_healthy
     networks:
       - primeerp
 
@@ -207,7 +203,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: primeerp-approval-escalation-worker
     restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-production}
@@ -221,8 +216,8 @@ services:
     healthcheck:
       disable: true
     depends_on:
-      migrate:
-        condition: service_completed_successfully
+      db:
+        condition: service_healthy
     networks:
       - primeerp
 
@@ -232,7 +227,6 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_URL: /api/v1
-    container_name: primeerp-frontend
     restart: unless-stopped
     depends_on:
       backend:
@@ -244,7 +238,7 @@ services:
 
 volumes:
   primeerp_postgres_data:
-    name: primeerp_postgres_data
+    name: ${PRIMEERP_POSTGRES_VOLUME_NAME:-primeerp_postgres_data}
 
 networks:
   primeerp:
