@@ -15,37 +15,53 @@ def _user(**kwargs):
     return SimpleNamespace(**defaults)
 
 
-def _permission(name: str, active: bool = True):
-    return SimpleNamespace(name=name, is_active=active)
+class PermissionDatabase:
+    def __init__(self, result):
+        self.result = result
+        self.calls = 0
+
+    def scalar(self, statement):
+        self.calls += 1
+        return self.result
 
 
-def test_platform_admin_bypasses_rbac():
-    assert user_has_permission(_user(is_platform_admin=True), "finance.post") is True
+def test_platform_admin_bypasses_rbac_without_database_lookup():
+    db = PermissionDatabase(None)
+    assert user_has_permission(_user(is_platform_admin=True), "finance.post", db) is True
+    assert db.calls == 0
 
 
-def test_superuser_bypasses_rbac():
-    assert user_has_permission(_user(is_superuser=True), "finance.post") is True
+def test_superuser_bypasses_rbac_without_database_lookup():
+    db = PermissionDatabase(None)
+    assert user_has_permission(_user(is_superuser=True), "finance.post", db) is True
+    assert db.calls == 0
 
 
-def test_role_permission_allows_active_permission():
-    role = SimpleNamespace(
-        permissions=[_permission("finance.post")],
+def test_role_permission_requires_active_database_grant():
+    role = SimpleNamespace(permissions=[], is_active=True)
+    db = PermissionDatabase(123)
+    assert user_has_permission(_user(role_id=10, role=role), "finance.post", db) is True
+    assert db.calls == 1
+
+
+def test_inactive_or_revoked_permission_is_not_trusted_from_role():
+    stale_role = SimpleNamespace(
+        permissions=[SimpleNamespace(name="finance.post", code="finance.post", is_active=True)],
         is_active=True,
     )
-    assert user_has_permission(_user(role_id=10, role=role), "finance.post") is True
+    db = PermissionDatabase(None)
+    assert user_has_permission(_user(role_id=10, role=stale_role), "finance.post", db) is False
+    assert db.calls == 1
 
 
-def test_inactive_permission_is_not_trusted_from_role():
-    role = SimpleNamespace(
-        permissions=[_permission("finance.post", active=False)],
-        is_active=True,
-    )
-    assert user_has_permission(_user(role_id=10, role=role), "finance.post") is False
+def test_missing_permission_denied_when_database_has_no_grant():
+    role = SimpleNamespace(permissions=[], is_active=True)
+    db = PermissionDatabase(None)
+    assert user_has_permission(_user(role_id=10, role=role), "finance.post", db) is False
+    assert db.calls == 1
 
 
-def test_missing_permission_denied_without_database_lookup():
-    role = SimpleNamespace(
-        permissions=[_permission("finance.read")],
-        is_active=True,
-    )
-    assert user_has_permission(_user(role_id=10, role=role), "finance.post") is False
+def test_missing_role_denied_without_database_lookup():
+    db = PermissionDatabase(123)
+    assert user_has_permission(_user(), "finance.post", db) is False
+    assert db.calls == 0
