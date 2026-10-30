@@ -13,7 +13,7 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuth();
-  const { i18n } = useTranslation();
+  const { i18n, t } = useTranslation();
   const [dark, setDark] = useState(() => {
     if (typeof window === "undefined") return false;
     return localStorage.getItem(THEME_KEY) === "dark";
@@ -30,17 +30,17 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
   const handleLogout = () => { logout(); navigate("/login", { replace: true }); };
   const currentItem = findNavigationItemByPath(location.pathname);
   const parentItem = findNavigationParent(location.pathname);
-  const userName = user?.full_name || user?.username || user?.email || (isArabic ? "مستخدم" : "User");
-  const roleName = user?.is_platform_admin || user?.is_superuser ? (isArabic ? "مسؤول المنصة" : "Platform administrator") : user?.role_name || user?.role || (isArabic ? "مستخدم النظام" : "System user");
+  const userName = user?.full_name || user?.username || user?.email || t("common.user", { defaultValue: isArabic ? "مستخدم" : "User" });
+  const roleName = user?.is_platform_admin || user?.is_superuser ? t("common.platformAdministrator", { defaultValue: isArabic ? "مسؤول المنصة" : "Platform administrator" }) : user?.role_name || user?.role || t("common.systemUser", { defaultValue: isArabic ? "مستخدم النظام" : "System user" });
 
   return <header className="sticky top-0 z-30 border-b border-border/80 bg-background/90 text-foreground backdrop-blur-xl">
     <div className="flex h-[76px] items-center justify-between gap-3 px-4 sm:px-6 xl:px-8">
       <div className="flex min-w-0 items-center gap-3">
         <Button type="button" variant="outline" size="icon" className="h-10 w-10 shrink-0 rounded-xl lg:hidden" onClick={onMenuClick} aria-label={isArabic ? "فتح القائمة" : "Open navigation"}><Menu className="h-5 w-5" /></Button>
         <div className="min-w-0">
-          <div className="mb-1 hidden items-center gap-1.5 text-[11px] font-medium text-muted-foreground sm:flex"><Command className="h-3.5 w-3.5" /><span>PrimeERP</span>{parentItem && <><ChevronLeft className="h-3 w-3" /><span>{isArabic ? parentItem.labelAr : parentItem.label}</span></>}{currentItem && <><ChevronLeft className="h-3 w-3" /><span className="text-foreground">{isArabic ? currentItem.labelAr : currentItem.label}</span></>}</div>
-          <h1 className="truncate text-base font-extrabold tracking-tight sm:text-lg">{currentItem ? (isArabic ? currentItem.labelAr : currentItem.label) : location.pathname === "/dashboard" ? (isArabic ? "لوحة التحكم" : "Dashboard") : (isArabic ? "مساحة العمل" : "Workspace")}</h1>
-          <p className="mt-0.5 hidden max-w-[44vw] truncate text-xs text-muted-foreground md:block">{user?.tenant_name || (isArabic ? "منصة إدارة الأعمال المتكاملة" : "Integrated business management")} · {isArabic ? "متابعة مترابطة للأعمال والعمليات" : "Connected business operations"}</p>
+          <div className="mb-1 hidden items-center gap-1.5 text-[11px] font-medium text-muted-foreground sm:flex"><Command className="h-3.5 w-3.5" /><span>PrimeERP</span>{parentItem && <><ChevronLeft className="h-3 w-3" /><span>{t(`navigation.${parentItem.id}`, { defaultValue: isArabic ? parentItem.labelAr : parentItem.label })}</span></>}{currentItem && <><ChevronLeft className="h-3 w-3" /><span className="text-foreground">{t(`navigation.${currentItem.id}`, { defaultValue: isArabic ? currentItem.labelAr : currentItem.label })}</span></>}</div>
+          <h1 className="truncate text-base font-extrabold tracking-tight sm:text-lg">{currentItem ? t(`navigation.${currentItem.id}`, { defaultValue: isArabic ? currentItem.labelAr : currentItem.label }) : location.pathname === "/dashboard" ? t("navigation.dashboard", { defaultValue: isArabic ? "لوحة التحكم" : "Dashboard" }) : t("common.workspace", { defaultValue: isArabic ? "مساحة العمل" : "Workspace" })}</h1>
+          <p className="mt-0.5 hidden max-w-[44vw] truncate text-xs text-muted-foreground md:block">{user?.tenant_name || t("common.integratedBusinessManagement", { defaultValue: isArabic ? "منصة إدارة الأعمال المتكاملة" : "Integrated business management" })} · {isArabic ? "متابعة مترابطة للأعمال والعمليات" : "Connected business operations"}</p>
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
