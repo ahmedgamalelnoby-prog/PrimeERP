@@ -99,7 +99,8 @@ export default function CompanyManagementPage() {
   function selectTenant(value: string) {
     setTenantId(value);
     storage.setTenantId(value ? Number(value) : null);
-    localStorage.removeItem("company_id");
+    storage.clearCompanyContext();
+    window.dispatchEvent(new Event("primeerp:context-changed"));
     setCompanyId("");
     setCompanies([]);
     setRows([]);
@@ -155,7 +156,7 @@ export default function CompanyManagementPage() {
 
     <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
       <form onSubmit={submit} className="space-y-4 rounded-2xl border bg-card p-5 shadow-sm">
-        {branches && <select required value={companyId} onChange={(event) => { setCompanyId(event.target.value); if (event.target.value) localStorage.setItem("company_id", event.target.value); else localStorage.removeItem("company_id"); }} className="w-full rounded-lg border bg-background px-3 py-2">
+        {branches && <select required value={companyId} onChange={(event) => { setCompanyId(event.target.value); storage.setCompanyId(event.target.value || null); storage.clearBranchContext(); window.dispatchEvent(new Event("primeerp:context-changed")); }} className="w-full rounded-lg border bg-background px-3 py-2">
           <option value="">اختر الشركة</option>{companies.map((company) => <option key={company.id} value={company.id}>{company.name} {company.code ? `(${company.code})` : ""}</option>)}
         </select>}
         <input required value={name} onChange={(event) => setName(event.target.value)} placeholder="الاسم" className="w-full rounded-lg border bg-background px-3 py-2" />
