@@ -13,6 +13,7 @@ from app.modules.companies.models import Company
 from app.modules.companies.membership import CompanyUserMembership
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
+from app.modules.roles.models import Role
 from app.modules.saas.entitlements import enforce_branch_limit
 from app.modules.audit.service import record_audit_event
 
@@ -83,6 +84,7 @@ def list_branch_members(
             "full_name": user.full_name,
             "user_is_active": user.is_active and not user.is_deleted,
             "membership_is_active": membership.is_active,
+            "role_id": membership.role_id,
         }
         for membership, user in rows
     ]
@@ -92,10 +94,15 @@ def list_branch_members(
 def grant_branch_membership(
     branch_id: int,
     user_id: int,
+    role_id: int | None = Query(default=None, gt=0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     branch = _branch(db, branch_id, current_user)
+    if role_id is not None:
+        role = db.get(Role, role_id)
+        if role is None or not role.is_active:
+            raise HTTPException(status_code=404, detail="Active role not found")
     company_membership = db.scalar(
         select(CompanyUserMembership.id).where(
             CompanyUserMembership.company_id == branch.company_id,
@@ -129,6 +136,8 @@ def grant_branch_membership(
     else:
         membership.is_active = True
         membership.assigned_by = current_user.id
+    if role_id is not None:
+        membership.role_id = role_id
     db.flush()
     record_audit_event(
         db,
@@ -141,7 +150,7 @@ def grant_branch_membership(
     )
     db.commit()
     db.refresh(membership)
-    return {"branch_id": branch.id, "user_id": member_user.id, "is_active": membership.is_active}
+    return {"branch_id": branch.id, "user_id": member_user.id, "is_active": membership.is_active, "role_id": membership.role_id}
 
 
 @router.delete("/{branch_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_permission("branch.write"))])
