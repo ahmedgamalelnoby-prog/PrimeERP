@@ -146,6 +146,8 @@ export default function LoginPage() {
             {error && <div role="alert" className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700">{error}</div>}
 
             <form onSubmit={handleSubmit} className="space-y-5">
+              <p className="text-[11px] leading-5 text-slate-400">{text("سيتم ربط حسابك بالشركة المصرح لك بها تلقائيًا. إذا كان لديك أكثر من شركة، ستختار الشركة بعد الدخول.", "Your account is linked to your authorized company. If you have access to multiple companies, choose one after signing in.")}</p>
+
               <div className="space-y-2">
                 <Label htmlFor="password" className="text-sm font-semibold text-slate-700">{text("كلمة المرور", "Password")}</Label>
                 <div className="relative">
