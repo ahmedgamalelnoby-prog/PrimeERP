@@ -106,3 +106,26 @@ def test_both_login_forms_do_not_request_company_or_tenant_identifier():
     assert "tenant_name" not in auth_types
     assert "tenantSlug" not in auth_context
     assert "tenantName" not in auth_context
+
+
+def test_authenticated_user_cannot_override_tenant_context():
+    dependency = source("app/modules/identity/dependencies/current_user.py")
+    assert "user.tenant_id != token_tenant_id" in dependency
+    assert "requested_tenant_id != user.tenant_id" in dependency
+    assert "Tenant context does not match the authenticated user" in dependency
+
+
+def test_company_reads_are_scoped_to_authenticated_tenant():
+    companies = source("app/modules/companies/router.py")
+    assert "Company.tenant_id == _tenant_id(user)" in companies
+    assert "Company.tenant_id == _tenant_id(current_user)" in companies
+    assert "return _get_company(db, company_id, current_user)" in companies
+
+
+def test_refresh_token_revalidates_user_and_tenant_before_issuing_new_tokens():
+    auth = source("app/modules/identity/services/authentication_service.py")
+    refresh = auth.split("def refresh(", 1)[1].split("def _matching_users_by_password", 1)[0]
+    assert "user_repository.get_by_id(db=db, user_id=record.user_id)" in refresh
+    assert "self._validate_user(user)" in refresh
+    assert "self._get_auth_tenant(db, user.tenant_id)" in refresh
+    assert "self._ensure_subscription_allows_login(tenant, subscription)" in refresh
