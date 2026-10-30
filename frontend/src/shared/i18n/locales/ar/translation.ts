@@ -472,6 +472,50 @@ const arTranslation = {
     skuCode: "SKU/Code"
   },
 
+  purchasing: {
+    title: "المشتريات",
+    description: "إنشاء طلب الشراء، الاعتماد، الاستلام والتحويل إلى دورة الدفع.",
+    unexpectedError: "حدث خطأ غير متوقع.",
+    supplier: "المورد",
+    documentNumber: "رقم المستند",
+    purchaseOrderLine: "بند أمر الشراء",
+    receivedReceipt: "إذن استلام مستلم",
+    unitPrice: "السعر",
+    quantity: "الكمية",
+    processing: "جارٍ التنفيذ...",
+    loadingCompanyDate: "جارٍ جلب تاريخ الشركة...",
+    createDocument: "إنشاء مستند",
+    loading: "جارٍ التحميل...",
+    number: "رقم",
+    date: "التاريخ",
+    type: "النوع",
+    status: "الحالة",
+    total: "الإجمالي",
+    actions: "إجراءات",
+    confirm: "تأكيد",
+    approve: "موافقة",
+    reject: "رفض",
+    receive: "استلام",
+    payFull: "دفع كامل",
+    details: "تفاصيل",
+    close: "إغلاق",
+    document: "المستند",
+    item: "الصنف",
+    types: { requisition: "طلب احتياج", rfq: "طلب عرض سعر", order: "أمر شراء", receipt: "إذن استلام", bill: "فاتورة مورد" },
+    statuses: { draft: "مسودة", pending_approval: "بانتظار الموافقة", approved: "معتمد", confirmed: "مؤكد", partially_received: "مستلم جزئياً", received: "مستلم", posted: "مرحّل", cancelled: "ملغي", rejected: "مرفوض", partially_fulfilled: "منفذ جزئياً" }
+  },
+  crm: {
+    title: "إدارة علاقات العملاء",
+    pipeline: "عميل محتمل ← عميل ← عرض سعر ← أمر بيع / فاتورة.",
+    lead: "عميل محتمل",
+    saveLead: "حفظ العميل المحتمل",
+    leads: "العملاء المحتملون",
+    opportunitiesQuotations: "الفرص وعروض الأسعار",
+    loadFailed: "تعذر تحميل بيانات CRM.",
+    createLeadFailed: "تعذر إنشاء العميل المحتمل.",
+    fields: { code: "الكود", name: "الاسم", phone: "الهاتف", email: "البريد الإلكتروني" }
+  },
+
   register: {
     workspaceLabel:
       "إنشاء مساحة عمل جديدة",
