@@ -70,15 +70,6 @@ class TransactionService:
             branch_id=payload.branch_id,
         )
 
-        require_branch_access(db, current_user, payload.branch_id)
-
-        self._validate_project(
-            db,
-            company_id=payload.company_id,
-            project_id=payload.project_id,
-            required=get_company_setting(db, payload.company_id, "general.require_project") is True,
-        )
-
         if payload.branch_id is None and get_company_setting(
             db, payload.company_id, "general.branch_required"
         ) is True:
@@ -86,6 +77,16 @@ class TransactionService:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Company policy requires a branch for transactions",
             )
+
+        if payload.branch_id is not None:
+            require_branch_access(db, current_user, payload.branch_id)
+
+        self._validate_project(
+            db,
+            company_id=payload.company_id,
+            project_id=payload.project_id,
+            required=get_company_setting(db, payload.company_id, "general.require_project") is True,
+        )
 
         if payload.source_id is not None:
             existing = (
