@@ -1,7 +1,6 @@
 services:
   db:
     image: postgres:17-alpine
-    container_name: primeerp-db
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-primeerp_clean}
@@ -23,7 +22,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: primeerp-migrate
     restart: "no"
     environment:
       APP_ENV: ${APP_ENV:-production}
@@ -42,7 +40,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: primeerp-backend
     restart: unless-stopped
     environment:
       APP_NAME: ${APP_NAME:-PrimeERP}
@@ -149,7 +146,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: primeerp-report-worker
     restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-production}
@@ -184,7 +180,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: primeerp-integration-worker
     restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-production}
@@ -208,7 +203,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: primeerp-approval-escalation-worker
     restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-production}
@@ -233,7 +227,6 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_URL: /api/v1
-    container_name: primeerp-frontend
     restart: unless-stopped
     depends_on:
       backend:
