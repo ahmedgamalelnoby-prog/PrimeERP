@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/table";
 
 import type { User } from "../types/user";
+import { useTranslation } from "react-i18next";
 import UserStatus from "./UserStatus";
 
 interface UserTableProps {
@@ -43,20 +44,20 @@ function getUserInitial(user: User): string {
   return displayName.charAt(0).toUpperCase();
 }
 
-function formatLastLogin(value: string | null, format: CompanyDateFormat): string {
+function formatLastLogin(value: string | null, format: CompanyDateFormat, locale: string, unavailable: string, neverLoggedIn: string): string {
   if (!value) {
-    return "لم يسجل الدخول";
+    return neverLoggedIn;
   }
 
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
-    return "غير متاح";
+    return unavailable;
   }
 
   const datePart = value.slice(0, 10);
   const displayDate = formatCompanyDate(datePart, format);
-  const displayTime = new Intl.DateTimeFormat("ar-EG", {
+  const displayTime = new Intl.DateTimeFormat(locale, {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
@@ -73,18 +74,22 @@ export default function UserTable({
   onResetPassword,
 }: UserTableProps) {
   const dateFormat = useCompanyDateFormat();
+  const { t, i18n } = useTranslation();
+  const isArabic = i18n.resolvedLanguage?.startsWith("ar") ?? false;
+  const direction = isArabic ? "rtl" : "ltr";
+  const locale = isArabic ? "ar-EG" : "en-US";
 
   if (loading) {
     return (
       <div
         className="flex min-h-80 items-center justify-center rounded-2xl border bg-card"
-        dir="rtl"
+        dir={direction}
       >
         <div className="text-center">
           <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
 
           <p className="mt-3 text-sm text-muted-foreground">
-            جاري تحميل المستخدمين...
+            {t("usersTable.loading")}
           </p>
         </div>
       </div>
@@ -100,11 +105,11 @@ export default function UserTable({
         <UserCircle className="h-12 w-12 text-muted-foreground" />
 
         <h3 className="mt-4 text-lg font-semibold">
-          لا يوجد مستخدمون
+          {t("usersTable.emptyTitle")}
         </h3>
 
         <p className="mt-2 text-sm text-muted-foreground">
-          لا توجد نتائج مطابقة للبحث أو عوامل التصفية الحالية.
+          {t("usersTable.emptyDescription")}
         </p>
       </div>
     );
@@ -119,23 +124,23 @@ export default function UserTable({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="min-w-52 text-right">
+              <TableHead className="min-w-52 text-start">
                 المستخدم
               </TableHead>
 
-              <TableHead className="min-w-56 text-right">
+              <TableHead className="min-w-56 text-start">
                 البريد الإلكتروني
               </TableHead>
 
-              <TableHead className="min-w-32 text-right">
+              <TableHead className="min-w-32 text-start">
                 الدور
               </TableHead>
 
-              <TableHead className="min-w-28 text-right">
+              <TableHead className="min-w-28 text-start">
                 الحالة
               </TableHead>
 
-              <TableHead className="min-w-40 text-right">
+              <TableHead className="min-w-40 text-start">
                 آخر تسجيل دخول
               </TableHead>
 
@@ -174,7 +179,7 @@ export default function UserTable({
                           {user.is_superuser && (
                             <ShieldCheck
                               className="h-4 w-4 shrink-0 text-amber-600"
-                              aria-label="مستخدم بصلاحيات مدير"
+                              aria-label={t("usersTable.superuser")}
                             />
                           )}
 
@@ -208,7 +213,7 @@ export default function UserTable({
 
                   <TableCell>
                     <span className="text-sm">
-                      {user.role_name || "بدون دور"}
+                      {user.role_name || {t("usersTable.noRole")}}
                     </span>
                   </TableCell>
 
@@ -223,6 +228,9 @@ export default function UserTable({
                       {formatLastLogin(
                         user.last_login,
                         dateFormat,
+                        locale,
+                        t("usersTable.unavailable"),
+                        t("usersTable.neverLoggedIn"),
                       )}
                     </span>
                   </TableCell>
@@ -237,8 +245,8 @@ export default function UserTable({
                         }
                         aria-label={
                           user.is_active
-                            ? "تعطيل المستخدم"
-                            : "تفعيل المستخدم"
+                            ? {t("usersTable.deactivateUser")}
+                            : {t("usersTable.activateUser")}
                         }
                       />
 
@@ -258,8 +266,8 @@ export default function UserTable({
                         onClick={() =>
                           onEdit(user)
                         }
-                        title="تعديل المستخدم"
-                        aria-label="تعديل المستخدم"
+                        title={t("usersTable.editUser")}
+                        aria-label={t("usersTable.editUser")}
                       >
                         <Pencil className="h-4 w-4" />
                       </Button>
@@ -272,8 +280,8 @@ export default function UserTable({
                         onClick={() =>
                           onResetPassword(user)
                         }
-                        title="إعادة تعيين كلمة المرور"
-                        aria-label="إعادة تعيين كلمة المرور"
+                        title={t("usersTable.resetPassword")}
+                        aria-label={t("usersTable.resetPassword")}
                       >
                         <KeyRound className="h-4 w-4" />
                       </Button>
@@ -286,8 +294,8 @@ export default function UserTable({
                         onClick={() =>
                           onDelete(user)
                         }
-                        title="حذف المستخدم"
-                        aria-label="حذف المستخدم"
+                        title={t("usersTable.deleteUser")}
+                        aria-label={t("usersTable.deleteUser")}
                         className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                       >
                         {processing ? (
