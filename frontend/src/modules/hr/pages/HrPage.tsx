@@ -81,7 +81,7 @@ export default function HrPage() {
         setCompanyTimezone("Africa/Cairo");
       }
     } catch (e: any) {
-      setError(e?.response?.data?.detail || {t("hr.loadFailed")});
+      setError(e?.response?.data?.detail || t("hr.loadFailed"));
     }
   }, [companyId]);
 
@@ -112,7 +112,7 @@ export default function HrPage() {
         check_out_time: attendanceForm.check_out_time || null,
       }, { params: { company_id: companyId } });
       await load();
-    } catch (e: any) { setError(e?.response?.data?.detail || {t("hr.attendanceFailed")}); }
+    } catch (e: any) { setError(e?.response?.data?.detail || t("hr.attendanceFailed")); }
     finally { setBusy(false); }
   }
 
@@ -142,7 +142,7 @@ export default function HrPage() {
       }, { params: { company_id: companyId } });
       setCorrectionTarget(null);
       await load();
-    } catch (e: any) { setError(e?.response?.data?.detail || {t("hr.correctionSubmitFailed")}); }
+    } catch (e: any) { setError(e?.response?.data?.detail || t("hr.correctionSubmitFailed")); }
     finally { setBusy(false); }
   }
 
@@ -158,7 +158,7 @@ export default function HrPage() {
       }, { params: { company_id: companyId } });
       setOvertimeForm({ ...overtimeForm, reason: "" });
       await load();
-    } catch (e: any) { setError(e?.response?.data?.detail || {t("hr.overtimeSubmitFailed")}); }
+    } catch (e: any) { setError(e?.response?.data?.detail || t("hr.overtimeSubmitFailed")); }
     finally { setBusy(false); }
   }
 
@@ -168,7 +168,7 @@ export default function HrPage() {
     try {
       await client.post(`/hr/overtime-requests/${id}/decision`, { decision }, { params: { company_id: companyId } });
       await load();
-    } catch (e: any) { setError(e?.response?.data?.detail || {t("hr.overtimeDecisionFailed")}); }
+    } catch (e: any) { setError(e?.response?.data?.detail || t("hr.overtimeDecisionFailed")); }
     finally { setBusy(false); }
   }
 
@@ -178,7 +178,7 @@ export default function HrPage() {
     try {
       await client.post(`/hr/attendance-corrections/${id}/decision`, { decision }, { params: { company_id: companyId } });
       await load();
-    } catch (e: any) { setError(e?.response?.data?.detail || {t("hr.correctionDecisionFailed")}); }
+    } catch (e: any) { setError(e?.response?.data?.detail || t("hr.correctionDecisionFailed")); }
     finally { setBusy(false); }
   }
 
@@ -193,7 +193,7 @@ export default function HrPage() {
         preferred_language: user.preferred_language || "ar",
       }, { params: { company_id: companyId } });
       await load();
-    } catch (e: any) { setError(e?.response?.data?.detail || {t("hr.saveWorkforceFailed")}); }
+    } catch (e: any) { setError(e?.response?.data?.detail || t("hr.saveWorkforceFailed")); }
     finally { setBusy(false); }
   }
 
@@ -205,7 +205,7 @@ export default function HrPage() {
       await client.post("/enterprise/employees", { ...employeeForm, company_id: companyId, basic_salary: Number(employeeForm.basic_salary) });
       setEmployeeForm({ employee_no: "", name: "", hire_date: companyDate || "", basic_salary: "0" });
       await load();
-    } catch (e: any) { setError(e?.response?.data?.detail || {t("hr.addEmployeeFailed")}); }
+    } catch (e: any) { setError(e?.response?.data?.detail || t("hr.addEmployeeFailed")); }
     finally { setBusy(false); }
   }
 
@@ -220,7 +220,7 @@ export default function HrPage() {
         entitled_days: Number(balanceForm.entitled_days),
       }, { params: { company_id: companyId } });
       await load();
-    } catch (e: any) { setError(e?.response?.data?.detail || {t("hr.saveLeaveBalanceFailed")}); }
+    } catch (e: any) { setError(e?.response?.data?.detail || t("hr.saveLeaveBalanceFailed")); }
     finally { setBusy(false); }
   }
 
@@ -237,7 +237,7 @@ export default function HrPage() {
       }, { params: { company_id: companyId } });
       setLeaveForm({ ...leaveForm, reason: "" });
       await load();
-    } catch (e: any) { setError(e?.response?.data?.detail || {t("hr.leaveSubmitFailed")}); }
+    } catch (e: any) { setError(e?.response?.data?.detail || t("hr.leaveSubmitFailed")); }
     finally { setBusy(false); }
   }
 
@@ -247,7 +247,7 @@ export default function HrPage() {
     try {
       await client.post(`/hr/leave-requests/${requestId}/decision`, { decision }, { params: { company_id: companyId } });
       await load();
-    } catch (e: any) { setError(e?.response?.data?.detail || {t("hr.leaveDecisionFailed")}); }
+    } catch (e: any) { setError(e?.response?.data?.detail || t("hr.leaveDecisionFailed")); }
     finally { setBusy(false); }
   }
 
