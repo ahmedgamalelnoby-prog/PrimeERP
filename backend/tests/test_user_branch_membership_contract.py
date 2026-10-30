@@ -135,3 +135,27 @@ def test_inventory_accounting_configuration_requires_branch_membership():
     assert "branch.company_id != payload.company_id" in save
     read = router.split("def get_accounting_config(", 1)[1].split("@router.put", 1)[0]
     assert "require_branch_access(db, user, config.branch_id)" in read
+
+
+def test_catalog_menu_reads_and_writes_respect_branch_membership():
+    router = source("app/modules/catalog/router.py")
+    assert "def _assert_menu_access(" in router
+    assert "require_branch_access(db, user, menu.branch_id)" in router
+    assert "Tenant-wide branch management permission is required for a company-wide menu" in router
+    assert "menu.branch_id is None or menu.branch_id in company_branch_ids" in router
+    assert "_assert_menu_access(db, current_user, company_id, menu)" in router
+
+
+def test_commerce_accounting_settings_default_branch_is_membership_scoped():
+    router = source("app/modules/commerce/router.py")
+    assert "branch = require_branch_access(db, current_user, payload.default_branch_id)" in router
+    assert "branch = require_branch_access(db, current_user, obj.default_branch_id)" in router
+
+
+def test_shipping_carriers_and_shipments_are_branch_scoped():
+    router = source("app/modules/shipping/router.py")
+    assert "def _require_carrier_branch_access(" in router
+    assert "require_branch_access(db, user, carrier_obj.branch_id)" in router
+    assert "ShippingCarrier.branch_id.in_(allowed)" in router
+    assert "_require_carrier_branch_access(db, current_user, carrier_obj)" in router
+    assert "_require_carrier_branch_access(db, current_user, carrier_obj)" in router
