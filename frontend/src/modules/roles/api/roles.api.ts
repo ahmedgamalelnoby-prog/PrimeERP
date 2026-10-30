@@ -1,6 +1,7 @@
 import apiClient from "@/shared/api/client";
 
-import type { Permission } from "../types/permission";\nimport type { RoleAccessAudit } from "../types/access-audit";
+import type { Permission } from "../types/permission";
+import type { RoleAccessAudit } from "../types/access-audit";
 import type {
   Role,
   RoleCreatePayload,
@@ -20,7 +21,12 @@ function cleanParams(filters?: RolesFilters) {
   );
 }
 
-export const rolesApi = {\n  async accessAudit(): Promise<RoleAccessAudit> {\n    const response = await apiClient.get<RoleAccessAudit>(`${BASE_URL}/access-audit`);\n    return response.data;\n  },\n
+export const rolesApi = {
+  async accessAudit(): Promise<RoleAccessAudit> {
+    const response = await apiClient.get<RoleAccessAudit>(`${BASE_URL}/access-audit`);
+    return response.data;
+  },
+
   async list(filters?: RolesFilters): Promise<Role[]> {
     const response = await apiClient.get<Role[]>(`${BASE_URL}/`, {
       params: cleanParams(filters),
