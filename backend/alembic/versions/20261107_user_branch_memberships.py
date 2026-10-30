@@ -65,6 +65,24 @@ def upgrade() -> None:
         ["branch_id"],
     )
 
+    # Make the explicit tenant-wide branch permission available for role
+    # assignment through the platform role administration screen.
+    op.execute(
+        sa.text(
+            """
+            INSERT INTO permissions (name, resource, action, description, is_active)
+            VALUES (
+                'branch.manage_all',
+                'branch',
+                'manage_all',
+                'View and manage every branch within the authenticated tenant.',
+                TRUE
+            )
+            ON CONFLICT (name) DO NOTHING
+            """
+        )
+    )
+
 
 def downgrade() -> None:
     op.drop_index("ix_user_branch_memberships_branch_id", table_name="user_branch_memberships")
