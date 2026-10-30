@@ -15,8 +15,14 @@ const client = axios.create({
 client.interceptors.request.use((config) => {
   const tenantId = storage.getTenantId();
   const companyId = localStorage.getItem("company_id");
+  const requestPath = (config.url || "").split("?")[0];
+  const companyIndependentRequest =
+    requestPath === "/companies" ||
+    requestPath.startsWith("/identity/users");
   if (tenantId) config.headers["X-Tenant-ID"] = tenantId;
-  if (companyId) config.headers["X-Company-ID"] = companyId;
+  if (companyId && !companyIndependentRequest) {
+    config.headers["X-Company-ID"] = companyId;
+  }
   return config;
 });
 
