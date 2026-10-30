@@ -79,7 +79,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
         const { data: settings } = await client.get<{
           settings: Array<{ key: string; value: unknown }>;
-        }>("/company-settings", { params: { company_id: companyId } });
+        }>("/company-settings", {
+          params: { company_id: companyId },
+          headers: { "X-Branch-ID": "" },
+        });
         if (cancelled) return;
 
         const dateFormat = settings.settings.find(
