@@ -49,7 +49,8 @@ def test_branch_creation_and_creator_membership_are_committed_atomically():
     assert "UserBranchMembership(" in create
     assert "user_id=current_user.id" in create
     assert "assigned_by_user_id=current_user.id" in create
-    assert create.index("db.flush()") < create.index("db.add(") < create.index("db.commit()")
+    assert create.index("db.add(branch)") < create.index("db.flush()")
+    assert create.index("db.flush()") < create.index("UserBranchMembership(") < create.index("db.commit()")
 
 
 def test_branch_members_can_only_be_assigned_from_the_same_tenant():
