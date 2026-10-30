@@ -69,14 +69,16 @@ def effective_role_id(current_user: Any, db: Session) -> int | None:
 
 def can_assign_role(current_user: Any, target_role_id: int, db: Session) -> bool:
     """Prevent scoped role grants from exceeding the actor's effective authority."""
+    target_role = db.get(Role, target_role_id)
+    if target_role is None or not target_role.is_active:
+        return False
     if getattr(current_user, "is_platform_admin", False) or getattr(current_user, "is_superuser", False):
         return True
     actor_role_id = effective_role_id(current_user, db)
     if actor_role_id is None:
         return False
-    target_role = db.get(Role, target_role_id)
     actor_role = db.get(Role, actor_role_id)
-    if target_role is None or actor_role is None or not target_role.is_active or not actor_role.is_active:
+    if actor_role is None or not actor_role.is_active:
         return False
 
     def permission_names(role_id: int) -> set[str]:
