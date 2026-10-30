@@ -13,7 +13,7 @@ export default function DashboardLayout() {
 
   return <div className="min-h-screen bg-background text-foreground" dir={isArabic ? "rtl" : "ltr"}>
     <AppSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-    <div className={["min-h-screen", isArabic ? "lg:mr-[286px]" : "lg:ml-[286px]"].join(" ")}>
+    <div className={["min-h-screen", "lg:mr-[286px]"].join(" ")}>
       <AppHeader onMenuClick={() => setSidebarOpen(true)} />
       <main key={location.pathname} className="min-h-[calc(100vh-78px)] px-4 py-5 sm:px-6 sm:py-7 xl:px-8">
         <div className="mx-auto w-full max-w-[1680px]"><Outlet /></div>
