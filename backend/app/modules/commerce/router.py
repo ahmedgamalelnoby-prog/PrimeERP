@@ -13,7 +13,7 @@ from app.modules.branches.access import accessible_branch_ids, can_manage_all_br
 from app.modules.branches.models import Branch
 from app.modules.commerce.accounting_models import CommerceAccountingSettings
 from app.modules.commerce.accounting_schemas import CommerceAccountingSettingsCreate
-from app.modules.commerce.models import CommercePayment, SalesDocument, PurchaseDocument
+from app.modules.commerce.models import CommercePayment, SalesDocument, SalesLine, PurchaseDocument
 from app.modules.commerce.schemas import PartnerCreate, PartnerResponse, DocumentCreate, DocumentResponse, PaymentCreate, PaymentResponse, PaymentReverse, AgingSummary, PartnerStatement, CommerceApprovalDecision
 from app.modules.commerce.sales_return_schemas import SalesReturnCreate
 from app.modules.commerce.sales_return_service import sales_return_service
@@ -212,6 +212,24 @@ def create_sale(payload: DocumentCreate, current_user: User = Depends(get_curren
 def create_sales_return(payload: SalesReturnCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, payload.company_id, current_user)
     _authorize_warehouse_branch(db, current_user, payload.company_id, payload.warehouse_id)
+    for request_line in payload.lines:
+        source_delivery = db.scalar(
+            select(SalesDocument)
+            .join(SalesLine, SalesLine.document_id == SalesDocument.id)
+            .where(
+                SalesLine.id == request_line.original_delivery_line_id,
+                SalesDocument.company_id == payload.company_id,
+                SalesDocument.document_type == "delivery",
+            )
+        )
+        if source_delivery is None:
+            raise HTTPException(status_code=404, detail="Original delivery line not found")
+        _authorize_warehouse_branch(
+            db,
+            current_user,
+            payload.company_id,
+            source_delivery.warehouse_id,
+        )
     try: obj = sales_return_service.create_and_post(db, payload, current_user.id); db.commit(); db.refresh(obj); return obj
     except ValueError as exc: db.rollback(); raise HTTPException(status_code=400, detail=str(exc)) from exc
     except IntegrityError as exc: db.rollback(); raise HTTPException(status_code=409, detail="The sales return conflicts with an existing allocation or document") from exc
