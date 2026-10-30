@@ -18,10 +18,7 @@ router = APIRouter(prefix="/inventory/locations", tags=["Inventory - Locations"]
 
 
 def _company_for_user(db: Session, company_id: int, user: User):
-    if get_effective_tenant_id(user) is None: raise HTTPException(403, "User is not assigned to a tenant")
-    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == get_effective_tenant_id(user), Company.is_active.is_(True)))
-    if company is None: raise HTTPException(403, "Company is outside the current tenant")
-    return company
+    return require_company_access(db, company_id, user)
 
 
 def _require_warehouse_access(db: Session, company_id: int, warehouse_id: int, user: User):
