@@ -134,6 +134,57 @@ const arTranslation = {
     }
   },
 
+  roles: {
+    title: "الأدوار والصلاحيات",
+    description: "إنشاء الأدوار وتحديد ما يمكن لكل مستخدم عرضه أو تنفيذه داخل PrimeERP.",
+    newRole: "دور جديد",
+    total: "إجمالي الأدوار",
+    active: "الأدوار النشطة",
+    assignedUsers: "المستخدمون المرتبطون",
+    searchPlaceholder: "البحث باسم الدور أو الوصف...",
+    confirmDelete: "هل تريد حذف الدور "{{name}}"؟",
+    errors: {
+      deleteAssigned: "لا يمكن حذف الدور لأنه مرتبط بـ {{count}} مستخدم."
+    }
+  },
+  roleForm: {
+    titleCreate: "إضافة دور جديد",
+    titleEdit: "تعديل الدور",
+    description: "حدد اسم الدور والصلاحيات التي سيتم منحها للمستخدمين المرتبطين به.",
+    name: "اسم الدور",
+    namePlaceholder: "مثال: مدير الفرع",
+    active: "الدور نشط",
+    descriptionLabel: "الوصف",
+    descriptionPlaceholder: "وصف مختصر لمسؤوليات هذا الدور",
+    permissions: "صلاحيات الدور",
+    selectedCount: "تم اختيار {{selected}} من {{total}} صلاحية",
+    selectAll: "تحديد أو إلغاء الكل",
+    searchPermissions: "البحث في الصلاحيات...",
+    loadingPermissions: "جاري تحميل الصلاحيات...",
+    noPermissions: "لا توجد صلاحيات متاحة.",
+    permissionCount_one: "{{count}} صلاحية",
+    permissionCount_other: "{{count}} صلاحيات",
+    selectSection: "تحديد القسم بالكامل",
+    unselectSection: "إلغاء تحديد القسم",
+    save: "حفظ التعديلات",
+    create: "إنشاء الدور",
+    cancel: "إلغاء",
+    resources: {
+      users: "المستخدمون", roles: "الأدوار", permissions: "الصلاحيات",
+      companies: "الشركات", branches: "الفروع", sales: "المبيعات",
+      customers: "العملاء", suppliers: "الموردون", products: "المنتجات",
+      inventory: "المخزون", purchasing: "المشتريات", accounting: "الحسابات",
+      restaurant: "المطاعم", pos: "نقاط البيع", hr: "الموارد البشرية",
+      reports: "التقارير", shipping: "شركات الشحن", settings: "الإعدادات",
+      other: "أخرى"
+    },
+    actions: {
+      view: "عرض", read: "عرض", create: "إضافة", update: "تعديل",
+      delete: "حذف", approve: "اعتماد", manage: "إدارة كاملة",
+      print: "طباعة", export: "تصدير", cancel: "إلغاء"
+    }
+  },
+
   permissions: {
     title: "الصلاحيات",
     description: "عرض وإدارة صلاحيات النظام وربطها بالأدوار.",
