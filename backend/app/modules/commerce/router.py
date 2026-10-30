@@ -30,6 +30,16 @@ router = APIRouter(prefix="/commerce", tags=["Commerce"], dependencies=[Depends(
 
 def _company_for_user(db: Session, company_id: int, user: User):
     return require_company_access(db, company_id, user)
+def _report_branch_id(db: Session, company_id: int, user: User) -> int | None:
+    if user.is_platform_admin:
+        return None
+    context = get_optional_request_context()
+    if context is None or context.branch_id is None:
+        raise HTTPException(400, "Select a branch using X-Branch-ID before viewing branch financial reports")
+    require_branch_access(db, company_id, context.branch_id, user)
+    return context.branch_id
+
+
 def _assert_warehouse_access(db: Session, company_id: int, warehouse_id: int | None, user: User) -> None:
     if warehouse_id is None:
         return
@@ -186,7 +196,8 @@ def create_purchase(payload: DocumentCreate, current_user: User = Depends(get_cu
 def ar_ap_aging(company_id: int = Query(..., gt=0), as_of: date | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
     cutoff = as_of or date.today()
-    rows = commerce_service.ar_ap_aging(db, company_id, cutoff)
+    branch_id = _report_branch_id(db, company_id, current_user)
+    rows = commerce_service.ar_ap_aging(db, company_id, cutoff, branch_id=branch_id)
     receivable = sum((r["outstanding"] for r in rows if r["direction"] == "receivable"), 0)
     payable = sum((r["outstanding"] for r in rows if r["direction"] == "payable"), 0)
     return {"as_of": cutoff, "receivable": receivable, "payable": payable, "net": receivable - payable, "rows": rows}
@@ -203,10 +214,13 @@ def partner_statement(
     db: Session = Depends(get_db),
 ):
     _company_for_user(db, company_id, current_user)
+    branch_id = _report_branch_id(db, company_id, current_user)
     if from_date and to_date and from_date > to_date:
         raise HTTPException(400, "from_date cannot be later than to_date")
     cutoff = as_of or to_date or date.today()
-    result = _run(lambda: commerce_service.partner_statement(db, company_id, partner_id, direction, from_date, to_date, cutoff))
+    result = _run(lambda: commerce_service.partner_statement(
+        db, company_id, partner_id, direction, from_date, to_date, cutoff, branch_id=branch_id
+    ))
     result.update({"company_id": company_id, "partner_id": partner_id, "direction": direction, "from_date": from_date, "to_date": to_date, "as_of": cutoff})
     return result
 
