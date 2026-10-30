@@ -1,4 +1,5 @@
 import {
+  Building2,
   KeyRound,
   Loader2,
   Pencil,
@@ -31,6 +32,7 @@ interface UserTableProps {
   onDelete: (user: User) => void;
   onToggleStatus: (user: User) => void;
   onResetPassword: (user: User) => void;
+  onManageCompanies: (user: User) => void;
 }
 
 function getUserDisplayName(user: User): string {
@@ -262,6 +264,18 @@ export default function UserTable({
                         aria-label="تعديل المستخدم"
                       >
                         <Pencil className="h-4 w-4" />
+                      </Button>
+
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        disabled={processing}
+                        onClick={() => onManageCompanies(user)}
+                        title="تعيين الشركات"
+                        aria-label="تعيين الشركات"
+                      >
+                        <Building2 className="h-4 w-4" />
                       </Button>
 
                       <Button
