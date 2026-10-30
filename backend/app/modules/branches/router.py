@@ -262,6 +262,33 @@ def list_branches(company_id: int | None = Query(default=None, gt=0), active_onl
     return list(db.scalars(stmt).all())
 
 
+@router.get("/accessible")
+def list_accessible_branches(
+    company_id: int = Query(..., gt=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return only active branches the authenticated user may select."""
+    _company(db, company_id, current_user)
+    stmt = select(Branch).where(
+        Branch.company_id == company_id,
+        Branch.tenant_id == _tenant_id(current_user),
+        Branch.is_active.is_(True),
+    )
+    if not current_user.is_platform_admin:
+        stmt = stmt.join(
+            BranchUserMembership,
+            BranchUserMembership.branch_id == Branch.id,
+        ).where(
+            BranchUserMembership.user_id == current_user.id,
+            BranchUserMembership.is_active.is_(True),
+        )
+    return [
+        {"id": branch.id, "name": branch.name, "code": branch.code}
+        for branch in db.scalars(stmt.order_by(Branch.name, Branch.id)).unique().all()
+    ]
+
+
 @router.get("/{branch_id}", response_model=BranchResponse, dependencies=[Depends(require_permission("branch.access"))])
 def get_branch(branch_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return _branch(db, branch_id, current_user)
