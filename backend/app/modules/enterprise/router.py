@@ -145,6 +145,20 @@ def employees(company_id: int = Query(..., gt=0), db: Session = Depends(get_db),
     return list(db.scalars(select(Employee).where(Employee.company_id == company_id, Employee.is_active.is_(True)).order_by(Employee.employee_no)).all())
 
 
+@router.get("/payroll/runs", response_model=list[PayrollResponse], dependencies=[Depends(require_permission("enterprise.access"))])
+def list_payroll_runs(
+    company_id: int = Query(..., gt=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    company_for_user(db, company_id, current_user)
+    return list(db.scalars(
+        select(PayrollRun)
+        .where(PayrollRun.company_id == company_id)
+        .order_by(PayrollRun.period.desc(), PayrollRun.id.desc())
+    ).all())
+
+
 @router.post("/payroll/runs", response_model=PayrollResponse, status_code=201, dependencies=[Depends(require_permission("enterprise.post"))])
 def payroll(p: PayrollRunCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     company_for_user(db, p.company_id, current_user)
