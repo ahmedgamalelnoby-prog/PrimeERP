@@ -811,7 +811,7 @@ const enTranslation = {
     menu: "Menu",
     item: "Item",
     paymentMethods: { cash: "Cash", card: "Card", bank: "Bank", wallet: "Wallet" },
-    orderStatuses: { draft: "Draft", pending: "Pending", preparing: "Preparing", ready: "Ready", served: "Served", paid: "Paid", cancelled: "Cancelled" }
+    orderStatuses: { draft: "Draft", pending: "Pending", preparing: "Preparing", ready: "Ready", served: "Served", paid: "Paid", cancelled: "Cancelled" },
     title: "Restaurant & Hotel POS",
     flowDescription: "Service outlet → POS terminal → menu → menu item → preparation station (kitchen/bar) → execution screen.",
     offlineCacheNotice: "You are offline. The latest locally cached POS data is being used.",
