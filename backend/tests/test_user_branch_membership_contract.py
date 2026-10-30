@@ -37,13 +37,14 @@ def test_branch_membership_migration_is_chained_after_current_merge_head():
 
 def test_branch_reads_are_limited_to_membership_unless_explicit_global_permission():
     router = source("app/modules/branches/router.py")
+    access = source("app/modules/branches/access.py")
     manifest = source("app/modules/branches/__manifest__.py")
     assert "branch.manage_all" in manifest
-    assert 'user_has_permission(user, "branch.manage_all", db)' in router
-    assert "UserBranchMembership.user_id == user.id" in router
-    assert "UserBranchMembership.is_active.is_(True)" in router
-    assert "UserBranchMembership.user_id == current_user.id" in router
-    assert 'detail="You are not assigned to this branch"' in router
+    assert 'user_has_permission(user, "branch.manage_all", db)' in access
+    assert "UserBranchMembership.user_id == user.id" in access
+    assert "UserBranchMembership.is_active.is_(True)" in access
+    assert "accessible_branch_ids(db, current_user)" in router
+    assert 'detail="You are not assigned to this branch"' in access
 
 
 def test_branch_creation_and_creator_membership_are_committed_atomically():
