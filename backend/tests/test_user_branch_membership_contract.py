@@ -353,3 +353,9 @@ def test_central_warehouse_list_requires_tenant_wide_branch_permission():
     assert "if not can_manage_all_branches(db, current_user):" in central
     assert "status_code=403" in central
     assert "warehouse_service.get_central(db, company_id=company_id)" in central
+
+
+def test_warehouse_service_honors_explicit_central_warehouse_exclusion_for_global_users():
+    service = source("app/modules/inventory/warehouses/service.py")
+    assert "elif allowed_branch_ids is None and not include_central:" in service
+    assert "InventoryWarehouse.is_central.is_(False)" in service
