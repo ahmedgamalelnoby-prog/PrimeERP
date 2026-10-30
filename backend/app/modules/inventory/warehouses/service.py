@@ -6,7 +6,7 @@ from app.modules.inventory.warehouses.models import InventoryWarehouse
 
 
 class WarehouseService:
-    def list(self, db: Session, *, company_id: int, branch_id: int | None = None, include_central: bool = True):
+    def list(self, db: Session, *, company_id: int, branch_id: int | None = None, include_central: bool = True, allowed_branch_ids: list[int] | None = None):
         query = db.query(InventoryWarehouse).filter(
             InventoryWarehouse.company_id == company_id,
             InventoryWarehouse.is_active.is_(True),
@@ -18,6 +18,16 @@ class WarehouseService:
                 )
             else:
                 query = query.filter(InventoryWarehouse.branch_id == branch_id)
+        elif allowed_branch_ids is not None:
+            if include_central and allowed_branch_ids:
+                query = query.filter(
+                    (InventoryWarehouse.branch_id.in_(allowed_branch_ids))
+                    | InventoryWarehouse.is_central.is_(True)
+                )
+            elif allowed_branch_ids:
+                query = query.filter(InventoryWarehouse.branch_id.in_(allowed_branch_ids))
+            else:
+                query = query.filter(InventoryWarehouse.id == -1)
         return query.order_by(InventoryWarehouse.is_central.desc(), InventoryWarehouse.code).all()
 
     def get_central(self, db: Session, *, company_id: int):
