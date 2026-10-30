@@ -237,7 +237,7 @@ export default function PosPage() {
       <form onSubmit={routeItem} className="rounded-2xl border bg-card p-5 space-y-3 lg:col-span-2">
         <h2 className="font-bold">5. {t("pos.routeItem")}</h2>
         <select required value={selectedTerminal} onChange={e => setSelectedTerminal(e.target.value)} className="rounded-lg border px-3 py-2"><option value="">POS</option>{terminals.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
-        <select required value={selectedMenu} onChange={e => {setSelectedMenu(e.target.value);setSelectedMenuItem("")}} className="rounded-lg border px-3 py-2"><option value="">Menu</option>{menus.map(x => <option key={x.id} value={x.id}>{x.name_ar}</option>)}</select>
+        <select required value={selectedMenu} onChange={e => {setSelectedMenu(e.target.value);setSelectedMenuItem("")}} className="rounded-lg border px-3 py-2"><option value="">{t("pos.menu")}</option>{menus.map(x => <option key={x.id} value={x.id}>{x.name_ar}</option>)}</select>
         <select required value={selectedMenuItem} onChange={e => setSelectedMenuItem(e.target.value)} className="rounded-lg border px-3 py-2"><option value="">Menu Item</option>{activeMenu?.items?.map((x:AnyRow) => <option key={x.id} value={x.id}>#{x.id} Product {x.product_id}</option>)}</select>
         <select required value={selectedStation} onChange={e => setSelectedStation(e.target.value)} className="rounded-lg border px-3 py-2"><option value="">Station</option>{stations.map(x => <option key={x.id} value={x.id}>{x.name} ({x.station_type})</option>)}</select>
         <button className="rounded-lg bg-primary px-4 py-2 text-primary-foreground">{t("pos.saveRouting")}</button>
@@ -255,46 +255,46 @@ export default function PosPage() {
           <button type="button" onClick={() => void openCashierShift()} className="rounded-lg bg-primary px-4 py-2 text-primary-foreground">{t("pos.openShift")}</button>
         </div>}
         {cashierShift?.status === "open" && <div className="flex flex-wrap items-end gap-3">
-          <div className="text-sm">الوردية #{cashierShift.id} مفتوحة · رصيد البداية {cashierShift.opening_cash}</div>
+          <div className="text-sm">{t("pos.shiftOpen", { id: cashierShift.id, amount: cashierShift.opening_cash })}</div>
           <label className="grid gap-1 text-sm">{t("pos.countedCash")}
             <input type="number" min="0" step="0.01" value={countedCash} onChange={e => setCountedCash(e.target.value)} className="rounded-lg border px-3 py-2"/>
           </label>
-          <button type="button" disabled={offlineQueue.length > 0} onClick={() => void closeCashierShift()} className="rounded-lg border px-4 py-2 disabled:opacity-50">إغلاق وتسوية الوردية</button>
-          {offlineQueue.length > 0 && <span className="text-xs text-amber-700">لا يمكن الإغلاق مع طلبات غير متزامنة.</span>}
+          <button type="button" disabled={offlineQueue.length > 0} onClick={() => void closeCashierShift()} className="rounded-lg border px-4 py-2 disabled:opacity-50">{t("pos.closeAndReconcile")}</button>
+          {offlineQueue.length > 0 && <span className="text-xs text-amber-700">{t("pos.cannotClosePending")}</span>}
         </div>}
         {cashierShift?.status === "closed" && <div className="space-y-1 text-sm">
-          <p>الوردية #{cashierShift.id} أُغلقت.</p>
-          <p>المتوقع نقدًا: {cashierShift.expected_cash} · المعدود: {cashierShift.counted_cash} · الفرق: {cashierShift.variance}</p>
-          <button type="button" onClick={() => void openCashierShift()} className="rounded-lg border px-4 py-2">{t("pos.openShift")} جديدة</button>
+          <p>{t("pos.shiftClosed", { id: cashierShift.id })}</p>
+          <p>{t("{t("pos.expectedCash")}:")} {cashierShift.expected_cash} · {t("{t("pos.counted")}:")} {cashierShift.counted_cash} · {t("{t("pos.variance")}:")} {cashierShift.variance}</p>
+          <button type="button" onClick={() => void openCashierShift()} className="rounded-lg border px-4 py-2">{t("pos.openShift")} {t("pos.newShift")}</button>
         </div>}
       </div>
       <form onSubmit={checkout} className="rounded-2xl border bg-card p-5 space-y-3 lg:col-span-2">
-        <h2 className="font-bold">طلب من المنيو</h2>
+        <h2 className="font-bold">{t("pos.menuOrder")}</h2>
         <div className="grid gap-3 md:grid-cols-2">
-          <input required value={partnerId} onChange={e => setPartnerId(e.target.value)} placeholder="Customer/Partner ID" className="rounded-lg border px-3 py-2"/>
-          <input required value={warehouseId || (activeOutlet?.warehouse_id ? String(activeOutlet.warehouse_id) : "")} readOnly placeholder="Consumption Warehouse (auto from outlet)" className="rounded-lg border bg-muted px-3 py-2"/>
-          <select required value={selectedTerminal} onChange={e => { const id=e.target.value; setSelectedTerminal(id); const terminal=terminals.find(x=>String(x.id)===id); const outlet=outlets.find(x=>String(x.id)===String(terminal?.outlet_id)); setWarehouseId(outlet?.warehouse_id ? String(outlet.warehouse_id) : ""); }} className="rounded-lg border px-3 py-2"><option value="">POS / المكان</option>{terminals.map(x => <option key={x.id} value={x.id}>{x.name} — Outlet {x.outlet_id}</option>)}</select>
+          <input required value={partnerId} onChange={e => setPartnerId(e.target.value)} placeholder={t("pos.customerPartnerId")} className="rounded-lg border px-3 py-2"/>
+          <input required value={warehouseId || (activeOutlet?.warehouse_id ? String(activeOutlet.warehouse_id) : "")} readOnly placeholder={t("pos.warehouseAuto")} className="rounded-lg border bg-muted px-3 py-2"/>
+          <select required value={selectedTerminal} onChange={e => { const id=e.target.value; setSelectedTerminal(id); const terminal=terminals.find(x=>String(x.id)===id); const outlet=outlets.find(x=>String(x.id)===String(terminal?.outlet_id)); setWarehouseId(outlet?.warehouse_id ? String(outlet.warehouse_id) : ""); }} className="rounded-lg border px-3 py-2"><option value="">{t("pos.posOutlet")}</option>{terminals.map(x => <option key={x.id} value={x.id}>{x.name} — Outlet {x.outlet_id}</option>)}</select>
           <select required value={selectedMenu} onChange={e => {setSelectedMenu(e.target.value);setSelectedMenuItem("")}} className="rounded-lg border px-3 py-2"><option value="">Menu</option>{menus.map(x => <option key={x.id} value={x.id}>{x.name_ar}</option>)}</select>
-          <select required value={selectedMenuItem} onChange={e => setSelectedMenuItem(e.target.value)} className="rounded-lg border px-3 py-2 md:col-span-2"><option value="">اختر من المنيو</option>{activeMenu?.items?.map((x:AnyRow) => <option key={x.id} value={x.id}>#{x.id} Product {x.product_id}{x.sale_price_override != null ? ` — ${x.sale_price_override}` : ""}</option>)}</select>
-          <input required type="number" min="0.01" step="0.01" value={qty} onChange={e => setQty(e.target.value)} placeholder="الكمية" className="rounded-lg border px-3 py-2"/>
-          <select value={method} onChange={e => setMethod(e.target.value)} className="rounded-lg border px-3 py-2"><option value="cash">Cash</option><option value="card">Card</option><option value="bank">Bank</option><option value="wallet">Wallet</option></select>
+          <select required value={selectedMenuItem} onChange={e => setSelectedMenuItem(e.target.value)} className="rounded-lg border px-3 py-2 md:col-span-2"><option value="">{t("pos.chooseMenuItem")}</option>{activeMenu?.items?.map((x:AnyRow) => <option key={x.id} value={x.id}>#{x.id} Product {x.product_id}{x.sale_price_override != null ? ` — ${x.sale_price_override}` : ""}</option>)}</select>
+          <input required type="number" min="0.01" step="0.01" value={qty} onChange={e => setQty(e.target.value)} placeholder="{t("pos.quantity")}" className="rounded-lg border px-3 py-2"/>
+          <select value={method} onChange={e => setMethod(e.target.value)} className="rounded-lg border px-3 py-2"><option value="cash">{t("pos.paymentMethods.cash")}</option><option value="card">{t("pos.paymentMethods.card")}</option><option value="bank">{t("pos.paymentMethods.bank")}</option><option value="wallet">{t("pos.paymentMethods.wallet")}</option></select>
         </div>
-        <button className="rounded-lg bg-primary px-4 py-2 text-primary-foreground">إرسال الطلب وتنفيذ {t("pos.tabs.sale")}</button>
+        <button className="rounded-lg bg-primary px-4 py-2 text-primary-foreground">{t("pos.submitOrder")} {t("pos.tabs.sale")}</button>
       </form>
-      <div className="rounded-2xl border bg-card p-5"><h2 className="font-bold mb-3">الأجهزة</h2>{terminals.map(x => <div key={x.id} className="border-b py-2">{x.name}<div className="text-xs text-muted-foreground">{x.code} · Outlet {x.outlet_id}</div></div>)}</div>
-      <div className="rounded-2xl border bg-card p-5 lg:col-span-3"><h2 className="font-bold mb-3">آخر مبيعات POS</h2>{offlineQueue.map(x => <div key={x.id} className="flex justify-between border-b py-2"><span>{x.payload.number}</span><span>محفوظ محليًا · في انتظار المزامنة</span></div>)}{sales.slice(0,20).map(x => <div key={x.id} className="flex justify-between border-b py-2"><span>{x.number}</span><span>{x.total} · {x.status}</span></div>)}</div>
+      <div className="rounded-2xl border bg-card p-5"><h2 className="font-bold mb-3">{t("pos.devices")}</h2>{terminals.map(x => <div key={x.id} className="border-b py-2">{x.name}<div className="text-xs text-muted-foreground">{x.code} · Outlet {x.outlet_id}</div></div>)}</div>
+      <div className="rounded-2xl border bg-card p-5 lg:col-span-3"><h2 className="font-bold mb-3">{t("pos.latestSales")}</h2>{offlineQueue.map(x => <div key={x.id} className="flex justify-between border-b py-2"><span>{x.payload.number}</span><span>{t("pos.locallyQueued")}</span></div>)}{sales.slice(0,20).map(x => <div key={x.id} className="flex justify-between border-b py-2"><span>{x.number}</span><span>{x.total} · {t(`pos.orderStatuses.${x.status}`, { defaultValue: x.status })}</span></div>)}</div>
     </div>}
 
     {tab === "kds" && <div className="space-y-4">
       <div className="rounded-2xl border bg-card p-5 flex gap-3">
-        <select value={selectedStation} onChange={e => setSelectedStation(e.target.value)} className="rounded-lg border px-3 py-2"><option value="">اختر المطبخ/البار</option>{stations.map(x => <option key={x.id} value={x.id}>{x.name} ({x.station_type})</option>)}</select>
-        <button onClick={() => void loadQueue()} className="rounded-lg border px-4 py-2">تحديث الطابور</button>
+        <select value={selectedStation} onChange={e => setSelectedStation(e.target.value)} className="rounded-lg border px-3 py-2"><option value="">{t("pos.chooseStation")}</option>{stations.map(x => <option key={x.id} value={x.id}>{x.name} ({x.station_type})</option>)}</select>
+        <button onClick={() => void loadQueue()} className="rounded-lg border px-4 py-2">{t("pos.refreshQueue")}</button>
       </div>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{queue.map(x =>
         <div key={x.route_id} className="rounded-2xl border bg-card p-5">
           <div className="flex justify-between font-bold"><span>{x.order_number}</span><span>× {x.quantity}</span></div>
-          <div className="mt-2 text-sm">Item #{x.item_id}</div>
-          <div className="mt-4 flex gap-2"><button onClick={() => void move(x.route_id,"preparing")} className="rounded-lg border px-3 py-2">بدء</button><button onClick={() => void move(x.route_id,"ready")} className="rounded-lg border px-3 py-2">جاهز</button><button onClick={() => void move(x.route_id,"served")} className="rounded-lg bg-primary px-3 py-2 text-primary-foreground">تم التسليم</button></div>
+          <div className="mt-2 text-sm">{t("pos.item")} #{x.item_id}</div>
+          <div className="mt-4 flex gap-2"><button onClick={() => void move(x.route_id,"preparing")} className="rounded-lg border px-3 py-2">{t("pos.start")}</button><button onClick={() => void move(x.route_id,"ready")} className="rounded-lg border px-3 py-2">{t("pos.ready")}</button><button onClick={() => void move(x.route_id,"served")} className="rounded-lg bg-primary px-3 py-2 text-primary-foreground">{t("pos.served")}</button></div>
         </div>
       )}</div>
     </div>}
