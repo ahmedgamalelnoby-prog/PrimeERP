@@ -73,10 +73,10 @@ class UserService(BaseService[UserRepository]):
         self._enforce_user_limit(effective_tenant_id)
         normalized_username = username.strip().lower()
         normalized_email = email.strip().lower()
-        if repository.get_by_username(db, normalized_username, tenant_id=effective_tenant_id, include_deleted=True):
-            raise ValueError("Username already exists for this tenant.")
-        if repository.get_by_email(db, normalized_email, tenant_id=effective_tenant_id, include_deleted=True):
-            raise ValueError("Email already exists for this tenant.")
+        if repository.get_by_username(db, normalized_username, include_deleted=True) or repository.get_by_email(db, normalized_username, include_deleted=True):
+            raise ValueError("Username already exists in the system.")
+        if repository.get_by_email(db, normalized_email, include_deleted=True) or repository.get_by_username(db, normalized_email, include_deleted=True):
+            raise ValueError("Email already exists in the system.")
         user_data: dict[str, Any] = {"username": normalized_username, "email": normalized_email, "hashed_password": password_service.hash_password(password), "full_name": full_name, "phone": phone, "role_id": role_id, "tenant_id": effective_tenant_id, "is_active": is_active, "is_superuser": is_superuser, **extra_data}
         user_data = {key: value for key, value in user_data.items() if value is not None}
         with self.uow as uow:
@@ -99,15 +99,15 @@ class UserService(BaseService[UserRepository]):
                 self._validate_role_assignment(update_data["role_id"])
             if "username" in update_data:
                 new_username = str(update_data["username"]).strip().lower()
-                existing_user = repository.get_by_username(db, new_username, tenant_id=effective_tenant_id, include_deleted=True)
+                existing_user = repository.get_by_username(db, new_username, include_deleted=True) or repository.get_by_email(db, new_username, include_deleted=True)
                 if existing_user is not None and existing_user.id != user.id:
-                    raise ValueError("Username already exists for this tenant.")
+                    raise ValueError("Username already exists in the system.")
                 update_data["username"] = new_username
             if "email" in update_data:
                 new_email = str(update_data["email"]).strip().lower()
-                existing_user = repository.get_by_email(db, new_email, tenant_id=effective_tenant_id, include_deleted=True)
+                existing_user = repository.get_by_email(db, new_email, include_deleted=True) or repository.get_by_username(db, new_email, include_deleted=True)
                 if existing_user is not None and existing_user.id != user.id:
-                    raise ValueError("Email already exists for this tenant.")
+                    raise ValueError("Email already exists in the system.")
                 update_data["email"] = new_email
             password_changed = "password" in update_data
             if password_changed:
