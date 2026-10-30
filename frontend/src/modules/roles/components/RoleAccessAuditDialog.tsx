@@ -85,9 +85,11 @@ export default function RoleAccessAuditDialog({ open, onOpenChange }: RoleAccess
                       <TableHead>{t("roles.accessAudit.role")}</TableHead>
                       <TableHead>{t("roles.accessAudit.status")}</TableHead>
                       <TableHead>{t("roles.accessAudit.permissions")}</TableHead>
-                      <TableHead>{t("roles.accessAudit.globalUsers")}</TableHead>
-                      <TableHead>{t("roles.accessAudit.companyGrants")}</TableHead>
-                      <TableHead>{t("roles.accessAudit.branchGrants")}</TableHead>
+                      <TableHead>{t("roles.accessAudit.globalUsersActive")}</TableHead>
+                      <TableHead>{t("roles.accessAudit.companyGrantsActive")}</TableHead>
+                      <TableHead>{t("roles.accessAudit.companyGrantsInactive")}</TableHead>
+                      <TableHead>{t("roles.accessAudit.branchGrantsActive")}</TableHead>
+                      <TableHead>{t("roles.accessAudit.branchGrantsInactive")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -107,12 +109,14 @@ export default function RoleAccessAuditDialog({ open, onOpenChange }: RoleAccess
                           <span className="text-muted-foreground"> / {role.permission_count}</span>
                           {role.inactive_permission_count > 0 && <div className="text-xs text-amber-700">{t("roles.accessAudit.inactivePermissions", { count: role.inactive_permission_count })}</div>}
                         </TableCell>
-                        <TableCell className="tabular-nums">{role.usage.global_users}</TableCell>
-                        <TableCell className="tabular-nums">{role.usage.company_memberships}</TableCell>
-                        <TableCell className="tabular-nums">{role.usage.branch_memberships}</TableCell>
+                        <TableCell className="tabular-nums">{role.usage.global_users_active}<span className="text-muted-foreground"> / {role.usage.global_users_inactive}</span></TableCell>
+                        <TableCell className="tabular-nums">{role.usage.company_memberships_active}</TableCell>
+                        <TableCell className="tabular-nums">{role.usage.company_memberships_inactive}</TableCell>
+                        <TableCell className="tabular-nums">{role.usage.branch_memberships_active}</TableCell>
+                        <TableCell className="tabular-nums">{role.usage.branch_memberships_inactive}</TableCell>
                       </TableRow>
                     ))}
-                    {audit.roles.length === 0 && <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">{t("roles.accessAudit.noRoles")}</TableCell></TableRow>}
+                    {audit.roles.length === 0 && <TableRow><TableCell colSpan={8} className="py-8 text-center text-muted-foreground">{t("roles.accessAudit.noRoles")}</TableCell></TableRow>}
                   </TableBody>
                 </Table>
               </div>
