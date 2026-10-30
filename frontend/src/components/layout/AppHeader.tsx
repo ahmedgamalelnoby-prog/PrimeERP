@@ -179,6 +179,7 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
         <Button type="button" variant="ghost" size="icon" className="h-9 w-9 rounded-xl text-muted-foreground hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40" onClick={handleLogout} aria-label={isArabic ? "تسجيل الخروج" : "Sign out"} title={isArabic ? "تسجيل الخروج" : "Sign out"}><LogOut className="h-4 w-4" /></Button>
       </div>
     </div>
+    {companies.length > 1 && !selectedCompanyId && <div className="border-t border-border/70 bg-muted/40 px-4 py-2 text-center text-xs font-semibold text-amber-700 dark:text-amber-300">{isArabic ? "اختر الشركة من القائمة بالأعلى للمتابعة إلى بياناتها." : "Select a company from the menu above to continue to its workspace."}</div>}
     <div className="h-[2px] bg-gradient-to-l from-blue-700 via-blue-500 to-cyan-400" />
   </header>;
 }
