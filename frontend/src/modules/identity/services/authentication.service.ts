@@ -10,7 +10,7 @@ async function login(payload: LoginPayload): Promise<LoginResponse> {
   const loginValue = payload.login.trim();
 
   if (!loginValue) {
-    throw new Error("Username or email is required.");
+    throw new Error("Username is required.");
   }
 
   if (!payload.password) {
