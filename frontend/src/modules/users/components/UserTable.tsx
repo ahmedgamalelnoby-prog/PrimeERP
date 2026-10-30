@@ -118,7 +118,7 @@ export default function UserTable({
   return (
     <div
       className="overflow-hidden rounded-2xl border bg-card shadow-sm"
-      dir="rtl"
+      dir={direction}
     >
       <div className="overflow-x-auto">
         <Table>
