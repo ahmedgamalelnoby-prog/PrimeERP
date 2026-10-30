@@ -17,8 +17,11 @@ import UserForm from "../components/UserForm";
 import UserTable from "../components/UserTable";
 import { useUsers } from "../hooks/useUsers";
 import type { User } from "../types/user";
+import { useTranslation } from "react-i18next";
 
 export default function UsersPage() {
+  const { t, i18n } = useTranslation();
+  const isArabic = i18n.resolvedLanguage?.startsWith("ar") ?? false;
   const {
   users,
   meta,
@@ -70,9 +73,7 @@ export default function UsersPage() {
     user: User,
   ) => {
     const confirmed = window.confirm(
-      `هل تريد حذف المستخدم "${
-        user.full_name || user.username
-      }"؟`,
+      t("users.confirmDelete", { name: user.full_name || user.username }),
     );
 
     if (!confirmed) {
@@ -83,17 +84,17 @@ export default function UsersPage() {
   };
 
   return (
-    <div className="space-y-6" dir="rtl">
+    <div className="space-y-6" dir={isArabic ? "rtl" : "ltr"}>
       <PageHeader
-        title="إدارة المستخدمين"
-        description="إضافة المستخدمين وتعديل بياناتهم والتحكم في حالتهم وأدوارهم."
+        title={t("users.title")}
+        description={t("users.description")}
         actions={
           <Button
             type="button"
             onClick={handleNewUser}
           >
-            <Plus className="ml-2 h-4 w-4" />
-            مستخدم جديد
+            <Plus className={isArabic ? "ml-2 h-4 w-4" : "mr-2 h-4 w-4"} />
+            {t("users.newUser")}
           </Button>
         }
       />
@@ -107,7 +108,7 @@ export default function UsersPage() {
 
             <div>
               <p className="text-sm text-muted-foreground">
-                إجمالي المستخدمين
+                {t("users.totalUsers")}
               </p>
 
               <p className="text-2xl font-bold">
@@ -125,7 +126,7 @@ export default function UsersPage() {
 
             <div>
               <p className="text-sm text-muted-foreground">
-                المستخدمون النشطون
+                {t("users.activeUsers")}
               </p>
 
               <p className="text-2xl font-bold">
@@ -138,7 +139,7 @@ export default function UsersPage() {
 
       <section className="rounded-2xl border bg-card p-4 shadow-sm">
         <div className="relative max-w-md">
-          <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className={`pointer-events-none absolute ${isArabic ? "right-3" : "left-3"} top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground`} />
 
           <Input
             value={filters.search || ""}
@@ -150,8 +151,8 @@ export default function UsersPage() {
                 page: 1,
               }))
             }
-            placeholder="البحث بالاسم أو اسم المستخدم أو البريد..."
-            className="pr-10"
+            placeholder={t("users.searchPlaceholder")}
+            className={isArabic ? "pr-10" : "pl-10"}
           />
         </div>
       </section>
