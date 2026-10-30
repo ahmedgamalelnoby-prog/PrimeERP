@@ -131,7 +131,7 @@ export default function ResetPasswordDialog({
         className="sm:max-w-md"
         dir={direction}
       >
-        <DialogHeader className="text-right">
+        <DialogHeader className="text-start">
           <DialogTitle>
             {t("users.resetPassword.title")}
           </DialogTitle>
@@ -166,7 +166,7 @@ export default function ResetPasswordDialog({
                     event.target.value,
                   )
                 }
-                className="pl-11"
+                className="ps-11"
                 required
               />
 
@@ -177,7 +177,7 @@ export default function ResetPasswordDialog({
                     (current) => !current,
                   )
                 }
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                className="absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground"
               >
                 {showPassword ? (
                   <EyeOff className="h-4 w-4" />
@@ -226,7 +226,7 @@ export default function ResetPasswordDialog({
               disabled={loading}
             >
               {loading && (
-                <Loader2 className="ml-2 h-4 w-4 animate-spin" />
+                <Loader2 className="ms-2 h-4 w-4 animate-spin" />
               )}
 
               {t("users.resetPassword.save")}
