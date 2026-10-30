@@ -238,11 +238,15 @@ const enTranslation = {
       noRoles: "No roles are registered.",
       noFindings: "No findings were detected by the current audit rules.",
       unassignedPermissions: "Active permissions not assigned to any active role",
+      missingManifestPermissions: "Module permissions missing from the database",
+      module: "Module",
+      permissionCode: "Permission code",
       findingTypes: {
         inactive_role_assigned: "Role {{role}} is inactive but is still assigned to {{count}} users or memberships.",
         active_role_without_permissions: "Active role {{role}} has no active permissions.",
         inactive_permissions_attached: "Role {{role}} contains {{count}} inactive permissions; they are excluded from effective access.",
-        permission_without_active_role: "Permission {{permission}} is not assigned to any active role."
+        permission_without_active_role: "Permission {{permission}} is not assigned to any active role.",
+        manifest_permission_not_registered: "Permission {{permission}} declared by module {{module}} is not registered in the database."
       }
     },
     title: "Roles & Permissions",
