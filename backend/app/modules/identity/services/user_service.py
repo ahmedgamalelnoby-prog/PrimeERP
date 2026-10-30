@@ -11,7 +11,7 @@ from app.modules.audit.service import record_audit_event
 from app.modules.identity.models.user import User
 from app.modules.identity.repositories.user_repository import UserRepository, user_repository
 from app.modules.identity.services.password_service import password_service
-from app.modules.roles.models import Role
+from app.modules.roles.models import Permission, Role, role_permissions
 from app.modules.saas.entitlements import enforce_user_limit
 
 
@@ -39,14 +39,34 @@ class UserService(BaseService[UserRepository]):
         """Prevent a non-platform user from granting permissions they do not possess."""
         if role_id is None or getattr(self.current_user, "is_platform_admin", False):
             return
+        db = self.require_db()
         target_role = self._load_role(role_id)
         if target_role is None:
             return
-        current_role = getattr(self.current_user, "role", None)
-        if current_role is None or not getattr(current_role, "is_active", False):
+
+        current_role_id = getattr(self.current_user, "role_id", None)
+        current_role_is_active = db.scalar(
+            select(Role.is_active).where(Role.id == current_role_id)
+        ) if current_role_id is not None else False
+        if not current_role_is_active:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="An active role is required to assign roles.")
-        current_permissions = {p.name for p in getattr(current_role, "permissions", []) if getattr(p, "is_active", False)}
-        target_permissions = {p.name for p in getattr(target_role, "permissions", []) if getattr(p, "is_active", False)}
+
+        def active_permissions(selected_role_id: int) -> set[str]:
+            return set(
+                db.scalars(
+                    select(Permission.name)
+                    .join(role_permissions, role_permissions.c.permission_id == Permission.id)
+                    .where(
+                        role_permissions.c.role_id == selected_role_id,
+                        Permission.is_active.is_(True),
+                    )
+                ).all()
+            )
+
+        # Read both permission sets from the database, not potentially stale
+        # ORM relationship collections on the authenticated user or target role.
+        current_permissions = active_permissions(current_role_id)
+        target_permissions = active_permissions(role_id)
         if not target_permissions.issubset(current_permissions):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You cannot assign a role with permissions beyond your own authority.")
 
