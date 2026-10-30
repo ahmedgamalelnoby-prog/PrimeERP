@@ -18,9 +18,10 @@ import {
 interface UserAccessAuditDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onManageUser: (userId: number) => void;
 }
 
-export default function UserAccessAuditDialog({ open, onOpenChange }: UserAccessAuditDialogProps) {
+export default function UserAccessAuditDialog({ open, onOpenChange, onManageUser }: UserAccessAuditDialogProps) {
   const { t, i18n } = useTranslation();
   const [companies, setCompanies] = useState<AccessibleCompany[]>([]);
   const [companyId, setCompanyId] = useState("");
@@ -140,6 +141,7 @@ export default function UserAccessAuditDialog({ open, onOpenChange }: UserAccess
                     <TableHead className="min-w-48">{t("users.accessAudit.user")}</TableHead>
                     <TableHead className="min-w-36">{t("users.accessAudit.companyAccess")}</TableHead>
                     <TableHead className="min-w-36">{t("users.accessAudit.companyRole")}</TableHead>
+                    <TableHead className="min-w-28">{t("users.accessAudit.actions")}</TableHead>
                     {audit.branches.map((branch) => (
                       <TableHead key={branch.id} className="min-w-44">
                         <div>{branch.name}</div>
@@ -162,6 +164,11 @@ export default function UserAccessAuditDialog({ open, onOpenChange }: UserAccess
                       </TableCell>
                       <TableCell>{membershipStatus(member.company_membership_is_active)}</TableCell>
                       <TableCell>{member.company_role_name || t("users.accessAudit.noRole")}</TableCell>
+                      <TableCell>
+                        <Button type="button" size="sm" variant="outline" onClick={() => onManageUser(member.user_id)}>
+                          {t("users.accessAudit.manage")}
+                        </Button>
+                      </TableCell>
                       {audit.branches.map((branch) => {
                         const grant = member.branch_access.find((item) => item.branch_id === branch.id);
                         return (
@@ -174,7 +181,7 @@ export default function UserAccessAuditDialog({ open, onOpenChange }: UserAccess
                     </TableRow>
                   ))}
                   {visibleMembers.length === 0 && (
-                    <TableRow><TableCell colSpan={3 + audit.branches.length} className="h-24 text-center text-muted-foreground">{t("users.accessAudit.noMembers")}</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={4 + audit.branches.length} className="h-24 text-center text-muted-foreground">{t("users.accessAudit.noMembers")}</TableCell></TableRow>
                   )}
                 </TableBody>
               </Table>
