@@ -1,14 +1,13 @@
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, aliased
 
 from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.modules.branches.access import accessible_branch_ids, can_manage_all_branches, require_branch_access
 from app.database.session import get_db
-from app.modules.branches.models import Branch
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
