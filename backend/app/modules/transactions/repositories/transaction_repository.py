@@ -98,6 +98,7 @@ class TransactionRepository:
         page_size: int,
         company_id: Optional[int] = None,
         branch_id: Optional[int] = None,
+        branch_ids: Optional[list[int]] = None,
         transaction_type: Optional[str] = None,
         transaction_status: Optional[str] = None,
         search: Optional[str] = None,
@@ -128,6 +129,11 @@ class TransactionRepository:
             query = query.filter(
                 BusinessTransaction.branch_id
                 == branch_id
+            )
+
+        if branch_ids is not None:
+            query = query.filter(
+                BusinessTransaction.branch_id.in_(branch_ids)
             )
 
         if transaction_type:
