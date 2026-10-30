@@ -36,7 +36,7 @@ const sections: SettingsSection[] = [
 
 export default function SettingsCenterPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { i18n } = useTranslation();
+  const { i18n, t } = useTranslation();
   const isArabic = i18n.resolvedLanguage?.startsWith("ar") ?? true;
   const activeId = searchParams.get("category") || "General";
   const selected = useMemo(
@@ -71,14 +71,12 @@ export default function SettingsCenterPage() {
             <Settings className="size-5" />
           </span>
           <div>
-            <p className="text-xs font-semibold text-muted-foreground">PrimeERP · {isArabic ? "مركز التحكم" : "Control Center"}</p>
-            <h1 className="mt-0.5 text-xl font-black">{isArabic ? "إعدادات النظام" : "System Settings"}</h1>
+            <p className="text-xs font-semibold text-muted-foreground">PrimeERP · {t("settingsCenter.controlCenter")}</p>
+            <h1 className="mt-0.5 text-xl font-black">{t("settingsCenter.title")}</h1>
           </div>
         </div>
         <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-          {isArabic
-            ? "اختر الموديول من القائمة الجانبية لعرض جميع إعداداته. تظل قائمة موديول واحد فقط مفتوحة في كل مرة."
-            : "Choose a module to display all of its settings. Only one module menu stays expanded at a time."}
+          {t("settingsCenter.description")}
         </p>
       </header>
 
@@ -90,13 +88,13 @@ export default function SettingsCenterPage() {
                 <SlidersHorizontal className="size-4 text-white" />
               </span>
               <div>
-                <h2 className="text-sm font-extrabold">{isArabic ? "إعدادات الموديولات" : "Module settings"}</h2>
-                <p className="mt-0.5 text-[11px] text-slate-400">{isArabic ? "اختر موديولًا لعرض خياراته" : "Select a module to view its options"}</p>
+                <h2 className="text-sm font-extrabold">{t("settingsCenter.moduleSettings")}</h2>
+                <p className="mt-0.5 text-[11px] text-slate-400">{t("settingsCenter.selectModule")}</p>
               </div>
             </div>
           </div>
 
-          <nav aria-label={isArabic ? "قائمة موديولات الإعدادات" : "Settings modules"} className="min-h-0 space-y-1 overflow-y-auto p-3 [scrollbar-color:rgba(148,163,184,.25)_transparent] [scrollbar-width:thin]">
+          <nav aria-label={t("settingsCenter.settingsModules")} className="min-h-0 space-y-1 overflow-y-auto p-3 [scrollbar-color:rgba(148,163,184,.25)_transparent] [scrollbar-width:thin]">
             {sections.map((section) => {
               const SectionIcon = section.icon;
               const isExpanded = expandedId === section.id;
@@ -117,7 +115,7 @@ export default function SettingsCenterPage() {
                   >
                     <span className="flex min-w-0 items-center gap-3">
                       <SectionIcon className={["size-[18px] shrink-0", isActive ? "text-cyan-300" : "text-slate-400 group-hover:text-cyan-300"].join(" ")} />
-                      <span className="min-w-0 flex-1">{isArabic ? section.title : section.english}</span>
+                      <span className="min-w-0 flex-1">{t(`settingsCenter.sections.${section.id}.title`)}</span>
                     </span>
                     <ChevronDown className={["size-4 shrink-0 text-slate-500 transition-transform", isExpanded ? "rotate-180" : ""].join(" ")} />
                   </button>
@@ -132,27 +130,27 @@ export default function SettingsCenterPage() {
                         className="flex w-full items-center gap-2 text-start text-xs font-semibold text-cyan-200 hover:text-white"
                       >
                         <Check className="size-3.5 shrink-0" />
-                        <span>{isArabic ? `إعدادات ${section.title}` : `${section.english} settings`}</span>
+                        <span>{t("settingsCenter.sectionSettings", { title: t(`settingsCenter.sections.${section.id}.title`) })}</span>
                       </button>
-                      <p className="mt-2 text-[11px] leading-5 text-slate-400">{isArabic ? section.desc : "Configure the policies and defaults for this module."}</p>
+                      <p className="mt-2 text-[11px] leading-5 text-slate-400">{t(`settingsCenter.sections.${section.id}.description`)}</p>
                     </div>
                   )}
                 </div>
               );
             })}
           </nav>
-          <div className="border-t border-white/10 px-4 py-3 text-center text-[10px] tracking-wide text-slate-500">PrimeERP · Settings Center</div>
+          <div className="border-t border-white/10 px-4 py-3 text-center text-[10px] tracking-wide text-slate-500">{t("settingsCenter.footer")}</div>
         </aside>
 
         <section className="min-w-0 rounded-2xl border bg-card p-3 shadow-sm sm:p-5">
           <div className="mb-5 flex flex-wrap items-start gap-3 border-b pb-4">
             <span className="rounded-xl bg-primary/10 p-3 text-primary"><Icon className="size-5" /></span>
             <div className="min-w-0 flex-1">
-              <h2 className="text-lg font-extrabold">{isArabic ? selected.title : selected.english}</h2>
-              <p className="mt-1 text-sm leading-6 text-muted-foreground">{isArabic ? selected.desc : "Configure policies and defaults for this module."}</p>
+              <h2 className="text-lg font-extrabold">{t(`settingsCenter.sections.${selected.id}.title`)}</h2>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">{t(`settingsCenter.sections.${selected.id}.description`)}</p>
             </div>
             <span className="rounded-full border bg-muted/60 px-3 py-1 text-[11px] font-semibold text-muted-foreground">
-              {isArabic ? "إعدادات الموديول" : "Module settings"}
+              {t("settingsCenter.moduleSettings")}
             </span>
           </div>
           <div className="min-w-0">
