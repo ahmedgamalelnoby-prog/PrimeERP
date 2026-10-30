@@ -62,6 +62,36 @@ def _scoped_role_id(current_user: Any, db: Session) -> int | None:
     return int(company_role_id) if company_role_id is not None else None
 
 
+def effective_role_id(current_user: Any, db: Session) -> int | None:
+    """Resolve the role governing this request, including company/branch overrides."""
+    return _scoped_role_id(current_user, db) or getattr(current_user, "role_id", None)
+
+
+def can_assign_role(current_user: Any, target_role_id: int, db: Session) -> bool:
+    """Prevent scoped role grants from exceeding the actor's effective authority."""
+    if getattr(current_user, "is_platform_admin", False) or getattr(current_user, "is_superuser", False):
+        return True
+    actor_role_id = effective_role_id(current_user, db)
+    if actor_role_id is None:
+        return False
+    target_role = db.get(Role, target_role_id)
+    actor_role = db.get(Role, actor_role_id)
+    if target_role is None or actor_role is None or not target_role.is_active or not actor_role.is_active:
+        return False
+
+    def permission_names(role_id: int) -> set[str]:
+        return set(db.scalars(
+            select(Permission.name)
+            .join(role_permissions, role_permissions.c.permission_id == Permission.id)
+            .where(
+                role_permissions.c.role_id == role_id,
+                Permission.is_active.is_(True),
+            )
+        ).all())
+
+    return permission_names(target_role_id).issubset(permission_names(actor_role_id))
+
+
 def _role_has_permission(db: Session, role_id: int, permission_code: str) -> bool:
     statement = (
         select(Permission.id)
