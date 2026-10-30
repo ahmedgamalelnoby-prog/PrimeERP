@@ -169,3 +169,12 @@ def test_active_permission_is_confirmed_from_database():
             return 123
 
     assert user_has_permission(user, "users.write", ActivePermissionDatabase()) is True
+
+
+def test_username_rename_checks_all_other_legacy_records_not_only_first_match():
+    users = source("app/modules/identity/services/user_service.py")
+    update = users.split("def update_user(", 1)[1]
+    assert "duplicate_user_id = db.scalar(" in update
+    assert "func.lower(User.username) == new_username" in update
+    assert "User.id != user.id" in update
+    assert "repository.get_by_username(db, new_username" not in update
