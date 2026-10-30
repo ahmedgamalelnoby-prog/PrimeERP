@@ -25,6 +25,16 @@ def _get_company(db: Session, company_id: int, user: User) -> Company:
     company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == _tenant_id(user)))
     if company is None:
         raise HTTPException(status_code=404, detail="Company not found")
+    if not user.is_platform_admin:
+        membership = db.scalar(
+            select(CompanyUserMembership.id).where(
+                CompanyUserMembership.company_id == company.id,
+                CompanyUserMembership.user_id == user.id,
+                CompanyUserMembership.is_active.is_(True),
+            )
+        )
+        if membership is None:
+            raise HTTPException(status_code=404, detail="Company not found")
     return company
 
 
@@ -169,9 +179,17 @@ def revoke_company_membership(
 @router.get("", response_model=list[CompanyResponse], dependencies=[Depends(require_permission("company.access"))])
 def list_companies(active_only: bool = Query(False), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     stmt = select(Company).where(Company.tenant_id == _tenant_id(current_user)).order_by(Company.name, Company.id)
+    if not current_user.is_platform_admin:
+        stmt = stmt.join(
+            CompanyUserMembership,
+            CompanyUserMembership.company_id == Company.id,
+        ).where(
+            CompanyUserMembership.user_id == current_user.id,
+            CompanyUserMembership.is_active.is_(True),
+        )
     if active_only:
         stmt = stmt.where(Company.is_active.is_(True))
-    return list(db.scalars(stmt).all())
+    return list(db.scalars(stmt).unique().all())
 
 
 @router.get("/{company_id}", response_model=CompanyResponse, dependencies=[Depends(require_permission("company.access"))])
@@ -186,6 +204,14 @@ def create_company(payload: CompanyCreate, db: Session = Depends(get_db), curren
     company = Company(tenant_id=tenant_id, **payload.model_dump())
     db.add(company)
     try:
+        db.flush()
+        if not current_user.is_platform_admin:
+            db.add(CompanyUserMembership(
+                company_id=company.id,
+                user_id=current_user.id,
+                is_active=True,
+                assigned_by=current_user.id,
+            ))
         db.commit()
         db.refresh(company)
     except IntegrityError as exc:
