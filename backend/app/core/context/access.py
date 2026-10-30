@@ -79,3 +79,39 @@ def require_branch_access(
         if membership is None:
             raise HTTPException(404, "Branch not found")
     return branch
+
+
+def require_branch_or_company_access(
+    db: Session,
+    company_id: int,
+    branch_id: int,
+    user,
+) -> Branch:
+    """Allow company-wide users across branches, but enforce membership in branch scope."""
+    require_company_access(db, company_id, user)
+    context = get_optional_request_context()
+    if context is None or context.company_id != company_id:
+        raise HTTPException(403, "Select the active company using X-Company-ID")
+    branch = db.scalar(
+        select(Branch).where(
+            Branch.id == branch_id,
+            Branch.company_id == company_id,
+            Branch.is_active.is_(True),
+        )
+    )
+    if branch is None:
+        raise HTTPException(404, "Branch not found")
+    if context.branch_id is None or getattr(user, "is_platform_admin", False):
+        return branch
+    if context.branch_id != branch_id:
+        raise HTTPException(403, "The requested branch is outside the active branch context")
+    membership = db.scalar(
+        select(BranchUserMembership.id).where(
+            BranchUserMembership.branch_id == branch_id,
+            BranchUserMembership.user_id == user.id,
+            BranchUserMembership.is_active.is_(True),
+        )
+    )
+    if membership is None:
+        raise HTTPException(404, "Branch not found")
+    return branch
