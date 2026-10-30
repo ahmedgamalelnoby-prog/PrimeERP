@@ -9,6 +9,7 @@ from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.accounting.chart_of_accounts.models import AccountCombination
 from app.modules.accounting.journals.models import AccountingJournal
+from app.modules.branches.access import accessible_branch_ids, can_manage_all_branches, require_branch_access
 from app.modules.branches.models import Branch
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
@@ -47,15 +48,36 @@ def _validate_account(db: Session, company_id: int, account_id: int | None, labe
         raise HTTPException(422, f"{label} does not belong to the company or is inactive")
 
 
-def _validate_journal_and_branch(db: Session, company_id: int, journal_id: int | None, branch_id: int | None, tenant_id: int):
-    if journal_id is None or branch_id is None:
+def _require_carrier_branch_access(db: Session, user: User, carrier_obj: ShippingCarrier) -> None:
+    if carrier_obj.branch_id is None:
+        if not can_manage_all_branches(db, user):
+            raise HTTPException(403, "Tenant-wide branch management permission is required for a company-wide carrier")
+        return
+    branch = require_branch_access(db, user, carrier_obj.branch_id)
+    if branch.company_id != carrier_obj.company_id:
+        raise HTTPException(404, "Carrier not found")
+
+
+def _validate_journal_and_branch(
+    db: Session,
+    company_id: int,
+    journal_id: int | None,
+    branch_id: int | None,
+    tenant_id: int,
+    user: User,
+):
+    if branch_id is None:
+        if not can_manage_all_branches(db, user):
+            raise HTTPException(403, "Tenant-wide branch management permission is required for a company-wide carrier")
+        return
+    branch = require_branch_access(db, user, branch_id)
+    if branch.company_id != company_id or branch.tenant_id != tenant_id:
+        raise HTTPException(422, "Settlement branch does not belong to the company")
+    if journal_id is None:
         return
     journal = db.scalar(select(AccountingJournal).where(AccountingJournal.id == journal_id, AccountingJournal.company_id == company_id, AccountingJournal.tenant_id == tenant_id, AccountingJournal.is_active.is_(True)))
     if journal is None:
         raise HTTPException(422, "Settlement journal does not belong to the company or is inactive")
-    branch = db.scalar(select(Branch).where(Branch.id == branch_id, Branch.company_id == company_id, Branch.tenant_id == tenant_id, Branch.is_active.is_(True)))
-    if branch is None:
-        raise HTTPException(422, "Settlement branch does not belong to the company or is inactive")
 
 
 @router.post("/carriers", response_model=CarrierResponse, status_code=201, dependencies=[Depends(require_permission("shipping.write"))])
@@ -66,7 +88,7 @@ def carrier(payload: CarrierCreate, current_user: User = Depends(get_current_use
     _validate_account(db, company.id, payload.settlement_account_id, "Carrier settlement account")
     _validate_account(db, company.id, payload.cash_account_id, "Carrier cash account")
     _validate_account(db, company.id, payload.fee_account_id, "Carrier fee account")
-    _validate_journal_and_branch(db, company.id, payload.settlement_journal_id, payload.branch_id, _tenant_id(current_user))
+    _validate_journal_and_branch(db, company.id, payload.settlement_journal_id, payload.branch_id, _tenant_id(current_user), current_user)
     account_fields = (payload.settlement_account_id, payload.cash_account_id, payload.fee_account_id)
     if any(account_fields) and not all(account_fields):
         raise HTTPException(422, "Settlement, cash and fee accounts must be configured together")
@@ -80,7 +102,14 @@ def carrier(payload: CarrierCreate, current_user: User = Depends(get_current_use
 @router.get("/carriers", response_model=list[CarrierResponse])
 def carriers(company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
-    return list(db.scalars(select(ShippingCarrier).where(ShippingCarrier.company_id == company_id, ShippingCarrier.is_active.is_(True)).order_by(ShippingCarrier.name)).all())
+    stmt = select(ShippingCarrier).where(
+        ShippingCarrier.company_id == company_id,
+        ShippingCarrier.is_active.is_(True),
+    )
+    if not can_manage_all_branches(db, current_user):
+        allowed = accessible_branch_ids(db, current_user)
+        stmt = stmt.where(ShippingCarrier.branch_id.in_(allowed)) if allowed else stmt.where(ShippingCarrier.id == -1)
+    return list(db.scalars(stmt.order_by(ShippingCarrier.name)).all())
 
 
 @router.post("/methods", response_model=MethodResponse, status_code=201, dependencies=[Depends(require_permission("shipping.write"))])
@@ -89,6 +118,7 @@ def method(payload: MethodCreate, current_user: User = Depends(get_current_user)
     carrier_obj = db.scalar(select(ShippingCarrier).join(Company, Company.id == ShippingCarrier.company_id).where(ShippingCarrier.id == payload.carrier_id, Company.tenant_id == tenant_id, ShippingCarrier.is_active.is_(True)))
     if carrier_obj is None:
         raise HTTPException(404, "Carrier not found")
+    _require_carrier_branch_access(db, current_user, carrier_obj)
     if payload.payment_method not in {"prepaid", "cod", "mixed"}:
         raise HTTPException(422, "Invalid shipping payment method")
     if payload.payment_method == "prepaid" and payload.cod_fee_percent:
@@ -105,6 +135,7 @@ def methods(carrier_id: int = Query(..., gt=0), current_user: User = Depends(get
     carrier_obj = db.scalar(select(ShippingCarrier).join(Company, Company.id == ShippingCarrier.company_id).where(ShippingCarrier.id == carrier_id, Company.tenant_id == tenant_id))
     if carrier_obj is None:
         raise HTTPException(404, "Carrier not found")
+    _require_carrier_branch_access(db, current_user, carrier_obj)
     return list(db.scalars(select(ShippingMethod).where(ShippingMethod.carrier_id == carrier_id).order_by(ShippingMethod.name)).all())
 
 
@@ -114,6 +145,14 @@ def shipment(payload: ShipmentCreate, current_user: User = Depends(get_current_u
     method_obj = db.scalar(select(ShippingMethod).join(ShippingCarrier, ShippingCarrier.id == ShippingMethod.carrier_id).where(ShippingMethod.id == payload.method_id, ShippingMethod.carrier_id == payload.carrier_id, ShippingCarrier.company_id == payload.company_id, ShippingCarrier.is_active.is_(True)))
     if method_obj is None:
         raise HTTPException(400, "Invalid carrier/method for company")
+    carrier_obj = db.scalar(select(ShippingCarrier).where(
+        ShippingCarrier.id == payload.carrier_id,
+        ShippingCarrier.company_id == payload.company_id,
+        ShippingCarrier.is_active.is_(True),
+    ))
+    if carrier_obj is None:
+        raise HTTPException(404, "Carrier not found")
+    _require_carrier_branch_access(db, current_user, carrier_obj)
     if payload.sales_document_id is not None:
         sales_document = db.scalar(select(SalesDocument).where(
             SalesDocument.id == payload.sales_document_id,
@@ -219,7 +258,16 @@ def shipment(payload: ShipmentCreate, current_user: User = Depends(get_current_u
 @router.get("/shipments", response_model=list[ShipmentResponse])
 def shipments(company_id: int = Query(..., gt=0), status: str | None = None, carrier_id: int | None = Query(default=None, gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
-    stmt = select(Shipment).where(Shipment.company_id == company_id)
+    stmt = select(Shipment).join(
+        ShippingCarrier,
+        ShippingCarrier.id == Shipment.carrier_id,
+    ).where(
+        Shipment.company_id == company_id,
+        ShippingCarrier.company_id == company_id,
+    )
+    if not can_manage_all_branches(db, current_user):
+        allowed = accessible_branch_ids(db, current_user)
+        stmt = stmt.where(ShippingCarrier.branch_id.in_(allowed)) if allowed else stmt.where(Shipment.id == -1)
     if status:
         stmt = stmt.where(Shipment.status == status)
     if carrier_id:
@@ -233,6 +281,13 @@ def status(shipment_id: int, value: str = Query(...), company_id: int = Query(..
     obj = db.scalar(select(Shipment).where(Shipment.id == shipment_id, Shipment.company_id == company_id).with_for_update())
     if obj is None:
         raise HTTPException(404, "Shipment not found")
+    carrier_obj = db.scalar(select(ShippingCarrier).where(
+        ShippingCarrier.id == obj.carrier_id,
+        ShippingCarrier.company_id == company_id,
+    ))
+    if carrier_obj is None:
+        raise HTTPException(404, "Shipment not found")
+    _require_carrier_branch_access(db, current_user, carrier_obj)
     if value == obj.status:
         return obj
     try:
