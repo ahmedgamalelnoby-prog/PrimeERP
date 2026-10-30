@@ -94,8 +94,50 @@ const arTranslation = {
     user: "مستخدم",
   },
 
+  userForm: {
+    titleCreate: "إضافة مستخدم جديد",
+    titleEdit: "تعديل المستخدم",
+    descriptionCreate: "أدخل بيانات المستخدم وحدد الدور والصلاحيات.",
+    descriptionEdit: "عدّل بيانات المستخدم ثم اضغط حفظ التعديلات.",
+    fullName: "الاسم بالكامل",
+    fullNamePlaceholder: "أدخل الاسم بالكامل",
+    username: "اسم المستخدم",
+    email: "البريد الإلكتروني",
+    phone: "رقم الهاتف",
+    password: "كلمة المرور",
+    newPassword: "كلمة مرور جديدة",
+    confirmPassword: "تأكيد كلمة المرور",
+    confirmNewPassword: "تأكيد كلمة المرور الجديدة",
+    passwordPlaceholderEdit: "اتركها فارغة دون تغيير",
+    passwordPlaceholderCreate: "8 أحرف على الأقل",
+    confirmPasswordPlaceholder: "أعد إدخال كلمة المرور",
+    passwordHint: "يجب أن تتكون كلمة المرور من 8 أحرف على الأقل.",
+    role: "الدور والصلاحيات",
+    loadingRoles: "جاري تحميل الأدوار...",
+    chooseRole: "اختر الدور",
+    noRole: "بدون دور",
+    noRoles: "لا توجد أدوار متاحة حاليًا.",
+    address: "العنوان",
+    addressPlaceholder: "أدخل عنوان المستخدم",
+    saveChanges: "حفظ التعديلات",
+    create: "إضافة المستخدم",
+    cancel: "إلغاء",
+    errors: {
+      fullName: "برجاء إدخال الاسم بالكامل.",
+      username: "برجاء إدخال اسم المستخدم.",
+      usernameLength: "يجب أن يتكون اسم المستخدم من 3 أحرف على الأقل.",
+      email: "برجاء إدخال البريد الإلكتروني.",
+      password: "برجاء إدخال كلمة المرور.",
+      passwordLength: "يجب أن تتكون كلمة المرور من 8 أحرف على الأقل.",
+      passwordMax: "يجب ألا تزيد كلمة المرور عن 128 حرفًا.",
+      passwordMismatch: "كلمتا المرور غير متطابقتين."
+    }
+  },
+
   usersTable: {
     "loading": "جاري تحميل المستخدمين...",
+    "active": "نشط",
+    "inactive": "معطل",
     "emptyTitle": "لا يوجد مستخدمون",
     "emptyDescription": "لا توجد نتائج مطابقة للبحث أو عوامل التصفية الحالية.",
     "user": "المستخدم",
@@ -118,6 +160,27 @@ const arTranslation = {
   },
 
   users: {
+    notifications: {
+      created: "تمت إضافة المستخدم بنجاح.",
+      updated: "تم تعديل بيانات المستخدم.",
+      deactivated: "تم تعطيل المستخدم.",
+      activated: "تم تفعيل المستخدم.",
+      deleted: "تم حذف المستخدم بنجاح."
+    },
+    resetPassword: {
+      title: "إعادة تعيين كلمة المرور",
+      userLabel: "المستخدم",
+      newPassword: "كلمة المرور الجديدة",
+      confirmPassword: "تأكيد كلمة المرور",
+      forceChange: "إجبار المستخدم على تغييرها",
+      save: "حفظ كلمة المرور",
+      success: "تمت إعادة تعيين كلمة المرور.",
+      errors: {
+        passwordLength: "كلمة المرور يجب ألا تقل عن 6 أحرف.",
+        passwordMismatch: "كلمتا المرور غير متطابقتين.",
+        failed: "تعذر إعادة تعيين كلمة المرور."
+      }
+    },
     "title": "إدارة المستخدمين",
     "description": "إضافة المستخدمين وتعديل بياناتهم والتحكم في حالتهم وأدوارهم.",
     "newUser": "مستخدم جديد",
