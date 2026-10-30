@@ -4,6 +4,7 @@ import {
   useEffect,
   useState,
 } from "react";
+import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -78,7 +79,9 @@ export default function UserForm({
   onOpenChange,
   onCreate,
   onUpdate,
-}: UserFormProps) {
+} : UserFormProps) {
+  const { t, i18n } = useTranslation();
+  const direction = i18n.dir();
   const [form, setForm] =
     useState<FormState>(initialState);
 
@@ -158,29 +161,29 @@ export default function UserForm({
 
   const validateForm = (): boolean => {
     if (!form.full_name.trim()) {
-      alert("برجاء إدخال الاسم بالكامل.");
+      alert(t("userForm.errors.fullName"));
       return false;
     }
 
     if (!form.username.trim()) {
-      alert("برجاء إدخال اسم المستخدم.");
+      alert(t("userForm.errors.username"));
       return false;
     }
 
     if (form.username.trim().length < 3) {
       alert(
-        "يجب أن يتكون اسم المستخدم من 3 أحرف على الأقل.",
+        t("userForm.errors.usernameLength"),
       );
       return false;
     }
 
     if (!form.email.trim()) {
-      alert("برجاء إدخال البريد الإلكتروني.");
+      alert(t("userForm.errors.email"));
       return false;
     }
 
     if (!isEditing && !form.password) {
-      alert("برجاء إدخال كلمة المرور.");
+      alert(t("userForm.errors.password"));
       return false;
     }
 
@@ -189,7 +192,7 @@ export default function UserForm({
       form.password.length < 8
     ) {
       alert(
-        "يجب أن تتكون كلمة المرور من 8 أحرف على الأقل.",
+        t("userForm.errors.passwordLength"),
       );
       return false;
     }
@@ -199,7 +202,7 @@ export default function UserForm({
       form.password.length > 128
     ) {
       alert(
-        "يجب ألا تزيد كلمة المرور عن 128 حرفًا.",
+        t("userForm.errors.passwordMax"),
       );
       return false;
     }
@@ -207,7 +210,7 @@ export default function UserForm({
     if (
       form.password !== form.confirmPassword
     ) {
-      alert("كلمتا المرور غير متطابقتين.");
+      alert(t("userForm.errors.passwordMismatch"));
       return false;
     }
 
@@ -311,19 +314,19 @@ export default function UserForm({
     >
       <DialogContent
         className="max-h-[90vh] overflow-y-auto sm:max-w-2xl"
-        dir="rtl"
+        dir={direction}
       >
-        <DialogHeader className="text-right">
+        <DialogHeader className="text-start">
           <DialogTitle>
             {isEditing
-              ? "تعديل المستخدم"
-              : "إضافة مستخدم جديد"}
+              ? t("userForm.titleEdit")
+              : t("userForm.titleCreate")}
           </DialogTitle>
 
           <DialogDescription>
             {isEditing
-              ? "عدّل بيانات المستخدم ثم اضغط حفظ التعديلات."
-              : "أدخل بيانات المستخدم وحدد الدور والصلاحيات."}
+              ? t("userForm.descriptionEdit")
+              : t("userForm.descriptionCreate")}
           </DialogDescription>
         </DialogHeader>
 
@@ -332,10 +335,10 @@ export default function UserForm({
           className="space-y-6"
         >
           <div className="grid gap-4 sm:grid-cols-2">
-            {/* الاسم بالكامل */}
+            {/* {t("userForm.fullName")} */}
             <div className="space-y-2">
               <Label htmlFor="full_name">
-                الاسم بالكامل *
+                {t("userForm.fullName")} *
               </Label>
 
               <Input
@@ -348,16 +351,16 @@ export default function UserForm({
                     event.target.value,
                   );
                 }}
-                placeholder="أحمد محمد"
+                placeholder={t("userForm.fullNamePlaceholder")}
                 autoComplete="name"
                 required
               />
             </div>
 
-            {/* اسم المستخدم */}
+            {/* {t("userForm.username")} */}
             <div className="space-y-2">
               <Label htmlFor="username">
-                اسم المستخدم *
+                {t("userForm.username")} *
               </Label>
 
               <Input
@@ -378,10 +381,10 @@ export default function UserForm({
               />
             </div>
 
-            {/* البريد الإلكتروني */}
+            {/* {t("userForm.email")} */}
             <div className="space-y-2">
               <Label htmlFor="email">
-                البريد الإلكتروني *
+                {t("userForm.email")} *
               </Label>
 
               <Input
@@ -401,10 +404,10 @@ export default function UserForm({
               />
             </div>
 
-            {/* رقم الهاتف */}
+            {/* {t("userForm.phone")} */}
             <div className="space-y-2">
               <Label htmlFor="phone">
-                رقم الهاتف
+                {t("userForm.phone")}
               </Label>
 
               <Input
@@ -428,8 +431,8 @@ export default function UserForm({
             <div className="space-y-2">
               <Label htmlFor="password">
                 {isEditing
-                  ? "كلمة مرور جديدة"
-                  : "كلمة المرور *"}
+                  ? t("userForm.newPassword")
+                  : t("userForm.password") + " *"}
               </Label>
 
               <Input
@@ -445,8 +448,8 @@ export default function UserForm({
                 }}
                 placeholder={
                   isEditing
-                    ? "اتركها فارغة دون تغيير"
-                    : "8 أحرف على الأقل"
+                    ? t("userForm.passwordPlaceholderEdit")
+                    : t("userForm.passwordPlaceholderCreate")
                 }
                 autoComplete="new-password"
                 minLength={
@@ -466,8 +469,8 @@ export default function UserForm({
             <div className="space-y-2">
               <Label htmlFor="confirmPassword">
                 {isEditing
-                  ? "تأكيد كلمة المرور الجديدة"
-                  : "تأكيد كلمة المرور *"}
+                  ? t("userForm.confirmNewPassword")
+                  : t("userForm.confirmPassword") + " *"}
               </Label>
 
               <Input
@@ -481,7 +484,7 @@ export default function UserForm({
                     event.target.value,
                   );
                 }}
-                placeholder="أعد إدخال كلمة المرور"
+                placeholder={t("userForm.confirmPasswordPlaceholder")}
                 autoComplete="new-password"
                 minLength={
                   form.confirmPassword
@@ -496,10 +499,10 @@ export default function UserForm({
               />
             </div>
 
-            {/* الدور والصلاحيات */}
+            {/* {t("userForm.role")} */}
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="role_id">
-                الدور والصلاحيات
+                {t("userForm.role")}
               </Label>
 
               <Select
@@ -518,15 +521,15 @@ export default function UserForm({
                   <SelectValue
                     placeholder={
                       rolesLoading
-                        ? "جاري تحميل الأدوار..."
-                        : "اختر الدور"
+                        ? t("userForm.loadingRoles")
+                        : t("userForm.chooseRole")
                     }
                   />
                 </SelectTrigger>
 
                 <SelectContent>
                   <SelectItem value="none">
-                    بدون دور
+                    {t("userForm.noRole")}
                   </SelectItem>
 
                   {roles.map((role) => (
@@ -543,15 +546,15 @@ export default function UserForm({
               {!rolesLoading &&
                 roles.length === 0 && (
                   <p className="text-xs text-muted-foreground">
-                    لا توجد أدوار متاحة حاليًا.
+                    {t("userForm.noRoles")}
                   </p>
                 )}
             </div>
 
-            {/* العنوان */}
+            {/* {t("userForm.address")} */}
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="address">
-                العنوان
+                {t("userForm.address")}
               </Label>
 
               <Input
@@ -564,7 +567,7 @@ export default function UserForm({
                     event.target.value,
                   );
                 }}
-                placeholder="أدخل عنوان المستخدم"
+                placeholder={t("userForm.addressPlaceholder")}
                 autoComplete="street-address"
               />
             </div>
@@ -576,12 +579,12 @@ export default function UserForm({
               disabled={loading}
             >
               {loading && (
-                <Loader2 className="ml-2 h-4 w-4 animate-spin" />
+                <Loader2 className="ms-2 h-4 w-4 animate-spin" />
               )}
 
               {isEditing
-                ? "حفظ التعديلات"
-                : "إضافة المستخدم"}
+                ? t("userForm.saveChanges")
+                : t("userForm.create")}
             </Button>
 
             <Button
@@ -592,7 +595,7 @@ export default function UserForm({
               }}
               disabled={loading}
             >
-              إلغاء
+              {t("common.cancel")}
             </Button>
           </DialogFooter>
         </form>
