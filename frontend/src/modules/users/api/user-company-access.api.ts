@@ -1,5 +1,41 @@
 import apiClient from "@/shared/api/client";
 
+export interface CompanyAccessAuditBranch {
+  id: number;
+  name: string;
+  code: string | null;
+  is_active: boolean;
+}
+
+export interface CompanyAccessAuditBranchGrant {
+  branch_id: number;
+  membership_is_active: boolean | null;
+  role_id: number | null;
+  role_name: string | null;
+}
+
+export interface CompanyAccessAuditMember {
+  user_id: number;
+  username: string;
+  full_name: string | null;
+  user_is_active: boolean;
+  company_membership_is_active: boolean;
+  company_role_id: number | null;
+  company_role_name: string | null;
+  branch_access: CompanyAccessAuditBranchGrant[];
+}
+
+export interface CompanyAccessAudit {
+  company_id: number;
+  company_name: string;
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+  branches: CompanyAccessAuditBranch[];
+  items: CompanyAccessAuditMember[];
+}
+
 export interface AccessibleCompany {
   id: number;
   name: string;
@@ -101,6 +137,17 @@ export const userCompanyAccessApi = {
       `/branches/${branchId}/members/${userId}/role`,
       companyConfig(companyId),
     );
+  },
+
+  async getAccessAudit(companyId: number, page = 1, pageSize = 50) {
+    const response = await apiClient.get<CompanyAccessAudit>(
+      `/companies/${companyId}/membership-audit`,
+      {
+        ...companyConfig(companyId),
+        params: { page, page_size: pageSize },
+      },
+    );
+    return response.data;
   },
 
   async getMembers(companyId: number) {
