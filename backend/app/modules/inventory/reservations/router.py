@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.context import get_effective_tenant_id
+from app.core.context.access import require_company_access, require_branch_access
+from app.core.context import get_optional_request_context
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
@@ -15,14 +16,7 @@ router = APIRouter(prefix="/inventory/reservations", tags=["Inventory Reservatio
 
 
 def _company_for_user(db: Session, company_id: int, user: User):
-    if get_effective_tenant_id(user) is None:
-        raise HTTPException(403, "User is not assigned to a tenant")
-    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == get_effective_tenant_id(user), Company.is_active.is_(True)))
-    if company is None:
-        raise HTTPException(403, "Company is outside the current tenant")
-    return company
-
-
+    return require_company_access(db, company_id, user)
 @router.get("")
 def list_reservations(company_id: int = Query(..., gt=0), item_id: int | None = Query(default=None, gt=0), location_id: int | None = Query(default=None, gt=0), variant_id: int | None = Query(default=None, gt=0), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _company_for_user(db, company_id, current_user)
