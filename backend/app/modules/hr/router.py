@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 from app.database.session import get_db
 from app.modules.audit.service import record_audit_event
 from app.modules.companies.models import Company
-from app.core.context import get_effective_tenant_id
+from app.modules.companies.membership import CompanyUserMembership
+from app.core.context import get_effective_tenant_id, get_optional_request_context
 from app.core.permissions import require_permission
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models.user import User
@@ -43,7 +44,11 @@ def _require_manual_attendance_source(db: Session, company_id: int) -> None:
         raise HTTPException(409, "Manual attendance changes are disabled by company policy; use the configured attendance source.")
 
 
-def _company_for_tenant(db: Session, company_id: int, tenant_id: int) -> Company:
+def _company_for_tenant(db: Session, company_id: int, tenant_id: int, user: User) -> Company:
+    """Require the selected active company and an explicit company access grant."""
+    context = get_optional_request_context()
+    if context is None or context.company_id != company_id:
+        raise HTTPException(403, "Select this company using X-Company-ID before accessing HR data")
     company = db.scalar(
         select(Company).where(
             Company.id == company_id,
@@ -52,8 +57,17 @@ def _company_for_tenant(db: Session, company_id: int, tenant_id: int) -> Company
         )
     )
     if company is None:
-        # Do not disclose whether a company exists in another tenant.
         raise HTTPException(404, "Company not found")
+    if not user.is_platform_admin:
+        membership = db.scalar(
+            select(CompanyUserMembership.id).where(
+                CompanyUserMembership.company_id == company_id,
+                CompanyUserMembership.user_id == user.id,
+                CompanyUserMembership.is_active.is_(True),
+            )
+        )
+        if membership is None:
+            raise HTTPException(404, "Company not found")
     return company
 
 
@@ -76,14 +90,20 @@ def workforce(
     db: Session = Depends(get_db),
 ):
     tenant_id = _tenant(current_user)
-    _company_for_tenant(db, company_id, tenant_id)
+    _company_for_tenant(db, company_id, tenant_id, current_user)
 
     users = list(
         db.scalars(
             select(User)
+            .join(
+                CompanyUserMembership,
+                CompanyUserMembership.user_id == User.id,
+            )
             .where(
                 User.tenant_id == tenant_id,
                 User.is_deleted.is_(False),
+                CompanyUserMembership.company_id == company_id,
+                CompanyUserMembership.is_active.is_(True),
             )
             .order_by(User.full_name, User.id)
         ).all()
@@ -115,13 +135,20 @@ def update_workforce(
     db: Session = Depends(get_db),
 ):
     tenant_id = _tenant(current_user)
-    _company_for_tenant(db, company_id, tenant_id)
+    _company_for_tenant(db, company_id, tenant_id, current_user)
 
     obj = db.scalar(
-        select(User).where(
+        select(User)
+        .join(
+            CompanyUserMembership,
+            CompanyUserMembership.user_id == User.id,
+        )
+        .where(
             User.id == user_id,
             User.tenant_id == tenant_id,
             User.is_deleted.is_(False),
+            CompanyUserMembership.company_id == company_id,
+            CompanyUserMembership.is_active.is_(True),
         )
     )
     if obj is None:
@@ -180,7 +207,7 @@ def update_leave_balance(
     db: Session = Depends(get_db),
 ):
     tenant_id = _tenant(current_user)
-    _company_for_tenant(db, company_id, tenant_id)
+    _company_for_tenant(db, company_id, tenant_id, current_user)
     try:
         balance = hr_leave_service.update_balance(
             db,
@@ -219,7 +246,7 @@ def list_leave_balances(
     db: Session = Depends(get_db),
 ):
     tenant_id = _tenant(current_user)
-    _company_for_tenant(db, company_id, tenant_id)
+    _company_for_tenant(db, company_id, tenant_id, current_user)
     balances = hr_leave_service.list_balances(db, company_id=company_id)
     return [
         LeaveBalanceResponse(
@@ -248,7 +275,7 @@ def create_leave_request(
     db: Session = Depends(get_db),
 ):
     tenant_id = _tenant(current_user)
-    _company_for_tenant(db, company_id, tenant_id)
+    _company_for_tenant(db, company_id, tenant_id, current_user)
     try:
         request = hr_leave_service.create_request(
             db,
@@ -289,7 +316,7 @@ def list_leave_requests(
     db: Session = Depends(get_db),
 ):
     tenant_id = _tenant(current_user)
-    _company_for_tenant(db, company_id, tenant_id)
+    _company_for_tenant(db, company_id, tenant_id, current_user)
     return list(db.scalars(
         select(HRLeaveRequest)
         .where(HRLeaveRequest.company_id == company_id)
@@ -310,7 +337,7 @@ def decide_leave_request(
     db: Session = Depends(get_db),
 ):
     tenant_id = _tenant(current_user)
-    _company_for_tenant(db, company_id, tenant_id)
+    _company_for_tenant(db, company_id, tenant_id, current_user)
     try:
         request = hr_leave_service.decide_request(
             db,
@@ -354,7 +381,7 @@ def cancel_leave_request(
     db: Session = Depends(get_db),
 ):
     tenant_id = _tenant(current_user)
-    _company_for_tenant(db, company_id, tenant_id)
+    _company_for_tenant(db, company_id, tenant_id, current_user)
     try:
         request = hr_leave_service.cancel_request(
             db,
@@ -423,7 +450,7 @@ def list_attendance(
     db: Session = Depends(get_db),
 ):
     tenant_id = _tenant(current_user)
-    _company_for_tenant(db, company_id, tenant_id)
+    _company_for_tenant(db, company_id, tenant_id, current_user)
     return hr_leave_service.list_attendance(db, company_id=company_id, attendance_date=attendance_date)
 
 
@@ -440,7 +467,7 @@ def create_attendance(
     db: Session = Depends(get_db),
 ):
     tenant_id = _tenant(current_user)
-    _company_for_tenant(db, company_id, tenant_id)
+    _company_for_tenant(db, company_id, tenant_id, current_user)
     # This endpoint is the manual-entry path. Do not silently accept it
     # when the company has selected another source.
     _require_manual_attendance_source(db, company_id)
@@ -476,7 +503,7 @@ def check_out_attendance(
     db: Session = Depends(get_db),
 ):
     tenant_id = _tenant(current_user)
-    _company_for_tenant(db, company_id, tenant_id)
+    _company_for_tenant(db, company_id, tenant_id, current_user)
     # Check-out is also a manual write and follows the same source policy.
     _require_manual_attendance_source(db, company_id)
     try:
@@ -520,7 +547,7 @@ def create_attendance_correction(
     db: Session = Depends(get_db),
 ):
     tenant_id = _tenant(current_user)
-    _company_for_tenant(db, company_id, tenant_id)
+    _company_for_tenant(db, company_id, tenant_id, current_user)
     try:
         correction = hr_leave_service.create_correction(
             db, company_id=company_id, record_id=record_id,
@@ -552,7 +579,7 @@ def list_attendance_corrections(
     db: Session = Depends(get_db),
 ):
     tenant_id = _tenant(current_user)
-    _company_for_tenant(db, company_id, tenant_id)
+    _company_for_tenant(db, company_id, tenant_id, current_user)
     return hr_leave_service.list_corrections(db, company_id=company_id)
 
 
@@ -569,7 +596,7 @@ def decide_attendance_correction(
     db: Session = Depends(get_db),
 ):
     tenant_id = _tenant(current_user)
-    _company_for_tenant(db, company_id, tenant_id)
+    _company_for_tenant(db, company_id, tenant_id, current_user)
     try:
         correction = hr_leave_service.decide_correction(
             db, company_id=company_id, correction_id=correction_id,
@@ -602,7 +629,7 @@ def list_overtime_requests(
     db: Session = Depends(get_db),
 ):
     tenant_id = _tenant(current_user)
-    _company_for_tenant(db, company_id, tenant_id)
+    _company_for_tenant(db, company_id, tenant_id, current_user)
     return hr_leave_service.list_overtime_requests(db, company_id=company_id)
 
 
@@ -619,7 +646,7 @@ def create_overtime_request(
     db: Session = Depends(get_db),
 ):
     tenant_id = _tenant(current_user)
-    _company_for_tenant(db, company_id, tenant_id)
+    _company_for_tenant(db, company_id, tenant_id, current_user)
     try:
         request = hr_leave_service.create_overtime_request(
             db, company_id=company_id, payload=payload, actor_user_id=current_user.id
@@ -658,7 +685,7 @@ def decide_overtime_request(
     db: Session = Depends(get_db),
 ):
     tenant_id = _tenant(current_user)
-    _company_for_tenant(db, company_id, tenant_id)
+    _company_for_tenant(db, company_id, tenant_id, current_user)
     try:
         request = hr_leave_service.decide_overtime_request(
             db,
