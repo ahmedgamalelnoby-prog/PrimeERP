@@ -135,6 +135,15 @@ const arTranslation = {
   },
 
   roles: {
+    notifications: {
+      created: "تم إنشاء الدور بنجاح.",
+      updated: "تم تعديل الدور بنجاح.",
+      permissionsUpdated: "تم تحديث صلاحيات الدور بنجاح.",
+      deactivated: "تم تعطيل الدور.",
+      activated: "تم تفعيل الدور.",
+      deleteAssigned: "لا يمكن حذف دور مرتبط بمستخدمين.",
+      deleted: "تم حذف الدور بنجاح."
+    },
     title: "الأدوار والصلاحيات",
     description: "إنشاء الأدوار وتحديد ما يمكن لكل مستخدم عرضه أو تنفيذه داخل PrimeERP.",
     newRole: "دور جديد",
@@ -147,6 +156,23 @@ const arTranslation = {
       deleteAssigned: "لا يمكن حذف الدور لأنه مرتبط بـ {{count}} مستخدم."
     }
   },
+  rolesTable: {
+    loading: "جاري تحميل الأدوار...",
+    emptyTitle: "لا توجد أدوار",
+    emptyDescription: "ابدأ بإنشاء أول دور وتحديد صلاحياته.",
+    role: "الدور",
+    permissions: "الصلاحيات",
+    users: "المستخدمون",
+    status: "الحالة",
+    enabled: "تفعيل الدور",
+    actions: "الإجراءات",
+    noDescription: "لا يوجد وصف",
+    permissionCount_one: "{{count}} صلاحية",
+    permissionCount_other: "{{count}} صلاحيات",
+    edit: "تعديل الدور",
+    delete: "حذف الدور"
+  },
+
   roleForm: {
     titleCreate: "إضافة دور جديد",
     titleEdit: "تعديل الدور",
