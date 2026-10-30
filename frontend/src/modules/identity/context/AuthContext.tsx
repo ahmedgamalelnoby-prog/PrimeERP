@@ -43,6 +43,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const refreshUser = async (): Promise<void> => {
     try {
       const currentUser = await authService.getCurrentUser();
+
+      // Keep the client tenant context synchronized with the authenticated
+      // identity after reloads and token refreshes, not only after login.
+      storage.setTenantId(currentUser.tenant_id);
       setUser(currentUser);
     } catch (error) {
       console.error("Unable to refresh authenticated user:", error);
@@ -57,6 +61,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     let cancelled = false;
     const applyCompanyLanguage = async (): Promise<void> => {
       try {
+        // The API scopes this list to the authenticated user's effective
+        // tenant. A remembered company is accepted only if it is in that list.
         const { data: companies } = await client.get<Array<{ id: number }>>(
           "/companies?active_only=true",
         );
@@ -129,6 +135,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       tenant_name: tenantName?.trim() || null,
     });
 
+    // authService.login stores the resolved tenant ID from the server response.
     setUser(response.user);
   };
 
