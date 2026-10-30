@@ -134,6 +134,30 @@ const arTranslation = {
     }
   },
 
+  permissions: {
+    title: "الصلاحيات",
+    description: "عرض وإدارة صلاحيات النظام وربطها بالأدوار.",
+    catalog: "دليل الصلاحيات",
+    refresh: "تحديث",
+    loading: "جاري التحميل...",
+    processing: "جارٍ التنفيذ...",
+    name: "الاسم",
+    resource: "المورد",
+    action: "الإجراء",
+    descriptionColumn: "الوصف",
+    status: "الحالة",
+    actions: "إجراء",
+    active: "نشطة",
+    inactive: "متوقفة",
+    activate: "تفعيل",
+    deactivate: "تعطيل",
+    empty: "لا توجد صلاحيات.",
+    errors: {
+      load: "تعذر تحميل الصلاحيات.",
+      update: "تعذر تحديث الصلاحية."
+    }
+  },
+
   usersTable: {
     "loading": "جاري تحميل المستخدمين...",
     "active": "نشط",
