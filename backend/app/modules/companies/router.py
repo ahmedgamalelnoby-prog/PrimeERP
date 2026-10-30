@@ -6,11 +6,12 @@ from sqlalchemy.orm import Session
 from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
-from app.modules.companies.models import Company
+from app.modules.companies.models import Company, user_company_access
 from app.modules.companies.schemas import CompanyCreate, CompanyResponse, CompanyUpdate
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.saas.entitlements import enforce_company_limit
+from app.modules.companies.access import assigned_company_ids
 
 router = APIRouter(prefix="/companies", tags=["Companies"])
 
@@ -28,10 +29,14 @@ def _get_company(db: Session, company_id: int, user: User) -> Company:
 
 @router.get("", response_model=list[CompanyResponse], dependencies=[Depends(require_permission("company.access"))])
 def list_companies(active_only: bool = Query(False), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    stmt = select(Company).where(Company.tenant_id == _tenant_id(current_user)).order_by(Company.name, Company.id)
+    tenant_id = _tenant_id(current_user)
+    stmt = select(Company).where(Company.tenant_id == tenant_id)
+    if not current_user.is_platform_admin:
+        allowed_ids = assigned_company_ids(db, current_user.id, tenant_id)
+        stmt = stmt.where(Company.id.in_(allowed_ids))
     if active_only:
         stmt = stmt.where(Company.is_active.is_(True))
-    return list(db.scalars(stmt).all())
+    return list(db.scalars(stmt.order_by(Company.name, Company.id)).all())
 
 
 @router.get("/{company_id}", response_model=CompanyResponse, dependencies=[Depends(require_permission("company.access"))])
