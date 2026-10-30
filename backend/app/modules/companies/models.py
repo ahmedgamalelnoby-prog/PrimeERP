@@ -2,12 +2,14 @@ from sqlalchemy import (
     Boolean,
     Column,
     ForeignKey,
+    Index,
     Integer,
     String,
     Table,
     Text,
     TIMESTAMP,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -21,6 +23,12 @@ user_company_access = Table(
     Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
     Column("company_id", Integer, ForeignKey("companies.id", ondelete="CASCADE"), primary_key=True),
     Column("is_default", Boolean, nullable=False, default=False, server_default="false"),
+)
+Index(
+    "uq_user_company_access_one_default",
+    user_company_access.c.user_id,
+    unique=True,
+    postgresql_where=user_company_access.c.is_default.is_(True),
 )
 
 
