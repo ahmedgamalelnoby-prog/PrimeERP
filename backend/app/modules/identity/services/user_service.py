@@ -177,16 +177,34 @@ class UserService(BaseService[UserRepository]):
             return tenant_id
 
         tenant = self.current_tenant
-        current_tenant_id = (
+        context_tenant_id = (
             tenant if isinstance(tenant, int)
             else getattr(tenant, "id", None)
         )
-        if current_tenant_id is None:
+
+        # For authenticated users, the tenant on the user record is the
+        # security boundary. A request context/header must never widen it.
+        if current_user is not None:
             current_tenant_id = getattr(current_user, "tenant_id", None)
+            if current_tenant_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Current user is not assigned to a tenant.",
+                )
+            if context_tenant_id is not None and context_tenant_id != current_tenant_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Requested tenant does not match the authenticated user.",
+                )
+        else:
+            # Preserve explicit tenant context for trusted internal service
+            # calls that do not run on behalf of an authenticated user.
+            current_tenant_id = context_tenant_id
+
         if current_tenant_id is None:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Current user is not assigned to a tenant.",
+                detail="A tenant context is required for user administration.",
             )
         if tenant_id is not None and tenant_id != current_tenant_id:
             raise HTTPException(
