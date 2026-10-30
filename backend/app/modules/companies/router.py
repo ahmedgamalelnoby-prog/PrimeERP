@@ -7,6 +7,7 @@ from app.core.context import get_effective_tenant_id, get_optional_request_conte
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
+from app.modules.companies.membership import CompanyUserMembership
 from app.modules.companies.schemas import CompanyCreate, CompanyResponse, CompanyUpdate
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
@@ -49,6 +50,101 @@ def get_current_company(
     if company is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Selected company is no longer available")
     return company
+
+
+@router.get("/{company_id}/members", dependencies=[Depends(require_permission("company.write"))])
+def list_company_members(
+    company_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    company = _get_company(db, company_id, current_user)
+    rows = db.execute(
+        select(CompanyUserMembership, User)
+        .join(User, User.id == CompanyUserMembership.user_id)
+        .where(CompanyUserMembership.company_id == company.id)
+        .order_by(User.username, User.id)
+    ).all()
+    return [
+        {
+            "user_id": user.id,
+            "username": user.username,
+            "full_name": user.full_name,
+            "user_is_active": user.is_active and not user.is_deleted,
+            "membership_is_active": membership.is_active,
+            "created_at": membership.created_at,
+        }
+        for membership, user in rows
+    ]
+
+
+@router.put("/{company_id}/members/{user_id}", dependencies=[Depends(require_permission("company.write"))])
+def grant_company_membership(
+    company_id: int,
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    company = _get_company(db, company_id, current_user)
+    member_user = db.scalar(
+        select(User).where(
+            User.id == user_id,
+            User.tenant_id == company.tenant_id,
+            User.is_deleted.is_(False),
+        )
+    )
+    if member_user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found in this tenant")
+
+    membership = db.scalar(
+        select(CompanyUserMembership)
+        .where(
+            CompanyUserMembership.company_id == company.id,
+            CompanyUserMembership.user_id == member_user.id,
+        )
+        .with_for_update()
+    )
+    if membership is None:
+        membership = CompanyUserMembership(
+            company_id=company.id,
+            user_id=member_user.id,
+            is_active=True,
+            assigned_by=current_user.id,
+        )
+        db.add(membership)
+    else:
+        membership.is_active = True
+        membership.assigned_by = current_user.id
+    db.commit()
+    db.refresh(membership)
+    return {
+        "company_id": company.id,
+        "user_id": member_user.id,
+        "is_active": membership.is_active,
+    }
+
+
+@router.delete("/{company_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_permission("company.write"))])
+def revoke_company_membership(
+    company_id: int,
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    company = _get_company(db, company_id, current_user)
+    membership = db.scalar(
+        select(CompanyUserMembership)
+        .where(
+            CompanyUserMembership.company_id == company.id,
+            CompanyUserMembership.user_id == user_id,
+        )
+        .with_for_update()
+    )
+    if membership is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company membership not found")
+    membership.is_active = False
+    db.commit()
+    return None
 
 
 @router.get("", response_model=list[CompanyResponse], dependencies=[Depends(require_permission("company.access"))])
