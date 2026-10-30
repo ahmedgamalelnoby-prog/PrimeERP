@@ -274,3 +274,23 @@ def test_transaction_numbering_endpoints_are_branch_membership_scoped():
     assert "sequence.branch_id in allowed_branch_ids" in router
     assert "require_branch_access(db, current_user, payload.branch_id)" in router
     assert "require_branch_access(db, current_user, sequence.branch_id)" in router
+
+
+def test_manufacturing_work_orders_are_limited_to_both_assigned_location_branches():
+    router = source("app/modules/manufacturing/bom/router.py")
+    service = source("app/modules/manufacturing/production_orders/service.py")
+    assert "require_location_access(db, current_user, payload.source_location_id)" not in router
+    assert "require_location_access(db, current_user, payload.company_id, payload.source_location_id)" in router
+    assert "require_location_access(db, current_user, payload.company_id, payload.destination_location_id)" in router
+    assert "allowed_branch_ids=accessible_branch_ids(db, current_user)" in router
+    assert "ManufacturingWorkOrder.source_location_id.in_(visible_location_ids)" in service
+    assert "ManufacturingWorkOrder.destination_location_id.in_(visible_location_ids)" in service
+    assert "InventoryWarehouse.branch_id.in_(allowed_branch_ids)" in service
+
+
+def test_manufacturing_work_order_mutations_recheck_both_location_branches():
+    router = source("app/modules/manufacturing/bom/router.py")
+    assert "def _authorize_work_order_access(" in router
+    assert "order.source_location_id, require_active=False" in router
+    assert "order.destination_location_id, require_active=False" in router
+    assert "_authorize_work_order_access(db, current_user, company_id, work_order_id)" in router
