@@ -172,6 +172,17 @@ const enTranslation = {
       delivery: "Delivery note",
       invoice: "Invoice"
     },
+    statuses: {
+      draft: "Draft",
+      pending_approval: "Pending approval",
+      approved: "Approved",
+      confirmed: "Confirmed",
+      partially_fulfilled: "Partially fulfilled",
+      fulfilled: "Fulfilled",
+      posted: "Posted",
+      cancelled: "Cancelled",
+      rejected: "Rejected"
+    },
     columns: {
       number: "Number",
       date: "Date",
