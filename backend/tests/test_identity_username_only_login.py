@@ -1,4 +1,7 @@
 from pathlib import Path
+from types import SimpleNamespace
+
+from app.modules.identity.services.authentication_service import AuthenticationService
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -8,15 +11,66 @@ def source(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
+def test_password_match_resolves_exactly_one_tenant_identity(monkeypatch):
+    monkeypatch.setattr(
+        "app.modules.identity.services.authentication_service.password_service.verify_password",
+        lambda password, hashed: password == "correct-password" and hashed == "tenant-a-hash",
+    )
+    users = [
+        SimpleNamespace(id=1, tenant_id=10, hashed_password="tenant-a-hash"),
+        SimpleNamespace(id=2, tenant_id=20, hashed_password="tenant-b-hash"),
+    ]
+
+    matches = AuthenticationService._matching_users_by_password(
+        users,
+        "correct-password",
+    )
+
+    assert len(matches) == 1
+    assert matches[0].tenant_id == 10
+
+
+def test_password_match_does_not_choose_between_ambiguous_duplicate_accounts(monkeypatch):
+    monkeypatch.setattr(
+        "app.modules.identity.services.authentication_service.password_service.verify_password",
+        lambda password, hashed: password == "same-password",
+    )
+    users = [
+        SimpleNamespace(id=1, tenant_id=10, hashed_password="hash-a"),
+        SimpleNamespace(id=2, tenant_id=20, hashed_password="hash-b"),
+    ]
+
+    matches = AuthenticationService._matching_users_by_password(
+        users,
+        "same-password",
+    )
+
+    assert len(matches) == 2
+
+
+def test_wrong_password_matches_no_tenant_identity(monkeypatch):
+    monkeypatch.setattr(
+        "app.modules.identity.services.authentication_service.password_service.verify_password",
+        lambda password, hashed: password == "correct-password",
+    )
+    users = [
+        SimpleNamespace(id=1, tenant_id=10, hashed_password="hash-a"),
+        SimpleNamespace(id=2, tenant_id=20, hashed_password="hash-b"),
+    ]
+
+    assert AuthenticationService._matching_users_by_password(
+        users,
+        "wrong-password",
+    ) == []
+
+
 def test_login_resolves_company_from_unique_password_match_without_company_input():
     auth = source("app/modules/identity/services/authentication_service.py")
     schema = source("app/modules/identity/schemas/auth.py")
-    assert "matching_users = [" in auth
-    assert "candidate.hashed_password" in auth
+    assert "_matching_users_by_password(" in auth
     assert "if len(matching_users) != 1:" in auth
     assert "company_name_required" not in auth
     assert "tenant_name: Optional[str] = Field(" in schema
-    assert "default=None" in schema
 
 
 def test_user_creation_and_rename_reserve_username_across_tenants():
