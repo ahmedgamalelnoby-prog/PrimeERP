@@ -238,11 +238,15 @@ const arTranslation = {
       noRoles: "لا توجد أدوار مسجلة.",
       noFindings: "لم يتم العثور على ملاحظات وفق قواعد التدقيق الحالية.",
       unassignedPermissions: "صلاحيات نشطة غير مرتبطة بأي دور نشط",
+      missingManifestPermissions: "صلاحيات الموديولات غير المسجلة في قاعدة البيانات",
+      module: "الموديول",
+      permissionCode: "كود الصلاحية",
       findingTypes: {
         inactive_role_assigned: "الدور {{role}} معطل، لكنه ما زال مرتبطًا بـ {{count}} مستخدم أو عضوية.",
         active_role_without_permissions: "الدور النشط {{role}} لا يحتوي على أي صلاحيات نشطة.",
         inactive_permissions_attached: "الدور {{role}} يحتوي على {{count}} صلاحية معطلة؛ لن تُحتسب ضمن الصلاحيات الفعالة.",
-        permission_without_active_role: "الصلاحية {{permission}} غير مرتبطة بأي دور نشط."
+        permission_without_active_role: "الصلاحية {{permission}} غير مرتبطة بأي دور نشط.",
+        manifest_permission_not_registered: "الصلاحية {{permission}} المعلنة في الموديول {{module}} غير مسجلة في قاعدة البيانات."
       }
     },
     title: "الأدوار والصلاحيات",
