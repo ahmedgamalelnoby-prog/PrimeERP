@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.context.access import require_company_access, require_branch_access
+from app.core.context.access import require_company_access, require_branch_access, require_branch_or_company_access
 from app.core.context import get_optional_request_context
 from app.core.permissions import require_permission
 from app.database.session import get_db
@@ -24,8 +24,10 @@ def _selected_branch(db: Session, company_id: int, user: User) -> int | None:
     if user.is_platform_admin:
         return None
     context = get_optional_request_context()
-    if context is None or context.branch_id is None:
-        raise HTTPException(400, "Select a branch using X-Branch-ID before accessing reservations")
+    if context is None or context.company_id != company_id:
+        raise HTTPException(400, "Select an active company using X-Company-ID")
+    if context.branch_id is None:
+        return None
     require_branch_access(db, company_id, context.branch_id, user)
     return context.branch_id
 
@@ -46,7 +48,7 @@ def _assert_location_access(db: Session, company_id: int, location_id: int, user
     if warehouse is None:
         raise HTTPException(404, "Stock warehouse not found")
     if warehouse.branch_id is not None:
-        require_branch_access(db, company_id, warehouse.branch_id, user)
+        require_branch_or_company_access(db, company_id, warehouse.branch_id, user)
 
 
 def _assert_reservation_access(db: Session, company_id: int, reservation_id: int, user: User) -> None:
