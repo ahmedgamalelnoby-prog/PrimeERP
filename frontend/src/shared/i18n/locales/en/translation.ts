@@ -501,6 +501,8 @@ const enTranslation = {
     close: "Close",
     document: "Document",
     item: "Item",
+    itemId: "Item ID",
+    paid: "Paid",
     types: { requisition: "Purchase requisition", rfq: "Request for quotation", order: "Purchase order", receipt: "Goods receipt", bill: "Supplier bill" },
     statuses: { draft: "Draft", pending_approval: "Pending approval", approved: "Approved", confirmed: "Confirmed", partially_received: "Partially received", received: "Received", posted: "Posted", cancelled: "Cancelled", rejected: "Rejected", partially_fulfilled: "Partially fulfilled" }
   },
