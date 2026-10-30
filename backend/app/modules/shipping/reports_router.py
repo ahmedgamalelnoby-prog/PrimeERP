@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.permissions import require_permission
+from app.modules.branches.access import accessible_branch_ids, can_manage_all_branches, require_branch_access
 from app.database.session import get_db
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
@@ -32,10 +33,23 @@ def _company(db: Session, company_id: int, user: User):
     return company
 
 
-def _filtered_shipments(db: Session, company_id: int, carrier_id: int | None, date_from: date | None, date_to: date | None, date_basis: str):
+def _filtered_shipments(db: Session, company_id: int, carrier_id: int | None, date_from: date | None, date_to: date | None, date_basis: str, user: User):
     stmt = select(Shipment, ShippingCarrier.name, ShippingShipmentCost).join(ShippingCarrier, ShippingCarrier.id == Shipment.carrier_id).outerjoin(ShippingShipmentCost, ShippingShipmentCost.shipment_id == Shipment.id).where(Shipment.company_id == company_id)
     if carrier_id:
+        carrier = db.scalar(select(ShippingCarrier).where(
+            ShippingCarrier.id == carrier_id,
+            ShippingCarrier.company_id == company_id,
+        ))
+        if carrier is None:
+            raise HTTPException(404, "Carrier not found for company")
+        if carrier.branch_id is None:
+            if not can_manage_all_branches(db, user):
+                raise HTTPException(403, "Central carrier access requires tenant-wide branch management permission")
+        else:
+            require_branch_access(db, user, carrier.branch_id)
         stmt = stmt.where(Shipment.carrier_id == carrier_id)
+    if not can_manage_all_branches(db, user):
+        stmt = stmt.where(ShippingCarrier.branch_id.in_(accessible_branch_ids(db, user)))
     column = Shipment.order_date if date_basis == "order" else Shipment.shipment_date
     if date_from:
         stmt = stmt.where(column >= date_from)
@@ -75,7 +89,7 @@ def _ledger_for_shipment(db: Session, shipment_id: int):
 @router.get("/carrier-position")
 def carrier_position(company_id: int = Query(..., gt=0), carrier_id: int | None = Query(default=None, gt=0), date_from: date | None = None, date_to: date | None = None, date_basis: str = Query(default="shipment", pattern="^(order|shipment)$"), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company(db, company_id, current_user)
-    rows = _filtered_shipments(db, company_id, carrier_id, date_from, date_to, date_basis)
+    rows = _filtered_shipments(db, company_id, carrier_id, date_from, date_to, date_basis, current_user)
     by_carrier = {}
     for shipment, carrier_name, cost in rows:
         bucket = by_carrier.setdefault(shipment.carrier_id, {
