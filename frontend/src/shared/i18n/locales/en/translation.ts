@@ -369,6 +369,7 @@ const enTranslation = {
       loadBranchDetailsFailed: "Unable to load the user's branch membership and roles.",
       branchAccessTitle: "Branch access",
       branchAccessDescription: "Branch access can only be granted after the user has active membership in the company.",
+      companyMembershipRequired: "Company membership is inactive. Existing branch access can be reviewed or revoked, but new branch access cannot be granted.",
       branch: "Branch",
       selectBranch: "Select a branch",
       loadingBranches: "Loading branches...",
