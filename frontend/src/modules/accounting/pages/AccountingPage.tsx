@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 
 export default function AccountingPage() {
   const { t, i18n } = useTranslation();
-  const areas = [
+  const areas: Array<[string, string]> = [
     ["chartOfAccounts", "/accounting/chart-of-accounts"],
     ["journalEntries", "/accounting/journal-entries"],
     ["financialReports", "/accounting/reports"],
