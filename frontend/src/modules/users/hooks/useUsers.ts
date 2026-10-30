@@ -6,6 +6,7 @@ import {
 } from "react";
 import type { AxiosError } from "axios";
 import { toast } from "react-hot-toast";
+import { useTranslation } from "react-i18next";
 
 import { getApiErrorMessage } from "@/shared/api/errors";
 import { useDebounce } from "@/shared/hooks/useDebounce";
@@ -30,6 +31,7 @@ const initialMeta: PageMeta = {
 };
 
 export function useUsers() {
+  const { t } = useTranslation();
   const [users, setUsers] = useState<User[]>([]);
   const [meta, setMeta] =
     useState<PageMeta>(initialMeta);
@@ -99,7 +101,7 @@ export function useUsers() {
       await usersService.create(payload);
 
       toast.success(
-        "تمت إضافة المستخدم بنجاح.",
+        t("users.notifications.created"),
       );
 
       await loadUsers();
@@ -126,7 +128,7 @@ export function useUsers() {
       await usersService.update(id, payload);
 
       toast.success(
-        "تم تعديل بيانات المستخدم.",
+        t("users.notifications.updated"),
       );
 
       await loadUsers();
@@ -160,8 +162,8 @@ export function useUsers() {
 
       toast.success(
         user.is_active
-          ? "تم تعطيل المستخدم."
-          : "تم تفعيل المستخدم.",
+          ? t("users.notifications.deactivated")
+          : t("users.notifications.activated"),
       );
 
       await loadUsers();
@@ -185,7 +187,7 @@ export function useUsers() {
       await usersService.remove(user.id);
 
       toast.success(
-        "تم حذف المستخدم بنجاح.",
+        t("users.notifications.deleted"),
       );
 
       await loadUsers();
