@@ -87,15 +87,15 @@ export default function RoleTable({
                 {t("rolesTable.permissions")}
               </TableHead>
 
-              <TableHead className="text-right">
+              <TableHead className="text-start">
                 {t("rolesTable.users")}
               </TableHead>
 
-              <TableHead className="text-right">
+              <TableHead className="text-start">
                 {t("rolesTable.status")}
               </TableHead>
 
-              <TableHead className="text-right">
+              <TableHead className="text-start">
                 {t("rolesTable.enabled")}
               </TableHead>
 
