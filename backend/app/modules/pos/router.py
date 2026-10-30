@@ -198,19 +198,14 @@ def _assert_warehouse_access(db: Session, company_id: int, warehouse_id: int | N
 
 
 def _visible_branch_ids(db: Session, company_id: int, user: User) -> list[int] | None:
-    """Return branch grants for list endpoints; None means platform-wide access."""
+    """Limit branch lists to the branch selected for this request."""
     if user.is_platform_admin:
         return None
-    return list(db.scalars(
-        select(BranchUserMembership.branch_id)
-        .join(Branch, Branch.id == BranchUserMembership.branch_id)
-        .where(
-            Branch.company_id == company_id,
-            Branch.is_active.is_(True),
-            BranchUserMembership.user_id == user.id,
-            BranchUserMembership.is_active.is_(True),
-        )
-    ).all())
+    context = get_optional_request_context()
+    if context is None or context.branch_id is None:
+        raise HTTPException(400, "Select a branch using X-Branch-ID")
+    require_branch_access(db, company_id, context.branch_id, user)
+    return [context.branch_id]
 
 
 def _terminal(db: Session, company_id: int, terminal_id: int, user: User) -> PosTerminal:
@@ -872,13 +867,11 @@ def update_route(route_id: int, payload: RouteStatusUpdate, company_id: int = Qu
         )
     )
     if not current_user.is_platform_admin:
-        route_query = route_query.join(
-            BranchUserMembership,
-            BranchUserMembership.branch_id == Branch.id,
-        ).where(
-            BranchUserMembership.user_id == current_user.id,
-            BranchUserMembership.is_active.is_(True),
-        )
+        context = get_optional_request_context()
+        if context is None or context.branch_id is None:
+            raise HTTPException(400, "Select a branch using X-Branch-ID before updating POS routes")
+        require_branch_access(db, company_id, context.branch_id, current_user)
+        route_query = route_query.where(Branch.id == context.branch_id)
     route = db.scalar(route_query.with_for_update())
     if route is None:
         raise HTTPException(404, "POS production route not found")
