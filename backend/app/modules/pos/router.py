@@ -259,6 +259,9 @@ def open_shift(payload: ShiftOpen, current_user: User = Depends(get_current_user
     ).with_for_update())
     if terminal is None:
         raise HTTPException(404, "Active POS terminal not found")
+    branch = require_branch_access(db, current_user, terminal.branch_id)
+    if branch.company_id != payload.company_id:
+        raise HTTPException(404, "Active POS terminal not found")
     existing = db.scalar(select(PosCashierShift).where(
         PosCashierShift.terminal_id == terminal.id,
         PosCashierShift.status == "open",
@@ -299,6 +302,9 @@ def close_shift(
     ).with_for_update())
     if shift is None:
         raise HTTPException(404, "Open cashier shift not found")
+    branch = require_branch_access(db, current_user, shift.branch_id)
+    if branch.company_id != company_id:
+        raise HTTPException(404, "Open cashier shift not found")
     cash_sales = db.scalar(select(func.coalesce(func.sum(CommercePayment.amount), 0)).join(
         SalesDocument,
         and_(
@@ -338,7 +344,11 @@ def sales(
 @router.get("/outlets")
 def list_outlets(company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company(db, company_id, current_user)
-    return list(db.scalars(select(PosOutlet).where(PosOutlet.company_id == company_id).order_by(PosOutlet.name)).all())
+    stmt = select(PosOutlet).where(PosOutlet.company_id == company_id)
+    allowed = _branch_scope_ids(db, current_user)
+    if allowed is not None:
+        stmt = stmt.where(PosOutlet.branch_id.in_(allowed))
+    return list(db.scalars(stmt.order_by(PosOutlet.name)).all())
 
 
 @router.post("/outlets", status_code=201, dependencies=[Depends(require_permission("commerce.write"))])
@@ -374,7 +384,14 @@ def assign_outlet_warehouse(outlet_id: int, warehouse_id: int = Query(..., gt=0)
 @router.get("/warehouses")
 def list_warehouses(company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company(db, company_id, current_user)
-    return list(db.scalars(select(InventoryWarehouse).where(InventoryWarehouse.company_id == company_id, InventoryWarehouse.is_active.is_(True)).order_by(InventoryWarehouse.is_central.desc(), InventoryWarehouse.name)).all())
+    stmt = select(InventoryWarehouse).where(
+        InventoryWarehouse.company_id == company_id,
+        InventoryWarehouse.is_active.is_(True),
+    )
+    allowed = _branch_scope_ids(db, current_user)
+    if allowed is not None:
+        stmt = stmt.where(InventoryWarehouse.branch_id.in_(allowed))
+    return list(db.scalars(stmt.order_by(InventoryWarehouse.is_central.desc(), InventoryWarehouse.name)).all())
 
 
 @router.get("/stations")
@@ -384,6 +401,9 @@ def list_stations(company_id: int = Query(..., gt=0), outlet_id: int | None = Qu
         Branch.company_id == company_id,
         PreparationStation.is_active.is_(True),
     )
+    allowed = _branch_scope_ids(db, current_user)
+    if allowed is not None:
+        q = q.where(Branch.id.in_(allowed))
     if outlet_id:
         q = q.join(PosOutletStation, PosOutletStation.station_id == PreparationStation.id).where(
             PosOutletStation.outlet_id == outlet_id,
@@ -440,6 +460,9 @@ def link_outlet_station(payload: OutletStationLink, company_id: int = Query(...,
 def list_terminals(company_id: int = Query(..., gt=0), outlet_id: int | None = Query(default=None, gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company(db, company_id, current_user)
     q = select(PosTerminal).where(PosTerminal.company_id == company_id, PosTerminal.is_active.is_(True))
+    allowed = _branch_scope_ids(db, current_user)
+    if allowed is not None:
+        q = q.where(PosTerminal.branch_id.in_(allowed))
     if outlet_id:
         q = q.where(PosTerminal.outlet_id == outlet_id)
     return list(db.scalars(q.order_by(PosTerminal.name)).all())
