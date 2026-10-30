@@ -52,7 +52,7 @@ export default function HrPage() {
 
   const load = useCallback(async () => {
     if (!companyId) {
-      setError("{t("hr.activeCompanyRequired")}");
+      setError(t("hr.activeCompanyRequired"));
       return;
     }
     setError("");
@@ -81,7 +81,7 @@ export default function HrPage() {
         setCompanyTimezone("Africa/Cairo");
       }
     } catch (e: any) {
-      setError(e?.response?.data?.detail || "{t("hr.loadFailed")}");
+      setError(e?.response?.data?.detail || {t("hr.loadFailed")});
     }
   }, [companyId]);
 
@@ -112,7 +112,7 @@ export default function HrPage() {
         check_out_time: attendanceForm.check_out_time || null,
       }, { params: { company_id: companyId } });
       await load();
-    } catch (e: any) { setError(e?.response?.data?.detail || "{t("hr.attendanceFailed")}"); }
+    } catch (e: any) { setError(e?.response?.data?.detail || {t("hr.attendanceFailed")}); }
     finally { setBusy(false); }
   }
 
@@ -142,7 +142,7 @@ export default function HrPage() {
       }, { params: { company_id: companyId } });
       setCorrectionTarget(null);
       await load();
-    } catch (e: any) { setError(e?.response?.data?.detail || "{t("hr.correctionSubmitFailed")}"); }
+    } catch (e: any) { setError(e?.response?.data?.detail || {t("hr.correctionSubmitFailed")}); }
     finally { setBusy(false); }
   }
 
@@ -158,7 +158,7 @@ export default function HrPage() {
       }, { params: { company_id: companyId } });
       setOvertimeForm({ ...overtimeForm, reason: "" });
       await load();
-    } catch (e: any) { setError(e?.response?.data?.detail || "{t("hr.overtimeSubmitFailed")}"); }
+    } catch (e: any) { setError(e?.response?.data?.detail || {t("hr.overtimeSubmitFailed")}); }
     finally { setBusy(false); }
   }
 
@@ -168,7 +168,7 @@ export default function HrPage() {
     try {
       await client.post(`/hr/overtime-requests/${id}/decision`, { decision }, { params: { company_id: companyId } });
       await load();
-    } catch (e: any) { setError(e?.response?.data?.detail || "{t("hr.overtimeDecisionFailed")}"); }
+    } catch (e: any) { setError(e?.response?.data?.detail || {t("hr.overtimeDecisionFailed")}); }
     finally { setBusy(false); }
   }
 
@@ -178,7 +178,7 @@ export default function HrPage() {
     try {
       await client.post(`/hr/attendance-corrections/${id}/decision`, { decision }, { params: { company_id: companyId } });
       await load();
-    } catch (e: any) { setError(e?.response?.data?.detail || "{t("hr.correctionDecisionFailed")}"); }
+    } catch (e: any) { setError(e?.response?.data?.detail || {t("hr.correctionDecisionFailed")}); }
     finally { setBusy(false); }
   }
 
@@ -193,7 +193,7 @@ export default function HrPage() {
         preferred_language: user.preferred_language || "ar",
       }, { params: { company_id: companyId } });
       await load();
-    } catch (e: any) { setError(e?.response?.data?.detail || "{t("hr.saveWorkforceFailed")}"); }
+    } catch (e: any) { setError(e?.response?.data?.detail || {t("hr.saveWorkforceFailed")}); }
     finally { setBusy(false); }
   }
 
@@ -205,7 +205,7 @@ export default function HrPage() {
       await client.post("/enterprise/employees", { ...employeeForm, company_id: companyId, basic_salary: Number(employeeForm.basic_salary) });
       setEmployeeForm({ employee_no: "", name: "", hire_date: companyDate || "", basic_salary: "0" });
       await load();
-    } catch (e: any) { setError(e?.response?.data?.detail || "{t("hr.addEmployeeFailed")}"); }
+    } catch (e: any) { setError(e?.response?.data?.detail || {t("hr.addEmployeeFailed")}); }
     finally { setBusy(false); }
   }
 
@@ -220,7 +220,7 @@ export default function HrPage() {
         entitled_days: Number(balanceForm.entitled_days),
       }, { params: { company_id: companyId } });
       await load();
-    } catch (e: any) { setError(e?.response?.data?.detail || "{t("hr.saveLeaveBalanceFailed")}"); }
+    } catch (e: any) { setError(e?.response?.data?.detail || {t("hr.saveLeaveBalanceFailed")}); }
     finally { setBusy(false); }
   }
 
@@ -237,7 +237,7 @@ export default function HrPage() {
       }, { params: { company_id: companyId } });
       setLeaveForm({ ...leaveForm, reason: "" });
       await load();
-    } catch (e: any) { setError(e?.response?.data?.detail || "{t("hr.leaveSubmitFailed")}"); }
+    } catch (e: any) { setError(e?.response?.data?.detail || {t("hr.leaveSubmitFailed")}); }
     finally { setBusy(false); }
   }
 
@@ -247,7 +247,7 @@ export default function HrPage() {
     try {
       await client.post(`/hr/leave-requests/${requestId}/decision`, { decision }, { params: { company_id: companyId } });
       await load();
-    } catch (e: any) { setError(e?.response?.data?.detail || "{t("hr.leaveDecisionFailed")}"); }
+    } catch (e: any) { setError(e?.response?.data?.detail || {t("hr.leaveDecisionFailed")}); }
     finally { setBusy(false); }
   }
 
@@ -265,10 +265,10 @@ export default function HrPage() {
     <div className="grid gap-6 xl:grid-cols-3">
       <form onSubmit={submitEmployee} className="space-y-3 rounded-2xl border bg-card p-5">
         <h2 className="font-semibold">{t("hr.addEmployee")}</h2>
-        <input required value={employeeForm.employee_no} onChange={e => setEmployeeForm({ ...employeeForm, employee_no: e.target.value })} placeholder="{t("hr.employeeNumber")}" className={fieldClass} />
-        <input required value={employeeForm.name} onChange={e => setEmployeeForm({ ...employeeForm, name: e.target.value })} placeholder="{t("hr.employeeName")}" className={fieldClass} />
+        <input required value={employeeForm.employee_no} onChange={e => setEmployeeForm({ ...employeeForm, employee_no: e.target.value })} placeholder={t("hr.employeeNumber")} className={fieldClass} />
+        <input required value={employeeForm.name} onChange={e => setEmployeeForm({ ...employeeForm, name: e.target.value })} placeholder={t("hr.employeeName")} className={fieldClass} />
         <input required type="date" value={employeeForm.hire_date} onChange={e => setEmployeeForm({ ...employeeForm, hire_date: e.target.value })} className={fieldClass} />
-        <input required type="number" min="0" step="0.01" value={employeeForm.basic_salary} onChange={e => setEmployeeForm({ ...employeeForm, basic_salary: e.target.value })} placeholder="{t("hr.basicSalary")}" className={fieldClass} />
+        <input required type="number" min="0" step="0.01" value={employeeForm.basic_salary} onChange={e => setEmployeeForm({ ...employeeForm, basic_salary: e.target.value })} placeholder={t("hr.basicSalary")} className={fieldClass} />
         <button disabled={busy || !companyId} className="w-full rounded-lg bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50">{t("hr.saveEmployee")}</button>
       </form>
 
@@ -280,7 +280,7 @@ export default function HrPage() {
         <select value={balanceForm.leave_type} onChange={e => setBalanceForm({ ...balanceForm, leave_type: e.target.value })} className={fieldClass}>
           <option value="annual">{t("hr.leaveTypes.annual")}</option><option value="sick">{t("hr.leaveTypes.sick")}</option><option value="other">{t("hr.leaveTypes.other")}</option>
         </select>
-        <input required type="number" min="0" step="0.01" value={balanceForm.entitled_days} onChange={e => setBalanceForm({ ...balanceForm, entitled_days: e.target.value })} placeholder="{t("hr.entitledDays")}" className={fieldClass} />
+        <input required type="number" min="0" step="0.01" value={balanceForm.entitled_days} onChange={e => setBalanceForm({ ...balanceForm, entitled_days: e.target.value })} placeholder={t("hr.entitledDays")} className={fieldClass} />
         <button disabled={busy || !companyId || !employees.length} className="w-full rounded-lg border px-4 py-2 disabled:opacity-50">{t("hr.saveBalance")}</button>
       </form>
 
@@ -296,8 +296,8 @@ export default function HrPage() {
           <label className="text-xs">{t("hr.from")}<input required type="date" value={leaveForm.start_date} onChange={e => setLeaveForm({ ...leaveForm, start_date: e.target.value })} className={fieldClass} /></label>
           <label className="text-xs">{t("hr.to")}<input required type="date" value={leaveForm.end_date} onChange={e => setLeaveForm({ ...leaveForm, end_date: e.target.value })} className={fieldClass} /></label>
         </div>
-        <input required type="number" min="0.01" step="0.01" value={leaveForm.requested_days} onChange={e => setLeaveForm({ ...leaveForm, requested_days: e.target.value })} placeholder="{t("hr.daysCount")}" className={fieldClass} />
-        <textarea value={leaveForm.reason} onChange={e => setLeaveForm({ ...leaveForm, reason: e.target.value })} placeholder="{t("hr.optionalReason")}" className={fieldClass} />
+        <input required type="number" min="0.01" step="0.01" value={leaveForm.requested_days} onChange={e => setLeaveForm({ ...leaveForm, requested_days: e.target.value })} placeholder={t("hr.daysCount")} className={fieldClass} />
+        <textarea value={leaveForm.reason} onChange={e => setLeaveForm({ ...leaveForm, reason: e.target.value })} placeholder={t("hr.optionalReason")} className={fieldClass} />
         <button disabled={busy || !companyId || !employees.length} className="w-full rounded-lg bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50">{t("hr.submitRequest")}</button>
       </form>
     </div>
@@ -321,7 +321,7 @@ export default function HrPage() {
         <h3 className="font-medium md:col-span-4">{t("hr.correctRecord")} #{correctionTarget}</h3>
         <label className="text-xs">{t("hr.checkIn")}<input required type="datetime-local" value={correctionForm.check_in_time} onChange={e => setCorrectionForm({ ...correctionForm, check_in_time: e.target.value })} className={fieldClass} /></label>
         <label className="text-xs">{t("hr.checkOut")}<input type="datetime-local" value={correctionForm.check_out_time} onChange={e => setCorrectionForm({ ...correctionForm, check_out_time: e.target.value })} className={fieldClass} /></label>
-        <input required value={correctionForm.reason} onChange={e => setCorrectionForm({ ...correctionForm, reason: e.target.value })} placeholder="{t("hr.correctionReason")}" className={fieldClass} />
+        <input required value={correctionForm.reason} onChange={e => setCorrectionForm({ ...correctionForm, reason: e.target.value })} placeholder={t("hr.correctionReason")} className={fieldClass} />
         <div className="flex gap-2"><button disabled={busy} className="rounded bg-primary px-3 py-2 text-primary-foreground">{t("hr.send")}</button><button type="button" onClick={() => setCorrectionTarget(null)} className="rounded border px-3 py-2">{t("hr.cancel")}</button></div>
       </form>}
     </section>
@@ -337,8 +337,8 @@ export default function HrPage() {
       <select required value={overtimeForm.attendance_record_id} onChange={e => setOvertimeForm({ ...overtimeForm, attendance_record_id: e.target.value })} className={fieldClass}>
         <option value="">{t("hr.attendanceLog")}</option>{attendance.filter(record => record.check_out_at).map(record => <option key={record.id} value={record.id}>{employeeName(record.employee_id)} · {formatCompanyDate(record.attendance_date, dateFormat)}</option>)}
       </select>
-      <input required type="number" min="0.01" step="0.01" value={overtimeForm.requested_hours} onChange={e => setOvertimeForm({ ...overtimeForm, requested_hours: e.target.value })} placeholder="{t("hr.hours")}" className={fieldClass} />
-      <input required value={overtimeForm.reason} onChange={e => setOvertimeForm({ ...overtimeForm, reason: e.target.value })} placeholder="{t("hr.overtimeReason")}" className={fieldClass} />
+      <input required type="number" min="0.01" step="0.01" value={overtimeForm.requested_hours} onChange={e => setOvertimeForm({ ...overtimeForm, requested_hours: e.target.value })} placeholder={t("hr.hours")} className={fieldClass} />
+      <input required value={overtimeForm.reason} onChange={e => setOvertimeForm({ ...overtimeForm, reason: e.target.value })} placeholder={t("hr.overtimeReason")} className={fieldClass} />
       <button disabled={busy || !companyId || !attendance.some(record => record.check_out_at)} className="rounded-lg bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50">{t("hr.submitRequest")}</button>
     </form>
 
