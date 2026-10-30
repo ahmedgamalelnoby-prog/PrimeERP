@@ -1,4 +1,5 @@
 import {
+  Building2,
   KeyRound,
   Loader2,
   Pencil,
@@ -32,6 +33,7 @@ interface UserTableProps {
   onDelete: (user: User) => void;
   onToggleStatus: (user: User) => void;
   onResetPassword: (user: User) => void;
+  onManageCompanyAccess: (user: User) => void;
 }
 
 function getUserDisplayName(user: User): string {
@@ -72,6 +74,7 @@ export default function UserTable({
   onDelete,
   onToggleStatus,
   onResetPassword,
+  onManageCompanyAccess,
 }: UserTableProps) {
   const dateFormat = useCompanyDateFormat();
   const { t, i18n } = useTranslation();
@@ -258,6 +261,18 @@ export default function UserTable({
 
                   <TableCell>
                     <div className="flex items-center justify-center gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        disabled={processing}
+                        onClick={() => onManageCompanyAccess(user)}
+                        title={t("usersTable.manageCompanyAccess")}
+                        aria-label={t("usersTable.manageCompanyAccess")}
+                      >
+                        <Building2 className="h-4 w-4" />
+                      </Button>
+
                       <Button
                         type="button"
                         variant="ghost"
