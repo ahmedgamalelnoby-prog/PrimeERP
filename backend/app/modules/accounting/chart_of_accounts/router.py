@@ -4,10 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.context import get_effective_tenant_id
+from app.core.context import get_optional_request_context
+from app.core.context.access import require_company_access
 from app.core.permissions import require_permission
 from app.database.session import get_db
-from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 
@@ -32,20 +32,13 @@ def _company_id(company_id: int) -> int:
 
 
 def _authorized_company(db: Session, company_id: int, current_user: User) -> int:
-    """Resolve the requested company only inside the user's effective tenant."""
+    """Resolve the selected company and require company-level accounting access."""
     company_id = _company_id(company_id)
-    tenant_id = get_effective_tenant_id(current_user)
-    company = db.scalar(
-        select(Company.id).where(
-            Company.id == company_id,
-            Company.tenant_id == tenant_id,
-            Company.is_active.is_(True),
-        )
-    )
-    if company is None:
-        # Do not disclose whether a company exists in another tenant.
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
-    return company
+    context = get_optional_request_context()
+    if context is None or context.branch_id is not None:
+        raise HTTPException(status_code=400, detail="Chart of accounts is company-wide; omit X-Branch-ID")
+    require_company_access(db, company_id, current_user)
+    return company_id
 
 
 @router.get(
