@@ -4,6 +4,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    Table,
     Text,
     TIMESTAMP,
     UniqueConstraint,
@@ -12,6 +13,15 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.database.base import Base
+
+
+user_company_access = Table(
+    "user_company_access",
+    Base.metadata,
+    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+    Column("company_id", Integer, ForeignKey("companies.id", ondelete="CASCADE"), primary_key=True),
+    Column("is_default", Boolean, nullable=False, default=False, server_default="false"),
+)
 
 
 class Company(Base):
