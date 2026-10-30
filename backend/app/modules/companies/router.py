@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.context import get_effective_tenant_id, get_optional_request_context
 from app.core.permissions import require_permission
+from app.core.permissions.checker import can_assign_role
 from app.database.session import get_db
 from app.modules.companies.models import Company
 from app.modules.companies.membership import CompanyUserMembership
@@ -101,9 +102,8 @@ def grant_company_membership(
 ):
     company = _get_company(db, company_id, current_user)
     if role_id is not None:
-        role = db.get(Role, role_id)
-        if role is None or not role.is_active:
-            raise HTTPException(status_code=404, detail="Active role not found")
+        if not can_assign_role(current_user, role_id, db):
+            raise HTTPException(status_code=403, detail="You cannot assign a role beyond your own permissions")
     member_user = db.scalar(
         select(User).where(
             User.id == user_id,
