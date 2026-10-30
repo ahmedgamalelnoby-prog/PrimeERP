@@ -168,7 +168,7 @@ def list_menus(company_id: int = Query(..., gt=0), db: Session = Depends(get_db)
     _company_for_user(db, company_id, current_user)
     try:
         menus = catalog_service.list_menus(db, company_id)
-        allowed = _branch_scope_ids = accessible_branch_ids(db, current_user)
+        allowed = accessible_branch_ids(db, current_user)
         if can_manage_all_branches(db, current_user):
             return menus
         company_branch_ids = set(db.scalars(
