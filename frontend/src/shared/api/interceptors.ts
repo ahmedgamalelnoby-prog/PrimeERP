@@ -43,8 +43,13 @@ client.interceptors.request.use((config) => {
   else delete config.headers["X-Tenant-ID"];
   if (companyId) config.headers["X-Company-ID"] = companyId;
   else delete config.headers["X-Company-ID"];
-  if (branchId) config.headers["X-Branch-ID"] = branchId;
-  else delete config.headers["X-Branch-ID"];
+  if (config.headers["X-Branch-ID"] === "") {
+    delete config.headers["X-Branch-ID"];
+  } else if (branchId) {
+    config.headers["X-Branch-ID"] = branchId;
+  } else {
+    delete config.headers["X-Branch-ID"];
+  }
   return config;
 });
 
