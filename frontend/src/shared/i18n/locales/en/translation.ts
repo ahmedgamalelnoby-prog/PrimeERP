@@ -151,7 +151,7 @@ const enTranslation = {
     active: "Active roles",
     assignedUsers: "Assigned users",
     searchPlaceholder: "Search by role name or description...",
-    confirmDelete: "Do you want to delete the role "{{name}}"?",
+    confirmDelete: "Do you want to delete the role \"{{name}}\"?",
     errors: {
       deleteAssigned: "This role cannot be deleted because it is assigned to {{count}} users."
     }
@@ -169,6 +169,7 @@ const enTranslation = {
     enabled: "Enable role",
     actions: "Actions",
     noDescription: "No description",
+    permissionCount: "{{count}}",
     permissionCount_one: "{{count}} permission",
     permissionCount_other: "{{count}} permissions",
     edit: "Edit role",
