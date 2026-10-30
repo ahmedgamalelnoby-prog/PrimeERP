@@ -241,8 +241,11 @@ class UserService(BaseService[UserRepository]):
             if duplicate_email_id is not None:
                 raise ValueError("Cannot restore user because the email is already assigned within this tenant.")
 
+            # Restoring a deleted account must not silently grant access.
+            # Keep it inactive; an authorized administrator can reactivate it
+            # through the dedicated status endpoint after reviewing the account.
             repository.restore(db, user)
-            user.is_active = True
+            user.is_active = False
             record_audit_event(
                 db,
                 action="user.restore",
