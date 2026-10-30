@@ -11,6 +11,7 @@ from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.inventory.costing.schemas import InventoryValuationResponse
 from app.modules.inventory.costing.service import inventory_costing_service
+from app.modules.inventory.warehouses.models import InventoryWarehouse
 
 router = APIRouter(
     prefix="/inventory/costing",
@@ -30,4 +31,21 @@ def inventory_valuation(
     current_user: User = Depends(get_current_user),
 ):
     _company_for_user(db, company_id, current_user)
-    return inventory_costing_service.valuation(db, company_id, warehouse_id, item_id)
+    branch_id = None
+    if not current_user.is_platform_admin:
+        context = get_optional_request_context()
+        if context is None or context.branch_id is None:
+            raise HTTPException(400, "Select a branch using X-Branch-ID before viewing inventory valuation")
+        branch_id = context.branch_id
+        require_branch_access(db, company_id, branch_id, current_user)
+    if warehouse_id is not None:
+        warehouse = db.scalar(select(InventoryWarehouse).where(
+            InventoryWarehouse.id == warehouse_id,
+            InventoryWarehouse.company_id == company_id,
+            InventoryWarehouse.is_active.is_(True),
+        ))
+        if warehouse is None:
+            raise HTTPException(404, "Warehouse not found")
+        if warehouse.branch_id is not None:
+            require_branch_access(db, company_id, warehouse.branch_id, current_user)
+    return inventory_costing_service.valuation(db, company_id, warehouse_id, item_id, branch_id=branch_id)
