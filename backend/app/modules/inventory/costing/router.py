@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.context import get_effective_tenant_id
+from app.core.context.access import require_company_access, require_branch_access
+from app.core.context import get_optional_request_context
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
@@ -19,14 +20,7 @@ router = APIRouter(
 
 
 def _company_for_user(db: Session, company_id: int, user: User) -> Company:
-    if get_effective_tenant_id(user) is None:
-        raise HTTPException(status_code=403, detail="User is not assigned to a tenant")
-    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == get_effective_tenant_id(user), Company.is_active.is_(True)))
-    if company is None:
-        raise HTTPException(status_code=403, detail="Company is outside the current tenant")
-    return company
-
-
+    return require_company_access(db, company_id, user)
 @router.get("/valuation", response_model=InventoryValuationResponse)
 def inventory_valuation(
     company_id: int = Query(..., gt=0),
