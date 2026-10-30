@@ -62,7 +62,18 @@ def _assert_move_access(db: Session, company_id: int, move: InventoryStockMove, 
 @router.get("", response_model=list[StockMoveResponse], dependencies=[Depends(require_permission("inventory.access"))])
 def list_stock_moves(company_id: int = Query(..., gt=0), item_id: int | None = Query(default=None, gt=0), variant_id: int | None = Query(default=None, gt=0), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _company_for_user(db, company_id, user)
-    return inventory_stock_move_service.list(db, company_id, item_id, variant_id)
+    moves = inventory_stock_move_service.list(db, company_id, item_id, variant_id)
+    if user.is_platform_admin:
+        return moves
+    visible = []
+    for move in moves:
+        try:
+            _assert_move_access(db, company_id, move, user)
+            visible.append(move)
+        except HTTPException as exc:
+            if exc.status_code not in {403, 404}:
+                raise
+    return visible
 
 
 @router.get("/accounting-config", response_model=InventoryAccountingConfigResponse, dependencies=[Depends(require_permission("inventory.access"))])
@@ -71,12 +82,14 @@ def get_accounting_config(company_id: int = Query(..., gt=0), db: Session = Depe
     config = inventory_stock_move_service.get_accounting_config(db, tenant_id=get_effective_tenant_id(user), company_id=company_id)
     if config is None:
         raise HTTPException(404, "Inventory accounting configuration not found")
+    require_branch_access(db, company_id, config.branch_id, user)
     return config
 
 
 @router.put("/accounting-config", response_model=InventoryAccountingConfigResponse, dependencies=[Depends(require_permission("inventory.write"))])
 def save_accounting_config(payload: InventoryAccountingConfigCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _company_for_user(db, payload.company_id, user)
+    require_branch_access(db, payload.company_id, payload.branch_id, user)
     try:
         config = inventory_stock_move_service.save_accounting_config(db, tenant_id=get_effective_tenant_id(user), payload=payload)
         db.commit()
@@ -90,6 +103,7 @@ def save_accounting_config(payload: InventoryAccountingConfigCreate, db: Session
 @router.post("", response_model=StockMoveResponse, status_code=201, dependencies=[Depends(require_permission("inventory.write"))])
 def create_stock_move(payload: StockMoveCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _company_for_user(db, payload.company_id, user)
+    _assert_location_pair_access(db, payload.company_id, (payload.source_location_id, payload.destination_location_id), user)
     try:
         move = inventory_stock_move_service.create_draft(db, payload)
         db.commit()
@@ -103,6 +117,13 @@ def create_stock_move(payload: StockMoveCreate, db: Session = Depends(get_db), u
 @router.post("/{move_id}/post", response_model=StockMoveResponse, dependencies=[Depends(require_permission("inventory.post"))])
 def post_stock_move(move_id: int, company_id: int = Query(..., gt=0), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _company_for_user(db, company_id, user)
+    existing_move = db.scalar(select(InventoryStockMove).where(
+        InventoryStockMove.id == move_id,
+        InventoryStockMove.company_id == company_id,
+    ))
+    if existing_move is None:
+        raise HTTPException(404, "Stock movement not found")
+    _assert_move_access(db, company_id, existing_move, user)
     try:
         move = inventory_stock_move_service.post(db, tenant_id=get_effective_tenant_id(user), company_id=company_id, move_id=move_id, user_id=user.id)
         db.commit()
@@ -116,6 +137,13 @@ def post_stock_move(move_id: int, company_id: int = Query(..., gt=0), db: Sessio
 @router.post("/{move_id}/reverse", response_model=StockMoveResponse, dependencies=[Depends(require_permission("inventory.post"))])
 def reverse_stock_move(move_id: int, company_id: int = Query(..., gt=0), reversal_date: date | None = Query(default=None), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _company_for_user(db, company_id, user)
+    existing_move = db.scalar(select(InventoryStockMove).where(
+        InventoryStockMove.id == move_id,
+        InventoryStockMove.company_id == company_id,
+    ))
+    if existing_move is None:
+        raise HTTPException(404, "Stock movement not found")
+    _assert_move_access(db, company_id, existing_move, user)
     try:
         move = inventory_stock_move_service.reverse(db, tenant_id=get_effective_tenant_id(user), company_id=company_id, move_id=move_id, user_id=user.id, reversal_date=reversal_date)
         # journal_service.reverse commits as part of its atomic reversal. For
