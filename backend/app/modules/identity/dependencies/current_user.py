@@ -13,10 +13,13 @@ from app.modules.platform.subscriptions.service import subscription_service
 from app.modules.saas.models import Tenant
 from app.modules.companies.models import Company
 from app.modules.companies.membership import CompanyUserMembership
+from app.modules.branches.models import Branch
+from app.modules.branches.membership import BranchUserMembership
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/identity/login")
 TENANT_CONTEXT_HEADER = "X-Tenant-ID"
 COMPANY_CONTEXT_HEADER = "X-Company-ID"
+BRANCH_CONTEXT_HEADER = "X-Branch-ID"
 
 
 def _resolve_platform_tenant(request_context, request_tenant_id: str | None, db: Session) -> Tenant | None:
@@ -95,11 +98,65 @@ def _resolve_company_context(request_context, request_company_id: str | None, te
     request_context.company_id = company.id
 
 
+
+def _resolve_branch_context(request_context, request_branch_id: str | None, tenant_id: int | None, db: Session) -> None:
+    """Validate the requested branch within the selected company and membership."""
+    request_context.branch_id = None
+    if not request_branch_id:
+        return
+    if tenant_id is None or request_context.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Select a company before selecting a branch",
+        )
+    try:
+        branch_id = int(request_branch_id.strip())
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="X-Branch-ID must be a valid branch ID",
+        ) from exc
+    if branch_id <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="X-Branch-ID must be a positive branch ID",
+        )
+
+    branch = db.query(Branch).filter(
+        Branch.id == branch_id,
+        Branch.tenant_id == tenant_id,
+        Branch.company_id == request_context.company_id,
+        Branch.is_active.is_(True),
+    ).first()
+    if branch is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Branch not found or inactive in the selected company",
+        )
+
+    if request_context.user_id is not None:
+        authenticated_user = db.get(User, request_context.user_id)
+        if authenticated_user is None or not authenticated_user.is_platform_admin:
+            membership = db.query(BranchUserMembership.id).filter(
+                BranchUserMembership.branch_id == branch.id,
+                BranchUserMembership.user_id == request_context.user_id,
+                BranchUserMembership.is_active.is_(True),
+            ).first()
+            if membership is None:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You do not have access to the selected branch",
+                )
+
+    request_context.branch_id = branch.id
+
+
 def _authenticate_user(
     token: str,
     db: Session,
     tenant_context_header: str | None = None,
     company_context_header: str | None = None,
+    branch_context_header: str | None = None,
 ) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -156,6 +213,7 @@ def _authenticate_user(
 
     effective_tenant_id = context.tenant_id
     _resolve_company_context(context, company_context_header, effective_tenant_id, db)
+    _resolve_branch_context(context, branch_context_header, effective_tenant_id, db)
     return user
 
 
@@ -164,8 +222,9 @@ def get_current_user(
     db: Session = Depends(get_db),
     tenant_context_header: str | None = Header(default=None, alias=TENANT_CONTEXT_HEADER),
     company_context_header: str | None = Header(default=None, alias=COMPANY_CONTEXT_HEADER),
+    branch_context_header: str | None = Header(default=None, alias=BRANCH_CONTEXT_HEADER),
 ) -> User:
-    user = _authenticate_user(token, db, tenant_context_header, company_context_header)
+    user = _authenticate_user(token, db, tenant_context_header, company_context_header, branch_context_header)
     if not user.is_platform_admin:
         tenant_id = user.tenant_id
         if tenant_id is None:
@@ -185,6 +244,7 @@ def get_current_user_for_billing(
     db: Session = Depends(get_db),
     tenant_context_header: str | None = Header(default=None, alias=TENANT_CONTEXT_HEADER),
     company_context_header: str | None = Header(default=None, alias=COMPANY_CONTEXT_HEADER),
+    branch_context_header: str | None = Header(default=None, alias=BRANCH_CONTEXT_HEADER),
 ) -> User:
     """Authenticate while allowing expired tenants to reach billing/subscription flows."""
-    return _authenticate_user(token, db, tenant_context_header, company_context_header)
+    return _authenticate_user(token, db, tenant_context_header, company_context_header, branch_context_header)
