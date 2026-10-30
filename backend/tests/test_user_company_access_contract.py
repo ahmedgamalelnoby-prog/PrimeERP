@@ -40,6 +40,6 @@ def test_user_company_assignment_endpoint_validates_tenant_and_default():
 
 
 def test_migration_backfills_existing_tenant_company_access():
-    source = read("../alembic/versions/20261107_user_company_access.py")
+    source = read("alembic/versions/20261107_user_company_access.py")
     assert "ROW_NUMBER() OVER (PARTITION BY u.id ORDER BY c.id)" in source
     assert "ranked.position = 1" in source
