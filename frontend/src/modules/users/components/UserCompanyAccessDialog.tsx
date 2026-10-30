@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 import type { User } from "../types/user";
+import UserBranchAccessPanel from "./UserBranchAccessPanel";
 import {
   userCompanyAccessApi,
   type AccessibleCompany,
@@ -250,6 +251,13 @@ export default function UserCompanyAccessDialog({
                   )}
                 </div>
               </div>
+              {active && user && (
+                <UserBranchAccessPanel
+                  companyId={selectedCompany.id}
+                  user={user}
+                  enabled={active}
+                />
+              )}
             )}
             {error && !selectedCompany && <p className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
           </div>
