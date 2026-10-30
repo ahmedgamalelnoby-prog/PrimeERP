@@ -369,6 +369,7 @@ const arTranslation = {
       loadBranchDetailsFailed: "تعذر تحميل عضوية المستخدم وأدواره على الفرع.",
       branchAccessTitle: "صلاحيات الفروع",
       branchAccessDescription: "تُمنح صلاحية الفرع فقط بعد تفعيل عضوية المستخدم في الشركة.",
+      companyMembershipRequired: "عضوية الشركة غير نشطة؛ يمكنك مراجعة أو إلغاء صلاحيات الفروع، لكن لا يمكن منح صلاحية فرع جديدة.",
       branch: "الفرع",
       selectBranch: "اختر الفرع",
       loadingBranches: "جارٍ تحميل الفروع...",
