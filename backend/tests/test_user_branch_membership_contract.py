@@ -133,3 +133,5 @@ def test_inventory_accounting_configuration_requires_branch_membership():
     save = router.split("def save_accounting_config(", 1)[1].split("@router.post", 1)[0]
     assert "require_branch_access(db, user, payload.branch_id)" in save
     assert "branch.company_id != payload.company_id" in save
+    read = router.split("def get_accounting_config(", 1)[1].split("@router.put", 1)[0]
+    assert "require_branch_access(db, user, config.branch_id)" in read
