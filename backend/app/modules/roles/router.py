@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database.session import get_db
+from app.core.module_engine.discovery import discover_manifests
 from app.modules.audit.service import record_audit_event
 from app.modules.identity.dependencies import get_current_user
 from app.modules.branches.membership import BranchUserMembership
@@ -129,8 +130,30 @@ def get_access_audit(db: Session = Depends(get_db)) -> dict:
         ).all()
     )
 
+    # Manifest declarations are metadata until a matching Permission row exists.
+    # Compare them explicitly so missing runtime grants are visible to platform admins.
+    manifest_permissions = sorted(
+        (manifest.key, permission_code)
+        for manifest in discover_manifests(("app.modules",))
+        for permission_code in manifest.permissions
+    )
+    registered_permission_names = {permission.name for permission in permissions}
+    missing_manifest_permissions = [
+        {"module_name": module_name, "permission_name": permission_code}
+        for module_name, permission_code in manifest_permissions
+        if permission_code not in registered_permission_names
+    ]
+
     role_items = []
     findings = []
+    for item in missing_manifest_permissions:
+        findings.append({
+            "code": "manifest_permission_not_registered",
+            "severity": "warning",
+            "module_name": item["module_name"],
+            "permission_name": item["permission_name"],
+            "count": 1,
+        })
     for role in roles:
         active_permissions = [p for p in role.permissions if p.is_active]
         inactive_permissions = [p for p in role.permissions if not p.is_active]
@@ -197,9 +220,13 @@ def get_access_audit(db: Session = Depends(get_db)) -> dict:
             "permissions_total": len(permissions),
             "permissions_active": sum(1 for permission in permissions if permission.is_active),
             "permissions_without_active_role": len(orphan_permissions),
+            "manifest_permissions_declared": len(manifest_permissions),
+            "manifest_permissions_registered": len(manifest_permissions) - len(missing_manifest_permissions),
+            "manifest_permissions_missing": len(missing_manifest_permissions),
             "findings_total": len(findings),
         },
         "roles": role_items,
+        "manifest_permissions_missing": missing_manifest_permissions,
         "permissions_without_active_role": [
             {
                 "id": permission.id,
