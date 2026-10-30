@@ -33,14 +33,18 @@ class ManufacturingWorkOrderService:
         return db.scalar(stmt)
 
     @staticmethod
-    def list(db: Session, *, company_id: int, allowed_branch_ids: list[int]):
+    def list(db: Session, *, company_id: int, allowed_branch_ids: list[int], include_central_warehouses: bool = False):
+        warehouse_scope = InventoryWarehouse.branch_id.in_(allowed_branch_ids)
+        if include_central_warehouses:
+            warehouse_scope = or_(warehouse_scope, InventoryWarehouse.branch_id.is_(None))
         visible_location_ids = (
             select(InventoryLocation.id)
             .join(InventoryWarehouse, InventoryWarehouse.id == InventoryLocation.warehouse_id)
             .where(
                 InventoryLocation.company_id == company_id,
                 InventoryWarehouse.company_id == company_id,
-                InventoryWarehouse.branch_id.in_(allowed_branch_ids),
+                InventoryWarehouse.is_active.is_(True),
+                warehouse_scope,
             )
         )
         return db.scalars(
