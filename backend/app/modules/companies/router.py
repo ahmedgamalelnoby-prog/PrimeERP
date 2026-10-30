@@ -9,6 +9,7 @@ from app.database.session import get_db
 from app.modules.companies.models import Company
 from app.modules.companies.membership import CompanyUserMembership
 from app.modules.companies.schemas import CompanyCreate, CompanyResponse, CompanyUpdate
+from app.modules.audit.service import record_audit_event
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.saas.entitlements import enforce_company_limit
@@ -115,6 +116,15 @@ def grant_company_membership(
     else:
         membership.is_active = True
         membership.assigned_by = current_user.id
+    record_audit_event(
+        db,
+        action="company.membership.grant",
+        entity_type="company_user_membership",
+        entity_id=membership.id,
+        user_id=current_user.id,
+        tenant_id=company.tenant_id,
+        metadata={"company_id": company.id, "member_user_id": member_user.id},
+    )
     db.commit()
     db.refresh(membership)
     return {
@@ -143,6 +153,15 @@ def revoke_company_membership(
     if membership is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company membership not found")
     membership.is_active = False
+    record_audit_event(
+        db,
+        action="company.membership.revoke",
+        entity_type="company_user_membership",
+        entity_id=membership.id,
+        user_id=current_user.id,
+        tenant_id=company.tenant_id,
+        metadata={"company_id": company.id, "member_user_id": user_id},
+    )
     db.commit()
     return None
 
