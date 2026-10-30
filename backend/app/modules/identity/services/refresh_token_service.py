@@ -70,6 +70,19 @@ class RefreshTokenService:
             instance.revoked_at = now
         return True
 
+    def revoke_user_tokens(self, db: Session, user_id: int, *, now: datetime | None = None) -> int:
+        """Revoke every active refresh session after a credential or account change."""
+        now = now or datetime.now(timezone.utc)
+        result = db.execute(
+            update(RefreshToken)
+            .where(
+                RefreshToken.user_id == user_id,
+                RefreshToken.is_active.is_(True),
+            )
+            .values(is_active=False, revoked_at=now)
+        )
+        return int(result.rowcount or 0)
+
     def revoke_family(self, db: Session, family_id: str, *, now: datetime | None = None) -> int:
         now = now or datetime.now(timezone.utc)
         result = db.execute(
