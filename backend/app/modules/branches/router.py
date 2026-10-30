@@ -98,17 +98,17 @@ def create_branch(payload: BranchCreate, db: Session = Depends(get_db), current_
     enforce_branch_limit(db, company.tenant_id)
     branch = Branch(tenant_id=company.tenant_id, **payload.model_dump())
     db.add(branch)
-    db.flush()
-    db.add(
-        UserBranchMembership(
-            tenant_id=branch.tenant_id,
-            user_id=current_user.id,
-            branch_id=branch.id,
-            assigned_by_user_id=current_user.id,
-            is_active=True,
-        )
-    )
     try:
+        db.flush()
+        db.add(
+            UserBranchMembership(
+                tenant_id=branch.tenant_id,
+                user_id=current_user.id,
+                branch_id=branch.id,
+                assigned_by_user_id=current_user.id,
+                is_active=branch.is_active,
+            )
+        )
         db.commit()
         db.refresh(branch)
     except IntegrityError as exc:
