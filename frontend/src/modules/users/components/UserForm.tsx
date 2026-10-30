@@ -258,11 +258,6 @@ export default function UserForm({
         updatePayload.password = form.password;
       }
 
-      console.log(
-        "Update user payload:",
-        updatePayload,
-      );
-
       success = await onUpdate(
         user.id,
         updatePayload,
@@ -275,11 +270,6 @@ export default function UserForm({
         // لا يتم إنشاء المستخدم كمدير منصة
         is_platform_admin: false,
       };
-
-      console.log(
-        "Create user payload:",
-        createPayload,
-      );
 
       success = await onCreate(createPayload);
     }
