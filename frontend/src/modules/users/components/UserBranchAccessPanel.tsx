@@ -19,12 +19,14 @@ interface UserBranchAccessPanelProps {
   companyId: number;
   user: User;
   enabled: boolean;
+  companyMembershipActive: boolean;
 }
 
 export default function UserBranchAccessPanel({
   companyId,
   user,
   enabled,
+  companyMembershipActive,
 }: UserBranchAccessPanelProps) {
   const { t } = useTranslation();
   const [branches, setBranches] = useState<AccessibleBranch[]>([]);
@@ -104,7 +106,7 @@ export default function UserBranchAccessPanel({
   }, [loadDetails]);
 
   async function grant() {
-    if (!branchId || !user.is_active) return;
+    if (!branchId || !user.is_active || !companyMembershipActive) return;
     setSaving(true);
     setError("");
     try {
@@ -158,6 +160,9 @@ export default function UserBranchAccessPanel({
         <h3 className="font-semibold">{t("users.companyAccess.branchAccessTitle")}</h3>
         <p className="mt-1 text-xs text-muted-foreground">{t("users.companyAccess.branchAccessDescription")}</p>
       </div>
+      {!companyMembershipActive && (
+        <p className="rounded-lg bg-amber-500/10 p-3 text-xs text-amber-800">{t("users.companyAccess.companyMembershipRequired")}</p>
+      )}
       <div className="space-y-2">
         <Label>{t("users.companyAccess.branch")}</Label>
         <Select value={branchId} onValueChange={setBranchId}>
@@ -190,7 +195,7 @@ export default function UserBranchAccessPanel({
             {roles.length === 0 && <p className="text-xs text-muted-foreground">{t("users.companyAccess.noAssignableRoles")}</p>}
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button type="button" size="sm" onClick={() => void grant()} disabled={saving || loading || !user.is_active}>
+            <Button type="button" size="sm" onClick={() => void grant()} disabled={saving || loading || !user.is_active || !companyMembershipActive}>
               {saving && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
               {active ? t("users.companyAccess.saveChanges") : t("users.companyAccess.grantBranchAccess")}
             </Button>
