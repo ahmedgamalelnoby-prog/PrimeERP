@@ -41,15 +41,21 @@ client.interceptors.request.use((config) => {
   if (token) config.headers.Authorization = `Bearer ${token}`;
   if (tenantId) config.headers["X-Tenant-ID"] = tenantId;
   else delete config.headers["X-Tenant-ID"];
-  if (config.headers["X-Company-ID"] === "") {
+  const explicitCompanyId = config.headers["X-Company-ID"];
+  if (explicitCompanyId === "") {
     delete config.headers["X-Company-ID"];
+  } else if (explicitCompanyId) {
+    // Preserve per-request context, e.g. replaying an offline checkout.
   } else if (companyId) {
     config.headers["X-Company-ID"] = companyId;
   } else {
     delete config.headers["X-Company-ID"];
   }
-  if (config.headers["X-Branch-ID"] === "") {
+  const explicitBranchId = config.headers["X-Branch-ID"];
+  if (explicitBranchId === "") {
     delete config.headers["X-Branch-ID"];
+  } else if (explicitBranchId) {
+    // Preserve per-request context, e.g. replaying an offline checkout.
   } else if (branchId) {
     config.headers["X-Branch-ID"] = branchId;
   } else {
