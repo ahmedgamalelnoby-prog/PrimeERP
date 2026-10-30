@@ -199,3 +199,42 @@ def test_audit_event_listing_is_limited_to_assigned_branches():
     assert "if not can_manage_all_branches(db, current_user):" in router
     assert "allowed_branch_ids = accessible_branch_ids(db, current_user)" in router
     assert "AuditEvent.branch_id.in_(allowed_branch_ids)" in router
+
+
+def test_shared_inventory_access_helper_resolves_warehouse_and_location_branch():
+    access = source("app/modules/inventory/access.py")
+    assert "def require_warehouse_access(" in access
+    assert "def require_location_access(" in access
+    assert "InventoryWarehouse.tenant_id == get_effective_tenant_id(user)" in access
+    assert "require_branch_access(db, user, warehouse.branch_id, require_active=require_active)" in access
+    assert "require_warehouse_access(db, user, company_id, location.warehouse_id" in access
+
+
+def test_inventory_locations_are_scoped_to_the_warehouse_branch():
+    router = source("app/modules/inventory/locations/router.py")
+    assert "require_warehouse_access(db, user, company_id, warehouse_id)" in router
+    assert "require_warehouse_access(db, user, payload.company_id, payload.warehouse_id)" in router
+    assert "require_location_access(db, user, company_id, location_id)" in router
+
+
+def test_inventory_transfers_require_access_to_both_warehouse_branches():
+    router = source("app/modules/inventory/transfers/router.py")
+    assert "require_warehouse_access(db, user, company_id, transfer.source_warehouse_id)" in router
+    assert "require_warehouse_access(db, user, company_id, transfer.destination_warehouse_id)" in router
+    assert "transfer.source_warehouse_id in allowed" in router
+    assert "transfer.destination_warehouse_id in allowed" in router
+
+
+def test_inventory_adjustments_are_scoped_by_their_location_warehouse():
+    router = source("app/modules/inventory/adjustments/router.py")
+    assert "require_location_access(db, user, company_id, adjustment.location_id)" in router
+    assert "InventoryLocation.warehouse_id.in_(allowed)" in router
+    assert "require_location_access(db, current_user, payload.company_id, payload.location_id)" in router
+
+
+def test_inventory_reservations_are_scoped_by_their_location_warehouse():
+    router = source("app/modules/inventory/reservations/router.py")
+    assert "require_location_access(db, user, company_id, reservation.location_id" in router
+    assert "InventoryLocation.warehouse_id.in_(allowed)" in router
+    assert "require_location_access(db, current_user, payload.company_id, payload.location_id)" in router
+    assert "require_active=False" in router
