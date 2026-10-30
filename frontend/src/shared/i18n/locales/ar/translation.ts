@@ -58,27 +58,6 @@ const arTranslation = {
   },
 
   common: {
-    "new": "جديد",
-    "closeNavigation": "إغلاق القائمة",
-    "workspace": "مساحة العمل",
-    "online": "متصل",
-    "searchNavigation": "ابحث في القائمة",
-    "searchScreens": "ابحث عن شاشة أو موديول...",
-    "clearSearch": "مسح البحث",
-    "mainNavigation": "القائمة الرئيسية",
-    "searchResults": "نتائج البحث",
-    "businessManagement": "إدارة الأعمال",
-    "noMatchingResults": "لا توجد نتائج مطابقة.",
-    "platformAdministrator": "مسؤول المنصة",
-    "secureWorkspace": "مساحة مؤسسية آمنة",
-    "organizationAccess": "صلاحيات وعزل بيانات حسب المؤسسة",
-    "integratedBusinessManagement": "منصة إدارة الأعمال المتكاملة",
-    "connectedBusinessOperations": "متابعة مترابطة للأعمال والعمليات",
-    "systemUser": "مستخدم النظام",
-    "user": "مستخدم"
-  },
-
-  commonExisting: {
     appName: "برايم ERP",
     appDescription: "منصة إدارة الأعمال",
 
@@ -95,6 +74,24 @@ const arTranslation = {
 
     secured:
       "النظام محمي باستخدام تسجيل دخول آمن واتصال مشفر.",
+    new: "جديد",
+    closeNavigation: "إغلاق القائمة",
+    workspace: "مساحة العمل",
+    online: "متصل",
+    searchNavigation: "ابحث في القائمة",
+    searchScreens: "ابحث عن شاشة أو موديول...",
+    clearSearch: "مسح البحث",
+    mainNavigation: "القائمة الرئيسية",
+    searchResults: "نتائج البحث",
+    businessManagement: "إدارة الأعمال",
+    noMatchingResults: "لا توجد نتائج مطابقة.",
+    platformAdministrator: "مسؤول المنصة",
+    secureWorkspace: "مساحة مؤسسية آمنة",
+    organizationAccess: "صلاحيات وعزل بيانات حسب المؤسسة",
+    integratedBusinessManagement: "منصة إدارة الأعمال المتكاملة",
+    connectedBusinessOperations: "متابعة مترابطة للأعمال والعمليات",
+    systemUser: "مستخدم النظام",
+    user: "مستخدم",
   },
 
   register: {
