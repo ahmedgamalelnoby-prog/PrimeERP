@@ -10,6 +10,7 @@ from app.database.session import get_db
 from app.modules.accounting.chart_of_accounts.models import AccountCombination
 from app.modules.accounting.journals.models import AccountingJournal
 from app.modules.branches.access import accessible_branch_ids, can_manage_all_branches, require_branch_access
+from app.modules.branches.models import Branch
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
