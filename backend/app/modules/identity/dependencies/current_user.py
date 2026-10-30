@@ -11,9 +11,11 @@ from app.modules.identity.repositories.user_repository import user_repository
 from app.modules.identity.services.token_service import token_service
 from app.modules.platform.subscriptions.service import subscription_service
 from app.modules.saas.models import Tenant
+from app.modules.companies.models import Company
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/identity/login")
 TENANT_CONTEXT_HEADER = "X-Tenant-ID"
+COMPANY_CONTEXT_HEADER = "X-Company-ID"
 
 
 def _resolve_platform_tenant(request_context, request_tenant_id: str | None, db: Session) -> Tenant | None:
@@ -38,7 +40,48 @@ def _resolve_platform_tenant(request_context, request_tenant_id: str | None, db:
     return tenant
 
 
-def _authenticate_user(token: str, db: Session, tenant_context_header: str | None = None) -> User:
+def _resolve_company_context(request_context, request_company_id: str | None, tenant_id: int | None, db: Session) -> None:
+    """Validate the requested company against the authenticated tenant."""
+    request_context.company_id = None
+    if not request_company_id:
+        return
+    if tenant_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A tenant context is required before selecting a company",
+        )
+    try:
+        company_id = int(request_company_id.strip())
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="X-Company-ID must be a valid company ID",
+        ) from exc
+    if company_id <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="X-Company-ID must be a positive company ID",
+        )
+    company = db.query(Company).filter(
+        Company.id == company_id,
+        Company.tenant_id == tenant_id,
+        Company.is_active.is_(True),
+    ).first()
+    if company is None:
+        # Do not disclose whether a foreign-tenant company exists.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Company not found or inactive in the selected tenant",
+        )
+    request_context.company_id = company.id
+
+
+def _authenticate_user(
+    token: str,
+    db: Session,
+    tenant_context_header: str | None = None,
+    company_context_header: str | None = None,
+) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -92,6 +135,8 @@ def _authenticate_user(token: str, db: Session, tenant_context_header: str | Non
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant context does not match the authenticated user")
         context.tenant_id = user.tenant_id
 
+    effective_tenant_id = context.tenant_id
+    _resolve_company_context(context, company_context_header, effective_tenant_id, db)
     return user
 
 
@@ -99,8 +144,9 @@ def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
     tenant_context_header: str | None = Header(default=None, alias=TENANT_CONTEXT_HEADER),
+    company_context_header: str | None = Header(default=None, alias=COMPANY_CONTEXT_HEADER),
 ) -> User:
-    user = _authenticate_user(token, db, tenant_context_header)
+    user = _authenticate_user(token, db, tenant_context_header, company_context_header)
     if not user.is_platform_admin:
         tenant_id = user.tenant_id
         if tenant_id is None:
@@ -119,6 +165,7 @@ def get_current_user_for_billing(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
     tenant_context_header: str | None = Header(default=None, alias=TENANT_CONTEXT_HEADER),
+    company_context_header: str | None = Header(default=None, alias=COMPANY_CONTEXT_HEADER),
 ) -> User:
     """Authenticate while allowing expired tenants to reach billing/subscription flows."""
-    return _authenticate_user(token, db, tenant_context_header)
+    return _authenticate_user(token, db, tenant_context_header, company_context_header)
