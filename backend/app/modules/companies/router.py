@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -8,6 +8,8 @@ from app.core.permissions import require_permission
 from app.core.permissions.checker import can_assign_role, effective_role_id
 from app.database.session import get_db
 from app.modules.companies.models import Company
+from app.modules.branches.models import Branch
+from app.modules.branches.membership import BranchUserMembership
 from app.modules.companies.membership import CompanyUserMembership
 from app.modules.companies.schemas import CompanyCreate, CompanyResponse, CompanyUpdate
 from app.modules.audit.service import record_audit_event
@@ -249,6 +251,108 @@ def clear_company_member_role(
     )
     db.commit()
     return None
+
+
+@router.get(
+    "/{company_id}/membership-audit",
+    dependencies=[
+        Depends(require_permission("company.write")),
+        Depends(require_permission("branch.write")),
+    ],
+)
+def list_company_membership_audit(
+    company_id: int,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return a tenant-scoped, paginated company/branch access review."""
+    company = _get_company(db, company_id, current_user)
+
+    total = db.scalar(
+        select(func.count(CompanyUserMembership.id)).where(
+            CompanyUserMembership.company_id == company.id,
+        )
+    ) or 0
+
+    member_rows = db.execute(
+        select(CompanyUserMembership, User, Role)
+        .join(User, User.id == CompanyUserMembership.user_id)
+        .outerjoin(Role, Role.id == CompanyUserMembership.role_id)
+        .where(CompanyUserMembership.company_id == company.id)
+        .order_by(User.username, User.id)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+
+    branches = db.execute(
+        select(Branch.id, Branch.name, Branch.code, Branch.is_active)
+        .where(
+            Branch.company_id == company.id,
+            Branch.tenant_id == company.tenant_id,
+        )
+        .order_by(Branch.name, Branch.id)
+    ).all()
+
+    user_ids = [user.id for _, user, _ in member_rows]
+    branch_memberships = []
+    if user_ids:
+        branch_memberships = db.execute(
+            select(BranchUserMembership, Branch, Role)
+            .join(Branch, Branch.id == BranchUserMembership.branch_id)
+            .outerjoin(Role, Role.id == BranchUserMembership.role_id)
+            .where(
+                Branch.company_id == company.id,
+                Branch.tenant_id == company.tenant_id,
+                BranchUserMembership.user_id.in_(user_ids),
+            )
+        ).all()
+
+    branch_access_by_user: dict[int, dict[int, dict]] = {
+        user_id: {} for user_id in user_ids
+    }
+    for membership, branch, role in branch_memberships:
+        branch_access_by_user[membership.user_id][branch.id] = {
+            "membership_is_active": membership.is_active,
+            "role_id": membership.role_id,
+            "role_name": role.name if role else None,
+        }
+
+    items = []
+    for membership, user, role in member_rows:
+        items.append({
+            "user_id": user.id,
+            "username": user.username,
+            "full_name": user.full_name,
+            "user_is_active": user.is_active and not user.is_deleted,
+            "company_membership_is_active": membership.is_active,
+            "company_role_id": membership.role_id,
+            "company_role_name": role.name if role else None,
+            "branch_access": [
+                {
+                    "branch_id": branch_id,
+                    "membership_is_active": branch_access_by_user[user.id].get(branch_id, {}).get("membership_is_active"),
+                    "role_id": branch_access_by_user[user.id].get(branch_id, {}).get("role_id"),
+                    "role_name": branch_access_by_user[user.id].get(branch_id, {}).get("role_name"),
+                }
+                for branch_id, _, _, _ in branches
+            ],
+        })
+
+    return {
+        "company_id": company.id,
+        "company_name": company.name,
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "total_pages": (total + page_size - 1) // page_size,
+        "branches": [
+            {"id": branch_id, "name": name, "code": code, "is_active": is_active}
+            for branch_id, name, code, is_active in branches
+        ],
+        "items": items,
+    }
 
 
 @router.get("", response_model=list[CompanyResponse], dependencies=[Depends(require_permission("company.access"))])
