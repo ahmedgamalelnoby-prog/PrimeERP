@@ -70,6 +70,22 @@ def get_current_company(
     return company
 
 
+@router.get("/{company_id}/assignable-roles", dependencies=[Depends(require_permission("company.write"))])
+def list_assignable_company_roles(
+    company_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List only active roles this actor is allowed to grant in this company."""
+    _get_company(db, company_id, current_user)
+    roles = db.scalars(select(Role).where(Role.is_active.is_(True)).order_by(Role.name)).all()
+    return [
+        {"id": role.id, "name": role.name, "description": role.description}
+        for role in roles
+        if can_assign_role(current_user, role.id, db)
+    ]
+
+
 @router.get("/{company_id}/members", dependencies=[Depends(require_permission("company.write"))])
 def list_company_members(
     company_id: int,
