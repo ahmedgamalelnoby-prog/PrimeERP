@@ -38,7 +38,7 @@ export default function CompanyManagementPage() {
   }, []);
 
   const loadCompanies = useCallback(async () => {
-    const response = await client.get<Company[]>("/companies?active_only=true");
+    const response = await client.get<Company[]>("/companies?active_only=true", { headers: { "X-Branch-ID": "" } });
     setCompanies(response.data);
     setCompanyId((current) => response.data.some((company) => String(company.id) === current) ? current : "");
   }, []);
@@ -58,11 +58,11 @@ export default function CompanyManagementPage() {
         if (!companyId) {
           setRows([]);
         } else {
-          const response = await client.get<Branch[]>("/branches", { params: { company_id: Number(companyId) } });
+          const response = await client.get<Branch[]>("/branches", { params: { company_id: Number(companyId) }, headers: { "X-Branch-ID": "" } });
           setRows(response.data);
         }
       } else {
-        const response = await client.get<Company[]>("/companies");
+        const response = await client.get<Company[]>("/companies", { headers: { "X-Branch-ID": "" } });
         setRows(response.data);
       }
     } catch (requestError: any) {
@@ -114,9 +114,9 @@ export default function CompanyManagementPage() {
       if (isPlatformAdmin && !tenantId) throw new Error("اختر Tenant أولاً قبل إدارة الشركات.");
       if (branches) {
         if (!companyId) throw new Error("اختر الشركة أولاً");
-        await client.post("/branches", { company_id: Number(companyId), name, code: code || null, email: email || null });
+        await client.post("/branches", { company_id: Number(companyId), name, code: code || null, email: email || null }, { headers: { "X-Branch-ID": "" } });
       } else {
-        await client.post("/companies", { name, code: code || null, email: email || null });
+        await client.post("/companies", { name, code: code || null, email: email || null }, { headers: { "X-Branch-ID": "" } });
       }
       setName("");
       setCode("");
@@ -132,7 +132,7 @@ export default function CompanyManagementPage() {
   async function deactivate(id: number) {
     if (!window.confirm("هل تريد تعطيل هذا السجل؟")) return;
     try {
-      await client.delete(`${branches ? "/branches" : "/companies"}/${id}`);
+      await client.delete(`${branches ? "/branches" : "/companies"}/${id}`, { headers: { "X-Branch-ID": "" } });
       await loadRows();
     } catch (requestError: any) {
       setError(requestError?.response?.data?.detail || "تعذر التعطيل");
