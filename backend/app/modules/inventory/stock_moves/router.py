@@ -1,3 +1,4 @@
+from app.core.context.access import require_company_access
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -17,14 +18,7 @@ router = APIRouter(prefix="/inventory/stock-moves", tags=["Inventory Stock Moves
 
 
 def _company_for_user(db: Session, company_id: int, user: User):
-    if get_effective_tenant_id(user) is None:
-        raise HTTPException(403, "User is not assigned to a tenant")
-    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == get_effective_tenant_id(user), Company.is_active.is_(True)))
-    if company is None:
-        raise HTTPException(403, "Company is outside the current tenant")
-    return company
-
-
+    return require_company_access(db, company_id, user)
 @router.get("", response_model=list[StockMoveResponse], dependencies=[Depends(require_permission("inventory.access"))])
 def list_stock_moves(company_id: int = Query(..., gt=0), item_id: int | None = Query(default=None, gt=0), variant_id: int | None = Query(default=None, gt=0), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _company_for_user(db, company_id, user)
