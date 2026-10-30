@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 import ResetPasswordDialog from "../components/ResetPasswordDialog";
-import UserCompanyAccessDialog from "../components/UserCompanyAccessDialog";
+import UserCompanyAccessDialog from "../components/UserCompanyAccessDialog";\nimport UserAccessAuditDialog from "../components/UserAccessAuditDialog";
 import UserForm from "../components/UserForm";
 import UserTable from "../components/UserTable";
 import { useUsers } from "../hooks/useUsers";
@@ -49,7 +49,7 @@ export default function UsersPage() {
     resetPasswordUser,
     setResetPasswordUser,
   ] = useState<User | null>(null);
-  const [companyAccessUser, setCompanyAccessUser] = useState<User | null>(null);
+  const [companyAccessUser, setCompanyAccessUser] = useState<User | null>(null);\n  const [accessAuditOpen, setAccessAuditOpen] = useState(false);
 
   const totalUsers = meta.total;
 
@@ -91,13 +91,16 @@ export default function UsersPage() {
         title={t("users.title")}
         description={t("users.description")}
         actions={
-          <Button
-            type="button"
-            onClick={handleNewUser}
-          >
-            <Plus className="me-2 h-4 w-4" />
-            {t("users.newUser")}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" onClick={() => setAccessAuditOpen(true)}>
+              <ClipboardList className="me-2 h-4 w-4" />
+              {t("users.accessAudit.open")}
+            </Button>
+            <Button type="button" onClick={handleNewUser}>
+              <Plus className="me-2 h-4 w-4" />
+              {t("users.newUser")}
+            </Button>
+          </div>
         }
       />
 
@@ -196,6 +199,11 @@ export default function UsersPage() {
         open={Boolean(companyAccessUser)}
         user={companyAccessUser}
         onOpenChange={(open) => { if (!open) setCompanyAccessUser(null); }}
+      />
+
+      <UserAccessAuditDialog
+        open={accessAuditOpen}
+        onOpenChange={setAccessAuditOpen}
       />
 
       <ResetPasswordDialog
