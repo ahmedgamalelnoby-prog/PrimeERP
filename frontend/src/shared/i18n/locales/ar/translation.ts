@@ -151,7 +151,7 @@ const arTranslation = {
     active: "الأدوار النشطة",
     assignedUsers: "المستخدمون المرتبطون",
     searchPlaceholder: "البحث باسم الدور أو الوصف...",
-    confirmDelete: "هل تريد حذف الدور "{{name}}"؟",
+    confirmDelete: "هل تريد حذف الدور \"{{name}}\"؟",
     errors: {
       deleteAssigned: "لا يمكن حذف الدور لأنه مرتبط بـ {{count}} مستخدم."
     }
@@ -169,6 +169,7 @@ const arTranslation = {
     enabled: "تفعيل الدور",
     actions: "الإجراءات",
     noDescription: "لا يوجد وصف",
+    permissionCount: "{{count}}",
     permissionCount_one: "{{count}} صلاحية",
     permissionCount_other: "{{count}} صلاحيات",
     edit: "تعديل الدور",
