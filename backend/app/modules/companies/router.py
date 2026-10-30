@@ -133,6 +133,7 @@ def grant_company_membership(
             user_id=member_user.id,
             is_active=True,
             assigned_by=current_user.id,
+            role_id=role_id if role_id is not None else member_user.role_id,
         )
         db.add(membership)
     else:
@@ -281,6 +282,7 @@ def create_company(payload: CompanyCreate, db: Session = Depends(get_db), curren
                 user_id=current_user.id,
                 is_active=True,
                 assigned_by=current_user.id,
+                role_id=current_user.role_id,
             ))
         db.commit()
         db.refresh(company)
