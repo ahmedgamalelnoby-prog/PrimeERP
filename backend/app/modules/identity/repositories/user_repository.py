@@ -107,10 +107,9 @@ class UserRepository(BaseRepository[User]):
         tenant_name: str | None = None,
     ) -> list[User]:
         """
-        Returns up to two matching users.
-
-        The service layer decides whether multiple matches
-        represent a business conflict.
+        Return matching identities so authentication can resolve the tenant
+        by verifying the supplied password. Legacy duplicate usernames are
+        handled fail-closed by the authentication service.
         """
         normalized_login = login.strip().lower()
 
@@ -141,7 +140,7 @@ class UserRepository(BaseRepository[User]):
                 )
             )
 
-        query = query.limit(2)
+        query = query.limit(51)
 
         return list(
             db.execute(query).scalars().all()
