@@ -11,6 +11,8 @@ from app.database.session import get_db
 from app.modules.companies.models import Company
 from app.modules.company_settings.service import get_company_setting
 from app.modules.catalog.service import catalog_service
+from app.modules.inventory.access import require_location_access
+from app.modules.branches.access import accessible_branch_ids
 from app.modules.inventory.stock_moves.schemas import StockMoveCreate
 from app.modules.inventory.stock_moves.service import inventory_stock_move_service
 from app.modules.manufacturing.production_orders.schemas import WorkOrderComplete, WorkOrderCreate, WorkOrderResponse
@@ -53,6 +55,16 @@ def _company(db: Session, company_id: int, user: User) -> int:
         raise HTTPException(403, "Company is outside the current tenant")
     return tenant_id
 
+def _authorize_work_order_access(db: Session, user: User, company_id: int, work_order_id: int):
+    order = manufacturing_work_order_service.get(
+        db, company_id=company_id, work_order_id=work_order_id
+    )
+    if order is None:
+        raise HTTPException(404, "Work order not found")
+    require_location_access(db, user, company_id, order.source_location_id, require_active=False)
+    require_location_access(db, user, company_id, order.destination_location_id, require_active=False)
+    return order
+
 
 @router.get("/bom")
 def list_bom(
@@ -88,6 +100,7 @@ def issue_material(
     db: Session = Depends(get_db),
 ):
     tenant_id = _company(db, payload.company_id, current_user)
+    require_location_access(db, current_user, payload.company_id, payload.source_location_id)
     if get_company_setting(db, payload.company_id, "manufacturing.require_work_order") is True:
         raise HTTPException(409, "Company policy requires material consumption to be completed through a released work order")
     move = inventory_stock_move_service.create_draft(
@@ -141,7 +154,11 @@ def list_work_orders(
     db: Session = Depends(get_db),
 ):
     _company(db, company_id, current_user)
-    return manufacturing_work_order_service.list(db, company_id=company_id)
+    return manufacturing_work_order_service.list(
+        db,
+        company_id=company_id,
+        allowed_branch_ids=accessible_branch_ids(db, current_user),
+    )
 
 
 @router.post(
@@ -156,6 +173,8 @@ def create_work_order(
     db: Session = Depends(get_db),
 ):
     _company(db, payload.company_id, current_user)
+    require_location_access(db, current_user, payload.company_id, payload.source_location_id)
+    require_location_access(db, current_user, payload.company_id, payload.destination_location_id)
     return _commit_work_order(
         db,
         lambda: manufacturing_work_order_service.create(
@@ -176,6 +195,7 @@ def release_work_order(
     db: Session = Depends(get_db),
 ):
     _company(db, company_id, current_user)
+    _authorize_work_order_access(db, current_user, company_id, work_order_id)
     return _commit_work_order(
         db,
         lambda: manufacturing_work_order_service.release(
@@ -197,6 +217,7 @@ def complete_work_order(
     db: Session = Depends(get_db),
 ):
     tenant_id = _company(db, company_id, current_user)
+    _authorize_work_order_access(db, current_user, company_id, work_order_id)
     return _commit_work_order(
         db,
         lambda: manufacturing_work_order_service.complete(
@@ -222,6 +243,7 @@ def cancel_work_order(
     db: Session = Depends(get_db),
 ):
     tenant_id = _company(db, company_id, current_user)
+    _authorize_work_order_access(db, current_user, company_id, work_order_id)
     return _commit_work_order(
         db,
         lambda: manufacturing_work_order_service.cancel(
