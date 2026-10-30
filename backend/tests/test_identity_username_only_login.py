@@ -70,7 +70,8 @@ def test_login_resolves_company_from_unique_password_match_without_company_input
     assert "_matching_users_by_password(" in auth
     assert "if len(matching_users) != 1:" in auth
     assert "company_name_required" not in auth
-    assert "tenant_name: Optional[str] = Field(" in schema
+    assert "tenant_name" not in schema
+    assert "tenant_slug" not in schema
 
 
 def test_user_creation_and_rename_reserve_username_across_tenants():
@@ -92,6 +93,15 @@ def test_both_login_forms_do_not_request_company_or_tenant_identifier():
     page = source("../frontend/src/modules/identity/pages/LoginPage.tsx")
     form = source("../frontend/src/modules/identity/components/LoginForm.tsx")
     hook = source("../frontend/src/modules/identity/hooks/useLogin.ts")
+    auth_service = source("../frontend/src/modules/identity/services/authentication.service.ts")
+    auth_types = source("../frontend/src/modules/identity/types/auth.ts")
+    auth_context = source("../frontend/src/modules/identity/context/AuthContext.tsx")
     assert "companyName" not in page
     assert "tenantSlug" not in form
     assert "tenantSlug" not in hook
+    assert "tenant_slug" not in auth_service
+    assert "tenant_name" not in auth_service
+    assert "tenant_slug" not in auth_types
+    assert "tenant_name" not in auth_types
+    assert "tenantSlug" not in auth_context
+    assert "tenantName" not in auth_context
