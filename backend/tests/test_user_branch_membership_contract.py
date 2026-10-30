@@ -359,3 +359,11 @@ def test_warehouse_service_honors_explicit_central_warehouse_exclusion_for_globa
     service = source("app/modules/inventory/warehouses/service.py")
     assert "elif allowed_branch_ids is None and not include_central:" in service
     assert "InventoryWarehouse.is_central.is_(False)" in service
+
+def test_payroll_journal_posting_requires_access_to_the_selected_and_existing_entry_branch():
+    router = source("app/modules/enterprise/router.py")
+    assert "from app.modules.branches.access import require_branch_access" in router
+    assert "branch = require_branch_access(db, current_user, payload.branch_id)" in router
+    assert "if branch.company_id != company_id:" in router
+    assert "if entry.branch_id != payload.branch_id:" in router
+    assert "require_branch_access(db, current_user, entry.branch_id)" in router
