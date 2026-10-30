@@ -62,15 +62,12 @@ export default function UserCompanyAccessDialog({ user, open, onOpenChange, onSa
   );
 
   const toggleCompany = (companyId: number, checked: boolean) => {
-    setSelectedIds((current) => {
-      const next = checked ? [...current, companyId] : current.filter((id) => id !== companyId);
-      if (!checked && defaultId === companyId) {
-        const replacement = next[0] ?? null;
-        setDefaultId(replacement);
-      }
-      if (checked && defaultId === null) setDefaultId(companyId);
-      return next;
-    });
+    const next = checked
+      ? [...selectedIds, companyId]
+      : selectedIds.filter((id) => id !== companyId);
+    setSelectedIds(next);
+    if (checked && defaultId === null) setDefaultId(companyId);
+    if (!checked && defaultId === companyId) setDefaultId(next[0] ?? null);
   };
 
   const save = async () => {
