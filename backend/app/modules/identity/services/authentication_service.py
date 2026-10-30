@@ -30,8 +30,6 @@ class AuthenticationService:
         users = user_repository.find_for_login(
             db=db,
             login=payload.login,
-            tenant_slug=payload.tenant_slug,
-            tenant_name=payload.tenant_name,
         )
         if not users:
             self._reject_login(db, login_key, "unknown_account")
@@ -106,10 +104,7 @@ class AuthenticationService:
         ]
 
     def _login_key(self, payload: LoginRequest) -> str:
-        tenant = (payload.tenant_slug or "").strip().lower()
-        tenant_name = (payload.tenant_name or "").strip().lower()
-        login = payload.login.strip().lower()
-        return f"{tenant}:{tenant_name}:{login}"
+        return payload.login.strip().lower()
 
     def _request_ip(self) -> str | None:
         context = get_optional_request_context()
