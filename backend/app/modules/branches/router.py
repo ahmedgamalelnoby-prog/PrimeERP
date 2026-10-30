@@ -101,6 +101,22 @@ def _branch(db: Session, branch_id: int, user: User) -> Branch:
     return branch
 
 
+@router.get("/{branch_id}/assignable-roles", dependencies=[Depends(require_permission("branch.write"))])
+def list_assignable_branch_roles(
+    branch_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List only active roles this actor may grant within the selected branch."""
+    _branch_for_membership_admin(db, branch_id, current_user)
+    roles = db.scalars(select(Role).where(Role.is_active.is_(True)).order_by(Role.name)).all()
+    return [
+        {"id": role.id, "name": role.name, "description": role.description}
+        for role in roles
+        if can_assign_role(current_user, role.id, db)
+    ]
+
+
 @router.get("/{branch_id}/members", dependencies=[Depends(require_permission("branch.write"))])
 def list_branch_members(
     branch_id: int,
