@@ -157,6 +157,8 @@ const arTranslation = {
     }
   },
   rolesTable: {
+    active: "نشط",
+    inactive: "معطل",
     loading: "جاري تحميل الأدوار...",
     emptyTitle: "لا توجد أدوار",
     emptyDescription: "ابدأ بإنشاء أول دور وتحديد صلاحياته.",
