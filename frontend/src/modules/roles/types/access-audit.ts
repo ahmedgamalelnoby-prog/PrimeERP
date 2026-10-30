@@ -1,7 +1,10 @@
 export interface RoleAccessAuditUsage {
-  global_users: number;
-  company_memberships: number;
-  branch_memberships: number;
+  global_users_active: number;
+  global_users_inactive: number;
+  company_memberships_active: number;
+  company_memberships_inactive: number;
+  branch_memberships_active: number;
+  branch_memberships_inactive: number;
 }
 
 export interface RoleAccessAuditRole {
