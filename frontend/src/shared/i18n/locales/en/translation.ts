@@ -135,6 +135,15 @@ const enTranslation = {
   },
 
   roles: {
+    notifications: {
+      created: "Role created successfully.",
+      updated: "Role updated successfully.",
+      permissionsUpdated: "Role permissions updated successfully.",
+      deactivated: "Role deactivated.",
+      activated: "Role activated.",
+      deleteAssigned: "A role assigned to users cannot be deleted.",
+      deleted: "Role deleted successfully."
+    },
     title: "Roles & Permissions",
     description: "Create roles and define what each user can view or perform in PrimeERP.",
     newRole: "New role",
@@ -147,6 +156,23 @@ const enTranslation = {
       deleteAssigned: "This role cannot be deleted because it is assigned to {{count}} users."
     }
   },
+  rolesTable: {
+    loading: "Loading roles...",
+    emptyTitle: "No roles found",
+    emptyDescription: "Create your first role and assign its permissions.",
+    role: "Role",
+    permissions: "Permissions",
+    users: "Users",
+    status: "Status",
+    enabled: "Enable role",
+    actions: "Actions",
+    noDescription: "No description",
+    permissionCount_one: "{{count}} permission",
+    permissionCount_other: "{{count}} permissions",
+    edit: "Edit role",
+    delete: "Delete role"
+  },
+
   roleForm: {
     titleCreate: "Create role",
     titleEdit: "Edit role",
