@@ -94,6 +94,29 @@ const arTranslation = {
     user: "مستخدم",
   },
 
+  usersTable: {
+    "loading": "جاري تحميل المستخدمين...",
+    "emptyTitle": "لا يوجد مستخدمون",
+    "emptyDescription": "لا توجد نتائج مطابقة للبحث أو عوامل التصفية الحالية.",
+    "user": "المستخدم",
+    "email": "البريد الإلكتروني",
+    "role": "الدور",
+    "status": "الحالة",
+    "lastLogin": "آخر تسجيل دخول",
+    "accountEnabled": "تفعيل الحساب",
+    "actions": "الإجراءات",
+    "superuser": "مستخدم بصلاحيات مدير",
+    "platformAdmin": "مدير المنصة",
+    "noRole": "بدون دور",
+    "deactivateUser": "تعطيل المستخدم",
+    "activateUser": "تفعيل المستخدم",
+    "editUser": "تعديل المستخدم",
+    "resetPassword": "إعادة تعيين كلمة المرور",
+    "deleteUser": "حذف المستخدم",
+    "unavailable": "غير متاح",
+    "neverLoggedIn": "لم يسجل الدخول"
+  },
+
   users: {
     "title": "إدارة المستخدمين",
     "description": "إضافة المستخدمين وتعديل بياناتهم والتحكم في حالتهم وأدوارهم.",
