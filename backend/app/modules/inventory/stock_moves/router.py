@@ -1,4 +1,5 @@
-from app.core.context.access import require_company_access
+from app.core.context.access import require_company_access, require_branch_access
+from app.core.context import get_optional_request_context
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -13,12 +14,51 @@ from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.inventory.stock_moves.schemas import InventoryAccountingConfigCreate, InventoryAccountingConfigResponse, StockMoveCreate, StockMoveResponse
 from app.modules.inventory.stock_moves.service import inventory_stock_move_service
+from app.modules.inventory.stock_moves.models import InventoryStockMove
+from app.modules.inventory.locations.models import InventoryLocation
+from app.modules.inventory.warehouses.models import InventoryWarehouse
 
 router = APIRouter(prefix="/inventory/stock-moves", tags=["Inventory Stock Moves"])
 
 
 def _company_for_user(db: Session, company_id: int, user: User):
     return require_company_access(db, company_id, user)
+def _assert_location_pair_access(db: Session, company_id: int, location_ids, user: User) -> None:
+    branch_ids = set()
+    for location_id in location_ids:
+        if location_id is None:
+            continue
+        location = db.scalar(select(InventoryLocation).where(
+            InventoryLocation.id == location_id,
+            InventoryLocation.company_id == company_id,
+            InventoryLocation.is_active.is_(True),
+        ))
+        if location is None:
+            raise HTTPException(404, "Stock location not found")
+        warehouse = db.scalar(select(InventoryWarehouse).where(
+            InventoryWarehouse.id == location.warehouse_id,
+            InventoryWarehouse.company_id == company_id,
+            InventoryWarehouse.is_active.is_(True),
+        ))
+        if warehouse is None:
+            raise HTTPException(404, "Stock warehouse not found")
+        if warehouse.branch_id is not None:
+            branch_ids.add(warehouse.branch_id)
+    if user.is_platform_admin:
+        return
+    context = get_optional_request_context()
+    if context is None or context.branch_id not in branch_ids:
+        raise HTTPException(403, "Select one of the stock movement branches using X-Branch-ID")
+    for branch_id in branch_ids:
+        require_branch_access(db, company_id, branch_id, user, require_selected=False)
+
+
+def _assert_move_access(db: Session, company_id: int, move: InventoryStockMove, user: User) -> None:
+    _assert_location_pair_access(
+        db, company_id, (move.source_location_id, move.destination_location_id), user
+    )
+
+
 @router.get("", response_model=list[StockMoveResponse], dependencies=[Depends(require_permission("inventory.access"))])
 def list_stock_moves(company_id: int = Query(..., gt=0), item_id: int | None = Query(default=None, gt=0), variant_id: int | None = Query(default=None, gt=0), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _company_for_user(db, company_id, user)
