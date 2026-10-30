@@ -46,6 +46,7 @@ def upgrade():
             ["user_id"],
             unique=True,
             postgresql_where=sa.text("is_default IS TRUE"),
+            sqlite_where=sa.text("is_default = 1"),
         )
 
 
