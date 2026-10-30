@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.context import get_effective_tenant_id, get_optional_request_context
 from app.core.permissions import require_permission
+from app.core.permissions.checker import user_has_permission
 from app.core.permissions.checker import can_assign_role
 from app.database.session import get_db
 from app.modules.branches.models import Branch
@@ -259,13 +260,17 @@ def list_branches(company_id: int | None = Query(default=None, gt=0), active_onl
         Branch.company_id == selected_company_id,
     )
     if not current_user.is_platform_admin:
-        stmt = stmt.join(
-            BranchUserMembership,
-            BranchUserMembership.branch_id == Branch.id,
-        ).where(
-            BranchUserMembership.user_id == current_user.id,
-            BranchUserMembership.is_active.is_(True),
-        )
+        context = get_optional_request_context()
+        if context is not None and context.branch_id is not None:
+            stmt = stmt.where(Branch.id == context.branch_id)
+        elif not user_has_permission(current_user, "branch.write", db):
+            stmt = stmt.join(
+                BranchUserMembership,
+                BranchUserMembership.branch_id == Branch.id,
+            ).where(
+                BranchUserMembership.user_id == current_user.id,
+                BranchUserMembership.is_active.is_(True),
+            )
     stmt = stmt.order_by(Branch.name, Branch.id)
     if active_only:
         stmt = stmt.where(Branch.is_active.is_(True))
