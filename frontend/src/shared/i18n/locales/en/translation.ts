@@ -66,9 +66,7 @@ const enTranslation = {
     appName: "PrimeERP",
     appDescription: "Business Management Platform",
 
-    loading: "Loading...",
     save: "Save",
-    cancel: "Cancel",
     submit: "Submit",
 
     english: "English",
