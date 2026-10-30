@@ -58,6 +58,11 @@ const arTranslation = {
   },
 
   common: {
+    loading: "جاري التحميل...",
+    processing: "جارٍ التنفيذ...",
+    close: "إغلاق",
+    refresh: "تحديث",
+    cancel: "إلغاء",
     appName: "برايم ERP",
     appDescription: "منصة إدارة الأعمال",
 
