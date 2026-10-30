@@ -61,7 +61,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       try {
         const { data: companies } = await client.get<Array<{ id: number }>>(
           "/companies/accessible",
-          { headers: { "X-Branch-ID": "" } },
+          { headers: { "X-Company-ID": "", "X-Branch-ID": "" } },
         );
         if (cancelled) return;
         if (companies.length === 0) {
