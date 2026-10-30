@@ -434,6 +434,44 @@ const arTranslation = {
     }
   },
 
+  accountingHome: {
+    title: "المحاسبة والمالية",
+    description: "مركز العمليات المالية في PrimeERP.",
+    areas: {
+      chartOfAccounts: { title: "دليل الحسابات", description: "الحسابات والأقسام ومراكز التكلفة" },
+      journalEntries: { title: "القيود اليومية", description: "إنشاء ومراجعة وترحيل القيود" },
+      financialReports: { title: "التقارير المالية", description: "التقارير والتحليلات المالية" },
+      arApAging: { title: "أعمار الذمم AR/AP", description: "تحليل المستحقات المدينة والدائنة حسب تاريخ الاستحقاق" },
+      partnerStatements: { title: "كشوف حسابات العملاء والموردين", description: "كشف حركة الذمم والمدفوعات والرصيد الجاري" }
+    }
+  },
+  productsHome: {
+    title: "كتالوج المنتجات والتسعير",
+    description: "واجهة تشغيلية متصلة مباشرةً بكتالوج المنتجات: التصنيفات، قوائم الأسعار، الوصفات وتحليل أثر الهامش.",
+    activeCompanyRequired: "اختر شركة فعالة أولاً.",
+    loadFailed: "تعذر تحميل كتالوج المنتجات.",
+    loading: "جارٍ تحميل الكتالوج...",
+    categories: "التصنيفات",
+    priceLists: "قوائم الأسعار",
+    recipes: "الوصفات",
+    belowMargin: "تحت هامش 30%",
+    emptyPriceLists: "لا توجد قوائم أسعار.",
+    recipeSku: "الوصفات المرتبطة بـ SKU",
+    emptyRecipes: "لا توجد وصفات.",
+    version: "إصدار",
+    unitCost: "تكلفة الوحدة",
+    components: "مكونات",
+    pricingImpact: "أثر التسعير والهامش",
+    pricingImpactDescription: "المنتجات التي تقع تحت هامش 30% وفق بيانات الكتالوج الحالية.",
+    product: "المنتج",
+    cost: "التكلفة",
+    price: "السعر",
+    margin: "الهامش",
+    recommendedPrice: "السعر المقترح",
+    default: "افتراضية",
+    skuCode: "SKU/Code"
+  },
+
   register: {
     workspaceLabel:
       "إنشاء مساحة عمل جديدة",
