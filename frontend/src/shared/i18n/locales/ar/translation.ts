@@ -329,7 +329,8 @@ const arTranslation = {
     "resetPassword": "إعادة تعيين كلمة المرور",
     "deleteUser": "حذف المستخدم",
     "unavailable": "غير متاح",
-    "neverLoggedIn": "لم يسجل الدخول"
+    "neverLoggedIn": "لم يسجل الدخول",
+    "manageCompanyAccess": "إدارة الشركات المسموح بها"
   },
 
   users: {
@@ -339,6 +340,31 @@ const arTranslation = {
       deactivated: "تم تعطيل المستخدم.",
       activated: "تم تفعيل المستخدم.",
       deleted: "تم حذف المستخدم بنجاح."
+    },
+    companyAccess: {
+      title: "صلاحيات المستخدم على الشركات",
+      company: "الشركة",
+      selectCompany: "اختر الشركة",
+      noCompanies: "لا توجد شركات متاحة لإدارتها ضمن صلاحياتك.",
+      activeMembership: "لديه صلاحية دخول إلى الشركة",
+      noMembership: "لا توجد له صلاحية دخول إلى الشركة",
+      userDisabled: "حساب المستخدم معطل",
+      role: "الدور داخل الشركة",
+      selectRole: "اختر الدور",
+      noAssignableRoles: "لا توجد أدوار يمكنك منحها وفق صلاحياتك الحالية.",
+      roleSecurityHint: "تظهر هنا الأدوار التي تسمح صلاحياتك بمنحها فقط. يتحقق الخادم من الصلاحية مرة أخرى عند الحفظ.",
+      grantAccess: "منح صلاحية الدخول",
+      saveChanges: "حفظ التغييرات",
+      revokeAccess: "إلغاء صلاحية الشركة",
+      clearRole: "إزالة الدور",
+      confirmRevoke: "هل تريد إلغاء صلاحية المستخدم على شركة {{company}}؟",
+      granted: "تم تحديث صلاحية الشركة للمستخدم.",
+      revoked: "تم إلغاء صلاحية الشركة.",
+      roleCleared: "تمت إزالة الدور من عضوية الشركة.",
+      loadCompaniesFailed: "تعذر تحميل الشركات المتاحة.",
+      loadDetailsFailed: "تعذر تحميل عضوية المستخدم وأدواره.",
+      saveFailed: "تعذر حفظ صلاحية الشركة.",
+      revokeFailed: "تعذر إلغاء صلاحية الشركة."
     },
     resetPassword: {
       title: "إعادة تعيين كلمة المرور",
