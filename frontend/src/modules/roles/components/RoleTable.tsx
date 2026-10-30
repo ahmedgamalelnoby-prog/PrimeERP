@@ -21,6 +21,7 @@ import {
 
 import type { Role } from "../types/role";
 import RoleStatus from "./RoleStatus";
+import { useTranslation } from "react-i18next";
 
 interface RoleTableProps {
   roles: Role[];
@@ -39,15 +40,17 @@ export default function RoleTable({
   onEdit,
   onDelete,
   onToggleStatus,
-}: RoleTableProps) {
+} : RoleTableProps) {
+  const { t, i18n } = useTranslation();
+  const direction = i18n.dir();
   if (loading) {
     return (
-      <div className="flex min-h-80 items-center justify-center rounded-2xl border bg-card">
+      <div className="flex min-h-80 items-center justify-center rounded-2xl border bg-card" dir={direction}>
         <div className="text-center">
           <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
 
           <p className="mt-3 text-sm text-muted-foreground">
-            جاري تحميل الأدوار...
+            {t("rolesTable.loading")}
           </p>
         </div>
       </div>
@@ -56,48 +59,48 @@ export default function RoleTable({
 
   if (roles.length === 0) {
     return (
-      <div className="flex min-h-80 flex-col items-center justify-center rounded-2xl border bg-card p-8 text-center">
+      <div className="flex min-h-80 flex-col items-center justify-center rounded-2xl border bg-card p-8 text-center" dir={direction}>
         <ShieldCheck className="h-12 w-12 text-muted-foreground" />
 
         <h3 className="mt-4 text-lg font-semibold">
-          لا توجد أدوار
+          {t("rolesTable.emptyTitle")}
         </h3>
 
         <p className="mt-2 text-sm text-muted-foreground">
-          ابدأ بإنشاء أول دور وتحديد صلاحياته.
+          {t("rolesTable.emptyDescription")}
         </p>
       </div>
     );
   }
 
   return (
-    <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+    <div className="overflow-hidden rounded-2xl border bg-card shadow-sm" dir={direction}>
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="text-right">
-                الدور
+              <TableHead className="text-start">
+                {t("rolesTable.role")}
               </TableHead>
 
               <TableHead className="text-right">
-                الصلاحيات
+                {t("rolesTable.permissions")}
               </TableHead>
 
               <TableHead className="text-right">
-                المستخدمون
+                {t("rolesTable.users")}
               </TableHead>
 
               <TableHead className="text-right">
-                الحالة
+                {t("rolesTable.status")}
               </TableHead>
 
               <TableHead className="text-right">
-                تفعيل الدور
+                {t("rolesTable.enabled")}
               </TableHead>
 
               <TableHead className="text-center">
-                الإجراءات
+                {t("rolesTable.actions")}
               </TableHead>
             </TableRow>
           </TableHeader>
@@ -122,7 +125,7 @@ export default function RoleTable({
 
                         <p className="mt-1 max-w-xs truncate text-xs text-muted-foreground">
                           {role.description ||
-                            "لا يوجد وصف"}
+                            t("rolesTable.noDescription")}
                         </p>
                       </div>
                     </div>
@@ -130,7 +133,7 @@ export default function RoleTable({
 
                   <TableCell>
                     <Badge variant="outline">
-                      {role.permissions.length} صلاحية
+                      {t("rolesTable.permissionCount", { count: role.permissions.length })}
                     </Badge>
                   </TableCell>
 
@@ -165,7 +168,7 @@ export default function RoleTable({
                         type="button"
                         size="icon"
                         variant="ghost"
-                        title="تعديل الدور"
+                        title={t("rolesTable.edit")}
                         disabled={processing}
                         onClick={() =>
                           onEdit(role)
@@ -178,7 +181,7 @@ export default function RoleTable({
                         type="button"
                         size="icon"
                         variant="ghost"
-                        title="حذف الدور"
+                        title={t("rolesTable.delete")}
                         disabled={processing}
                         className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                         onClick={() =>
