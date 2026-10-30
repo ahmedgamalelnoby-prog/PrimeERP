@@ -198,3 +198,24 @@ def test_branch_update_schema_cannot_reassign_branch_to_another_company():
     router = source("app/modules/branches/router.py")
     assert "def _branch(db: Session, branch_id: int, user: User)" in router
     assert "Branch.tenant_id == _tenant_id(user)" in router
+
+def test_user_restore_service_is_implemented_and_tenant_scoped():
+    users = source("app/modules/identity/services/user_service.py")
+    restore = users.split("def restore_user(", 1)[1].split("def list_users(", 1)[0]
+    assert "include_deleted=True" in restore
+    assert "for_update=True" in restore
+    assert "_resolve_write_tenant_id(tenant_id)" in restore
+    assert "pg_advisory_xact_lock" in restore
+    assert "repository.restore(db, user)" in restore
+    assert 'user.is_active = True' in restore
+    assert 'action="user.restore"' in restore
+
+
+def test_user_restore_rejects_username_and_tenant_email_conflicts():
+    users = source("app/modules/identity/services/user_service.py")
+    restore = users.split("def restore_user(", 1)[1].split("def list_users(", 1)[0]
+    assert "duplicate_username_id = db.scalar(" in restore
+    assert "func.lower(User.username) == user.username.strip().lower()" in restore
+    assert "duplicate_email_id = db.scalar(" in restore
+    assert "User.tenant_id == user.tenant_id" in restore
+    assert "func.lower(User.email) == user.email.strip().lower()" in restore
