@@ -141,7 +141,9 @@ class UserRepository(BaseRepository[User]):
                 )
             )
 
-        query = query.limit(2)
+        # Three rows let the authentication service fail closed when a
+        # username is reused by more than two tenants.
+        query = query.limit(3)
 
         return list(
             db.execute(query).scalars().all()
