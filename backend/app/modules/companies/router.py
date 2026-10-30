@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -271,16 +271,26 @@ def list_company_membership_audit(
     company = _get_company(db, company_id, current_user)
 
     total = db.scalar(
-        select(func.count(CompanyUserMembership.id)).where(
-            CompanyUserMembership.company_id == company.id,
+        select(func.count(User.id)).where(
+            User.tenant_id == company.tenant_id,
+            User.is_deleted.is_(False),
         )
     ) or 0
 
     member_rows = db.execute(
-        select(CompanyUserMembership, User, Role)
-        .join(User, User.id == CompanyUserMembership.user_id)
+        select(User, CompanyUserMembership, Role)
+        .outerjoin(
+            CompanyUserMembership,
+            and_(
+                CompanyUserMembership.company_id == company.id,
+                CompanyUserMembership.user_id == User.id,
+            ),
+        )
         .outerjoin(Role, Role.id == CompanyUserMembership.role_id)
-        .where(CompanyUserMembership.company_id == company.id)
+        .where(
+            User.tenant_id == company.tenant_id,
+            User.is_deleted.is_(False),
+        )
         .order_by(User.username, User.id)
         .offset((page - 1) * page_size)
         .limit(page_size)
@@ -295,7 +305,7 @@ def list_company_membership_audit(
         .order_by(Branch.name, Branch.id)
     ).all()
 
-    user_ids = [user.id for _, user, _ in member_rows]
+    user_ids = [user.id for user, _, _ in member_rows]
     branch_memberships = []
     if user_ids:
         branch_memberships = db.execute(
@@ -320,7 +330,7 @@ def list_company_membership_audit(
         }
 
     items = []
-    for membership, user, role in member_rows:
+    for user, membership, role in member_rows:
         items.append({
             "user_id": user.id,
             "username": user.username,
