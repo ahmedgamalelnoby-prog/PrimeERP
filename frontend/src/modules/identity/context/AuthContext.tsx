@@ -125,16 +125,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, []);
 
   const login = async (
-    usernameOrEmail: string,
+    username: string,
     password: string,
-    tenantSlug: string | null = null,
-    tenantName: string | null = null,
   ): Promise<void> => {
     const response = await authService.login({
-      login: usernameOrEmail.trim(),
+      login: username.trim(),
       password,
-      tenant_slug: tenantSlug?.trim() || null,
-      tenant_name: tenantName?.trim() || null,
     });
 
     setUser(response.user);
