@@ -23,7 +23,7 @@ export default function UserStatus({
     >
       <span
         className={[
-          "ml-1.5 h-1.5 w-1.5 rounded-full",
+          "ms-1.5 h-1.5 w-1.5 rounded-full",
           isActive
             ? "bg-emerald-500"
             : "bg-slate-400",
