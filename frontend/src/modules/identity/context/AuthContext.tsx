@@ -20,10 +20,8 @@ interface AuthContextValue {
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (
-    usernameOrEmail: string,
+    username: string,
     password: string,
-    tenantSlug?: string | null,
-    tenantName?: string | null,
   ) => Promise<void>;
   logout: () => void;
   refreshUser: () => Promise<void>;
