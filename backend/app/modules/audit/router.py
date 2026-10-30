@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.permissions import require_permission
+from app.modules.branches.access import accessible_branch_ids, can_manage_all_branches
 from app.database.session import get_db
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
@@ -28,6 +29,9 @@ def list_audit_events(
     stmt = select(AuditEvent)
     if not current_user.is_platform_admin:
         stmt = stmt.where(AuditEvent.tenant_id == current_user.tenant_id)
+    if not can_manage_all_branches(db, current_user):
+        allowed_branch_ids = accessible_branch_ids(db, current_user)
+        stmt = stmt.where(AuditEvent.branch_id.in_(allowed_branch_ids)) if allowed_branch_ids else stmt.where(AuditEvent.id == -1)
     if company_id is not None:
         stmt = stmt.where(AuditEvent.company_id == company_id)
     if entity_type:
