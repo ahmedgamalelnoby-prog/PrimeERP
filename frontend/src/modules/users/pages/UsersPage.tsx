@@ -19,8 +19,10 @@ import UserAccessAuditDialog from "../components/UserAccessAuditDialog";
 import UserForm from "../components/UserForm";
 import UserTable from "../components/UserTable";
 import { useUsers } from "../hooks/useUsers";
+import { usersApi } from "../api/users.api";
 import type { User } from "../types/user";
 import { useTranslation } from "react-i18next";
+import { toast } from "react-hot-toast";
 
 export default function UsersPage() {
   const { t, i18n } = useTranslation();
@@ -71,6 +73,16 @@ export default function UsersPage() {
   const handleEdit = (user: User) => {
     setSelectedUser(user);
     setFormOpen(true);
+  };
+
+  const handleAuditManageUser = async (userId: number) => {
+    try {
+      const response = await usersApi.get(userId);
+      setAccessAuditOpen(false);
+      setCompanyAccessUser(response.data);
+    } catch {
+      toast.error(t("users.accessAudit.loadUserFailed"));
+    }
   };
 
   const handleDelete = async (
@@ -206,6 +218,7 @@ export default function UsersPage() {
       <UserAccessAuditDialog
         open={accessAuditOpen}
         onOpenChange={setAccessAuditOpen}
+        onManageUser={handleAuditManageUser}
       />
 
       <ResetPasswordDialog
