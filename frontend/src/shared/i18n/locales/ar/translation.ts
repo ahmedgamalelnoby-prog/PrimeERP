@@ -501,6 +501,8 @@ const arTranslation = {
     close: "إغلاق",
     document: "المستند",
     item: "الصنف",
+    itemId: "كود الصنف",
+    paid: "المدفوع",
     types: { requisition: "طلب احتياج", rfq: "طلب عرض سعر", order: "أمر شراء", receipt: "إذن استلام", bill: "فاتورة مورد" },
     statuses: { draft: "مسودة", pending_approval: "بانتظار الموافقة", approved: "معتمد", confirmed: "مؤكد", partially_received: "مستلم جزئياً", received: "مستلم", posted: "مرحّل", cancelled: "ملغي", rejected: "مرفوض", partially_fulfilled: "منفذ جزئياً" }
   },
