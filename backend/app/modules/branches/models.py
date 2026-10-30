@@ -118,3 +118,52 @@ class Branch(Base):
             f"company_id={self.company_id} "
             f"name={self.name!r}>"
         )
+
+class UserBranchMembership(Base):
+    """Explicit tenant-scoped access of a user to a company branch."""
+
+    __tablename__ = "user_branch_memberships"
+
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(
+        Integer,
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    branch_id = Column(
+        Integer,
+        ForeignKey("branches.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    assigned_by_user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    is_active = Column(Boolean, nullable=False, default=True, server_default="true")
+    created_at = Column(
+        TIMESTAMP(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    branch = relationship("Branch", foreign_keys=[branch_id])
+    user = relationship("User", foreign_keys=[user_id])
+    assigned_by = relationship("User", foreign_keys=[assigned_by_user_id])
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "user_id",
+            "branch_id",
+            name="uq_user_branch_memberships_tenant_user_branch",
+        ),
+    )
