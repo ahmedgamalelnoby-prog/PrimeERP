@@ -94,6 +94,29 @@ const enTranslation = {
     user: "User",
   },
 
+  usersTable: {
+    "loading": "Loading users...",
+    "emptyTitle": "No users found",
+    "emptyDescription": "No results match the current search or filters.",
+    "user": "User",
+    "email": "Email",
+    "role": "Role",
+    "status": "Status",
+    "lastLogin": "Last login",
+    "accountEnabled": "Account enabled",
+    "actions": "Actions",
+    "superuser": "Administrator privileges",
+    "platformAdmin": "Platform administrator",
+    "noRole": "No role assigned",
+    "deactivateUser": "Deactivate user",
+    "activateUser": "Activate user",
+    "editUser": "Edit user",
+    "resetPassword": "Reset password",
+    "deleteUser": "Delete user",
+    "unavailable": "Unavailable",
+    "neverLoggedIn": "Never logged in"
+  },
+
   users: {
     "title": "User Management",
     "description": "Create users, update their details, and manage their status and roles.",
