@@ -178,3 +178,23 @@ def test_username_rename_checks_all_other_legacy_records_not_only_first_match():
     assert "func.lower(User.username) == new_username" in update
     assert "User.id != user.id" in update
     assert "repository.get_by_username(db, new_username" not in update
+
+
+def test_role_delegation_uses_database_permission_sets_not_stale_relationships():
+    users = source("app/modules/identity/services/user_service.py")
+    block = users.split("def _validate_role_assignment", 1)[1].split("def _resolve_write_tenant_id", 1)[0]
+    assert "select(Role.is_active).where(Role.id == role_id)" in block
+    assert "select(Role.is_active).where(Role.id == current_role_id)" in block
+    assert "select(Permission.name)" in block
+    assert "role_permissions.c.role_id == selected_role_id" in block
+    assert "getattr(current_role, \"permissions\"" not in block
+    assert "getattr(target_role, \"permissions\"" not in block
+
+
+def test_branch_update_schema_cannot_reassign_branch_to_another_company():
+    schema = source("app/modules/branches/schemas.py")
+    update_schema = schema.split("class BranchUpdate", 1)[1].split("class BranchResponse", 1)[0]
+    assert "company_id" not in update_schema
+    router = source("app/modules/branches/router.py")
+    assert "def _branch(db: Session, branch_id: int, user: User)" in router
+    assert "Branch.tenant_id == _tenant_id(user)" in router
