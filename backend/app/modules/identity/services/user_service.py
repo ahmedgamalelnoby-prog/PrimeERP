@@ -73,8 +73,8 @@ class UserService(BaseService[UserRepository]):
         self._enforce_user_limit(effective_tenant_id)
         normalized_username = username.strip().lower()
         normalized_email = email.strip().lower()
-        if repository.get_by_username(db, normalized_username, tenant_id=effective_tenant_id, include_deleted=True):
-            raise ValueError("Username already exists for this tenant.")
+        if repository.get_by_username(db, normalized_username, include_deleted=True):
+            raise ValueError("Username already exists. Choose a unique username across PrimeERP.")
         if repository.get_by_email(db, normalized_email, tenant_id=effective_tenant_id, include_deleted=True):
             raise ValueError("Email already exists for this tenant.")
         user_data: dict[str, Any] = {"username": normalized_username, "email": normalized_email, "hashed_password": password_service.hash_password(password), "full_name": full_name, "phone": phone, "role_id": role_id, "tenant_id": effective_tenant_id, "is_active": is_active, "is_superuser": is_superuser, **extra_data}
@@ -99,7 +99,7 @@ class UserService(BaseService[UserRepository]):
                 self._validate_role_assignment(update_data["role_id"])
             if "username" in update_data:
                 new_username = str(update_data["username"]).strip().lower()
-                existing_user = repository.get_by_username(db, new_username, tenant_id=effective_tenant_id, include_deleted=True)
+                existing_user = repository.get_by_username(db, new_username, include_deleted=True)
                 if existing_user is not None and existing_user.id != user.id:
                     raise ValueError("Username already exists for this tenant.")
                 update_data["username"] = new_username
