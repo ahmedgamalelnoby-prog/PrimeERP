@@ -18,8 +18,11 @@ import RoleForm from "../components/RoleForm";
 import RoleTable from "../components/RoleTable";
 import { useRoles } from "../hooks/useRoles";
 import type { Role } from "../types/role";
+import { useTranslation } from "react-i18next";
 
 export default function RolesPage() {
+  const { t, i18n } = useTranslation();
+  const direction = i18n.dir();
   const {
     roles,
     permissions,
@@ -75,14 +78,14 @@ export default function RolesPage() {
   ) => {
     if (role.users_count > 0) {
       window.alert(
-        `لا يمكن حذف الدور لأنه مرتبط بـ ${role.users_count} مستخدم.`,
+        t("roles.errors.deleteAssigned", { count: role.users_count }),
       );
       return;
     }
 
     const confirmed =
       window.confirm(
-        `هل تريد حذف الدور "${role.name}"؟`,
+        t("roles.confirmDelete", { name: role.name }),
       );
 
     if (!confirmed) {
@@ -93,17 +96,17 @@ export default function RolesPage() {
   };
 
   return (
-    <div className="space-y-6" dir="rtl">
+    <div className="space-y-6" dir={direction}>
       <PageHeader
-        title="الأدوار والصلاحيات"
-        description="إنشاء الأدوار وتحديد ما يمكن لكل مستخدم عرضه أو تنفيذه داخل PrimeERP."
+        title={t("roles.title")}
+        description={t("roles.description")}
         actions={
           <Button
             type="button"
             onClick={handleNewRole}
           >
-            <Plus className="ml-2 h-4 w-4" />
-            دور جديد
+            <Plus className="me-2 h-4 w-4" />
+            {t("roles.newRole")}
           </Button>
         }
       />
@@ -117,7 +120,7 @@ export default function RolesPage() {
 
             <div>
               <p className="text-sm text-muted-foreground">
-                إجمالي الأدوار
+                {t("roles.total")}
               </p>
 
               <p className="text-2xl font-bold">
@@ -135,7 +138,7 @@ export default function RolesPage() {
 
             <div>
               <p className="text-sm text-muted-foreground">
-                الأدوار النشطة
+                {t("roles.active")}
               </p>
 
               <p className="text-2xl font-bold">
@@ -153,7 +156,7 @@ export default function RolesPage() {
 
             <div>
               <p className="text-sm text-muted-foreground">
-                المستخدمون المرتبطون
+                {t("roles.assignedUsers")}
               </p>
 
               <p className="text-2xl font-bold">
@@ -166,7 +169,7 @@ export default function RolesPage() {
 
       <section className="rounded-2xl border bg-card p-4 shadow-sm">
         <div className="relative max-w-md">
-          <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
 
           <Input
             value={filters.search || ""}
@@ -177,8 +180,8 @@ export default function RolesPage() {
                   event.target.value,
               }))
             }
-            placeholder="البحث باسم الدور أو الوصف..."
-            className="pr-10"
+            placeholder={t("roles.searchPlaceholder")}
+            className="ps-10"
           />
         </div>
       </section>
