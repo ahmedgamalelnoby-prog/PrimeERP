@@ -70,7 +70,7 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
       setCompanies(available);
       const savedCompanyId = storage.getCompanyId() || "";
       const savedCompany = available.find((company) => String(company.id) === savedCompanyId);
-      const selectedCompany = savedCompany || (!user.is_platform_admin ? available[0] : undefined);
+      const selectedCompany = savedCompany || (available.length === 1 ? available[0] : undefined);
 
       if (!selectedCompany) {
         storage.clearCompanyContext();
@@ -157,7 +157,7 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
           aria-label={isArabic ? "الشركة النشطة" : "Active company"}
           title={isArabic ? "الشركة النشطة" : "Active company"}
         >
-          {user?.is_platform_admin && <option value="">{isArabic ? "اختر الشركة" : "Select company"}</option>}
+          <option value="">{isArabic ? "اختر الشركة" : "Select company"}</option>
           {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
         </select>}
         {selectedCompanyId && branches.length > 0 && <select
