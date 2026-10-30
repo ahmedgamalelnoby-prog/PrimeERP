@@ -506,6 +506,16 @@ def budget(p: BudgetCreate, db: Session = Depends(get_db), current_user: User = 
     return o
 
 
+@router.get("/budgets", response_model=list[BudgetResponse], dependencies=[Depends(require_permission("enterprise.access"))])
+def budgets(company_id: int = Query(..., gt=0), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    company_for_user(db, company_id, current_user)
+    return list(db.scalars(
+        select(Budget)
+        .where(Budget.company_id == company_id)
+        .order_by(Budget.fiscal_year.desc(), Budget.id.desc())
+    ).all())
+
+
 @router.post("/budgets/{budget_id}/lines", response_model=BudgetResponse, dependencies=[Depends(require_permission("enterprise.write"))])
 def budget_line(budget_id: int, p: BudgetLineCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     o = db.scalar(select(Budget).where(Budget.id == budget_id).with_for_update())
