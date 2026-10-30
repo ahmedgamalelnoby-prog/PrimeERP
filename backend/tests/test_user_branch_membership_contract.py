@@ -305,3 +305,15 @@ def test_journal_entry_api_reads_and_writes_are_branch_membership_scoped():
     assert "require_branch_access(db, current_user, entry.branch_id)" in router
     assert "require_branch_access(db, current_user, payload.branch_id)" in router
     assert "_authorize_entry_access(db, current_user, entry_id)" in router
+
+
+def test_ai_financial_report_analysis_uses_accessible_branch_scope():
+    router = source("app/modules/reports/router.py")
+    assert "branch_ids=accessible_branch_ids(db, current_user)" in router
+
+
+def test_company_wide_scheduled_reports_require_tenant_wide_branch_management():
+    router = source("app/modules/reports/router.py")
+    assert "def _require_company_wide_reporting_access(" in router
+    assert "can_manage_all_branches(db, user)" in router
+    assert router.count("_require_company_wide_reporting_access(db, current_user)") >= 3
