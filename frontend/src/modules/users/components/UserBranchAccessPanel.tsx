@@ -77,6 +77,9 @@ export default function UserBranchAccessPanel({
     }
     setLoading(true);
     setError("");
+    setMember(null);
+    setRoles([]);
+    setRoleId("");
     try {
       const [members, assignableRoles] = await Promise.all([
         userCompanyAccessApi.getBranchMembers(companyId, Number(branchId)),
