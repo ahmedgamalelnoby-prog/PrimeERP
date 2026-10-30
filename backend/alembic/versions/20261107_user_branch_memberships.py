@@ -1,7 +1,7 @@
 """Add explicit user-to-branch access assignments.
 
 Revision ID: 20261107_user_branch_memberships
-Revises: 20261106_merge_inventory_approval_heads
+Revises: d8f77511bacb
 """
 from alembic import op
 import sqlalchemy as sa
