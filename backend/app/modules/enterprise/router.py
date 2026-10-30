@@ -8,7 +8,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.context import get_effective_tenant_id, get_optional_request_context
-from app.core.context.access import require_branch_access
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
@@ -62,6 +61,8 @@ def company_for_user(db: Session, company_id: int, user: User) -> Company:
     context = get_optional_request_context()
     if context is None or context.company_id != company_id:
         raise HTTPException(403, "Select this company using X-Company-ID before accessing enterprise data")
+    if context.branch_id is not None:
+        raise HTTPException(400, "Enterprise records are company-wide; omit X-Branch-ID to use company-level permissions")
     company = db.scalar(
         select(Company).where(
             Company.id == company_id,
@@ -226,7 +227,6 @@ def submit_payroll_run(
     current_user: User = Depends(get_current_user),
 ):
     company = company_for_user(db, company_id, current_user)
-    require_branch_access(db, company_id, payload.branch_id, current_user)
     run = db.scalar(select(PayrollRun).where(
         PayrollRun.id == run_id,
         PayrollRun.company_id == company_id,
