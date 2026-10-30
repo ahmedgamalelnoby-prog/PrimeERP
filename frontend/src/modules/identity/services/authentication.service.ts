@@ -54,7 +54,11 @@ async function logout(): Promise<void> {
 }
 
 async function getCurrentUser(): Promise<AuthenticatedUser> {
-  const response = await client.get<AuthenticatedUser>("/identity/me");
+  // Identity bootstrap must remain available when a previously selected
+  // company or branch membership has been revoked.
+  const response = await client.get<AuthenticatedUser>("/identity/me", {
+    headers: { "X-Company-ID": "", "X-Branch-ID": "" },
+  });
   return response.data;
 }
 
