@@ -192,3 +192,10 @@ def test_sales_returns_validate_access_to_every_source_delivery_branch():
     assert "SalesLine.id == request_line.original_delivery_line_id" in router
     assert "SalesDocument.document_type == \"delivery\"" in router
     assert "source_delivery.warehouse_id" in router
+
+
+def test_audit_event_listing_is_limited_to_assigned_branches():
+    router = source("app/modules/audit/router.py")
+    assert "if not can_manage_all_branches(db, current_user):" in router
+    assert "allowed_branch_ids = accessible_branch_ids(db, current_user)" in router
+    assert "AuditEvent.branch_id.in_(allowed_branch_ids)" in router
