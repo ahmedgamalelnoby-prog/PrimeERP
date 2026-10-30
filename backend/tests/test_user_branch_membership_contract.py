@@ -31,10 +31,14 @@ def test_branch_membership_migration_is_chained_after_current_merge_head():
     assert "op.create_table(" in migration
     assert '"user_branch_memberships"' in migration
     assert "uq_user_branch_memberships_tenant_user_branch" in migration
+    assert "branch.manage_all" in migration
+    assert "ON CONFLICT (name) DO NOTHING" in migration
 
 
 def test_branch_reads_are_limited_to_membership_unless_explicit_global_permission():
     router = source("app/modules/branches/router.py")
+    manifest = source("app/modules/branches/__manifest__.py")
+    assert "branch.manage_all" in manifest
     assert 'user_has_permission(user, "branch.manage_all", db)' in router
     assert "UserBranchMembership.user_id == user.id" in router
     assert "UserBranchMembership.is_active.is_(True)" in router
