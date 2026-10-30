@@ -81,7 +81,7 @@ export default function AppSidebar({ open, onClose }: AppSidebarProps) {
 
   return <>
     {open && <button type="button" aria-label={t("common.closeNavigation", { defaultValue: isArabic ? "إغلاق القائمة" : "Close navigation" })} className="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-sm lg:hidden" onClick={onClose} />}
-    <aside className={["fixed top-0 z-50 flex h-screen w-[286px] flex-col overflow-hidden border-slate-800 bg-[#0b1730] text-white shadow-2xl shadow-slate-950/20 transition-transform duration-300", isArabic ? "right-0 border-l" : "left-0 border-r", open ? "translate-x-0" : isArabic ? "translate-x-full" : "-translate-x-full", "lg:translate-x-0"].join(" ")}>
+    <aside className={["fixed top-0 z-50 flex h-screen w-[286px] flex-col overflow-hidden border-slate-800 bg-[#0b1730] text-white shadow-2xl shadow-slate-950/20 transition-transform duration-300",  "right-0 border-l", open ? "translate-x-0" : "translate-x-full", "lg:translate-x-0"].join(" ")}>
       <div className="relative overflow-hidden border-b border-white/10 px-5 pb-5 pt-5">
         <div className="absolute -left-10 -top-14 h-32 w-32 rounded-full bg-cyan-400/10 blur-3xl" />
         <div className="relative flex items-center justify-between gap-3">
