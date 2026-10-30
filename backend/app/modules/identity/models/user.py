@@ -153,8 +153,8 @@ class User(Base):
     )
 
     __table_args__ = (
-        Index("uq_users_username_global_ci", func.lower(username), unique=True),
-        Index("uq_users_email_global_ci", func.lower(email), unique=True),
+        Index("uq_users_username_global_ci", func.lower(func.trim(username)), unique=True),
+        Index("uq_users_email_global_ci", func.lower(func.trim(email)), unique=True),
     )
 
     def __repr__(self) -> str:
