@@ -336,8 +336,8 @@ def list_company_membership_audit(
             "username": user.username,
             "full_name": user.full_name,
             "user_is_active": user.is_active and not user.is_deleted,
-            "company_membership_is_active": membership.is_active,
-            "company_role_id": membership.role_id,
+            "company_membership_is_active": membership.is_active if membership else None,
+            "company_role_id": membership.role_id if membership else None,
             "company_role_name": role.name if role else None,
             "branch_access": [
                 {
