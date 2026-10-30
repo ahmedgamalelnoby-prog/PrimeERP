@@ -79,3 +79,34 @@ def test_branch_update_payload_cannot_change_tenant_or_company():
     update = schema.split("class BranchUpdate", 1)[1].split("class BranchResponse", 1)[0]
     assert "tenant_id" not in update
     assert "company_id" not in update
+
+
+def test_shared_branch_access_helper_checks_tenant_membership_and_active_branch():
+    access = source("app/modules/branches/access.py")
+    assert "Branch.tenant_id == tenant_id" in access
+    assert "Branch.is_active.is_(True)" in access
+    assert "UserBranchMembership.user_id == user.id" in access
+    assert "UserBranchMembership.is_active.is_(True)" in access
+    assert '"branch.manage_all"' in access
+
+
+def test_warehouse_list_is_filtered_to_assigned_branches_for_regular_users():
+    router = source("app/modules/inventory/warehouses/router.py")
+    service = source("app/modules/inventory/warehouses/service.py")
+    assert "require_branch_access(db, current_user, branch_id)" in router
+    assert "accessible_branch_ids(db, current_user)" in router
+    assert "allowed_branch_ids=allowed" in router
+    assert "InventoryWarehouse.branch_id.in_(allowed_branch_ids)" in service
+
+
+def test_central_warehouse_requires_tenant_wide_permission_for_creation_and_update():
+    router = source("app/modules/inventory/warehouses/router.py")
+    assert "Tenant-wide branch management permission is required for a central warehouse" in router
+    assert "can_manage_all_branches(db, current_user)" in router
+
+
+def test_warehouse_creation_validates_branch_company_and_user_membership():
+    router = source("app/modules/inventory/warehouses/router.py")
+    create = router.split("def create_warehouse(", 1)[1].split("@router.patch", 1)[0]
+    assert "require_branch_access(db, current_user, payload.branch_id)" in create
+    assert "branch.company_id != company.id" in create
