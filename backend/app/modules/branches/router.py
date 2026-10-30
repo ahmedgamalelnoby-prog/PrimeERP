@@ -208,6 +208,36 @@ def revoke_branch_membership(
     return None
 
 
+@router.delete("/{branch_id}/members/{user_id}/role", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_permission("branch.write"))])
+def clear_branch_member_role(
+    branch_id: int,
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    branch = _branch_for_membership_admin(db, branch_id, current_user)
+    membership = db.scalar(
+        select(BranchUserMembership).where(
+            BranchUserMembership.branch_id == branch.id,
+            BranchUserMembership.user_id == user_id,
+        ).with_for_update()
+    )
+    if membership is None:
+        raise HTTPException(status_code=404, detail="Branch membership not found")
+    membership.role_id = None
+    record_audit_event(
+        db,
+        action="branch.membership.role.clear",
+        entity_type="branch_user_membership",
+        entity_id=membership.id,
+        user_id=current_user.id,
+        tenant_id=branch.tenant_id,
+        metadata={"branch_id": branch.id, "member_user_id": user_id},
+    )
+    db.commit()
+    return None
+
+
 @router.get("", response_model=list[BranchResponse], dependencies=[Depends(require_permission("branch.access"))])
 def list_branches(company_id: int | None = Query(default=None, gt=0), active_only: bool = Query(False), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     selected_company_id = _selected_company_id()
