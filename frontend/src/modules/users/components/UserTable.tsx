@@ -73,6 +73,7 @@ export default function UserTable({
   onDelete,
   onToggleStatus,
   onResetPassword,
+  onManageCompanies,
 }: UserTableProps) {
   const dateFormat = useCompanyDateFormat();
 
