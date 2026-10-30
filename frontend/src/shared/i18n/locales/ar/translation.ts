@@ -811,7 +811,7 @@ const arTranslation = {
     menu: "المنيو",
     item: "الصنف",
     paymentMethods: { cash: "نقدي", card: "بطاقة", bank: "تحويل بنكي", wallet: "محفظة" },
-    orderStatuses: { draft: "مسودة", pending: "قيد الانتظار", preparing: "قيد التحضير", ready: "جاهز", served: "تم التسليم", paid: "مدفوع", cancelled: "ملغي" }
+    orderStatuses: { draft: "مسودة", pending: "قيد الانتظار", preparing: "قيد التحضير", ready: "جاهز", served: "تم التسليم", paid: "مدفوع", cancelled: "ملغي" },
     title: "نقاط البيع للمطاعم والفنادق",
     flowDescription: "مكان الخدمة ← جهاز POS ← المنيو ← صنف المنيو ← محطة التحضير (المطبخ/البار) ← شاشة التنفيذ.",
     offlineCacheNotice: "أنت تعمل دون اتصال؛ يتم استخدام آخر بيانات POS محفوظة محليًا.",
