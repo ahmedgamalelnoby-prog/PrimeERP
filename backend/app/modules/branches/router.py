@@ -39,7 +39,7 @@ def _company(db: Session, company_id: int, user: User) -> Company:
 def _can_manage_all_branches(db: Session, user: User) -> bool:
     return bool(
         user.is_platform_admin
-        or user_has_permission(user, "branch.write", db)
+        or user_has_permission(user, "branch.manage_all", db)
     )
 
 
