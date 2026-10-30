@@ -134,7 +134,7 @@ def carrier_position(company_id: int = Query(..., gt=0), carrier_id: int | None 
 @router.get("/shipment-reconciliation")
 def shipment_reconciliation(company_id: int = Query(..., gt=0), carrier_id: int | None = Query(default=None, gt=0), date_from: date | None = None, date_to: date | None = None, date_basis: str = Query(default="shipment", pattern="^(order|shipment)$"), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company(db, company_id, current_user)
-    rows = _filtered_shipments(db, company_id, carrier_id, date_from, date_to, date_basis)
+    rows = _filtered_shipments(db, company_id, carrier_id, date_from, date_to, date_basis, current_user)
     result = []
     for shipment, carrier_name, cost in rows:
         expected_cod, carrier_payable, revenue = _ledger_for_shipment(db, shipment.id)
