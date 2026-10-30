@@ -126,7 +126,9 @@ def bootstrap_super_admin(
         user.is_platform_admin = True
         user.is_deleted = False
         user.must_change_password = False
-        user.hashed_password = password_service.hash_password(password)
+        # Existing administrator credentials are never silently replaced by
+        # an idempotent bootstrap run. Use the authenticated password-reset
+        # workflow when a credential change is actually required.
 
     db.commit()
     db.refresh(user)
