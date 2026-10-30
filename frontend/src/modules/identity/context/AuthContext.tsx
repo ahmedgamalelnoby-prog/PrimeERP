@@ -60,7 +60,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const applyCompanyLanguage = async (): Promise<void> => {
       try {
         const { data: companies } = await client.get<Array<{ id: number }>>(
-          "/companies?active_only=true",
+          "/companies/accessible",
+          { headers: { "X-Branch-ID": "" } },
         );
         if (cancelled) return;
         if (companies.length === 0) {
