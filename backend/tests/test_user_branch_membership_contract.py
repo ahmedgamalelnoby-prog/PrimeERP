@@ -98,6 +98,8 @@ def test_warehouse_list_is_filtered_to_assigned_branches_for_regular_users():
     assert "accessible_branch_ids(db, current_user)" in router
     assert "allowed_branch_ids=allowed" in router
     assert "InventoryWarehouse.branch_id.in_(allowed_branch_ids)" in service
+    assert "include_central_warehouses=can_manage_all_branches(db, current_user)" in router
+    assert "or_(warehouse_scope, InventoryWarehouse.branch_id.is_(None))" in service
 
 
 def test_central_warehouse_requires_tenant_wide_permission_for_creation_and_update():
