@@ -85,7 +85,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute(sa.text("DELETE FROM permissions WHERE name = 'branch.manage_all'"))
     op.drop_index("ix_user_branch_memberships_branch_id", table_name="user_branch_memberships")
     op.drop_index("ix_user_branch_memberships_user_id", table_name="user_branch_memberships")
     op.drop_index("ix_user_branch_memberships_tenant_id", table_name="user_branch_memberships")
