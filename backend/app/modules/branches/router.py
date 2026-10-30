@@ -249,7 +249,18 @@ def clear_branch_member_role(
     return None
 
 
-@router.get("", response_model=list[BranchResponse], dependencies=[Depends(require_permission("branch.access"))])
+def _require_branch_list_access(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    if not (
+        user_has_permission(current_user, "branch.access", db)
+        or user_has_permission(current_user, "branch.write", db)
+    ):
+        raise HTTPException(status_code=403, detail="Missing required branch access permission")
+
+
+@router.get("", response_model=list[BranchResponse], dependencies=[Depends(_require_branch_list_access)])
 def list_branches(company_id: int | None = Query(default=None, gt=0), active_only: bool = Query(False), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     selected_company_id = _selected_company_id()
     if company_id is not None and company_id != selected_company_id:
