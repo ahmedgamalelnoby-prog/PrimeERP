@@ -5,7 +5,6 @@ from sqlalchemy.orm import Session
 
 from app.core.database import BaseRepository
 from app.modules.identity.models.user import User
-from app.modules.saas.models import Tenant
 
 
 class UserRepository(BaseRepository[User]):
@@ -102,50 +101,14 @@ class UserRepository(BaseRepository[User]):
         self,
         db: Session,
         login: str,
-        *,
-        tenant_slug: str | None = None,
-        tenant_name: str | None = None,
-    ) -> list[User]:
-        """
-        Returns up to two matching users.
-
-        The service layer decides whether multiple matches
-        represent a business conflict.
-        """
-        normalized_login = login.strip().lower()
-
-        query = (
-            select(User)
-            .outerjoin(
-                Tenant,
-                Tenant.id == User.tenant_id,
-            )
-            .where(
-                or_(
-                    func.lower(func.trim(User.email)) == normalized_login,
-                    func.lower(func.trim(User.username)) == normalized_login,
-                ),
-                User.is_deleted.is_(False),
-            )
+    ) -> User | None:
+        """Resolve a globally unique username without asking for a tenant/company."""
+        normalized_username = login.strip().lower()
+        query = select(User).where(
+            func.lower(func.trim(User.username)) == normalized_username,
+            User.is_deleted.is_(False),
         )
-
-        if tenant_slug:
-            query = query.where(
-                func.lower(Tenant.slug) == tenant_slug.strip().lower()
-            )
-        if tenant_name:
-            query = query.where(
-                or_(
-                    User.is_platform_admin.is_(True),
-                    func.lower(Tenant.name) == tenant_name.strip().lower(),
-                )
-            )
-
-        query = query.limit(2)
-
-        return list(
-            db.execute(query).scalars().all()
-        )
+        return db.execute(query).scalar_one_or_none()
 
     def list_users(
         self,
