@@ -4,19 +4,27 @@ from sqlalchemy import MetaData, select
 from sqlalchemy.orm import Session
 
 from app.modules.inventory.items.models import InventoryItem, InventoryStock
+from app.modules.inventory.warehouses.models import InventoryWarehouse
 from app.modules.inventory.costing.schemas import InventoryValuationResponse, InventoryValuationRow
 
 
 class InventoryCostingService:
-    def valuation(self, db: Session, company_id: int, warehouse_id: int | None = None, item_id: int | None = None):
+    def valuation(self, db: Session, company_id: int, warehouse_id: int | None = None, item_id: int | None = None, *, branch_id: int | None = None):
         stmt = (
             select(InventoryStock, InventoryItem.costing_method)
             .join(InventoryItem, InventoryItem.id == InventoryStock.item_id)
+            .join(InventoryWarehouse, InventoryWarehouse.id == InventoryStock.warehouse_id)
             .where(
                 InventoryStock.company_id == company_id,
                 InventoryItem.company_id == company_id,
+                InventoryWarehouse.company_id == company_id,
+                InventoryWarehouse.is_active.is_(True),
             )
         )
+        if branch_id is not None:
+            stmt = stmt.where(
+                (InventoryWarehouse.branch_id == branch_id) | InventoryWarehouse.is_central.is_(True)
+            )
         if warehouse_id:
             stmt = stmt.where(InventoryStock.warehouse_id == warehouse_id)
         if item_id:
