@@ -33,7 +33,13 @@ export interface RoleAccessAuditFinding {
   role_name?: string;
   permission_id?: number;
   permission_name?: string;
+  module_name?: string;
   count: number;
+}
+
+export interface ManifestPermissionGap {
+  module_name: string;
+  permission_name: string;
 }
 
 export interface RoleAccessAudit {
@@ -43,9 +49,13 @@ export interface RoleAccessAudit {
     permissions_total: number;
     permissions_active: number;
     permissions_without_active_role: number;
+    manifest_permissions_declared: number;
+    manifest_permissions_registered: number;
+    manifest_permissions_missing: number;
     findings_total: number;
   };
   roles: RoleAccessAuditRole[];
   permissions_without_active_role: RoleAccessAuditPermission[];
+  manifest_permissions_missing: ManifestPermissionGap[];
   findings: RoleAccessAuditFinding[];
 }
