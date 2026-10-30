@@ -134,6 +134,48 @@ const enTranslation = {
     }
   },
 
+  sales: {
+    title: "Sales",
+    description: "Create sales documents, approve them, post inventory and collect payments within the sales cycle.",
+    customer: "Customer",
+    autoNumber: "Document numbers are generated automatically according to company settings.",
+    sourceOrderOptional: "Sales order (optional, subject to policy)",
+    sourceOrderLine: "Sales order line",
+    itemQuantity: "Item {{item}} · Quantity {{quantity}}",
+    warehouse: "Issuing / delivery warehouse",
+    price: "Price",
+    quantity: "Quantity",
+    itemId: "Item ID",
+    loadingCompanyDate: "Loading company date...",
+    createDocument: "Create document",
+    types: {
+      quotation: "Quotation",
+      order: "Sales order",
+      delivery: "Delivery note",
+      invoice: "Invoice"
+    },
+    columns: {
+      number: "Number",
+      date: "Date",
+      type: "Type",
+      status: "Status",
+      total: "Total",
+      actions: "Actions"
+    },
+    actions: {
+      confirm: "Confirm",
+      cancelRelease: "Cancel order and release reservation",
+      approve: "Approve",
+      reject: "Reject",
+      postInventory: "Post inventory",
+      collectFull: "Collect in full",
+      details: "Details"
+    },
+    confirmCancelOrder: "This will cancel the sales order and release reserved quantities. Do you want to continue?",
+    documentNumber: "Document #{{number}}",
+    detailsSummary: "Customer: {{customer}} — Total: {{total}} — Paid: {{paid}}"
+  },
+
   roles: {
     notifications: {
       created: "Role created successfully.",
