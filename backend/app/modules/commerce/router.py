@@ -9,6 +9,7 @@ from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.accounting.chart_of_accounts.models import AccountCombination
 from app.modules.accounting.journals.models import AccountingJournal
+from app.modules.branches.access import require_branch_access
 from app.modules.branches.models import Branch
 from app.modules.commerce.accounting_models import CommerceAccountingSettings
 from app.modules.commerce.accounting_schemas import CommerceAccountingSettingsCreate
@@ -55,8 +56,9 @@ def _validate_accounting_configuration(db: Session, company: Company, payload: C
 @router.post("/accounting-settings", status_code=201, dependencies=[Depends(require_permission("commerce.write"))])
 def configure_accounting(payload: CommerceAccountingSettingsCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     company = _company_for_user(db, payload.company_id, current_user)
-    branch = db.scalar(select(Branch).where(Branch.id == payload.default_branch_id, Branch.company_id == company.id, Branch.tenant_id == company.tenant_id, Branch.is_active.is_(True)))
-    if branch is None: raise HTTPException(422, "Default branch does not belong to the company")
+    branch = require_branch_access(db, current_user, payload.default_branch_id)
+    if branch.company_id != company.id or branch.tenant_id != company.tenant_id:
+        raise HTTPException(404, "Default branch not found for company")
     _validate_accounting_configuration(db, company, payload)
     values = payload.model_dump(); obj = db.scalar(select(CommerceAccountingSettings).where(CommerceAccountingSettings.company_id == company.id))
     if obj is None: obj = CommerceAccountingSettings(**values); db.add(obj)
@@ -69,6 +71,9 @@ def configure_accounting(payload: CommerceAccountingSettingsCreate, current_user
 def get_accounting_settings(company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user); obj = db.scalar(select(CommerceAccountingSettings).where(CommerceAccountingSettings.company_id == company_id))
     if obj is None: raise HTTPException(404, "Commerce accounting configuration not found")
+    branch = require_branch_access(db, current_user, obj.default_branch_id)
+    if branch.company_id != company_id:
+        raise HTTPException(404, "Commerce accounting configuration not found")
     return {c.name: getattr(obj, c.name) for c in obj.__table__.columns if c.name != "id"}
 
 
