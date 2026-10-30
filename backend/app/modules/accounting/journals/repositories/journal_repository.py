@@ -72,6 +72,7 @@ class JournalRepository:
         end_date: Optional[date] = None,
         status: Optional[str] = None,
         journal_id: Optional[int] = None,
+        branch_ids: Optional[list[int]] = None,
     ) -> list[JournalEntry]:
         query = (
             db.query(JournalEntry)
@@ -89,6 +90,8 @@ class JournalRepository:
             query = query.filter(JournalEntry.status == status)
         if journal_id is not None:
             query = query.filter(JournalEntry.journal_id == journal_id)
+        if branch_ids is not None:
+            query = query.filter(JournalEntry.branch_id.in_(branch_ids))
         return query.order_by(JournalEntry.entry_date.desc(), JournalEntry.id.desc()).all()
 
 
