@@ -157,6 +157,8 @@ const enTranslation = {
     }
   },
   rolesTable: {
+    active: "Active",
+    inactive: "Inactive",
     loading: "Loading roles...",
     emptyTitle: "No roles found",
     emptyDescription: "Create your first role and assign its permissions.",
