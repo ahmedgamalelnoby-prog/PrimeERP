@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { toast } from "react-hot-toast";
+import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -38,7 +39,9 @@ export default function ResetPasswordDialog({
   user,
   onOpenChange,
   onSuccess,
-}: ResetPasswordDialogProps) {
+} : ResetPasswordDialogProps) {
+  const { t, i18n } = useTranslation();
+  const direction = i18n.dir();
   const [password, setPassword] =
     useState("");
 
@@ -74,14 +77,14 @@ export default function ResetPasswordDialog({
 
     if (password.length < 6) {
       toast.error(
-        "كلمة المرور يجب ألا تقل عن 6 أحرف.",
+        t("users.resetPassword.errors.passwordLength"),
       );
       return;
     }
 
     if (password !== confirmPassword) {
       toast.error(
-        "كلمتا المرور غير متطابقتين.",
+        t("users.resetPassword.errors.passwordMismatch"),
       );
       return;
     }
@@ -99,7 +102,7 @@ export default function ResetPasswordDialog({
       );
 
       toast.success(
-        "تمت إعادة تعيين كلمة المرور.",
+        t("users.resetPassword.success"),
       );
 
       await onSuccess();
@@ -112,7 +115,7 @@ export default function ResetPasswordDialog({
       );
 
       toast.error(
-        "تعذر إعادة تعيين كلمة المرور.",
+        t("users.resetPassword.errors.failed"),
       );
     } finally {
       setLoading(false);
@@ -126,15 +129,15 @@ export default function ResetPasswordDialog({
     >
       <DialogContent
         className="sm:max-w-md"
-        dir="rtl"
+        dir={direction}
       >
         <DialogHeader className="text-right">
           <DialogTitle>
-            إعادة تعيين كلمة المرور
+            {t("users.resetPassword.title")}
           </DialogTitle>
 
           <DialogDescription>
-            المستخدم:{" "}
+            {t("users.resetPassword.userLabel")}:{" "}
             {user?.full_name ||
               user?.username}
           </DialogDescription>
@@ -146,7 +149,7 @@ export default function ResetPasswordDialog({
         >
           <div className="space-y-2">
             <Label htmlFor="new_password">
-              كلمة المرور الجديدة
+              {t("users.resetPassword.newPassword")}
             </Label>
 
             <div className="relative">
@@ -187,7 +190,7 @@ export default function ResetPasswordDialog({
 
           <div className="space-y-2">
             <Label htmlFor="confirm_password">
-              تأكيد كلمة المرور
+              {t("users.resetPassword.confirmPassword")}
             </Label>
 
             <Input
@@ -205,7 +208,7 @@ export default function ResetPasswordDialog({
 
           <div className="flex items-center justify-between rounded-xl border p-4">
             <Label htmlFor="must-change">
-              إجبار المستخدم على تغييرها
+              {t("users.resetPassword.forceChange")}
             </Label>
 
             <Switch
@@ -226,7 +229,7 @@ export default function ResetPasswordDialog({
                 <Loader2 className="ml-2 h-4 w-4 animate-spin" />
               )}
 
-              حفظ كلمة المرور
+              {t("users.resetPassword.save")}
             </Button>
 
             <Button
@@ -236,7 +239,7 @@ export default function ResetPasswordDialog({
                 onOpenChange(false)
               }
             >
-              إلغاء
+              {t("common.cancel")}
             </Button>
           </DialogFooter>
         </form>
