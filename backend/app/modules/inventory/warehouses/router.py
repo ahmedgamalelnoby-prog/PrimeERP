@@ -39,7 +39,7 @@ def list_warehouses(company_id: int = Query(gt=0), branch_id: int | None = Query
         db,
         company_id=company_id,
         branch_id=branch_id,
-        include_central=include_central,
+        include_central=include_central and can_manage_all_branches(db, current_user),
         allowed_branch_ids=allowed,
     )
 
@@ -48,17 +48,10 @@ def list_warehouses(company_id: int = Query(gt=0), branch_id: int | None = Query
 def get_central_warehouse(company_id: int = Query(gt=0), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _company_for_user(db, company_id, current_user)
     if not can_manage_all_branches(db, current_user):
-        branch_ids = accessible_branch_ids(db, current_user)
-        from app.modules.branches.models import Branch
-        has_company_membership = db.scalar(
-            select(Branch.id).where(
-                Branch.id.in_(branch_ids),
-                Branch.company_id == company_id,
-                Branch.tenant_id == get_effective_tenant_id(current_user),
-            ).limit(1)
-        ) if branch_ids else None
-        if has_company_membership is None:
-            raise HTTPException(status_code=403, detail="You are not assigned to this company's branches")
+        raise HTTPException(
+            status_code=403,
+            detail="Tenant-wide branch management permission is required for the central warehouse",
+        )
     return warehouse_service.get_central(db, company_id=company_id)
 
 
