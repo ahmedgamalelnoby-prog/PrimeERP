@@ -31,3 +31,15 @@ class BranchResponse(BaseModel):
     phone: str | None
     email: str | None
     is_active: bool
+
+
+class BranchMemberCreate(BaseModel):
+    user_id: int = Field(gt=0)
+
+
+class BranchMemberResponse(BaseModel):
+    user_id: int
+    username: str
+    full_name: str | None
+    is_active: bool
+    assigned_by_user_id: int | None

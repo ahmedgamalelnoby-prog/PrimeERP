@@ -60,10 +60,16 @@ def get_tenant_owner_role(db: Session) -> Role:
 
 
 def validate_registration_uniqueness(db: Session, payload: TenantRegistrationRequest) -> None:
+    normalized_username = payload.username.strip().lower()
+    # The lock is held until register_trial_tenant commits/rolls back, so two
+    # concurrent sign-ups cannot reserve the same login in different tenants.
+    db.query(func.pg_advisory_xact_lock(func.hashtext(
+        f"primeerp:username:{normalized_username}"
+    ))).scalar()
     normalized_email = str(payload.email).strip().lower()
     if db.query(User.id).filter(func.lower(User.email) == normalized_email).first():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An account with this email already exists")
-    if db.query(User.id).filter(func.lower(User.username) == payload.username.lower()).first():
+    if db.query(User.id).filter(func.lower(User.username) == normalized_username).first():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This username is already in use")
 
 

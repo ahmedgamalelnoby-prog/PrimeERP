@@ -5,7 +5,6 @@ from sqlalchemy.orm import Session
 
 from app.core.database import BaseRepository
 from app.modules.identity.models.user import User
-from app.modules.saas.models import Tenant
 
 
 class UserRepository(BaseRepository[User]):
@@ -67,7 +66,7 @@ class UserRepository(BaseRepository[User]):
             )
 
         return db.execute(
-            query
+            query.limit(1)
         ).scalar_one_or_none()
 
     def get_by_email(
@@ -102,50 +101,22 @@ class UserRepository(BaseRepository[User]):
         self,
         db: Session,
         login: str,
-        *,
-        tenant_slug: str | None = None,
-        tenant_name: str | None = None,
     ) -> list[User]:
         """
-        Returns up to two matching users.
+        Return candidate identities matching a username or email.
 
-        The service layer decides whether multiple matches
-        represent a business conflict.
+        Authentication resolves the tenant by verifying the supplied password.
+        Ambiguous legacy identities are rejected by the service layer.
         """
         normalized_login = login.strip().lower()
-
-        query = (
-            select(User)
-            .outerjoin(
-                Tenant,
-                Tenant.id == User.tenant_id,
-            )
-            .where(
-                or_(
-                    func.lower(User.email) == normalized_login,
-                    func.lower(User.username) == normalized_login,
-                ),
-                User.is_deleted.is_(False),
-            )
-        )
-
-        if tenant_slug:
-            query = query.where(
-                func.lower(Tenant.slug) == tenant_slug.strip().lower()
-            )
-        if tenant_name:
-            query = query.where(
-                or_(
-                    User.is_platform_admin.is_(True),
-                    func.lower(Tenant.name) == tenant_name.strip().lower(),
-                )
-            )
-
-        query = query.limit(2)
-
-        return list(
-            db.execute(query).scalars().all()
-        )
+        query = select(User).where(
+            or_(
+                func.lower(User.email) == normalized_login,
+                func.lower(User.username) == normalized_login,
+            ),
+            User.is_deleted.is_(False),
+        ).limit(51)
+        return list(db.execute(query).scalars().all())
 
     def list_users(
         self,

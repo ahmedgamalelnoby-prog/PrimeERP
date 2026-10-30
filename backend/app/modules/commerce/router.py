@@ -1,6 +1,6 @@
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -9,15 +9,17 @@ from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.accounting.chart_of_accounts.models import AccountCombination
 from app.modules.accounting.journals.models import AccountingJournal
+from app.modules.branches.access import accessible_branch_ids, can_manage_all_branches, require_branch_access
 from app.modules.branches.models import Branch
 from app.modules.commerce.accounting_models import CommerceAccountingSettings
 from app.modules.commerce.accounting_schemas import CommerceAccountingSettingsCreate
-from app.modules.commerce.models import CommercePayment, SalesDocument, PurchaseDocument
+from app.modules.commerce.models import CommercePayment, SalesDocument, SalesLine, PurchaseDocument
 from app.modules.commerce.schemas import PartnerCreate, PartnerResponse, DocumentCreate, DocumentResponse, PaymentCreate, PaymentResponse, PaymentReverse, AgingSummary, PartnerStatement, CommerceApprovalDecision
 from app.modules.commerce.sales_return_schemas import SalesReturnCreate
 from app.modules.commerce.sales_return_service import sales_return_service
 from app.modules.commerce.service import commerce_service
 from app.modules.companies.models import Company
+from app.modules.inventory.warehouses.models import InventoryWarehouse
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.jurisdiction.commerce_guard import capture_document_tax_snapshot, validate_document_tax_snapshot
@@ -52,11 +54,124 @@ def _validate_accounting_configuration(db: Session, company: Company, payload: C
         if account_id not in account_by_id: raise HTTPException(422, f"Configured {label} does not belong to this company or is inactive")
 
 
+def _require_company_branch_membership(db: Session, user: User, company_id: int) -> None:
+    if can_manage_all_branches(db, user):
+        return
+    allowed = accessible_branch_ids(db, user)
+    has_company_branch = db.scalar(
+        select(Branch.id).where(
+            Branch.id.in_(allowed),
+            Branch.company_id == company_id,
+            Branch.tenant_id == get_effective_tenant_id(user),
+            Branch.is_active.is_(True),
+        ).limit(1)
+    ) if allowed else None
+    if has_company_branch is None:
+        raise HTTPException(status_code=403, detail="Branch membership is required for this company")
+
+
+def _authorize_warehouse_branch(
+    db: Session,
+    user: User,
+    company_id: int,
+    warehouse_id: int | None,
+) -> InventoryWarehouse | None:
+    if warehouse_id is None:
+        _require_company_branch_membership(db, user, company_id)
+        return None
+    warehouse = db.scalar(
+        select(InventoryWarehouse).where(
+            InventoryWarehouse.id == warehouse_id,
+            InventoryWarehouse.company_id == company_id,
+            InventoryWarehouse.tenant_id == get_effective_tenant_id(user),
+            InventoryWarehouse.is_active.is_(True),
+        )
+    )
+    if warehouse is None:
+        raise HTTPException(status_code=404, detail="Warehouse not found for company")
+    if warehouse.branch_id is None:
+        if not can_manage_all_branches(db, user):
+            raise HTTPException(status_code=403, detail="Central warehouse access requires tenant-wide branch management permission")
+    else:
+        branch = require_branch_access(db, user, warehouse.branch_id)
+        if branch.company_id != company_id:
+            raise HTTPException(status_code=404, detail="Warehouse not found for company")
+    return warehouse
+
+
+def _authorize_commerce_document(
+    db: Session,
+    user: User,
+    company_id: int,
+    document_id: int,
+    kind: str,
+):
+    model = SalesDocument if kind == "sale" else PurchaseDocument
+    document = db.scalar(
+        select(model).where(
+            model.id == document_id,
+            model.company_id == company_id,
+        )
+    )
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    _authorize_warehouse_branch(db, user, company_id, document.warehouse_id)
+    return document
+
+
+def _visible_warehouse_ids(db: Session, user: User, company_id: int) -> set[int] | None:
+    if can_manage_all_branches(db, user):
+        return None
+    allowed = accessible_branch_ids(db, user)
+    return set(db.scalars(
+        select(InventoryWarehouse.id).where(
+            InventoryWarehouse.company_id == company_id,
+            InventoryWarehouse.tenant_id == get_effective_tenant_id(user),
+            InventoryWarehouse.branch_id.in_(allowed),
+            InventoryWarehouse.is_active.is_(True),
+        )
+    ).all()) if allowed else set()
+
+
+def _visible_document_ids(db: Session, user: User, company_id: int, kind: str) -> set[int] | None:
+    if can_manage_all_branches(db, user):
+        return None
+    model = SalesDocument if kind == "sale" else PurchaseDocument
+    visible_warehouses = _visible_warehouse_ids(db, user, company_id) or set()
+    allowed = accessible_branch_ids(db, user)
+    has_company_membership = db.scalar(
+        select(Branch.id).where(
+            Branch.id.in_(allowed),
+            Branch.company_id == company_id,
+            Branch.tenant_id == get_effective_tenant_id(user),
+            Branch.is_active.is_(True),
+        ).limit(1)
+    ) if allowed else None
+    conditions = []
+    if visible_warehouses:
+        conditions.append(model.warehouse_id.in_(visible_warehouses))
+    if has_company_membership is not None:
+        conditions.append(model.warehouse_id.is_(None))
+    if not conditions:
+        return set()
+    return set(db.scalars(
+        select(model.id).where(model.company_id == company_id, or_(*conditions))
+    ).all())
+
+
+def _filter_visible_documents(db: Session, user: User, company_id: int, documents, kind: str):
+    visible_ids = _visible_document_ids(db, user, company_id, kind)
+    if visible_ids is None:
+        return documents
+    return [document for document in documents if document.id in visible_ids]
+
+
 @router.post("/accounting-settings", status_code=201, dependencies=[Depends(require_permission("commerce.write"))])
 def configure_accounting(payload: CommerceAccountingSettingsCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     company = _company_for_user(db, payload.company_id, current_user)
-    branch = db.scalar(select(Branch).where(Branch.id == payload.default_branch_id, Branch.company_id == company.id, Branch.tenant_id == company.tenant_id, Branch.is_active.is_(True)))
-    if branch is None: raise HTTPException(422, "Default branch does not belong to the company")
+    branch = require_branch_access(db, current_user, payload.default_branch_id)
+    if branch.company_id != company.id or branch.tenant_id != company.tenant_id:
+        raise HTTPException(404, "Default branch not found for company")
     _validate_accounting_configuration(db, company, payload)
     values = payload.model_dump(); obj = db.scalar(select(CommerceAccountingSettings).where(CommerceAccountingSettings.company_id == company.id))
     if obj is None: obj = CommerceAccountingSettings(**values); db.add(obj)
@@ -69,6 +184,9 @@ def configure_accounting(payload: CommerceAccountingSettingsCreate, current_user
 def get_accounting_settings(company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user); obj = db.scalar(select(CommerceAccountingSettings).where(CommerceAccountingSettings.company_id == company_id))
     if obj is None: raise HTTPException(404, "Commerce accounting configuration not found")
+    branch = require_branch_access(db, current_user, obj.default_branch_id)
+    if branch.company_id != company_id:
+        raise HTTPException(404, "Commerce accounting configuration not found")
     return {c.name: getattr(obj, c.name) for c in obj.__table__.columns if c.name != "id"}
 
 
@@ -86,12 +204,32 @@ def list_partners(company_id: int = Query(..., gt=0), partner_type: str | None =
 def create_sale(payload: DocumentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, payload.company_id, current_user)
     if payload.document_type not in {"quotation", "order", "delivery", "invoice", "credit_note"}: raise HTTPException(400, "Invalid sales document type")
+    _authorize_warehouse_branch(db, current_user, payload.company_id, payload.warehouse_id)
     obj = _run(lambda: commerce_service.create_document(db, payload)); db.commit(); db.refresh(obj); return obj
 
 
 @router.post("/sales/returns", response_model=DocumentResponse, status_code=201, dependencies=[Depends(require_permission("commerce.post"))])
 def create_sales_return(payload: SalesReturnCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, payload.company_id, current_user)
+    _authorize_warehouse_branch(db, current_user, payload.company_id, payload.warehouse_id)
+    for request_line in payload.lines:
+        source_delivery = db.scalar(
+            select(SalesDocument)
+            .join(SalesLine, SalesLine.document_id == SalesDocument.id)
+            .where(
+                SalesLine.id == request_line.original_delivery_line_id,
+                SalesDocument.company_id == payload.company_id,
+                SalesDocument.document_type == "delivery",
+            )
+        )
+        if source_delivery is None:
+            raise HTTPException(status_code=404, detail="Original delivery line not found")
+        _authorize_warehouse_branch(
+            db,
+            current_user,
+            payload.company_id,
+            source_delivery.warehouse_id,
+        )
     try: obj = sales_return_service.create_and_post(db, payload, current_user.id); db.commit(); db.refresh(obj); return obj
     except ValueError as exc: db.rollback(); raise HTTPException(status_code=400, detail=str(exc)) from exc
     except IntegrityError as exc: db.rollback(); raise HTTPException(status_code=409, detail="The sales return conflicts with an existing allocation or document") from exc
@@ -101,12 +239,15 @@ def create_sales_return(payload: SalesReturnCreate, current_user: User = Depends
 def create_purchase(payload: DocumentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, payload.company_id, current_user)
     if payload.document_type not in {"requisition", "rfq", "order", "receipt", "bill", "debit_note"}: raise HTTPException(400, "Invalid purchase document type")
+    _authorize_warehouse_branch(db, current_user, payload.company_id, payload.warehouse_id)
     obj = _run(lambda: commerce_service.create_document(db, payload)); db.commit(); db.refresh(obj); return obj
 
 
 @router.get("/ar-ap/aging", response_model=AgingSummary)
 def ar_ap_aging(company_id: int = Query(..., gt=0), as_of: date | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
+    if not can_manage_all_branches(db, current_user):
+        raise HTTPException(status_code=403, detail="Tenant-wide branch management permission is required for company-wide AR/AP aging")
     cutoff = as_of or date.today()
     rows = commerce_service.ar_ap_aging(db, company_id, cutoff)
     receivable = sum((r["outstanding"] for r in rows if r["direction"] == "receivable"), 0)
@@ -125,6 +266,8 @@ def partner_statement(
     db: Session = Depends(get_db),
 ):
     _company_for_user(db, company_id, current_user)
+    if not can_manage_all_branches(db, current_user):
+        raise HTTPException(status_code=403, detail="Tenant-wide branch management permission is required for company-wide partner statements")
     if from_date and to_date and from_date > to_date:
         raise HTTPException(400, "from_date cannot be later than to_date")
     cutoff = as_of or to_date or date.today()
@@ -144,7 +287,8 @@ def sales(
     allowed = {"quotation", "order", "delivery", "invoice", "credit_note"}
     if document_type is not None and document_type not in allowed:
         raise HTTPException(400, "Invalid sales document type")
-    return commerce_service.list_documents(db, company_id, "sale", document_type)
+    documents = commerce_service.list_documents(db, company_id, "sale", document_type)
+    return _filter_visible_documents(db, current_user, company_id, documents, "sale")
 
 
 @router.get("/purchases/documents", response_model=list[DocumentResponse])
@@ -158,11 +302,13 @@ def purchases(
     allowed = {"requisition", "rfq", "order", "receipt", "bill", "debit_note"}
     if document_type is not None and document_type not in allowed:
         raise HTTPException(400, "Invalid purchase document type")
-    return commerce_service.list_documents(db, company_id, "purchase", document_type)
+    documents = commerce_service.list_documents(db, company_id, "purchase", document_type)
+    return _filter_visible_documents(db, current_user, company_id, documents, "purchase")
 
 @router.post("/sales/{document_id}/cancel", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def cancel_sales_order(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
+    _authorize_commerce_document(db, current_user, company_id, document_id, "sale")
     order = _run(lambda: commerce_service.cancel_sales_order(db, company_id=company_id, document_id=document_id))
     db.commit(); db.refresh(order); return order
 
@@ -170,6 +316,7 @@ def cancel_sales_order(document_id: int, company_id: int = Query(..., gt=0), cur
 @router.post("/sales/{document_id}/confirm", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def confirm_sale(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
+    _authorize_commerce_document(db, current_user, company_id, document_id, "sale")
     def action():
         obj = db.scalar(select(SalesDocument).where(SalesDocument.id == document_id, SalesDocument.company_id == company_id).with_for_update())
         if obj is None: raise ValueError("Document not found")
@@ -183,6 +330,7 @@ def confirm_sale(document_id: int, company_id: int = Query(..., gt=0), current_u
 @router.post("/purchases/{document_id}/confirm", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def confirm_purchase(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
+    _authorize_commerce_document(db, current_user, company_id, document_id, "purchase")
     def action():
         obj = db.scalar(select(PurchaseDocument).where(PurchaseDocument.id == document_id, PurchaseDocument.company_id == company_id).with_for_update())
         if obj is None: raise ValueError("Document not found")
@@ -200,18 +348,21 @@ def confirm_purchase(document_id: int, company_id: int = Query(..., gt=0), curre
 @router.get("/sales/{document_id}/approval-events")
 def list_sales_order_approval_events(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
+    _authorize_commerce_document(db, current_user, company_id, document_id, "sale")
     return _run(lambda: commerce_service.list_approval_events(db, company_id, document_id, "sale"))
 
 
 @router.get("/purchases/{document_id}/approval-events")
 def list_purchase_order_approval_events(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
+    _authorize_commerce_document(db, current_user, company_id, document_id, "purchase")
     return _run(lambda: commerce_service.list_approval_events(db, company_id, document_id, "purchase"))
 
 
 @router.post("/sales/{document_id}/approval-decision", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def decide_sales_order_approval(document_id: int, payload: CommerceApprovalDecision, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
+    _authorize_commerce_document(db, current_user, company_id, document_id, "sale")
     obj = _run(lambda: commerce_service.decide_approval(db, company_id, document_id, "sale", payload.decision, current_user.id, payload.reason))
     db.commit(); db.refresh(obj); return obj
 
@@ -219,24 +370,34 @@ def decide_sales_order_approval(document_id: int, payload: CommerceApprovalDecis
 @router.post("/purchases/{document_id}/approval-decision", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def decide_purchase_order_approval(document_id: int, payload: CommerceApprovalDecision, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
+    _authorize_commerce_document(db, current_user, company_id, document_id, "purchase")
     obj = _run(lambda: commerce_service.decide_approval(db, company_id, document_id, "purchase", payload.decision, current_user.id, payload.reason))
     db.commit(); db.refresh(obj); return obj
 
 
 @router.post("/sales/{document_id}/post-inventory", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def post_sale(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _company_for_user(db, company_id, current_user); obj = _run(lambda: commerce_service.post_inventory(db, company_id, document_id, "sale", user_id=current_user.id)); db.commit(); db.refresh(obj); return obj
+    _company_for_user(db, company_id, current_user); _authorize_commerce_document(db, current_user, company_id, document_id, "sale"); obj = _run(lambda: commerce_service.post_inventory(db, company_id, document_id, "sale", user_id=current_user.id)); db.commit(); db.refresh(obj); return obj
 
 
 @router.post("/purchases/{document_id}/receive", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def receive_purchase(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _company_for_user(db, company_id, current_user); obj = _run(lambda: commerce_service.post_inventory(db, company_id, document_id, "purchase", user_id=current_user.id)); db.commit(); db.refresh(obj); return obj
+    _company_for_user(db, company_id, current_user); _authorize_commerce_document(db, current_user, company_id, document_id, "purchase"); obj = _run(lambda: commerce_service.post_inventory(db, company_id, document_id, "purchase", user_id=current_user.id)); db.commit(); db.refresh(obj); return obj
 
 
 @router.get("/payments", response_model=list[PaymentResponse])
 def list_payments(company_id: int = Query(..., gt=0), document_kind: str | None = Query(default=None, pattern="^(sale|purchase)$"), document_id: int | None = Query(default=None, gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
     query = select(CommercePayment).where(CommercePayment.company_id == company_id)
+    if not can_manage_all_branches(db, current_user):
+        sale_ids = _visible_document_ids(db, current_user, company_id, "sale") or set()
+        purchase_ids = _visible_document_ids(db, current_user, company_id, "purchase") or set()
+        visible_conditions = []
+        if sale_ids:
+            visible_conditions.append(and_(CommercePayment.document_kind == "sale", CommercePayment.document_id.in_(sale_ids)))
+        if purchase_ids:
+            visible_conditions.append(and_(CommercePayment.document_kind == "purchase", CommercePayment.document_id.in_(purchase_ids)))
+        query = query.where(or_(*visible_conditions)) if visible_conditions else query.where(CommercePayment.id == -1)
     if document_kind:
         query = query.where(CommercePayment.document_kind == document_kind)
     if document_id:
@@ -247,13 +408,13 @@ def list_payments(company_id: int = Query(..., gt=0), document_kind: str | None 
 @router.post("/sales/{document_id}/payments", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.payment"))])
 def pay_sale(document_id: int, payload: PaymentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if payload.document_id != document_id: raise HTTPException(400, "Document id mismatch")
-    _company_for_user(db, payload.company_id, current_user); obj, payment = _run(lambda: commerce_service.pay(db, payload, "sale", current_user.id)); db.commit(); db.refresh(obj); return obj
+    _company_for_user(db, payload.company_id, current_user); _authorize_commerce_document(db, current_user, payload.company_id, document_id, "sale"); obj, payment = _run(lambda: commerce_service.pay(db, payload, "sale", current_user.id)); db.commit(); db.refresh(obj); return obj
 
 
 @router.post("/purchases/{document_id}/payments", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.payment"))])
 def pay_purchase(document_id: int, payload: PaymentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if payload.document_id != document_id: raise HTTPException(400, "Document id mismatch")
-    _company_for_user(db, payload.company_id, current_user); obj, payment = _run(lambda: commerce_service.pay(db, payload, "purchase", current_user.id)); db.commit(); db.refresh(obj); return obj
+    _company_for_user(db, payload.company_id, current_user); _authorize_commerce_document(db, current_user, payload.company_id, document_id, "purchase"); obj, payment = _run(lambda: commerce_service.pay(db, payload, "purchase", current_user.id)); db.commit(); db.refresh(obj); return obj
 
 
 @router.post("/payments/{payment_id}/reverse", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.reverse"))])
@@ -261,4 +422,13 @@ def reverse_payment(payment_id: int, payload: PaymentReverse, current_user: User
     _company_for_user(db, payload.company_id, current_user)
     original = db.scalar(select(CommercePayment).where(CommercePayment.id == payment_id, CommercePayment.company_id == payload.company_id))
     if original is None: raise HTTPException(404, "Payment not found")
+    if original.document_kind not in {"sale", "purchase"}:
+        raise HTTPException(409, "Payment document kind is not supported for branch authorization")
+    _authorize_commerce_document(
+        db,
+        current_user,
+        payload.company_id,
+        original.document_id,
+        original.document_kind,
+    )
     obj, original, reversal = _run(lambda: commerce_service.reverse_payment(db, payload.company_id, payment_id, payload.reversal_date, payload.notes, current_user.id)); db.commit(); db.refresh(obj); return obj

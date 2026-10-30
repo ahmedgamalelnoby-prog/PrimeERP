@@ -1,4 +1,5 @@
 import {
+  GitBranch,
   KeyRound,
   Loader2,
   Pencil,
@@ -31,6 +32,7 @@ interface UserTableProps {
   onDelete: (user: User) => void;
   onToggleStatus: (user: User) => void;
   onResetPassword: (user: User) => void;
+  onManageBranches: (user: User) => void;
 }
 
 function getUserDisplayName(user: User): string {
@@ -71,6 +73,7 @@ export default function UserTable({
   onDelete,
   onToggleStatus,
   onResetPassword,
+  onManageBranches,
 }: UserTableProps) {
   const dateFormat = useCompanyDateFormat();
 
@@ -262,6 +265,18 @@ export default function UserTable({
                         aria-label="تعديل المستخدم"
                       >
                         <Pencil className="h-4 w-4" />
+                      </Button>
+
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        disabled={processing}
+                        onClick={() => onManageBranches(user)}
+                        title="إدارة الفروع"
+                        aria-label="إدارة الفروع"
+                      >
+                        <GitBranch className="h-4 w-4" />
                       </Button>
 
                       <Button

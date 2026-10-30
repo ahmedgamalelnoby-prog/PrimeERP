@@ -8,6 +8,7 @@ from app.modules.catalog.models import Recipe, RecipeLine, ProductVariant
 from app.modules.company_settings.service import get_company_setting
 from app.modules.inventory.items.models import InventoryItem
 from app.modules.inventory.locations.models import InventoryLocation
+from app.modules.inventory.warehouses.models import InventoryWarehouse
 from app.modules.inventory.stock_moves.models import InventoryStockMove
 from app.modules.inventory.stock_moves.schemas import StockMoveCreate
 from app.modules.inventory.stock_moves.service import inventory_stock_move_service
@@ -32,11 +33,28 @@ class ManufacturingWorkOrderService:
         return db.scalar(stmt)
 
     @staticmethod
-    def list(db: Session, *, company_id: int):
+    def list(db: Session, *, company_id: int, allowed_branch_ids: list[int], include_central_warehouses: bool = False):
+        warehouse_scope = InventoryWarehouse.branch_id.in_(allowed_branch_ids)
+        if include_central_warehouses:
+            warehouse_scope = or_(warehouse_scope, InventoryWarehouse.branch_id.is_(None))
+        visible_location_ids = (
+            select(InventoryLocation.id)
+            .join(InventoryWarehouse, InventoryWarehouse.id == InventoryLocation.warehouse_id)
+            .where(
+                InventoryLocation.company_id == company_id,
+                InventoryWarehouse.company_id == company_id,
+                InventoryWarehouse.is_active.is_(True),
+                warehouse_scope,
+            )
+        )
         return db.scalars(
             select(ManufacturingWorkOrder)
             .options(selectinload(ManufacturingWorkOrder.lines))
-            .where(ManufacturingWorkOrder.company_id == company_id)
+            .where(
+                ManufacturingWorkOrder.company_id == company_id,
+                ManufacturingWorkOrder.source_location_id.in_(visible_location_ids),
+                ManufacturingWorkOrder.destination_location_id.in_(visible_location_ids),
+            )
             .order_by(ManufacturingWorkOrder.id.desc())
             .limit(500)
         ).all()

@@ -13,6 +13,7 @@ from fastapi import (
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.modules.branches.access import accessible_branch_ids, require_branch_access
 from app.modules.branches.models import Branch
 from app.modules.companies.models import Company
 from app.modules.company_settings.service import get_company_setting
@@ -69,13 +70,6 @@ class TransactionService:
             branch_id=payload.branch_id,
         )
 
-        self._validate_project(
-            db,
-            company_id=payload.company_id,
-            project_id=payload.project_id,
-            required=get_company_setting(db, payload.company_id, "general.require_project") is True,
-        )
-
         if payload.branch_id is None and get_company_setting(
             db, payload.company_id, "general.branch_required"
         ) is True:
@@ -83,6 +77,16 @@ class TransactionService:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Company policy requires a branch for transactions",
             )
+
+        if payload.branch_id is not None:
+            require_branch_access(db, current_user, payload.branch_id)
+
+        self._validate_project(
+            db,
+            company_id=payload.company_id,
+            project_id=payload.project_id,
+            required=get_company_setting(db, payload.company_id, "general.require_project") is True,
+        )
 
         if payload.source_id is not None:
             existing = (
@@ -457,6 +461,8 @@ class TransactionService:
         if transaction is None:
             self._raise_not_found()
 
+        self._require_transaction_branch_access(db, current_user, transaction)
+
         if transaction.status not in {
             "draft",
             "pending",
@@ -532,6 +538,8 @@ class TransactionService:
 
         if original is None:
             self._raise_not_found()
+
+        self._require_transaction_branch_access(db, current_user, original)
 
         if original.status != "posted":
             raise HTTPException(
@@ -708,6 +716,7 @@ class TransactionService:
         if transaction is None:
             self._raise_not_found()
 
+        self._require_transaction_branch_access(db, current_user, transaction)
         return transaction
 
     def get_by_number(
@@ -734,6 +743,7 @@ class TransactionService:
         if transaction is None:
             self._raise_not_found()
 
+        self._require_transaction_branch_access(db, current_user, transaction)
         return transaction
 
     def list_transactions(
@@ -752,6 +762,10 @@ class TransactionService:
             current_user
         )
 
+        if branch_id is not None:
+            require_branch_access(db, current_user, branch_id)
+        visible_branch_ids = accessible_branch_ids(db, current_user)
+
         items, total = (
             transaction_repository
             .list_transactions(
@@ -761,6 +775,7 @@ class TransactionService:
                 page_size=page_size,
                 company_id=company_id,
                 branch_id=branch_id,
+                branch_ids=visible_branch_ids,
                 transaction_type=(
                     transaction_type
                 ),
@@ -857,7 +872,21 @@ class TransactionService:
         if transaction is None:
             self._raise_not_found()
 
+        self._require_transaction_branch_access(db, current_user, transaction)
         return transaction
+
+    @staticmethod
+    def _require_transaction_branch_access(
+        db: Session,
+        current_user: User,
+        transaction: BusinessTransaction,
+    ) -> None:
+        if transaction.branch_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Transactions without a branch are not accessible to branch-scoped users",
+            )
+        require_branch_access(db, current_user, transaction.branch_id)
 
     @staticmethod
     def _add_event(

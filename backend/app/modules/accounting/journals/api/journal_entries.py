@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
+from app.modules.branches.access import accessible_branch_ids, require_branch_access
 from app.database.session import get_db
 from app.modules.accounting.journals.schemas.journal_entry import JournalEntryCreate, JournalEntryResponse, JournalResponse
 from app.modules.accounting.journals.services.journal_service import journal_service
@@ -28,6 +29,11 @@ class JournalReversalRequest(BaseModel):
 def _tenant_id(current_user: User) -> int:
     return get_effective_tenant_id(current_user)
 
+def _authorize_entry_access(db: Session, current_user: User, entry_id: int):
+    entry = journal_service.get_entry(db, _tenant_id(current_user), entry_id)
+    require_branch_access(db, current_user, entry.branch_id)
+    return entry
+
 
 @router.get("/journals", response_model=list[JournalResponse])
 def list_journals(company_id: int = Query(gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -44,16 +50,26 @@ def list_entries(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return journal_service.list_entries(db, _tenant_id(current_user), company_id, status=status_filter, start_date=from_date, end_date=to_date, journal_id=journal_id)
+    return journal_service.list_entries(
+        db,
+        _tenant_id(current_user),
+        company_id,
+        status=status_filter,
+        start_date=from_date,
+        end_date=to_date,
+        journal_id=journal_id,
+        branch_ids=accessible_branch_ids(db, current_user),
+    )
 
 
 @router.get("/{entry_id}", response_model=JournalEntryResponse)
 def get_entry(entry_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return journal_service.get_entry(db, _tenant_id(current_user), entry_id)
+    return _authorize_entry_access(db, current_user, entry_id)
 
 
 @router.post("", response_model=JournalEntryResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("accounting.write"))])
 def create_entry(payload: JournalEntryCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    require_branch_access(db, current_user, payload.branch_id)
     return journal_service.create_draft(
         db,
         tenant_id=_tenant_id(current_user),
@@ -78,21 +94,25 @@ def create_entry(payload: JournalEntryCreate, current_user: User = Depends(get_c
 
 @router.post("/{entry_id}/submit", response_model=JournalEntryResponse, dependencies=[Depends(require_permission("accounting.write"))])
 def submit_entry(entry_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _authorize_entry_access(db, current_user, entry_id)
     return journal_service.submit(db, tenant_id=_tenant_id(current_user), entry_id=entry_id, user_id=current_user.id)
 
 
 @router.post("/{entry_id}/approve", response_model=JournalEntryResponse, dependencies=[Depends(require_permission("accounting.post"))])
 def approve_entry(entry_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _authorize_entry_access(db, current_user, entry_id)
     return journal_service.approve(db, tenant_id=_tenant_id(current_user), entry_id=entry_id, user_id=current_user.id)
 
 
 @router.post("/{entry_id}/post", response_model=JournalEntryResponse, dependencies=[Depends(require_permission("accounting.post"))])
 def post_entry(entry_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _authorize_entry_access(db, current_user, entry_id)
     return journal_service.post(db, tenant_id=_tenant_id(current_user), entry_id=entry_id, user_id=current_user.id)
 
 
 @router.post("/{entry_id}/reverse", response_model=JournalEntryResponse, dependencies=[Depends(require_permission("accounting.post"))])
 def reverse_entry(entry_id: int, payload: JournalReversalRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _authorize_entry_access(db, current_user, entry_id)
     request = payload
     return journal_service.reverse(
         db,
@@ -107,4 +127,5 @@ def reverse_entry(entry_id: int, payload: JournalReversalRequest, current_user: 
 
 @router.post("/{entry_id}/cancel", response_model=JournalEntryResponse, dependencies=[Depends(require_permission("accounting.write"))])
 def cancel_entry(entry_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _authorize_entry_access(db, current_user, entry_id)
     return journal_service.cancel(db, tenant_id=_tenant_id(current_user), entry_id=entry_id, user_id=current_user.id)

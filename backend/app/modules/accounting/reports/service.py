@@ -31,6 +31,7 @@ class FinancialReportService:
         company_id: int,
         from_date: date | None = None,
         to_date: date | None = None,
+        branch_ids: list[int] | None = None,
     ) -> TrialBalanceResponse:
         self._assert_company(db, tenant_id=tenant_id, company_id=company_id)
         query = (
@@ -62,6 +63,8 @@ class FinancialReportService:
             )
             .order_by(AccountCombination.code)
         )
+        if branch_ids is not None:
+            query = query.filter(JournalEntry.branch_id.in_(branch_ids))
         if from_date is not None:
             query = query.filter(JournalEntry.entry_date >= from_date)
         if to_date is not None:
@@ -107,6 +110,7 @@ class FinancialReportService:
         company_id: int,
         from_date: date | None = None,
         to_date: date | None = None,
+        branch_ids: list[int] | None = None,
     ) -> FinancialSummaryResponse:
         trial = self.trial_balance(
             db,
@@ -114,6 +118,7 @@ class FinancialReportService:
             company_id=company_id,
             from_date=from_date,
             to_date=to_date,
+            branch_ids=branch_ids,
         )
         revenue = Decimal("0")
         expenses = Decimal("0")

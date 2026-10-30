@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
+from app.modules.inventory.access import require_location_access, require_warehouse_access
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
@@ -25,6 +26,7 @@ def _company_for_user(db: Session, company_id: int, user: User):
 @router.get("", response_model=list[LocationResponse], dependencies=[Depends(require_permission("inventory.access"))])
 def list_locations(company_id: int = Query(gt=0), warehouse_id: int = Query(gt=0), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _company_for_user(db, company_id, user)
+    require_warehouse_access(db, user, company_id, warehouse_id)
     try: return location_service.list(db, company_id=company_id, warehouse_id=warehouse_id)
     except ValueError as exc: raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -32,6 +34,7 @@ def list_locations(company_id: int = Query(gt=0), warehouse_id: int = Query(gt=0
 @router.post("", response_model=LocationResponse, status_code=201, dependencies=[Depends(require_permission("inventory.write"))])
 def create_location(payload: LocationCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _company_for_user(db, payload.company_id, user)
+    require_warehouse_access(db, user, payload.company_id, payload.warehouse_id)
     try: return location_service.create(db, payload=payload)
     except ValueError as exc: raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -39,5 +42,6 @@ def create_location(payload: LocationCreate, db: Session = Depends(get_db), user
 @router.patch("/{location_id}", response_model=LocationResponse, dependencies=[Depends(require_permission("inventory.write"))])
 def update_location(location_id: int, payload: LocationUpdate, company_id: int = Query(gt=0), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _company_for_user(db, company_id, user)
+    require_location_access(db, user, company_id, location_id, require_active=False)
     try: return location_service.update(db, company_id=company_id, location_id=location_id, payload=payload)
     except ValueError as exc: raise HTTPException(status_code=404, detail=str(exc)) from exc

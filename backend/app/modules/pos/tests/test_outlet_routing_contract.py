@@ -79,3 +79,26 @@ def test_pos_checkout_does_not_double_consume_inventory_from_invoice_and_deliver
     invoice_post = 'commerce_service.post_inventory(db, payload.company_id, doc.id, "sale", user_id=current_user.id)'
     assert delivery_post in router
     assert invoice_post not in router
+
+
+def test_pos_branch_and_terminal_helpers_require_explicit_membership():
+    router = (ROOT / "modules/pos/router.py").read_text(encoding="utf-8")
+    assert "def _branch(db: Session, company_id: int, branch_id: int, user: User)" in router
+    assert "branch = require_branch_access(db, user, branch_id)" in router
+    assert "def _terminal(db: Session, company_id: int, terminal_id: int, user: User)" in router
+    assert "branch = require_branch_access(db, user, terminal.branch_id)" in router
+
+
+def test_pos_lists_and_shifts_are_scoped_to_assigned_branches():
+    router = (ROOT / "modules/pos/router.py").read_text(encoding="utf-8")
+    assert "PosOutlet.branch_id.in_(allowed)" in router
+    assert "PosTerminal.branch_id.in_(allowed)" in router
+    assert "InventoryWarehouse.branch_id.in_(allowed)" in router
+    assert "require_branch_access(db, current_user, shift.branch_id)" in router
+
+
+def test_pos_checkout_and_kitchen_queue_enforce_branch_membership():
+    router = (ROOT / "modules/pos/router.py").read_text(encoding="utf-8")
+    assert "_branch(db, payload.company_id, warehouse.branch_id, current_user)" in router
+    assert "_branch(db, company_id, station_branch_id, current_user)" in router
+    assert "The linked sales invoice must belong to the terminal branch" in router

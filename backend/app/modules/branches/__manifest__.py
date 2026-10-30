@@ -6,5 +6,6 @@ MANIFEST = manifest(
     version="1.0.0",
     domain="organization",
     dependencies=("organization/companies",),
+    permissions=frozenset({"branch.access", "branch.write", "branch.manage_all"}),
     metadata={"migration_status": "legacy-compatibility"},
 )

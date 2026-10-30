@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
+from app.modules.branches.access import require_branch_access
 from app.database.session import get_db
 from app.modules.companies.models import Company
 from app.modules.commerce.models import BusinessPartner
@@ -196,6 +197,9 @@ def submit_payroll_run(
     current_user: User = Depends(get_current_user),
 ):
     company = company_for_user(db, company_id, current_user)
+    branch = require_branch_access(db, current_user, payload.branch_id)
+    if branch.company_id != company_id:
+        raise HTTPException(404, "Branch not found for company")
     run = db.scalar(select(PayrollRun).where(
         PayrollRun.id == run_id,
         PayrollRun.company_id == company_id,
@@ -362,6 +366,11 @@ def post_payroll_run(
         JournalEntry.source_entity == "payroll_run",
         JournalEntry.source_id == run.id,
     ).with_for_update())
+
+    if entry is not None:
+        if entry.branch_id != payload.branch_id:
+            raise HTTPException(409, "Payroll run is already linked to a journal entry in another branch")
+        require_branch_access(db, current_user, entry.branch_id)
 
     try:
         if entry is None:

@@ -34,11 +34,9 @@ def user_has_permission(current_user: Any, permission_code: str, db: Session | N
     if getattr(current_user, "is_platform_admin", False) or getattr(current_user, "is_superuser", False):
         return True
 
-    if permission_code in extract_permission_codes(current_user):
-        role = getattr(current_user, "role", None)
-        if role is None or getattr(role, "is_active", True):
-            return True
-
+    # Always consult the database for non-privileged users. Relationship
+    # collections can be stale within a long-lived SQLAlchemy identity map;
+    # trusting them here could preserve a permission after it was revoked.
     if db is None or not getattr(current_user, "role_id", None):
         return False
 

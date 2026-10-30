@@ -30,21 +30,24 @@ class AuthenticationService:
         users = user_repository.find_for_login(
             db=db,
             login=payload.login,
-            tenant_slug=payload.tenant_slug,
-            tenant_name=payload.tenant_name,
         )
         if not users:
             self._reject_login(db, login_key, "unknown_account")
-        if len(users) > 1:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Multiple accounts match this login. Please provide the company name.",
-            )
-        user = users[0]
-        if not user.is_platform_admin and not payload.tenant_name:
-            self._reject_login(db, login_key, "company_name_required")
-        if not password_service.verify_password(payload.password, user.hashed_password):
-            self._reject_login(db, login_key, "invalid_password")
+        if len(users) > 50:
+            self._reject_login(db, login_key, "too_many_matching_accounts")
+
+        # Resolve the tenant from the matched identity and password. A company
+        # name/slug is deliberately not required at sign-in. If legacy data has
+        # the same username and password in more than one tenant, fail closed.
+        matching_users = self._matching_users_by_password(
+            users,
+            payload.password,
+        )
+        if len(matching_users) != 1:
+            reason = "ambiguous_credentials" if matching_users else "invalid_password"
+            self._reject_login(db, login_key, reason)
+
+        user = matching_users[0]
         self._validate_user(user)
 
         tenant = None
@@ -88,11 +91,20 @@ class AuthenticationService:
             },
         }
 
+    @staticmethod
+    def _matching_users_by_password(users: list, password: str) -> list:
+        """Return only identities whose password hash verifies the supplied password."""
+        return [
+            candidate
+            for candidate in users
+            if password_service.verify_password(
+                password,
+                candidate.hashed_password,
+            )
+        ]
+
     def _login_key(self, payload: LoginRequest) -> str:
-        tenant = (payload.tenant_slug or "").strip().lower()
-        tenant_name = (payload.tenant_name or "").strip().lower()
-        login = payload.login.strip().lower()
-        return f"{tenant}:{tenant_name}:{login}"
+        return payload.login.strip().lower()
 
     def _request_ip(self) -> str | None:
         context = get_optional_request_context()

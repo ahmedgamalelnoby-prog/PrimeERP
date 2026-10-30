@@ -8,6 +8,7 @@ from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.accounting.reports.schemas import FinancialSummaryResponse, TrialBalanceResponse
 from app.modules.accounting.reports.service import financial_report_service
+from app.modules.branches.access import accessible_branch_ids
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 
@@ -30,7 +31,7 @@ def trial_balance(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return financial_report_service.trial_balance(db, tenant_id=tenant_id(current_user), company_id=company_id, from_date=from_date, to_date=to_date)
+    return financial_report_service.trial_balance(db, tenant_id=tenant_id(current_user), company_id=company_id, from_date=from_date, to_date=to_date, branch_ids=accessible_branch_ids(db, current_user))
 
 
 @router.get("/summary", response_model=FinancialSummaryResponse)
@@ -41,4 +42,4 @@ def financial_summary(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return financial_report_service.financial_summary(db, tenant_id=tenant_id(current_user), company_id=company_id, from_date=from_date, to_date=to_date)
+    return financial_report_service.financial_summary(db, tenant_id=tenant_id(current_user), company_id=company_id, from_date=from_date, to_date=to_date, branch_ids=accessible_branch_ids(db, current_user))
