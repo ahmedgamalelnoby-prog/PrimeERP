@@ -31,7 +31,6 @@ export default function LoginPage() {
   const locationState = location.state as LoginLocationState | null;
   const currentLanguage = i18n.resolvedLanguage ?? i18n.language;
   const isArabic = currentLanguage.toLowerCase().startsWith("ar");
-  const [companyName, setCompanyName] = useState("");
   const [loginValue, setLoginValue] = useState(locationState?.username ?? "");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -64,7 +63,7 @@ export default function LoginPage() {
     }
     try {
       setIsLoading(true);
-      await login(normalizedLogin, password, null, companyName.trim() || null);
+      await login(normalizedLogin, password);
       if (rememberMe) localStorage.setItem("primeerp_remember_login", normalizedLogin);
       else localStorage.removeItem("primeerp_remember_login");
       toast.success(text("مرحبًا بك في PrimeERP", "Welcome back to PrimeERP"));
@@ -147,23 +146,6 @@ export default function LoginPage() {
             {error && <div role="alert" className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700">{error}</div>}
 
             <form onSubmit={handleSubmit} className="space-y-5">
-              <div className="space-y-2">
-                <Label htmlFor="companyName" className="text-sm font-semibold text-slate-700">{text("الشركة", "Company")}</Label>
-                <div className="relative">
-                  <Building2 className="pointer-events-none absolute start-4 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-slate-400" />
-                  <Input id="companyName" name="companyName" value={companyName} onChange={e => { setCompanyName(e.target.value); setError(""); }} placeholder={text("اسم الشركة (عند الحاجة)", "Company name (if required)")} autoComplete="organization" disabled={isLoading} className="h-[52px] rounded-xl border-slate-200 bg-white ps-11 shadow-sm placeholder:text-slate-400 focus-visible:border-teal-500 focus-visible:ring-teal-500/20" />
-                </div>
-                <p className="text-[11px] leading-5 text-slate-400">{text("أدخل اسم الشركة إذا كان حسابك مرتبطًا بأكثر من شركة.", "Enter the company name if your account matches more than one company.")}</p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="login" className="text-sm font-semibold text-slate-700">{text("اسم المستخدم", "Username or email")}</Label>
-                <div className="relative">
-                  <Users2 className="pointer-events-none absolute start-4 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-slate-400" />
-                  <Input id="login" name="login" value={loginValue} onChange={e => { setLoginValue(e.target.value); setError(""); }} placeholder={text("أدخل اسم المستخدم أو البريد الإلكتروني", "Enter your username or email")} autoComplete="username" autoCapitalize="none" spellCheck={false} disabled={isLoading} required className="h-[52px] rounded-xl border-slate-200 bg-white ps-11 shadow-sm placeholder:text-slate-400 focus-visible:border-teal-500 focus-visible:ring-teal-500/20" dir="ltr" />
-                </div>
-              </div>
-
               <div className="space-y-2">
                 <Label htmlFor="password" className="text-sm font-semibold text-slate-700">{text("كلمة المرور", "Password")}</Label>
                 <div className="relative">
