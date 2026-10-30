@@ -172,6 +172,17 @@ const arTranslation = {
       delivery: "إذن تسليم",
       invoice: "فاتورة"
     },
+    statuses: {
+      draft: "مسودة",
+      pending_approval: "بانتظار الاعتماد",
+      approved: "معتمد",
+      confirmed: "مؤكد",
+      partially_fulfilled: "تم التنفيذ جزئيًا",
+      fulfilled: "تم التنفيذ",
+      posted: "مُرحّل",
+      cancelled: "ملغي",
+      rejected: "مرفوض"
+    },
     columns: {
       number: "رقم",
       date: "التاريخ",
