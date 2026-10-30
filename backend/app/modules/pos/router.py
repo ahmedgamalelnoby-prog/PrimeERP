@@ -6,6 +6,7 @@ from sqlalchemy import select, and_, func
 from sqlalchemy.orm import Session
 
 from app.core.context import get_effective_tenant_id, get_optional_request_context
+from app.core.context.access import require_branch_access
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.catalog.models import Menu, MenuItem, ProductPrice
@@ -181,6 +182,21 @@ def _branch(db: Session, company_id: int, branch_id: int, user: User):
     return branch
 
 
+def _assert_warehouse_access(db: Session, company_id: int, warehouse_id: int | None, user: User):
+    if warehouse_id is None:
+        return None
+    warehouse = db.scalar(select(InventoryWarehouse).where(
+        InventoryWarehouse.id == warehouse_id,
+        InventoryWarehouse.company_id == company_id,
+        InventoryWarehouse.is_active.is_(True),
+    ))
+    if warehouse is None:
+        raise HTTPException(404, "Warehouse not found")
+    if warehouse.branch_id is not None:
+        require_branch_access(db, company_id, warehouse.branch_id, user)
+    return warehouse
+
+
 def _visible_branch_ids(db: Session, company_id: int, user: User) -> list[int] | None:
     """Return branch grants for list endpoints; None means platform-wide access."""
     if user.is_platform_admin:
@@ -290,6 +306,7 @@ def current_shift(
 @router.post("/shifts/open", status_code=201, dependencies=[Depends(require_permission("commerce.write"))])
 def open_shift(payload: ShiftOpen, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company(db, payload.company_id, current_user)
+    _terminal(db, payload.company_id, payload.terminal_id, current_user)
     terminal = db.scalar(select(PosTerminal).where(
         PosTerminal.id == payload.terminal_id,
         PosTerminal.company_id == payload.company_id,
@@ -337,6 +354,7 @@ def close_shift(
     ).with_for_update())
     if shift is None:
         raise HTTPException(404, "Open cashier shift not found")
+    _terminal(db, company_id, shift.terminal_id, current_user)
     cash_sales = db.scalar(select(func.coalesce(func.sum(CommercePayment.amount), 0)).join(
         SalesDocument,
         and_(
@@ -423,6 +441,7 @@ def assign_outlet_warehouse(outlet_id: int, warehouse_id: int = Query(..., gt=0)
     warehouse = db.scalar(select(InventoryWarehouse).where(InventoryWarehouse.id == warehouse_id, InventoryWarehouse.company_id == company_id, InventoryWarehouse.is_active.is_(True)))
     if outlet is None or warehouse is None or outlet.branch_id != warehouse.branch_id:
         raise HTTPException(422, "Outlet and warehouse must belong to the same company and branch")
+    _branch(db, company_id, outlet.branch_id, current_user)
     outlet.warehouse_id = warehouse.id
     db.commit()
     db.refresh(outlet)
@@ -494,6 +513,7 @@ def link_outlet_station(payload: OutletStationLink, company_id: int = Query(...,
     station = db.scalar(select(PreparationStation).join(Branch, Branch.id == PreparationStation.branch_id).where(PreparationStation.id == payload.station_id, Branch.company_id == company_id, PreparationStation.is_active.is_(True)))
     if outlet is None or station is None or outlet.branch_id != station.branch_id:
         raise HTTPException(422, "Outlet and preparation station must belong to the same company and branch")
+    _branch(db, company_id, outlet.branch_id, current_user)
     obj = db.scalar(select(PosOutletStation).where(PosOutletStation.outlet_id == outlet.id, PosOutletStation.station_id == station.id))
     if obj is None:
         obj = PosOutletStation(outlet_id=outlet.id, station_id=station.id)
@@ -596,6 +616,8 @@ def route_menu_item(payload: MenuItemRouteCreate, company_id: int = Query(..., g
     ))
     if item is None or station is None or terminal_menu is None or allowed_station is None:
         raise HTTPException(422, "Menu item, terminal menu, station, and outlet/station link must all be valid")
+    if station.branch_id != terminal.branch_id:
+        raise HTTPException(422, "Preparation station belongs to another branch")
     obj = db.scalar(select(PosMenuItemRoute).where(PosMenuItemRoute.terminal_id == terminal.id, PosMenuItemRoute.menu_item_id == item.id))
     if obj is None:
         obj = PosMenuItemRoute(terminal_id=terminal.id, menu_item_id=item.id, station_id=station.id)
@@ -639,12 +661,17 @@ def checkout(payload: Checkout, current_user: User = Depends(get_current_user), 
         SalesDocument.document_type == "invoice",
     ))
     if existing is not None:
+        _assert_warehouse_access(db, payload.company_id, existing.warehouse_id, current_user)
         return existing
 
     require_shift_close = get_company_setting(db, payload.company_id, "pos.require_shift_close") is True
     if require_shift_close and payload.terminal_id is None:
         raise HTTPException(422, "terminal_id is required while cashier shift control is enabled")
     terminal = _terminal(db, payload.company_id, payload.terminal_id, current_user) if payload.terminal_id else None
+    if payload.warehouse_id is not None:
+        _assert_warehouse_access(db, payload.company_id, payload.warehouse_id, current_user)
+    elif terminal is None:
+        raise HTTPException(422, "A branch warehouse is required when checkout is not linked to a POS terminal")
     shift = None
     if terminal is not None:
         shift = db.scalar(select(PosCashierShift).where(
