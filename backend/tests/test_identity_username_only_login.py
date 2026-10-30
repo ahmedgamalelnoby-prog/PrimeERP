@@ -79,7 +79,9 @@ def test_user_creation_and_rename_reserve_username_across_tenants():
     users = source("app/modules/identity/services/user_service.py")
     assert users.count("pg_advisory_xact_lock") >= 2
     assert "get_by_username(db, normalized_username, include_deleted=True)" in users
-    assert "get_by_username(db, new_username, include_deleted=True)" in users
+    assert "duplicate_user_id = db.scalar(" in users
+    assert "func.lower(User.username) == new_username" in users
+    assert "User.id != user.id" in users
     assert "unique username across PrimeERP" in users
 
 
@@ -197,7 +199,7 @@ def test_branch_update_schema_cannot_reassign_branch_to_another_company():
     assert "company_id" not in update_schema
     router = source("app/modules/branches/router.py")
     assert "def _branch(db: Session, branch_id: int, user: User)" in router
-    assert "Branch.tenant_id == _tenant_id(user)" in router
+    assert "return require_branch_access(db, user, branch_id, require_active=False)" in router
 
 def test_user_restore_service_is_implemented_and_tenant_scoped():
     users = source("app/modules/identity/services/user_service.py")
