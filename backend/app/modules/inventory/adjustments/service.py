@@ -6,17 +6,27 @@ from sqlalchemy.orm import Session
 from app.modules.catalog.models import ProductVariant
 from app.modules.inventory.items.models import InventoryItem
 from app.modules.inventory.locations.models import InventoryLocation
+from app.modules.inventory.warehouses.models import InventoryWarehouse
 from app.modules.inventory.stock_moves.schemas import StockMoveCreate
 from app.modules.inventory.stock_moves.service import inventory_stock_move_service
 from app.modules.inventory.adjustments.models import InventoryAdjustment
 
 
 class InventoryAdjustmentService:
-    def list(self, db: Session, *, company_id: int, status: str | None = None):
-        stmt = select(InventoryAdjustment).where(InventoryAdjustment.company_id == company_id)
+    def list(self, db: Session, *, company_id: int, status: str | None = None, branch_id: int | None = None):
+        stmt = (
+            select(InventoryAdjustment)
+            .join(InventoryLocation, InventoryLocation.id == InventoryAdjustment.location_id)
+            .join(InventoryWarehouse, InventoryWarehouse.id == InventoryLocation.warehouse_id)
+            .where(InventoryAdjustment.company_id == company_id)
+        )
+        if branch_id is not None:
+            stmt = stmt.where(
+                (InventoryWarehouse.branch_id == branch_id) | InventoryWarehouse.is_central.is_(True)
+            )
         if status:
             stmt = stmt.where(InventoryAdjustment.status == status)
-        return list(db.scalars(stmt.order_by(InventoryAdjustment.id.desc())))
+        return list(db.scalars(stmt.order_by(InventoryAdjustment.id.desc())).all())
 
     def create(self, db: Session, payload):
         if payload.direction not in {"increase", "decrease"}:
