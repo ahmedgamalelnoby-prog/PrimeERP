@@ -1,6 +1,6 @@
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -9,7 +9,7 @@ from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.accounting.chart_of_accounts.models import AccountCombination
 from app.modules.accounting.journals.models import AccountingJournal
-from app.modules.branches.access import require_branch_access
+from app.modules.branches.access import accessible_branch_ids, can_manage_all_branches, require_branch_access
 from app.modules.branches.models import Branch
 from app.modules.commerce.accounting_models import CommerceAccountingSettings
 from app.modules.commerce.accounting_schemas import CommerceAccountingSettingsCreate
@@ -19,6 +19,7 @@ from app.modules.commerce.sales_return_schemas import SalesReturnCreate
 from app.modules.commerce.sales_return_service import sales_return_service
 from app.modules.commerce.service import commerce_service
 from app.modules.companies.models import Company
+from app.modules.inventory.warehouses.models import InventoryWarehouse
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.jurisdiction.commerce_guard import capture_document_tax_snapshot, validate_document_tax_snapshot
@@ -51,6 +52,97 @@ def _validate_accounting_configuration(db: Session, company: Company, payload: C
     account_by_id = {account.id: account for account in accounts}
     for label, account_id in account_ids.items():
         if account_id not in account_by_id: raise HTTPException(422, f"Configured {label} does not belong to this company or is inactive")
+
+
+def _require_company_branch_membership(db: Session, user: User, company_id: int) -> None:
+    if can_manage_all_branches(db, user):
+        return
+    allowed = accessible_branch_ids(db, user)
+    has_company_branch = db.scalar(
+        select(Branch.id).where(
+            Branch.id.in_(allowed),
+            Branch.company_id == company_id,
+            Branch.tenant_id == get_effective_tenant_id(user),
+            Branch.is_active.is_(True),
+        ).limit(1)
+    ) if allowed else None
+    if has_company_branch is None:
+        raise HTTPException(status_code=403, detail="Branch membership is required for this company")
+
+
+def _authorize_warehouse_branch(
+    db: Session,
+    user: User,
+    company_id: int,
+    warehouse_id: int | None,
+) -> InventoryWarehouse | None:
+    if warehouse_id is None:
+        _require_company_branch_membership(db, user, company_id)
+        return None
+    warehouse = db.scalar(
+        select(InventoryWarehouse).where(
+            InventoryWarehouse.id == warehouse_id,
+            InventoryWarehouse.company_id == company_id,
+            InventoryWarehouse.tenant_id == get_effective_tenant_id(user),
+            InventoryWarehouse.is_active.is_(True),
+        )
+    )
+    if warehouse is None:
+        raise HTTPException(status_code=404, detail="Warehouse not found for company")
+    if warehouse.branch_id is None:
+        if not can_manage_all_branches(db, user):
+            raise HTTPException(status_code=403, detail="Central warehouse access requires tenant-wide branch management permission")
+    else:
+        branch = require_branch_access(db, user, warehouse.branch_id)
+        if branch.company_id != company_id:
+            raise HTTPException(status_code=404, detail="Warehouse not found for company")
+    return warehouse
+
+
+def _authorize_commerce_document(
+    db: Session,
+    user: User,
+    company_id: int,
+    document_id: int,
+    kind: str,
+):
+    model = SalesDocument if kind == "sale" else PurchaseDocument
+    document = db.scalar(
+        select(model).where(
+            model.id == document_id,
+            model.company_id == company_id,
+        )
+    )
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    _authorize_warehouse_branch(db, user, company_id, document.warehouse_id)
+    return document
+
+
+def _visible_warehouse_ids(db: Session, user: User, company_id: int) -> set[int] | None:
+    if can_manage_all_branches(db, user):
+        return None
+    allowed = accessible_branch_ids(db, user)
+    return set(db.scalars(
+        select(InventoryWarehouse.id).where(
+            InventoryWarehouse.company_id == company_id,
+            InventoryWarehouse.tenant_id == get_effective_tenant_id(user),
+            InventoryWarehouse.branch_id.in_(allowed),
+            InventoryWarehouse.is_active.is_(True),
+        )
+    ).all()) if allowed else set()
+
+
+def _filter_visible_documents(db: Session, user: User, company_id: int, documents):
+    visible_warehouses = _visible_warehouse_ids(db, user, company_id)
+    if visible_warehouses is None:
+        return documents
+    has_company_membership = bool(visible_warehouses) or can_manage_all_branches(db, user)
+    return [
+        document for document in documents
+        if document.warehouse_id in visible_warehouses
+        or (document.warehouse_id is None and has_company_membership)
+    ]
 
 
 @router.post("/accounting-settings", status_code=201, dependencies=[Depends(require_permission("commerce.write"))])
@@ -91,12 +183,14 @@ def list_partners(company_id: int = Query(..., gt=0), partner_type: str | None =
 def create_sale(payload: DocumentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, payload.company_id, current_user)
     if payload.document_type not in {"quotation", "order", "delivery", "invoice", "credit_note"}: raise HTTPException(400, "Invalid sales document type")
+    _authorize_warehouse_branch(db, current_user, payload.company_id, payload.warehouse_id)
     obj = _run(lambda: commerce_service.create_document(db, payload)); db.commit(); db.refresh(obj); return obj
 
 
 @router.post("/sales/returns", response_model=DocumentResponse, status_code=201, dependencies=[Depends(require_permission("commerce.post"))])
 def create_sales_return(payload: SalesReturnCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, payload.company_id, current_user)
+    _authorize_warehouse_branch(db, current_user, payload.company_id, payload.warehouse_id)
     try: obj = sales_return_service.create_and_post(db, payload, current_user.id); db.commit(); db.refresh(obj); return obj
     except ValueError as exc: db.rollback(); raise HTTPException(status_code=400, detail=str(exc)) from exc
     except IntegrityError as exc: db.rollback(); raise HTTPException(status_code=409, detail="The sales return conflicts with an existing allocation or document") from exc
@@ -106,6 +200,7 @@ def create_sales_return(payload: SalesReturnCreate, current_user: User = Depends
 def create_purchase(payload: DocumentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, payload.company_id, current_user)
     if payload.document_type not in {"requisition", "rfq", "order", "receipt", "bill", "debit_note"}: raise HTTPException(400, "Invalid purchase document type")
+    _authorize_warehouse_branch(db, current_user, payload.company_id, payload.warehouse_id)
     obj = _run(lambda: commerce_service.create_document(db, payload)); db.commit(); db.refresh(obj); return obj
 
 
@@ -149,7 +244,8 @@ def sales(
     allowed = {"quotation", "order", "delivery", "invoice", "credit_note"}
     if document_type is not None and document_type not in allowed:
         raise HTTPException(400, "Invalid sales document type")
-    return commerce_service.list_documents(db, company_id, "sale", document_type)
+    documents = commerce_service.list_documents(db, company_id, "sale", document_type)
+    return _filter_visible_documents(db, current_user, company_id, documents)
 
 
 @router.get("/purchases/documents", response_model=list[DocumentResponse])
@@ -163,7 +259,8 @@ def purchases(
     allowed = {"requisition", "rfq", "order", "receipt", "bill", "debit_note"}
     if document_type is not None and document_type not in allowed:
         raise HTTPException(400, "Invalid purchase document type")
-    return commerce_service.list_documents(db, company_id, "purchase", document_type)
+    documents = commerce_service.list_documents(db, company_id, "purchase", document_type)
+    return _filter_visible_documents(db, current_user, company_id, documents)
 
 @router.post("/sales/{document_id}/cancel", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def cancel_sales_order(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
