@@ -51,11 +51,11 @@ def upgrade() -> None:
     op.drop_constraint("uq_users_tenant_email", "users", type_="unique")
     op.create_index(
         "uq_users_username_global_ci", "users",
-        [sa.text("lower(username)")], unique=True,
+        [sa.text("lower(trim(username))")], unique=True,
     )
     op.create_index(
         "uq_users_email_global_ci", "users",
-        [sa.text("lower(email)")], unique=True,
+        [sa.text("lower(trim(email))")], unique=True,
     )
 
 
