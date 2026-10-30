@@ -102,10 +102,9 @@ export default function RoleForm({
           role.description || "",
         is_active: role.is_active,
         permission_ids:
-          role.permissions.map(
-            (permission) =>
-              permission.id,
-          ),
+          role.permissions
+            .filter((permission) => permission.is_active)
+            .map((permission) => permission.id),
       });
     } else {
       setForm(initialState);
