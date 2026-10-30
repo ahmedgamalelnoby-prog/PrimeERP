@@ -64,10 +64,10 @@ export default function SettingsCenterPage() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-[1700px] space-y-4" dir={isArabic ? "rtl" : "ltr"}>
-      <header className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border bg-card px-5 py-4 shadow-sm">
+    <div className="mx-auto w-full max-w-[1700px] space-y-4 rounded-2xl bg-[#f3f7f6] p-2 sm:p-4" dir={isArabic ? "rtl" : "ltr"}>
+      <header className="flex min-h-[76px] flex-wrap items-center justify-between gap-4 rounded-2xl border border-[#e4eceb] bg-white px-5 py-4 shadow-sm">
         <div className="flex items-center gap-3">
-          <span className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+          <span className="flex size-11 items-center justify-center rounded-xl bg-[#e7f7f3] text-[#087f73]">
             <Settings className="size-5" />
           </span>
           <div>
@@ -81,15 +81,15 @@ export default function SettingsCenterPage() {
       </header>
 
       <div className={["grid min-h-[72vh] gap-4", isArabic ? "lg:grid-cols-[286px_minmax(0,1fr)]" : "lg:grid-cols-[minmax(0,1fr)_286px]"].join(" ")}>
-        <aside className="flex h-fit flex-col overflow-hidden rounded-2xl border border-slate-800 bg-[#0b1730] text-white shadow-xl lg:sticky lg:top-24 lg:max-h-[calc(100vh-7rem)]">
-          <div className="border-b border-white/10 px-4 py-4">
+        <aside className="flex h-fit flex-col overflow-hidden rounded-[18px] border border-[#102b38] bg-[#102b38] text-[#d8e7e8] shadow-sm lg:sticky lg:top-24 lg:max-h-[calc(100vh-7rem)]">
+          <div className="border-b border-white/10 px-4 py-5">
             <div className="flex items-center gap-3">
-              <span className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-cyan-400">
+              <span className="flex size-9 items-center justify-center rounded-xl bg-[#18a998]">
                 <SlidersHorizontal className="size-4 text-white" />
               </span>
               <div>
                 <h2 className="text-sm font-extrabold">{t("settingsCenter.moduleSettings")}</h2>
-                <p className="mt-0.5 text-[11px] text-slate-400">{t("settingsCenter.selectModule")}</p>
+                <p className="mt-0.5 text-[11px] text-[#a9c6c7]">{t("settingsCenter.selectModule")}</p>
               </div>
             </div>
           </div>
@@ -107,14 +107,14 @@ export default function SettingsCenterPage() {
                     aria-controls={`settings-module-panel-${section.id.replace(/[^a-z0-9]/gi, "-")}`}
                     onClick={() => toggleSection(section.id)}
                     className={[
-                      "group flex w-full items-center justify-between gap-3 rounded-xl px-3 py-3 text-start text-sm font-semibold transition-colors",
+                      "group flex w-full items-center justify-between gap-3 rounded-[11px] px-3 py-3 text-start text-sm font-semibold transition-colors",
                       isActive
                         ? "bg-gradient-to-l from-cyan-400/20 to-blue-500/20 text-white ring-1 ring-inset ring-cyan-300/25"
                         : "text-slate-300 hover:bg-white/[0.07] hover:text-white",
                     ].join(" ")}
                   >
                     <span className="flex min-w-0 items-center gap-3">
-                      <SectionIcon className={["size-[18px] shrink-0", isActive ? "text-cyan-300" : "text-slate-400 group-hover:text-cyan-300"].join(" ")} />
+                      <SectionIcon className={["size-[18px] shrink-0", isActive ? "text-[#18c4b0]" : "text-[#a9c6c7] group-hover:text-white"].join(" ")} />
                       <span className="min-w-0 flex-1">{t(`settingsCenter.sections.${section.id}.title`)}</span>
                     </span>
                     <ChevronDown className={["size-4 shrink-0 text-slate-500 transition-transform", isExpanded ? "rotate-180" : ""].join(" ")} />
@@ -122,34 +122,34 @@ export default function SettingsCenterPage() {
                   {isExpanded && (
                     <div
                       id={`settings-module-panel-${section.id.replace(/[^a-z0-9]/gi, "-")}`}
-                      className={["mx-3 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-3", isArabic ? "mr-7" : "ml-7"].join(" ")}
+                      className={["mx-3 rounded-lg border border-white/10 bg-[#1c414d] px-3 py-3", isArabic ? "mr-7" : "ml-7"].join(" ")}
                     >
                       <button
                         type="button"
                         onClick={() => selectSection(section.id)}
-                        className="flex w-full items-center gap-2 text-start text-xs font-semibold text-cyan-200 hover:text-white"
+                        className="flex w-full items-center gap-2 text-start text-xs font-semibold text-[#8ce3d7] hover:text-white"
                       >
                         <Check className="size-3.5 shrink-0" />
                         <span>{t("settingsCenter.sectionSettings", { title: t(`settingsCenter.sections.${section.id}.title`) })}</span>
                       </button>
-                      <p className="mt-2 text-[11px] leading-5 text-slate-400">{t(`settingsCenter.sections.${section.id}.description`)}</p>
+                      <p className="mt-2 text-[11px] leading-5 text-[#b4ced0]">{t(`settingsCenter.sections.${section.id}.description`)}</p>
                     </div>
                   )}
                 </div>
               );
             })}
           </nav>
-          <div className="border-t border-white/10 px-4 py-3 text-center text-[10px] tracking-wide text-slate-500">{t("settingsCenter.footer")}</div>
+          <div className="border-t border-white/10 px-4 py-3 text-center text-[10px] tracking-wide text-[#a9c6c7]">{t("settingsCenter.footer")}</div>
         </aside>
 
-        <section className="min-w-0 rounded-2xl border bg-card p-3 shadow-sm sm:p-5">
+        <section className="min-w-0 rounded-[18px] border border-[#e4eceb] bg-white p-4 shadow-[0_8px_28px_rgba(17,53,59,.035)] sm:p-7">
           <div className="mb-5 flex flex-wrap items-start gap-3 border-b pb-4">
-            <span className="rounded-xl bg-primary/10 p-3 text-primary"><Icon className="size-5" /></span>
+            <span className="rounded-xl bg-[#e8f7f3] p-3 text-[#0d9888]"><Icon className="size-5" /></span>
             <div className="min-w-0 flex-1">
               <h2 className="text-lg font-extrabold">{t(`settingsCenter.sections.${selected.id}.title`)}</h2>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">{t(`settingsCenter.sections.${selected.id}.description`)}</p>
             </div>
-            <span className="rounded-full border bg-muted/60 px-3 py-1 text-[11px] font-semibold text-muted-foreground">
+            <span className="rounded-full border border-[#cdece5] bg-[#e7f7f3] px-3 py-1 text-[11px] font-semibold text-[#087f73]">
               {t("settingsCenter.moduleSettings")}
             </span>
           </div>
