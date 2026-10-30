@@ -28,6 +28,61 @@ router = APIRouter(prefix="/commerce", tags=["Commerce"], dependencies=[Depends(
 
 def _company_for_user(db: Session, company_id: int, user: User):
     return require_company_access(db, company_id, user)
+def _run(fn):
+    try:
+        return fn()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        raise HTTPException(status_code=409, detail="The request conflicts with an existing record") from exc
+
+
+def _validate_accounting_configuration(db: Session, company: Company, payload: CommerceAccountingSettingsCreate) -> None:
+    journal_ids = {
+        "sales journal": payload.sales_journal_id,
+        "purchase journal": payload.purchase_journal_id,
+        "cash journal": payload.cash_journal_id,
+    }
+    journals = db.scalars(
+        select(AccountingJournal).where(
+            AccountingJournal.id.in_(journal_ids.values()),
+            AccountingJournal.company_id == company.id,
+            AccountingJournal.tenant_id == company.tenant_id,
+            AccountingJournal.is_active.is_(True),
+        )
+    ).all()
+    journal_by_id = {journal.id: journal for journal in journals}
+    for label, journal_id in journal_ids.items():
+        if journal_id not in journal_by_id:
+            raise HTTPException(422, f"Configured {label} does not belong to this company/tenant or is inactive")
+    account_ids = {
+        "AR account": payload.ar_account_id,
+        "AP account": payload.ap_account_id,
+        "sales account": payload.sales_account_id,
+        "purchase account": payload.purchase_account_id,
+        "inventory account": payload.inventory_account_id,
+        "GRNI account": payload.grni_account_id,
+        "PPV account": payload.purchase_price_variance_account_id,
+        "COGS account": payload.cogs_account_id,
+        "output VAT account": payload.output_vat_account_id,
+        "input VAT account": payload.input_vat_account_id,
+        "default payment account": payload.default_payment_account_id,
+    }
+    if payload.wht_account_id is not None:
+        account_ids["WHT account"] = payload.wht_account_id
+    accounts = db.scalars(
+        select(AccountCombination).where(
+            AccountCombination.id.in_(account_ids.values()),
+            AccountCombination.company_id == company.id,
+            AccountCombination.is_active.is_(True),
+        )
+    ).all()
+    account_by_id = {account.id: account for account in accounts}
+    for label, account_id in account_ids.items():
+        if account_id not in account_by_id:
+            raise HTTPException(422, f"Configured {label} does not belong to this company or is inactive")
+
+
 @router.post("/accounting-settings", status_code=201, dependencies=[Depends(require_permission("commerce.write"))])
 def configure_accounting(payload: CommerceAccountingSettingsCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     company = _company_for_user(db, payload.company_id, current_user)
