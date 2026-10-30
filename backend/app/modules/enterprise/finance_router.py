@@ -3,13 +3,14 @@ from datetime import date
 from fastapi import APIRouter,Depends,HTTPException
 from sqlalchemy import select,func
 from sqlalchemy.orm import Session
-from app.core.context import get_effective_tenant_id
+from app.core.context import get_effective_tenant_id, get_optional_request_context
 from app.core.permissions import require_permission
 from app.modules.saas.entitlements import require_module
 from app.database.session import get_db
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.companies.models import Company
+from app.modules.companies.membership import CompanyUserMembership
 from app.modules.company_settings.service import get_company_setting
 from app.modules.enterprise.finance_models import FinanceEntity,ConsolidationGroup,ConsolidationMember,IntercompanyTransaction,ConsolidationRun,ConsolidationLine,ConsolidationElimination,FinanceFxRate,FinanceRevaluation
 from app.modules.enterprise.finance_schemas import *
@@ -22,12 +23,24 @@ router = APIRouter(
     dependencies=[Depends(require_module("enterprise"))],
 )
 def company_ok(db, cid, user):
+    """Require a selected company context and explicit access to every participating company."""
     tenant_id = get_effective_tenant_id(user)
-    if tenant_id is None or not db.scalar(
+    context = get_optional_request_context()
+    if tenant_id is None or context is None or context.company_id is None:
+        raise HTTPException(400, "Select an active company using X-Company-ID")
+    if not db.scalar(
         select(Company.id).where(
             Company.id == cid,
             Company.tenant_id == tenant_id,
             Company.is_active.is_(True),
+        )
+    ):
+        raise HTTPException(404, "Company not found")
+    if not user.is_platform_admin and not db.scalar(
+        select(CompanyUserMembership.id).where(
+            CompanyUserMembership.company_id == cid,
+            CompanyUserMembership.user_id == user.id,
+            CompanyUserMembership.is_active.is_(True),
         )
     ):
         raise HTTPException(404, "Company not found")
