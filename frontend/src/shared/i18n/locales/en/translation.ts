@@ -472,6 +472,50 @@ const enTranslation = {
     skuCode: "SKU/Code"
   },
 
+  purchasing: {
+    title: "Purchasing",
+    description: "Create purchase requests, approve orders, receive goods, and move documents into payment.",
+    unexpectedError: "An unexpected error occurred.",
+    supplier: "Supplier",
+    documentNumber: "Document number",
+    purchaseOrderLine: "Purchase order line",
+    receivedReceipt: "Received receipt",
+    unitPrice: "Unit price",
+    quantity: "Quantity",
+    processing: "Processing...",
+    loadingCompanyDate: "Loading company date...",
+    createDocument: "Create document",
+    loading: "Loading...",
+    number: "Number",
+    date: "Date",
+    type: "Type",
+    status: "Status",
+    total: "Total",
+    actions: "Actions",
+    confirm: "Confirm",
+    approve: "Approve",
+    reject: "Reject",
+    receive: "Receive",
+    payFull: "Pay in full",
+    details: "Details",
+    close: "Close",
+    document: "Document",
+    item: "Item",
+    types: { requisition: "Purchase requisition", rfq: "Request for quotation", order: "Purchase order", receipt: "Goods receipt", bill: "Supplier bill" },
+    statuses: { draft: "Draft", pending_approval: "Pending approval", approved: "Approved", confirmed: "Confirmed", partially_received: "Partially received", received: "Received", posted: "Posted", cancelled: "Cancelled", rejected: "Rejected", partially_fulfilled: "Partially fulfilled" }
+  },
+  crm: {
+    title: "Customer Relationship Management",
+    pipeline: "Lead → Customer → Quotation → Sales order / Invoice.",
+    lead: "Lead",
+    saveLead: "Save lead",
+    leads: "Leads",
+    opportunitiesQuotations: "Opportunities & Quotations",
+    loadFailed: "Could not load CRM data.",
+    createLeadFailed: "Could not create the lead.",
+    fields: { code: "Code", name: "Name", phone: "Phone", email: "Email" }
+  },
+
   register: {
     workspaceLabel:
       "Create your workspace",
