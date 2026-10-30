@@ -68,6 +68,7 @@ export default function RoleAccessAuditDialog({ open, onOpenChange }: RoleAccess
                 [t("roles.accessAudit.activeRoles"), audit.summary.roles_active],
                 [t("roles.accessAudit.permissions"), audit.summary.permissions_total],
                 [t("roles.accessAudit.findings"), audit.summary.findings_total],
+                [t("roles.accessAudit.missingManifestPermissions"), audit.summary.manifest_permissions_missing],
               ].map(([label, value]) => (
                 <div key={String(label)} className="rounded-xl border p-4">
                   <p className="text-sm text-muted-foreground">{label}</p>
@@ -140,6 +141,7 @@ export default function RoleAccessAuditDialog({ open, onOpenChange }: RoleAccess
                           {t(`roles.accessAudit.findingTypes.${finding.code}`, {
                             role: finding.role_name,
                             permission: finding.permission_name,
+                            module: finding.module_name,
                             count: finding.count,
                             defaultValue: finding.code,
                           })}
@@ -150,6 +152,30 @@ export default function RoleAccessAuditDialog({ open, onOpenChange }: RoleAccess
                 </div>
               )}
             </section>
+
+            {audit.manifest_permissions_missing.length > 0 && (
+              <section className="space-y-3">
+                <h3 className="font-semibold">{t("roles.accessAudit.missingManifestPermissions")}</h3>
+                <div className="overflow-x-auto rounded-lg border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{t("roles.accessAudit.module")}</TableHead>
+                        <TableHead>{t("roles.accessAudit.permissionCode")}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {audit.manifest_permissions_missing.map((item) => (
+                        <TableRow key={item.module_name + ":" + item.permission_name}>
+                          <TableCell className="font-medium">{item.module_name}</TableCell>
+                          <TableCell><code className="text-xs">{item.permission_name}</code></TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </section>
+            )}
 
             {audit.permissions_without_active_role.length > 0 && (
               <section className="space-y-3">
