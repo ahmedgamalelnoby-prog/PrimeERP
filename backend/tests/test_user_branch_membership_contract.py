@@ -183,3 +183,11 @@ def test_company_wide_commerce_aging_and_partner_statements_require_tenant_wide_
     assert "company-wide AR/AP aging" in router
     assert "company-wide partner statements" in router
     assert "if not can_manage_all_branches(db, current_user)" in router
+
+
+def test_sales_returns_validate_access_to_every_source_delivery_branch():
+    router = source("app/modules/commerce/router.py")
+    assert "for request_line in payload.lines:" in router
+    assert "SalesLine.id == request_line.original_delivery_line_id" in router
+    assert "SalesDocument.document_type == \"delivery\"" in router
+    assert "source_delivery.warehouse_id" in router
