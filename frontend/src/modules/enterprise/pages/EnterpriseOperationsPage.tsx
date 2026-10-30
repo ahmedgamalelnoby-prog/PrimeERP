@@ -60,7 +60,8 @@ function companyId(): number | null {
 
 export default function EnterpriseOperationsPage() {
   const path = useLocation().pathname;
-  const area = (path.split("/").filter(Boolean).at(-1) || "assets") as Area;
+  const segments = path.split("/").filter(Boolean);
+  const area = (segments[segments.length - 1] || "assets") as Area;
   const config = areas[area] || areas.assets;
   const company = companyId();
   const [rows, setRows] = useState<Row[]>([]);
