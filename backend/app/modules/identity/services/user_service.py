@@ -11,6 +11,7 @@ from app.modules.audit.service import record_audit_event
 from app.modules.identity.models.user import User
 from app.modules.identity.repositories.user_repository import UserRepository, user_repository
 from app.modules.identity.services.password_service import password_service
+from app.modules.identity.services.refresh_token_service import refresh_token_service
 from app.modules.roles.models import Role
 from app.modules.saas.entitlements import enforce_user_limit
 
@@ -110,16 +111,20 @@ class UserService(BaseService[UserRepository]):
                     raise ValueError("Email already exists in the system.")
                 update_data["email"] = new_email
             password_changed = "password" in update_data
+            password_rotated = False
             if password_changed:
                 password = update_data.pop("password")
                 if password:
                     update_data["hashed_password"] = password_service.hash_password(str(password))
+                    password_rotated = True
             if not getattr(self.current_user, "is_platform_admin", False):
                 update_data.pop("is_platform_admin", None)
                 update_data.pop("is_superuser", None)
             protected_fields = {"id", "uuid", "tenant_id", "hashed_password", "created_at", "created_by"}
             update_data = {key: value for key, value in update_data.items() if key not in protected_fields}
             repository.update(db, user, data=update_data)
+            if password_rotated or update_data.get("is_active") is False:
+                refresh_token_service.revoke_user_tokens(db, user.id)
             record_audit_event(db, action="user.update", entity_type="user", entity_id=user.id, user_id=getattr(self.current_user, "id", None), tenant_id=effective_tenant_id, metadata={"changed_fields": sorted(update_data.keys()), "password_changed": password_changed})
             uow.commit()
         repository.refresh(db, user)
@@ -137,6 +142,7 @@ class UserService(BaseService[UserRepository]):
             if user is None:
                 raise LookupError("User was not found.")
             repository.update(db, user, data={"hashed_password": password_service.hash_password(new_password), "must_change_password": must_change_password})
+            refresh_token_service.revoke_user_tokens(db, user.id)
             record_audit_event(db, action="user.password_reset", entity_type="user", entity_id=user.id, user_id=getattr(self.current_user, "id", None), tenant_id=effective_tenant_id, metadata={"must_change_password": must_change_password})
             uow.commit()
         repository.refresh(db, user)
@@ -151,6 +157,7 @@ class UserService(BaseService[UserRepository]):
             if user is None:
                 raise LookupError("User was not found.")
             repository.soft_delete(db, user, deleted_by=deleted_by)
+            refresh_token_service.revoke_user_tokens(db, user.id)
             if hasattr(user, "is_active"):
                 user.is_active = False
             record_audit_event(db, action="user.delete", entity_type="user", entity_id=user.id, user_id=deleted_by or getattr(self.current_user, "id", None), tenant_id=effective_tenant_id, metadata={"username": user.username})
