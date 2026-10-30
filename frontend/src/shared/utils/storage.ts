@@ -10,7 +10,13 @@ export const storage = {
   },
   getTenantId() { return localStorage.getItem(STORAGE_KEYS.TENANT_ID); },
   setTenantId(tenantId: number | null | undefined) {
-    if (tenantId && tenantId > 0) localStorage.setItem(STORAGE_KEYS.TENANT_ID, String(tenantId));
+    const current = localStorage.getItem(STORAGE_KEYS.TENANT_ID);
+    const next = tenantId && tenantId > 0 ? String(tenantId) : null;
+    if (current !== next) {
+      localStorage.removeItem(STORAGE_KEYS.COMPANY_ID);
+      localStorage.removeItem(STORAGE_KEYS.BRANCH_ID);
+    }
+    if (next) localStorage.setItem(STORAGE_KEYS.TENANT_ID, next);
     else localStorage.removeItem(STORAGE_KEYS.TENANT_ID);
   },
   getCompanyId() { return localStorage.getItem(STORAGE_KEYS.COMPANY_ID); },
