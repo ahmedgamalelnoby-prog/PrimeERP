@@ -171,6 +171,8 @@ def grant_branch_membership(
     )
     if member_user is None or company_membership is None:
         raise HTTPException(status_code=404, detail="User must have an active membership in this company")
+    if not member_user.is_active:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot grant branch access to a disabled user")
     membership = db.scalar(
         select(BranchUserMembership).where(
             BranchUserMembership.branch_id == branch.id,
