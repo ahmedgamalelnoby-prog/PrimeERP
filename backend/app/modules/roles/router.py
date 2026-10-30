@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.database.session import get_db
 from app.modules.audit.service import record_audit_event
 from app.modules.identity.dependencies import get_current_user
-from app.modules.identity.models import User
 from app.modules.branches.membership import BranchUserMembership
 from app.modules.companies.membership import CompanyUserMembership
 from app.modules.identity.models import User
@@ -88,7 +87,7 @@ def get_access_audit(db: Session = Depends(get_db)) -> dict:
     roles = list(
         db.scalars(
             select(Role).options(
-                __import__("sqlalchemy").orm.selectinload(Role.permissions)
+                selectinload(Role.permissions)
             ).order_by(Role.name, Role.id)
         ).unique().all()
     )
