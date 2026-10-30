@@ -156,7 +156,7 @@ def grant_company_membership(
         entity_id=membership.id,
         user_id=current_user.id,
         tenant_id=company.tenant_id,
-        metadata={"company_id": company.id, "member_user_id": member_user.id},
+        metadata={"company_id": company.id, "member_user_id": member_user.id, "role_id": membership.role_id},
     )
     db.commit()
     db.refresh(membership)
