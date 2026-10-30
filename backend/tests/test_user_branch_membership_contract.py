@@ -294,3 +294,14 @@ def test_manufacturing_work_order_mutations_recheck_both_location_branches():
     assert "order.source_location_id, require_active=False" in router
     assert "order.destination_location_id, require_active=False" in router
     assert "_authorize_work_order_access(db, current_user, company_id, work_order_id)" in router
+
+
+def test_journal_entry_api_reads_and_writes_are_branch_membership_scoped():
+    router = source("app/modules/accounting/journals/api/journal_entries.py")
+    repository = source("app/modules/accounting/journals/repositories/journal_repository.py")
+    assert "branch_ids=accessible_branch_ids(db, current_user)" in router
+    assert "JournalEntry.branch_id.in_(branch_ids)" in repository
+    assert "def _authorize_entry_access(" in router
+    assert "require_branch_access(db, current_user, entry.branch_id)" in router
+    assert "require_branch_access(db, current_user, payload.branch_id)" in router
+    assert "_authorize_entry_access(db, current_user, entry_id)" in router
