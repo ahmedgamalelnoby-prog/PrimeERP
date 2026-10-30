@@ -97,27 +97,30 @@ def get_access_audit(db: Session = Depends(get_db)) -> dict:
         ).all()
     )
 
-    global_counts = dict(
-        db.execute(
-            select(User.role_id, func.count(User.id))
+    global_counts = {
+        (role_id, is_active): count
+        for role_id, is_active, count in db.execute(
+            select(User.role_id, User.is_active, func.count(User.id))
             .where(User.role_id.is_not(None), User.is_deleted.is_(False))
-            .group_by(User.role_id)
+            .group_by(User.role_id, User.is_active)
         ).all()
-    )
-    company_counts = dict(
-        db.execute(
-            select(CompanyUserMembership.role_id, func.count(CompanyUserMembership.id))
+    }
+    company_counts = {
+        (role_id, is_active): count
+        for role_id, is_active, count in db.execute(
+            select(CompanyUserMembership.role_id, CompanyUserMembership.is_active, func.count(CompanyUserMembership.id))
             .where(CompanyUserMembership.role_id.is_not(None))
-            .group_by(CompanyUserMembership.role_id)
+            .group_by(CompanyUserMembership.role_id, CompanyUserMembership.is_active)
         ).all()
-    )
-    branch_counts = dict(
-        db.execute(
-            select(BranchUserMembership.role_id, func.count(BranchUserMembership.id))
+    }
+    branch_counts = {
+        (role_id, is_active): count
+        for role_id, is_active, count in db.execute(
+            select(BranchUserMembership.role_id, BranchUserMembership.is_active, func.count(BranchUserMembership.id))
             .where(BranchUserMembership.role_id.is_not(None))
-            .group_by(BranchUserMembership.role_id)
+            .group_by(BranchUserMembership.role_id, BranchUserMembership.is_active)
         ).all()
-    )
+    }
     active_role_permission_ids = set(
         db.scalars(
             select(role_permissions.c.permission_id)
@@ -132,9 +135,12 @@ def get_access_audit(db: Session = Depends(get_db)) -> dict:
         active_permissions = [p for p in role.permissions if p.is_active]
         inactive_permissions = [p for p in role.permissions if not p.is_active]
         usage = {
-            "global_users": int(global_counts.get(role.id, 0)),
-            "company_memberships": int(company_counts.get(role.id, 0)),
-            "branch_memberships": int(branch_counts.get(role.id, 0)),
+            "global_users_active": int(global_counts.get((role.id, True), 0)),
+            "global_users_inactive": int(global_counts.get((role.id, False), 0)),
+            "company_memberships_active": int(company_counts.get((role.id, True), 0)),
+            "company_memberships_inactive": int(company_counts.get((role.id, False), 0)),
+            "branch_memberships_active": int(branch_counts.get((role.id, True), 0)),
+            "branch_memberships_inactive": int(branch_counts.get((role.id, False), 0)),
         }
         if not role.is_active and sum(usage.values()) > 0:
             findings.append({
