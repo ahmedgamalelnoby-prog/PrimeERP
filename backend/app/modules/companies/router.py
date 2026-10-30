@@ -190,6 +190,36 @@ def revoke_company_membership(
     return None
 
 
+@router.delete("/{company_id}/members/{user_id}/role", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_permission("company.write"))])
+def clear_company_member_role(
+    company_id: int,
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    company = _get_company(db, company_id, current_user)
+    membership = db.scalar(
+        select(CompanyUserMembership).where(
+            CompanyUserMembership.company_id == company.id,
+            CompanyUserMembership.user_id == user_id,
+        ).with_for_update()
+    )
+    if membership is None:
+        raise HTTPException(status_code=404, detail="Company membership not found")
+    membership.role_id = None
+    record_audit_event(
+        db,
+        action="company.membership.role.clear",
+        entity_type="company_user_membership",
+        entity_id=membership.id,
+        user_id=current_user.id,
+        tenant_id=company.tenant_id,
+        metadata={"company_id": company.id, "member_user_id": user_id},
+    )
+    db.commit()
+    return None
+
+
 @router.get("", response_model=list[CompanyResponse], dependencies=[Depends(require_permission("company.access"))])
 def list_companies(active_only: bool = Query(False), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     stmt = select(Company).where(Company.tenant_id == _tenant_id(current_user)).order_by(Company.name, Company.id)
