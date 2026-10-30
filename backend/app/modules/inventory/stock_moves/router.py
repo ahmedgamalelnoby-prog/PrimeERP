@@ -44,7 +44,7 @@ def _assert_location_pair_access(db: Session, company_id: int, location_ids, use
             raise HTTPException(404, "Stock warehouse not found")
         if warehouse.branch_id is not None:
             branch_ids.add(warehouse.branch_id)
-    if user.is_platform_admin:
+    if user.is_platform_admin or not branch_ids:
         return
     context = get_optional_request_context()
     if context is None or context.branch_id not in branch_ids:
