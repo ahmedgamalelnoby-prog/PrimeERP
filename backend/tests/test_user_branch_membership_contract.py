@@ -239,3 +239,12 @@ def test_inventory_reservations_are_scoped_by_their_location_warehouse():
     assert "InventoryLocation.warehouse_id.in_(allowed)" in router
     assert "require_location_access(db, current_user, payload.company_id, payload.location_id)" in router
     assert "require_active=False" in router
+
+
+def test_accounting_financial_reports_are_scoped_to_accessible_branches():
+    router = source("app/modules/accounting/reports/router.py")
+    service = source("app/modules/accounting/reports/service.py")
+    assert "accessible_branch_ids(db, current_user)" in router
+    assert "branch_ids=accessible_branch_ids(db, current_user)" in router
+    assert "JournalEntry.branch_id.in_(branch_ids)" in service
+    assert "branch_ids: list[int] | None = None" in service
