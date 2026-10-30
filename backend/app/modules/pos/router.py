@@ -542,7 +542,7 @@ def link_terminal_menu(payload: TerminalMenuLink, company_id: int = Query(..., g
 @router.post("/menu-routes", status_code=201, dependencies=[Depends(require_permission("commerce.write"))])
 def route_menu_item(payload: MenuItemRouteCreate, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company(db, company_id, current_user)
-    terminal = _terminal(db, company_id, payload.terminal_id)
+    terminal = _terminal(db, company_id, payload.terminal_id, current_user)
     item = db.scalar(select(MenuItem).join(Menu, Menu.id == MenuItem.menu_id).where(
         MenuItem.id == payload.menu_item_id,
         Menu.company_id == company_id,
