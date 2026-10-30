@@ -101,14 +101,14 @@ class UserRepository(BaseRepository[User]):
         self,
         db: Session,
         login: str,
-    ) -> User | None:
-        """Resolve a globally unique username without asking for a tenant/company."""
+    ) -> list[User]:
+        """Resolve a username without requiring a tenant/company identifier."""
         normalized_username = login.strip().lower()
         query = select(User).where(
             func.lower(func.trim(User.username)) == normalized_username,
             User.is_deleted.is_(False),
-        )
-        return db.execute(query).scalar_one_or_none()
+        ).limit(2)
+        return list(db.execute(query).scalars().all())
 
     def list_users(
         self,
