@@ -52,7 +52,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
   };
 
   useEffect(() => {
-    if (!user) return;
+    // Platform administrators must explicitly select a tenant before any
+    // tenant-scoped company settings request is made.
+    if (!user || user.is_platform_admin || user.tenant_id === null) return;
 
     let cancelled = false;
     const applyCompanyLanguage = async (): Promise<void> => {
