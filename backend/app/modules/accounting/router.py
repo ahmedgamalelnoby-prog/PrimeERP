@@ -25,6 +25,8 @@ def _company_for_user(db: Session, company_id: int, user: User):
     context = get_optional_request_context()
     if context is None or context.company_id != company_id:
         raise HTTPException(403, "Select this company using X-Company-ID before accessing accounting data")
+    if context.branch_id is not None:
+        raise HTTPException(400, "Tax configuration is company-wide; omit X-Branch-ID to use company-level permissions")
     company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == tenant_id))
     if company is None:
         raise HTTPException(404, "Company not found")
