@@ -15,12 +15,12 @@ import { useAuth } from "@/modules/identity/hooks/useAuth";
 interface LoginLocationState { registrationSuccess?: boolean; username?: string; }
 
 const capabilities = [
-  { icon: WalletCards, ar: "الإدارة المالية", en: "Finance", detailAr: "الحسابات والخزينة والميزانيات والأصول", detailEn: "Accounting, treasury, budgets and assets" },
-  { icon: Package, ar: "الإدارة التجارية", en: "Commercial", detailAr: "المبيعات والمشتريات والعملاء ونقاط البيع", detailEn: "Sales, purchasing, CRM and point of sale" },
-  { icon: Workflow, ar: "التشغيل وسلاسل الإمداد", en: "Operations & supply chain", detailAr: "المخزون والتصنيع والجودة والصيانة", detailEn: "Inventory, manufacturing, quality and maintenance" },
-  { icon: Users2, ar: "الموارد البشرية", en: "Human resources", detailAr: "الموظفون والحضور والانصراف والرواتب", detailEn: "Employees, attendance and payroll" },
-  { icon: BarChart3, ar: "التقارير والتحليلات", en: "Reports & analytics", detailAr: "مؤشرات الأداء وتقارير الإدارة", detailEn: "Management reports and performance insights" },
-  { icon: Bot, ar: "الذكاء الاصطناعي", en: "Artificial intelligence", detailAr: "مساعد ذكي لدعم فهم البيانات والعمل", detailEn: "An intelligent assistant for business insights" },
+  { icon: WalletCards, ar: "المالية والمحاسبة", en: "Finance & accounting", detailAr: "الحسابات والخزينة والميزانيات والأصول", detailEn: "Accounting, treasury, budgets and assets", tone: "text-cyan-300 bg-cyan-400/10" },
+  { icon: Package, ar: "المبيعات والمشتريات", en: "Sales & purchasing", detailAr: "إدارة العملاء والموردين ودورة التجارة", detailEn: "Customers, suppliers and commercial workflows", tone: "text-sky-300 bg-sky-400/10" },
+  { icon: Layers3, ar: "المخزون وسلاسل الإمداد", en: "Inventory & supply chain", detailAr: "المخازن والتصنيع والجودة والصيانة", detailEn: "Warehousing, manufacturing, quality and maintenance", tone: "text-amber-300 bg-amber-400/10" },
+  { icon: Users2, ar: "الموارد البشرية والرواتب", en: "HR & payroll", detailAr: "الموظفون والحضور والانصراف والرواتب", detailEn: "Employees, attendance and payroll", tone: "text-teal-300 bg-teal-400/10" },
+  { icon: BarChart3, ar: "التقارير والتحليلات", en: "Reports & analytics", detailAr: "مؤشرات الأداء والرؤية الإدارية", detailEn: "Performance indicators and management insight", tone: "text-blue-300 bg-blue-400/10" },
+  { icon: Bot, ar: "الذكاء الاصطناعي", en: "AI assistant", detailAr: "مساعدة ذكية لفهم البيانات وسير العمل", detailEn: "Intelligent assistance for data and workflows", tone: "text-violet-300 bg-violet-400/10" },
 ];
 
 export default function LoginPage() {
@@ -84,85 +84,107 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#eef3f8] px-4 py-6 text-slate-900 sm:px-6 lg:px-8" dir={isArabic ? "rtl" : "ltr"}>
-      <div className="pointer-events-none absolute -left-32 -top-32 h-96 w-96 rounded-full bg-cyan-200/40 blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-40 -right-24 h-[30rem] w-[30rem] rounded-full bg-blue-200/40 blur-3xl" />
+    <main className="min-h-screen bg-[#edf2f7] p-0 text-slate-900" dir="ltr">
+      <div className="grid min-h-screen w-full lg:grid-cols-[minmax(0,1.12fr)_minmax(420px,0.88fr)]">
+        <section dir={isArabic ? "rtl" : "ltr"} className="relative flex min-h-[560px] flex-col overflow-hidden bg-[#07172b] px-6 py-7 text-white sm:px-10 sm:py-9 lg:min-h-screen lg:px-12 lg:py-10 xl:px-16">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_75%_25%,rgba(20,119,176,0.32),transparent_48%),linear-gradient(145deg,#0b2340_0%,#07172b_55%,#04101f_100%)]" />
+          <div className="pointer-events-none absolute -bottom-36 -right-20 h-[28rem] w-[28rem] rounded-full border border-cyan-300/10" />
+          <div className="pointer-events-none absolute -bottom-24 -right-8 h-[22rem] w-[22rem] rounded-full border border-cyan-300/[0.07]" />
 
-      <div className="relative grid w-full max-w-[1180px] overflow-hidden rounded-[28px] border border-white/80 bg-white shadow-[0_30px_100px_rgba(15,35,65,0.14)] lg:min-h-[720px] lg:grid-cols-[1.04fr_0.96fr]">
-        <section className="relative flex flex-col overflow-hidden bg-[#102b43] px-6 py-7 text-white sm:px-9 sm:py-9 lg:px-11 lg:py-10">
-          <div className="pointer-events-none absolute -right-28 -top-28 h-80 w-80 rounded-full border-[48px] border-cyan-300/[0.06]" />
-          <div className="pointer-events-none absolute -bottom-40 -left-24 h-96 w-96 rounded-full bg-blue-500/10 blur-3xl" />
-          <div className="relative flex items-center justify-between gap-4">
-            <Link to="/" className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/15 bg-white/10 shadow-lg"><Building2 className="h-6 w-6 text-cyan-300" /></div>
-              <div><div className="text-2xl font-black tracking-tight">Prime<span className="text-cyan-300">ERP</span></div><div className="mt-0.5 text-[10px] font-semibold tracking-[0.19em] text-slate-400">BUSINESS OPERATING SYSTEM</div></div>
-            </Link>
-            <button type="button" onClick={changeLanguage} className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-white/15 bg-white/[0.06] px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/10"><Globe2 className="h-4 w-4" />{isArabic ? "English" : "العربية"}</button>
-          </div>
+          <header className="relative z-10 flex items-center gap-3">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-300 to-cyan-600 shadow-lg shadow-cyan-950/40">
+              <span className="text-2xl font-black text-[#062038]">P</span>
+            </div>
+            <div>
+              <div className="text-3xl font-black tracking-tight sm:text-4xl">Prime<span className="text-cyan-400">ERP</span></div>
+              <div className="mt-1 text-[10px] font-semibold tracking-[0.2em] text-slate-400">BUSINESS OPERATING SYSTEM</div>
+            </div>
+          </header>
 
-          <div className="relative my-8 lg:my-auto">
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-1.5 text-xs font-semibold text-cyan-200"><Layers3 className="h-3.5 w-3.5" />{text("منصة موحدة لإدارة المؤسسة", "One connected enterprise platform")}</div>
-            <h1 className="max-w-xl text-3xl font-black leading-tight tracking-tight sm:text-4xl">{text("كل أقسام شركتك تعمل بتناغم.", "Every part of your business, working together.")}</h1>
-            <p className="mt-4 max-w-xl text-sm leading-7 text-slate-300 sm:text-base">{text("منظومة متكاملة تربط الإدارة المالية والتجارية والتشغيلية والموارد البشرية في مساحة عمل واحدة، مع صلاحيات واضحة ورؤية موحدة للأعمال.", "A connected platform for finance, commercial operations, supply chain and people management, with clear access controls and a unified view of the business.")}</p>
+          <div className="relative z-10 my-auto max-w-3xl py-12 lg:py-14">
+            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-teal-300/20 bg-teal-300/10 px-4 py-2 text-xs font-semibold text-teal-200">
+              <Layers3 className="h-4 w-4" />{text("منصة موحدة لإدارة المؤسسة", "INTEGRATED ENTERPRISE PLATFORM")}
+            </div>
+            <h1 className="max-w-2xl text-3xl font-black leading-[1.25] tracking-tight sm:text-4xl xl:text-5xl">{text("إدارة متكاملة لأعمالك. رؤية أوضح لقراراتك.", "One platform for your business. Clarity for every decision.")}</h1>
+            <p className="mt-5 max-w-2xl text-sm leading-8 text-slate-300 sm:text-base">{text("PrimeERP يجمع الإدارة المالية والتجارية والتشغيلية والموارد البشرية والتقارير في نظام واحد، مع إدارة مركزية للشركات والفروع والصلاحيات.", "PrimeERP brings finance, commercial operations, supply chain, HR and reporting together, with centralized company, branch and access management.")}</p>
 
-            <div className="mt-8 grid gap-3 sm:grid-cols-2">
-              {capabilities.map(({ icon: Icon, ar, en, detailAr, detailEn }) => (
-                <div key={en} className="flex min-h-[82px] items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.055] p-3.5 transition hover:bg-white/[0.09]">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cyan-300/10 text-cyan-200"><Icon className="h-[18px] w-[18px]" /></div>
-                  <div className="min-w-0"><p className="text-sm font-bold text-white">{text(ar, en)}</p><p className="mt-1 text-[11px] leading-5 text-slate-400">{text(detailAr, detailEn)}</p></div>
+            <div className="mt-9 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {capabilities.map(({ icon: Icon, ar, en, detailAr, detailEn, tone }) => (
+                <div key={en} className="flex min-h-[112px] items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.045] p-4 backdrop-blur-sm transition hover:border-cyan-300/25 hover:bg-white/[0.075]">
+                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${tone}`}><Icon className="h-5 w-5" /></div>
+                  <div className="min-w-0"><h3 className="text-sm font-bold text-white">{text(ar, en)}</h3><p className="mt-1.5 text-[11px] leading-5 text-slate-400">{text(detailAr, detailEn)}</p></div>
                 </div>
               ))}
             </div>
 
-            <div className="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-400">
-              <span className="inline-flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-emerald-300" />{text("صلاحيات وأمان مؤسسي", "Enterprise access & security")}</span>
-              <span className="inline-flex items-center gap-2"><Workflow className="h-4 w-4 text-cyan-300" />{text("سير عمل مترابط", "Connected workflows")}</span>
+            <div className="mt-8 grid grid-cols-1 gap-3 rounded-2xl border border-cyan-300/15 bg-[#0b2945]/75 p-4 sm:grid-cols-3 sm:p-5">
+              <div className="flex items-center gap-3"><Building2 className="h-6 w-6 shrink-0 text-cyan-300" /><div><p className="text-xs font-bold">{text("متعدد الشركات والفروع", "Multi-company")}</p><p className="mt-1 text-[10px] text-slate-400">{text("مساحات عمل مستقلة", "Independent workspaces")}</p></div></div>
+              <div className="flex items-center gap-3"><ShieldCheck className="h-6 w-6 shrink-0 text-teal-300" /><div><p className="text-xs font-bold">{text("أمان وصلاحيات", "Secure by design")}</p><p className="mt-1 text-[10px] text-slate-400">{text("تحكم دقيق في الوصول", "Granular access control")}</p></div></div>
+              <div className="flex items-center gap-3"><Workflow className="h-6 w-6 shrink-0 text-sky-300" /><div><p className="text-xs font-bold">{text("سير عمل مترابط", "Connected workflows")}</p><p className="mt-1 text-[10px] text-slate-400">{text("منظومة واحدة لأعمالك", "One connected system")}</p></div></div>
             </div>
           </div>
 
-          <div className="relative flex items-center justify-between border-t border-white/10 pt-4 text-[10px] text-slate-500"><span>© {new Date().getFullYear()} PrimeERP</span><span>{text("منصة إدارة موارد المؤسسة", "Enterprise resource planning")}</span></div>
+          <footer className="relative z-10 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-5 text-[10px] text-slate-500">
+            <span>© {new Date().getFullYear()} PrimeERP. {text("جميع الحقوق محفوظة.", "All rights reserved.")}</span>
+            <span>{text("إدارة أفضل • قرارات أدق • نمو مستدام", "Better management • Smarter decisions • Sustainable growth")}</span>
+          </footer>
         </section>
 
-        <section className="flex items-center justify-center bg-white px-5 py-8 sm:px-9 lg:px-12">
-          <div className="w-full max-w-[430px]">
-            <div className="mb-8">
-              <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-700"><LockKeyhole className="h-6 w-6" /></div>
-              <p className="text-sm font-bold text-blue-700">{text("مرحبًا بك مجددًا", "Welcome back")}</p>
-              <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-900">{text("تسجيل الدخول", "Sign in")}</h2>
-              <p className="mt-3 text-sm leading-6 text-slate-500">{text("سجّل الدخول للوصول إلى مساحة العمل الخاصة بك.", "Sign in to access your workspace.")}</p>
+        <section dir={isArabic ? "rtl" : "ltr"} className="relative flex min-h-screen items-center justify-center bg-gradient-to-br from-white via-[#fbfdff] to-[#f3f8fb] px-5 py-8 sm:px-10 lg:px-12 xl:px-16">
+          <button type="button" onClick={changeLanguage} className="absolute end-6 top-6 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-teal-300 hover:text-teal-700">
+            <Globe2 className="h-4 w-4 text-teal-700" />{isArabic ? "العربية" : "English"}
+          </button>
+
+          <div className="w-full max-w-[460px] py-12">
+            <div className="mb-9 text-center">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-400 to-cyan-600 shadow-lg shadow-teal-700/20"><span className="text-2xl font-black text-white">P</span></div>
+              <div className="text-xl font-black tracking-tight text-slate-900">Prime<span className="text-teal-600">ERP</span></div>
+              <p className="mt-1 text-[9px] font-semibold tracking-[0.2em] text-slate-400">BUSINESS OPERATING SYSTEM</p>
+              <h2 className="mt-8 text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">{text("مرحبًا بك في PrimeERP", "Welcome to PrimeERP")}</h2>
+              <p className="mt-2 text-sm text-slate-500">{text("يرجى تسجيل الدخول للمتابعة إلى مساحة العمل", "Sign in to continue to your workspace")}</p>
             </div>
 
             {error && <div role="alert" className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700">{error}</div>}
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-5">
               <div className="space-y-2">
                 <Label htmlFor="companyName" className="text-sm font-semibold text-slate-700">{text("الشركة", "Company")}</Label>
-                <Input id="companyName" name="companyName" value={companyName} onChange={e => { setCompanyName(e.target.value); setError(""); }} placeholder={text("اسم الشركة (عند الحاجة)", "Company name (if required)")} autoComplete="organization" disabled={isLoading} className="h-12 rounded-xl border-slate-200 bg-slate-50/60 focus-visible:bg-white" />
-                <p className="text-[11px] leading-5 text-slate-400">{text("إذا كان حسابك مرتبطًا بأكثر من شركة، أدخل اسم الشركة المسجل.", "If your account is associated with multiple companies, enter the registered company name.")}</p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="login" className="text-sm font-semibold text-slate-700">{text("اسم المستخدم أو البريد الإلكتروني", "Username or email")}</Label>
-                <Input id="login" name="login" value={loginValue} onChange={e => { setLoginValue(e.target.value); setError(""); }} placeholder={text("أدخل اسم المستخدم أو البريد", "Enter username or email")} autoComplete="username" autoCapitalize="none" spellCheck={false} disabled={isLoading} required className="h-12 rounded-xl border-slate-200 bg-slate-50/60 focus-visible:bg-white" dir="ltr" />
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-3"><Label htmlFor="password" className="text-sm font-semibold text-slate-700">{text("كلمة المرور", "Password")}</Label><span className="text-[11px] text-slate-400">{text("للمساعدة، تواصل مع مسؤول النظام", "Contact your administrator for help")}</span></div>
                 <div className="relative">
-                  <Input id="password" name="password" type={showPassword ? "text" : "password"} value={password} onChange={e => { setPassword(e.target.value); setError(""); }} placeholder={text("أدخل كلمة المرور", "Enter your password")} autoComplete="current-password" disabled={isLoading} required className="h-12 rounded-xl border-slate-200 bg-slate-50/60 pe-11 focus-visible:bg-white" />
-                  <button type="button" onClick={() => setShowPassword(v => !v)} disabled={isLoading} aria-label={showPassword ? text("إخفاء كلمة المرور", "Hide password") : text("إظهار كلمة المرور", "Show password")} className="absolute end-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 hover:text-slate-700">{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+                  <Building2 className="pointer-events-none absolute start-4 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-slate-400" />
+                  <Input id="companyName" name="companyName" value={companyName} onChange={e => { setCompanyName(e.target.value); setError(""); }} placeholder={text("اسم الشركة (عند الحاجة)", "Company name (if required)")} autoComplete="organization" disabled={isLoading} className="h-[52px] rounded-xl border-slate-200 bg-white ps-11 shadow-sm placeholder:text-slate-400 focus-visible:border-teal-500 focus-visible:ring-teal-500/20" />
+                </div>
+                <p className="text-[11px] leading-5 text-slate-400">{text("أدخل اسم الشركة إذا كان حسابك مرتبطًا بأكثر من شركة.", "Enter the company name if your account matches more than one company.")}</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="login" className="text-sm font-semibold text-slate-700">{text("اسم المستخدم", "Username or email")}</Label>
+                <div className="relative">
+                  <Users2 className="pointer-events-none absolute start-4 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-slate-400" />
+                  <Input id="login" name="login" value={loginValue} onChange={e => { setLoginValue(e.target.value); setError(""); }} placeholder={text("أدخل اسم المستخدم أو البريد الإلكتروني", "Enter your username or email")} autoComplete="username" autoCapitalize="none" spellCheck={false} disabled={isLoading} required className="h-[52px] rounded-xl border-slate-200 bg-white ps-11 shadow-sm placeholder:text-slate-400 focus-visible:border-teal-500 focus-visible:ring-teal-500/20" dir="ltr" />
                 </div>
               </div>
 
-              <label className="flex cursor-pointer items-center gap-2.5 pt-1 text-sm text-slate-600"><input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)} disabled={isLoading} className="h-4 w-4 rounded accent-blue-700" />{text("تذكر اسم المستخدم", "Remember username")}</label>
+              <div className="space-y-2">
+                <Label htmlFor="password" className="text-sm font-semibold text-slate-700">{text("كلمة المرور", "Password")}</Label>
+                <div className="relative">
+                  <LockKeyhole className="pointer-events-none absolute start-4 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-slate-400" />
+                  <Input id="password" name="password" type={showPassword ? "text" : "password"} value={password} onChange={e => { setPassword(e.target.value); setError(""); }} placeholder={text("أدخل كلمة المرور", "Enter your password")} autoComplete="current-password" disabled={isLoading} required className="h-[52px] rounded-xl border-slate-200 bg-white ps-11 pe-12 shadow-sm placeholder:text-slate-400 focus-visible:border-teal-500 focus-visible:ring-teal-500/20" />
+                  <button type="button" onClick={() => setShowPassword(v => !v)} disabled={isLoading} aria-label={showPassword ? text("إخفاء كلمة المرور", "Hide password") : text("إظهار كلمة المرور", "Show password")} className="absolute end-3 top-1/2 -translate-y-1/2 rounded-md p-2 text-slate-400 transition hover:text-teal-700">{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+                </div>
+              </div>
 
-              <Button type="submit" disabled={isLoading} className="mt-2 h-12 w-full rounded-xl bg-[#1257a6] text-sm font-bold shadow-lg shadow-blue-900/15 transition hover:bg-[#0d478c]">
-                {isLoading ? <><Loader2 className="h-4 w-4 animate-spin" />{text("جارٍ تسجيل الدخول...", "Signing in...")}</> : <>{text("دخول إلى النظام", "Sign in to PrimeERP")}<ArrowRight className={isArabic ? "h-4 w-4 rotate-180" : "h-4 w-4"} /></>}
+              <div className="flex items-center justify-between gap-3 pt-1">
+                <label className="flex cursor-pointer items-center gap-2.5 text-sm text-slate-600"><input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)} disabled={isLoading} className="h-4 w-4 rounded border-slate-300 accent-teal-600" />{text("تذكرني", "Remember me")}</label>
+                <span className="text-[11px] text-slate-400">{text("للمساعدة تواصل مع مسؤول النظام", "Contact your administrator for help")}</span>
+              </div>
+
+              <Button type="submit" disabled={isLoading} className="h-[52px] w-full rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 text-sm font-bold text-white shadow-lg shadow-teal-700/20 transition hover:from-teal-700 hover:to-cyan-700">
+                {isLoading ? <><Loader2 className="h-4 w-4 animate-spin" />{text("جارٍ تسجيل الدخول...", "Signing in...")}</> : <>{text("تسجيل الدخول", "Sign in")}<ArrowRight className={isArabic ? "h-4 w-4 rotate-180" : "h-4 w-4"} /></>}
               </Button>
             </form>
 
-            <div className="mt-7 flex items-center justify-center gap-2 text-xs text-slate-400"><ShieldCheck className="h-4 w-4 text-emerald-600" />{text("اتصال آمن ومساحة عمل مخصصة", "Secure access to your workspace")}</div>
-            <div className="mt-6 border-t border-slate-100 pt-5 text-center text-sm text-slate-500">{text("ليس لديك حساب؟", "Don't have an account?")}{" "}<Link to="/register" className="font-bold text-blue-700 hover:text-blue-900 hover:underline">{text("إنشاء حساب", "Create an account")}</Link></div>
+            <div className="mt-8 flex items-center justify-center gap-2 text-xs text-slate-400"><ShieldCheck className="h-4 w-4 text-teal-600" />{text("دخول آمن إلى مساحة عملك", "Secure access to your workspace")}</div>
+            <div className="mt-7 border-t border-slate-100 pt-6 text-center text-sm text-slate-500">{text("ليس لديك حساب؟", "Don't have an account?")}{" "}<Link to="/register" className="font-bold text-teal-700 transition hover:text-teal-900 hover:underline">{text("إنشاء حساب", "Create an account")}</Link></div>
           </div>
         </section>
       </div>
