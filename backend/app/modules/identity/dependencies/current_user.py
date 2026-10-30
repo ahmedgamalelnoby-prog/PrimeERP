@@ -11,6 +11,7 @@ from app.modules.identity.repositories.user_repository import user_repository
 from app.modules.identity.services.token_service import token_service
 from app.modules.platform.subscriptions.service import subscription_service
 from app.modules.saas.models import Tenant
+from app.modules.companies.access import has_company_access
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/identity/login")
 TENANT_CONTEXT_HEADER = "X-Tenant-ID"
@@ -99,8 +100,18 @@ def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
     tenant_context_header: str | None = Header(default=None, alias=TENANT_CONTEXT_HEADER),
+    company_context_header: str | None = Header(default=None, alias="X-Company-ID"),
 ) -> User:
     user = _authenticate_user(token, db, tenant_context_header)
+    if company_context_header:
+        try:
+            company_id = int(company_context_header.strip())
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="X-Company-ID must be a valid company ID") from exc
+        if company_id <= 0:
+            raise HTTPException(status_code=400, detail="X-Company-ID must be a positive company ID")
+        if not user.is_platform_admin and not has_company_access(db, user.id, company_id, user.tenant_id):
+            raise HTTPException(status_code=403, detail="Company context is not assigned to the authenticated user")
     if not user.is_platform_admin:
         tenant_id = user.tenant_id
         if tenant_id is None:
