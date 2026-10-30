@@ -40,9 +40,13 @@ class UserService(BaseService[UserRepository]):
         if role_id is None or getattr(self.current_user, "is_platform_admin", False):
             return
         db = self.require_db()
-        target_role = self._load_role(role_id)
-        if target_role is None:
-            return
+        target_role_is_active = self.require_db().scalar(
+            select(Role.is_active).where(Role.id == role_id)
+        )
+        if target_role_is_active is None:
+            raise ValueError("Selected role is inactive or unavailable.")
+        if not target_role_is_active:
+            raise ValueError("Selected role is inactive or unavailable.")
 
         current_role_id = getattr(self.current_user, "role_id", None)
         current_role_is_active = db.scalar(
