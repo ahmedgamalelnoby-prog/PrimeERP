@@ -6,6 +6,7 @@ import {
 } from "react";
 import type { AxiosError } from "axios";
 import { toast } from "react-hot-toast";
+import { useTranslation } from "react-i18next";
 
 import { getApiErrorMessage } from "@/shared/api/errors";
 import { useDebounce } from "@/shared/hooks/useDebounce";
@@ -21,6 +22,7 @@ import type {
 } from "../types/role";
 
 export function useRoles() {
+  const { t } = useTranslation();
   const [roles, setRoles] = useState<Role[]>([]);
   const [permissions, setPermissions] =
     useState<Permission[]>([]);
@@ -113,7 +115,7 @@ export function useRoles() {
 
       await rolesService.createRole(payload);
 
-      toast.success("تم إنشاء الدور بنجاح.");
+      toast.success(t("roles.notifications.created"));
 
       await loadRoles();
 
@@ -138,7 +140,7 @@ export function useRoles() {
         payload,
       );
 
-      toast.success("تم تعديل الدور بنجاح.");
+      toast.success(t("roles.notifications.updated"));
 
       await loadRoles();
 
@@ -164,7 +166,7 @@ export function useRoles() {
       );
 
       toast.success(
-        "تم تحديث صلاحيات الدور بنجاح.",
+        t("roles.notifications.permissionsUpdated"),
       );
 
       await loadRoles();
@@ -193,8 +195,8 @@ export function useRoles() {
 
       toast.success(
         role.is_active
-          ? "تم تعطيل الدور."
-          : "تم تفعيل الدور.",
+          ? t("roles.notifications.deactivated")
+          : t("roles.notifications.activated"),
       );
 
       await loadRoles();
@@ -213,7 +215,7 @@ export function useRoles() {
   ): Promise<boolean> => {
     if (role.users_count > 0) {
       toast.error(
-        "لا يمكن حذف دور مرتبط بمستخدمين.",
+        t("roles.notifications.deleteAssigned"),
       );
 
       return false;
@@ -224,7 +226,7 @@ export function useRoles() {
 
       await rolesService.deleteRole(role.id);
 
-      toast.success("تم حذف الدور بنجاح.");
+      toast.success(t("roles.notifications.deleted"));
 
       await loadRoles();
 
