@@ -94,8 +94,50 @@ const enTranslation = {
     user: "User",
   },
 
+  userForm: {
+    titleCreate: "Create user",
+    titleEdit: "Edit user",
+    descriptionCreate: "Enter the user details and assign a role and permissions.",
+    descriptionEdit: "Update the user details, then save your changes.",
+    fullName: "Full name",
+    fullNamePlaceholder: "Enter full name",
+    username: "Username",
+    email: "Email address",
+    phone: "Phone number",
+    password: "Password",
+    newPassword: "New password",
+    confirmPassword: "Confirm password",
+    confirmNewPassword: "Confirm new password",
+    passwordPlaceholderEdit: "Leave blank to keep unchanged",
+    passwordPlaceholderCreate: "At least 8 characters",
+    confirmPasswordPlaceholder: "Re-enter the password",
+    passwordHint: "Password must contain at least 8 characters.",
+    role: "Role & permissions",
+    loadingRoles: "Loading roles...",
+    chooseRole: "Choose a role",
+    noRole: "No role",
+    noRoles: "No roles are currently available.",
+    address: "Address",
+    addressPlaceholder: "Enter the user's address",
+    saveChanges: "Save changes",
+    create: "Create user",
+    cancel: "Cancel",
+    errors: {
+      fullName: "Please enter the full name.",
+      username: "Please enter a username.",
+      usernameLength: "Username must contain at least 3 characters.",
+      email: "Please enter an email address.",
+      password: "Please enter a password.",
+      passwordLength: "Password must contain at least 8 characters.",
+      passwordMax: "Password must not exceed 128 characters.",
+      passwordMismatch: "Passwords do not match."
+    }
+  },
+
   usersTable: {
     "loading": "Loading users...",
+    "active": "Active",
+    "inactive": "Inactive",
     "emptyTitle": "No users found",
     "emptyDescription": "No results match the current search or filters.",
     "user": "User",
@@ -118,6 +160,27 @@ const enTranslation = {
   },
 
   users: {
+    notifications: {
+      created: "User created successfully.",
+      updated: "User details updated.",
+      deactivated: "User deactivated.",
+      activated: "User activated.",
+      deleted: "User deleted successfully."
+    },
+    resetPassword: {
+      title: "Reset password",
+      userLabel: "User",
+      newPassword: "New password",
+      confirmPassword: "Confirm password",
+      forceChange: "Require the user to change it",
+      save: "Save password",
+      success: "Password reset successfully.",
+      errors: {
+        passwordLength: "Password must contain at least 6 characters.",
+        passwordMismatch: "Passwords do not match.",
+        failed: "Unable to reset the password."
+      }
+    },
     "title": "User Management",
     "description": "Create users, update their details, and manage their status and roles.",
     "newUser": "New user",
