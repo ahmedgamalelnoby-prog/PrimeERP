@@ -100,7 +100,7 @@ export default function UserTable({
     return (
       <div
         className="flex min-h-80 flex-col items-center justify-center rounded-2xl border bg-card p-8 text-center"
-        dir="rtl"
+        dir={direction}
       >
         <UserCircle className="h-12 w-12 text-muted-foreground" />
 
@@ -213,7 +213,7 @@ export default function UserTable({
 
                   <TableCell>
                     <span className="text-sm">
-                      {user.role_name || {t("usersTable.noRole")}}
+                      {user.role_name || t("usersTable.noRole")}
                     </span>
                   </TableCell>
 
@@ -245,8 +245,8 @@ export default function UserTable({
                         }
                         aria-label={
                           user.is_active
-                            ? {t("usersTable.deactivateUser")}
-                            : {t("usersTable.activateUser")}
+                            ? t("usersTable.deactivateUser")
+                            : t("usersTable.activateUser")
                         }
                       />
 
