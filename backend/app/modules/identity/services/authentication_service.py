@@ -27,12 +27,18 @@ class AuthenticationService:
         login_key = self._login_key(payload)
         self._enforce_login_throttle(db, login_key)
 
-        user = user_repository.find_for_login(
+        users = user_repository.find_for_login(
             db=db,
             login=payload.login,
         )
-        if user is None:
+        if not users:
             self._reject_login(db, login_key, "unknown_account")
+        if len(users) > 1:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This username is not unique. Contact your system administrator.",
+            )
+        user = users[0]
         if not password_service.verify_password(payload.password, user.hashed_password):
             self._reject_login(db, login_key, "invalid_password")
         self._validate_user(user)
