@@ -34,14 +34,19 @@ def _report_branch_id(db: Session, company_id: int, user: User) -> int | None:
     if user.is_platform_admin:
         return None
     context = get_optional_request_context()
-    if context is None or context.branch_id is None:
-        raise HTTPException(400, "Select a branch using X-Branch-ID before viewing branch financial reports")
+    if context is None or context.company_id != company_id:
+        raise HTTPException(400, "Select an active company using X-Company-ID")
+    if context.branch_id is None:
+        return None
     require_branch_access(db, company_id, context.branch_id, user)
     return context.branch_id
 
 
 def _assert_warehouse_access(db: Session, company_id: int, warehouse_id: int | None, user: User) -> None:
     if warehouse_id is None:
+        context = get_optional_request_context()
+        if not user.is_platform_admin and context is not None and context.branch_id is not None:
+            raise HTTPException(422, "A warehouse is required for branch-scoped sales and purchase documents")
         return
     warehouse = db.scalar(select(InventoryWarehouse).where(
         InventoryWarehouse.id == warehouse_id,
@@ -70,16 +75,14 @@ def _list_documents_for_user(db: Session, company_id: int, kind: str, document_t
         query = query.where(model.document_type == document_type)
     if not user.is_platform_admin:
         context = get_optional_request_context()
-        if context is None or context.branch_id is None:
-            raise HTTPException(400, "Select a branch using X-Branch-ID before listing branch documents")
-        require_branch_access(db, company_id, context.branch_id, user)
-        query = query.outerjoin(InventoryWarehouse, InventoryWarehouse.id == model.warehouse_id).where(
-            or_(
-                model.warehouse_id.is_(None),
+        if context is None or context.company_id != company_id:
+            raise HTTPException(400, "Select an active company using X-Company-ID")
+        if context.branch_id is not None:
+            require_branch_access(db, company_id, context.branch_id, user)
+            query = query.outerjoin(InventoryWarehouse, InventoryWarehouse.id == model.warehouse_id).where(
                 InventoryWarehouse.is_central.is_(True),
                 InventoryWarehouse.branch_id == context.branch_id,
             )
-        )
     return list(db.scalars(query.order_by(model.document_date.desc(), model.id.desc())).all())
 
 
@@ -350,33 +353,32 @@ def list_payments(company_id: int = Query(..., gt=0), document_kind: str | None 
         query = query.where(CommercePayment.document_id == document_id)
     if not current_user.is_platform_admin:
         context = get_optional_request_context()
-        if context is None or context.branch_id is None:
-            raise HTTPException(400, "Select a branch using X-Branch-ID before listing payments")
-        require_branch_access(db, company_id, context.branch_id, current_user)
-        sales_ids = select(SalesDocument.id).outerjoin(
-            InventoryWarehouse, InventoryWarehouse.id == SalesDocument.warehouse_id
-        ).where(
-            SalesDocument.company_id == company_id,
-            or_(
-                SalesDocument.warehouse_id.is_(None),
-                InventoryWarehouse.is_central.is_(True),
-                InventoryWarehouse.branch_id == context.branch_id,
-            ),
-        )
-        purchase_ids = select(PurchaseDocument.id).outerjoin(
-            InventoryWarehouse, InventoryWarehouse.id == PurchaseDocument.warehouse_id
-        ).where(
-            PurchaseDocument.company_id == company_id,
-            or_(
-                PurchaseDocument.warehouse_id.is_(None),
-                InventoryWarehouse.is_central.is_(True),
-                InventoryWarehouse.branch_id == context.branch_id,
-            ),
-        )
-        query = query.where(or_(
-            and_(CommercePayment.document_kind == "sale", CommercePayment.document_id.in_(sales_ids)),
-            and_(CommercePayment.document_kind == "purchase", CommercePayment.document_id.in_(purchase_ids)),
-        ))
+        if context is None or context.company_id != company_id:
+            raise HTTPException(400, "Select an active company using X-Company-ID")
+        if context.branch_id is not None:
+            require_branch_access(db, company_id, context.branch_id, current_user)
+            sales_ids = select(SalesDocument.id).join(
+                InventoryWarehouse, InventoryWarehouse.id == SalesDocument.warehouse_id
+            ).where(
+                SalesDocument.company_id == company_id,
+                or_(
+                    InventoryWarehouse.is_central.is_(True),
+                    InventoryWarehouse.branch_id == context.branch_id,
+                ),
+            )
+            purchase_ids = select(PurchaseDocument.id).join(
+                InventoryWarehouse, InventoryWarehouse.id == PurchaseDocument.warehouse_id
+            ).where(
+                PurchaseDocument.company_id == company_id,
+                or_(
+                    InventoryWarehouse.is_central.is_(True),
+                    InventoryWarehouse.branch_id == context.branch_id,
+                ),
+            )
+            query = query.where(or_(
+                and_(CommercePayment.document_kind == "sale", CommercePayment.document_id.in_(sales_ids)),
+                and_(CommercePayment.document_kind == "purchase", CommercePayment.document_id.in_(purchase_ids)),
+            ))
     return list(db.scalars(query.order_by(CommercePayment.id.desc()).limit(500)).all())
 
 
