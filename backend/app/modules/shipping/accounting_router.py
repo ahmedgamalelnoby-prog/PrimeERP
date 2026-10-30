@@ -5,12 +5,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.permissions import require_permission
+from app.modules.branches.access import can_manage_all_branches, require_branch_access
 from app.database.session import get_db
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.saas.entitlements import require_module
 from app.modules.shipping.accounting_service import shipping_accounting_service
+from app.modules.shipping.models import ShippingCarrier
 from app.modules.shipping.settlement_models import ShippingSettlementBatch
 
 router = APIRouter(
@@ -36,6 +38,17 @@ def post_settlement(
     batch = db.scalar(select(ShippingSettlementBatch).where(ShippingSettlementBatch.id == batch_id, ShippingSettlementBatch.company_id == company_id))
     if batch is None:
         raise HTTPException(404, "Settlement batch not found")
+    carrier = db.scalar(select(ShippingCarrier).where(
+        ShippingCarrier.id == batch.carrier_id,
+        ShippingCarrier.company_id == company_id,
+    ))
+    if carrier is None:
+        raise HTTPException(404, "Carrier not found for settlement batch")
+    if carrier.branch_id is None:
+        if not can_manage_all_branches(db, current_user):
+            raise HTTPException(403, "Central carrier access requires tenant-wide branch management permission")
+    else:
+        require_branch_access(db, current_user, carrier.branch_id)
     try:
         entry = shipping_accounting_service.post_settlement(db, batch_id=batch.id, user_id=current_user.id, posting_date=posting_date)
         db.commit()
