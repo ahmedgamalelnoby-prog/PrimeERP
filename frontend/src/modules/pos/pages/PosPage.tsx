@@ -94,38 +94,38 @@ export default function PosPage() {
     if (!cid || !selectedTerminal) return;
     client.get("/pos/shifts/current", { params: { company_id: cid, terminal_id: Number(selectedTerminal) } })
       .then(({ data }) => setCashierShift(data))
-      .catch((e: any) => setError(e?.response?.data?.detail || {t("pos.loadShiftFailed")}));
+      .catch((e: any) => setError(e?.response?.data?.detail || t("pos.loadShiftFailed")));
   }, [cid, selectedTerminal]);
 
   async function createOutlet(e: any) {
     e.preventDefault();
     try { await client.post("/pos/outlets", { company_id: cid, branch_id: Number(branchId), ...outletForm }); setOutletForm({ code: "", name: "", outlet_type: "restaurant" }); await load(); }
-    catch (e: any) { setError(e?.response?.data?.detail || {t("pos.createOutletFailed")}); }
+    catch (e: any) { setError(e?.response?.data?.detail || t("pos.createOutletFailed")); }
   }
   async function assignWarehouse(e: any) {
     e.preventDefault();
     try { await client.patch(`/pos/outlets/${selectedOutlet}/warehouse`, null, { params: { company_id: cid, warehouse_id: Number(outletWarehouseId) } }); setError(""); await load(); }
-    catch (e: any) { setError(e?.response?.data?.detail || {t("pos.assignWarehouseFailed")}); }
+    catch (e: any) { setError(e?.response?.data?.detail || t("pos.assignWarehouseFailed")); }
   }
   async function createStation(e: any) {
     e.preventDefault();
     try { await client.post("/pos/stations", { company_id: cid, branch_id: Number(branchId), outlet_id: Number(selectedOutlet) || null, ...stationForm }); setStationForm({ code: "", name: "", station_type: "kitchen" }); await load(); }
-    catch (e: any) { setError(e?.response?.data?.detail || {t("pos.createStationFailed")}); }
+    catch (e: any) { setError(e?.response?.data?.detail || t("pos.createStationFailed")); }
   }
   async function createTerminal(e: any) {
     e.preventDefault();
     try { await client.post("/pos/terminals", { company_id: cid, branch_id: Number(branchId), outlet_id: Number(selectedOutlet), ...terminalForm }); setTerminalForm({ code: "", name: "", device_identifier: "" }); await load(); }
-    catch (e: any) { setError(e?.response?.data?.detail || {t("pos.createTerminalFailed")}); }
+    catch (e: any) { setError(e?.response?.data?.detail || t("pos.createTerminalFailed")); }
   }
   async function linkMenu(e: any) {
     e.preventDefault();
     try { await client.post("/pos/terminals/menus", { terminal_id: Number(selectedTerminal), menu_id: Number(selectedMenu), price_list_id: Number(priceListId) || null }, { params: { company_id: cid } }); setError(""); }
-    catch (e: any) { setError(e?.response?.data?.detail || {t("pos.linkMenuFailed")}); }
+    catch (e: any) { setError(e?.response?.data?.detail || t("pos.linkMenuFailed")); }
   }
   async function routeItem(e: any) {
     e.preventDefault();
     try { await client.post("/pos/menu-routes", { terminal_id: Number(selectedTerminal), menu_item_id: Number(selectedMenuItem), station_id: Number(selectedStation) }, { params: { company_id: cid } }); setError(""); }
-    catch (e: any) { setError(e?.response?.data?.detail || {t("pos.routeItemFailed")}); }
+    catch (e: any) { setError(e?.response?.data?.detail || t("pos.routeItemFailed")); }
   }
   async function openCashierShift() {
     if (!selectedTerminal) return setError(t("pos.selectTerminal")});
@@ -134,7 +134,7 @@ export default function PosPage() {
         company_id: cid, terminal_id: Number(selectedTerminal), opening_cash: Number(openingCash || 0),
       });
       setCashierShift(data); setCountedCash(""); setError("");
-    } catch (e: any) { setError(e?.response?.data?.detail || {t("pos.openShiftFailed")}); }
+    } catch (e: any) { setError(e?.response?.data?.detail || t("pos.openShiftFailed")); }
   }
   async function closeCashierShift() {
     if (!cashierShift || !countedCash) return setError(t("pos.enterCountedCash")});
@@ -142,11 +142,11 @@ export default function PosPage() {
     try {
       const { data } = await client.post(`/pos/shifts/${cashierShift.id}/close`, { counted_cash: Number(countedCash) }, { params: { company_id: cid } });
       setCashierShift(data); setError("");
-    } catch (e: any) { setError(e?.response?.data?.detail || {t("pos.closeShiftFailed")}); }
+    } catch (e: any) { setError(e?.response?.data?.detail || t("pos.closeShiftFailed")); }
   }
   async function checkout(e: any) {
     e.preventDefault();
-    if (!companyDate) return setError(clockError || {t("pos.companyDateRequired")});
+    if (!companyDate) return setError(clockError || t("pos.companyDateRequired"));
     if (!activeMenuItem) return setError(t("pos.selectMenuItem")});
     try {
       const payload: PosCheckoutPayload = {
@@ -167,16 +167,16 @@ export default function PosPage() {
           } else throw error;
         }
       }
-    } catch (e: any) { setError(e?.response?.data?.detail || {t("pos.checkoutFailed")}); }
+    } catch (e: any) { setError(e?.response?.data?.detail || t("pos.checkoutFailed")); }
   }
   async function loadQueue() {
     if (!selectedStation) return;
     try { const r = await client.get(`/pos/stations/${selectedStation}/queue`, { params: { company_id: cid, status: "queued" } }); setQueue(r.data); }
-    catch (e: any) { setError(e?.response?.data?.detail || {t("pos.loadKdsFailed")}); }
+    catch (e: any) { setError(e?.response?.data?.detail || t("pos.loadKdsFailed")); }
   }
   async function move(routeId: number, status: string) {
     try { await client.patch(`/pos/order-routes/${routeId}`, { status }, { params: { company_id: cid } }); await loadQueue(); }
-    catch (e: any) { setError(e?.response?.data?.detail || {t("pos.updateOrderFailed")}); }
+    catch (e: any) { setError(e?.response?.data?.detail || t("pos.updateOrderFailed")); }
   }
 
   return <section className="space-y-6 p-6" dir={i18n.dir()}>
