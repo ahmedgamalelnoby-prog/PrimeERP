@@ -34,6 +34,23 @@ def _duplicate_groups(connection, column: str) -> list[dict[str, Any]]:
     return [dict(row) for row in result]
 
 
+def _duplicate_primary_keys(connection) -> list[dict[str, Any]]:
+    result = connection.execute(
+        text(
+            """
+            SELECT id,
+                   array_agg(ctid::text ORDER BY ctid) AS physical_tuples,
+                   count(*) AS row_count
+            FROM public.users
+            GROUP BY id
+            HAVING count(*) > 1
+            ORDER BY id
+            """
+        )
+    ).mappings()
+    return [dict(row) for row in result]
+
+
 def _foreign_key_references(connection, duplicate_ids: list[int]) -> list[dict[str, Any]]:
     if not duplicate_ids:
         return []
@@ -98,8 +115,16 @@ def main() -> int:
     with engine.connect() as connection:
         with connection.begin():
             connection.exec_driver_sql("SET TRANSACTION READ ONLY")
+            # Force heap-based reads for this forensic preflight. An index lookup
+            # can omit a heap tuple when an index is inconsistent, hiding the
+            # condition this audit is intended to detect.
+            connection.exec_driver_sql("SET LOCAL enable_indexscan = off")
+            connection.exec_driver_sql("SET LOCAL enable_indexonlyscan = off")
+            connection.exec_driver_sql("SET LOCAL enable_bitmapscan = off")
+
             duplicate_usernames = _duplicate_groups(connection, "username")
             duplicate_emails = _duplicate_groups(connection, "email")
+            duplicate_primary_keys = _duplicate_primary_keys(connection)
 
             duplicate_ids = sorted(
                 {
@@ -107,6 +132,7 @@ def main() -> int:
                     for group in [*duplicate_usernames, *duplicate_emails]
                     for user_id in group["user_ids"]
                 }
+                | {int(group["id"]) for group in duplicate_primary_keys}
             )
             physical_rows: list[dict[str, Any]] = []
             if duplicate_ids:
@@ -127,9 +153,12 @@ def main() -> int:
             references = _foreign_key_references(connection, duplicate_ids)
 
     report = {
-        "status": "blocked" if duplicate_usernames or duplicate_emails else "clean",
+        "status": "blocked"
+        if duplicate_usernames or duplicate_emails or duplicate_primary_keys
+        else "clean",
         "duplicate_usernames": duplicate_usernames,
         "duplicate_emails": duplicate_emails,
+        "duplicate_primary_keys": duplicate_primary_keys,
         "physical_user_rows": physical_rows,
         "foreign_key_references": references,
         "mutations_performed": False,
