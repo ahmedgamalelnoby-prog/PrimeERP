@@ -1,7 +1,8 @@
-from app.core.context.access import require_company_access
+from app.core.context.access import require_company_access, require_branch_access
+from app.core.context import get_optional_request_context
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -19,6 +20,7 @@ from app.modules.commerce.sales_return_schemas import SalesReturnCreate
 from app.modules.commerce.sales_return_service import sales_return_service
 from app.modules.commerce.service import commerce_service
 from app.modules.companies.models import Company
+from app.modules.inventory.warehouses.models import InventoryWarehouse
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.jurisdiction.commerce_guard import capture_document_tax_snapshot, validate_document_tax_snapshot
@@ -28,6 +30,49 @@ router = APIRouter(prefix="/commerce", tags=["Commerce"], dependencies=[Depends(
 
 def _company_for_user(db: Session, company_id: int, user: User):
     return require_company_access(db, company_id, user)
+def _assert_warehouse_access(db: Session, company_id: int, warehouse_id: int | None, user: User) -> None:
+    if warehouse_id is None:
+        return
+    warehouse = db.scalar(select(InventoryWarehouse).where(
+        InventoryWarehouse.id == warehouse_id,
+        InventoryWarehouse.company_id == company_id,
+        InventoryWarehouse.is_active.is_(True),
+    ))
+    if warehouse is None:
+        raise HTTPException(404, "Warehouse not found for this company")
+    if warehouse.branch_id is not None:
+        require_branch_access(db, company_id, warehouse.branch_id, user)
+
+
+def _assert_document_access(db: Session, company_id: int, document_id: int, kind: str, user: User):
+    model = SalesDocument if kind == "sale" else PurchaseDocument
+    document = db.scalar(select(model).where(model.id == document_id, model.company_id == company_id))
+    if document is None:
+        raise HTTPException(404, "Document not found")
+    _assert_warehouse_access(db, company_id, document.warehouse_id, user)
+    return document
+
+
+def _list_documents_for_user(db: Session, company_id: int, kind: str, document_type: str | None, user: User):
+    model = SalesDocument if kind == "sale" else PurchaseDocument
+    query = select(model).where(model.company_id == company_id)
+    if document_type is not None:
+        query = query.where(model.document_type == document_type)
+    if not user.is_platform_admin:
+        context = get_optional_request_context()
+        if context is None or context.branch_id is None:
+            raise HTTPException(400, "Select a branch using X-Branch-ID before listing branch documents")
+        require_branch_access(db, company_id, context.branch_id, user)
+        query = query.outerjoin(InventoryWarehouse, InventoryWarehouse.id == model.warehouse_id).where(
+            or_(
+                model.warehouse_id.is_(None),
+                InventoryWarehouse.is_central.is_(True),
+                InventoryWarehouse.branch_id == context.branch_id,
+            )
+        )
+    return list(db.scalars(query.order_by(model.document_date.desc(), model.id.desc())).all())
+
+
 def _run(fn):
     try:
         return fn()
@@ -116,6 +161,7 @@ def list_partners(company_id: int = Query(..., gt=0), partner_type: str | None =
 @router.post("/sales/documents", response_model=DocumentResponse, status_code=201, dependencies=[Depends(require_permission("commerce.write"))])
 def create_sale(payload: DocumentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, payload.company_id, current_user)
+    _assert_warehouse_access(db, payload.company_id, payload.warehouse_id, current_user)
     if payload.document_type not in {"quotation", "order", "delivery", "invoice", "credit_note"}: raise HTTPException(400, "Invalid sales document type")
     obj = _run(lambda: commerce_service.create_document(db, payload)); db.commit(); db.refresh(obj); return obj
 
@@ -131,6 +177,7 @@ def create_sales_return(payload: SalesReturnCreate, current_user: User = Depends
 @router.post("/purchases/documents", response_model=DocumentResponse, status_code=201, dependencies=[Depends(require_permission("commerce.write"))])
 def create_purchase(payload: DocumentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, payload.company_id, current_user)
+    _assert_warehouse_access(db, payload.company_id, payload.warehouse_id, current_user)
     if payload.document_type not in {"requisition", "rfq", "order", "receipt", "bill", "debit_note"}: raise HTTPException(400, "Invalid purchase document type")
     obj = _run(lambda: commerce_service.create_document(db, payload)); db.commit(); db.refresh(obj); return obj
 
@@ -175,7 +222,7 @@ def sales(
     allowed = {"quotation", "order", "delivery", "invoice", "credit_note"}
     if document_type is not None and document_type not in allowed:
         raise HTTPException(400, "Invalid sales document type")
-    return commerce_service.list_documents(db, company_id, "sale", document_type)
+    return _list_documents_for_user(db, company_id, "sale", document_type, current_user)
 
 
 @router.get("/purchases/documents", response_model=list[DocumentResponse])
@@ -189,11 +236,12 @@ def purchases(
     allowed = {"requisition", "rfq", "order", "receipt", "bill", "debit_note"}
     if document_type is not None and document_type not in allowed:
         raise HTTPException(400, "Invalid purchase document type")
-    return commerce_service.list_documents(db, company_id, "purchase", document_type)
+    return _list_documents_for_user(db, company_id, "purchase", document_type, current_user)
 
 @router.post("/sales/{document_id}/cancel", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def cancel_sales_order(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
+    _assert_document_access(db, company_id, document_id, "sale", current_user)
     order = _run(lambda: commerce_service.cancel_sales_order(db, company_id=company_id, document_id=document_id))
     db.commit(); db.refresh(order); return order
 
@@ -201,6 +249,7 @@ def cancel_sales_order(document_id: int, company_id: int = Query(..., gt=0), cur
 @router.post("/sales/{document_id}/confirm", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def confirm_sale(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
+    _assert_document_access(db, company_id, document_id, "sale", current_user)
     def action():
         obj = db.scalar(select(SalesDocument).where(SalesDocument.id == document_id, SalesDocument.company_id == company_id).with_for_update())
         if obj is None: raise ValueError("Document not found")
@@ -214,6 +263,7 @@ def confirm_sale(document_id: int, company_id: int = Query(..., gt=0), current_u
 @router.post("/purchases/{document_id}/confirm", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def confirm_purchase(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
+    _assert_document_access(db, company_id, document_id, "purchase", current_user)
     def action():
         obj = db.scalar(select(PurchaseDocument).where(PurchaseDocument.id == document_id, PurchaseDocument.company_id == company_id).with_for_update())
         if obj is None: raise ValueError("Document not found")
@@ -231,18 +281,21 @@ def confirm_purchase(document_id: int, company_id: int = Query(..., gt=0), curre
 @router.get("/sales/{document_id}/approval-events")
 def list_sales_order_approval_events(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
+    _assert_document_access(db, company_id, document_id, "sale", current_user)
     return _run(lambda: commerce_service.list_approval_events(db, company_id, document_id, "sale"))
 
 
 @router.get("/purchases/{document_id}/approval-events")
 def list_purchase_order_approval_events(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
+    _assert_document_access(db, company_id, document_id, "purchase", current_user)
     return _run(lambda: commerce_service.list_approval_events(db, company_id, document_id, "purchase"))
 
 
 @router.post("/sales/{document_id}/approval-decision", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def decide_sales_order_approval(document_id: int, payload: CommerceApprovalDecision, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
+    _assert_document_access(db, company_id, document_id, "sale", current_user)
     obj = _run(lambda: commerce_service.decide_approval(db, company_id, document_id, "sale", payload.decision, current_user.id, payload.reason))
     db.commit(); db.refresh(obj); return obj
 
@@ -250,18 +303,21 @@ def decide_sales_order_approval(document_id: int, payload: CommerceApprovalDecis
 @router.post("/purchases/{document_id}/approval-decision", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def decide_purchase_order_approval(document_id: int, payload: CommerceApprovalDecision, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
+    _assert_document_access(db, company_id, document_id, "purchase", current_user)
     obj = _run(lambda: commerce_service.decide_approval(db, company_id, document_id, "purchase", payload.decision, current_user.id, payload.reason))
     db.commit(); db.refresh(obj); return obj
 
 
 @router.post("/sales/{document_id}/post-inventory", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def post_sale(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _company_for_user(db, company_id, current_user); obj = _run(lambda: commerce_service.post_inventory(db, company_id, document_id, "sale", user_id=current_user.id)); db.commit(); db.refresh(obj); return obj
+    _company_for_user(db, company_id, current_user)
+    _assert_document_access(db, company_id, document_id, "sale", current_user); obj = _run(lambda: commerce_service.post_inventory(db, company_id, document_id, "sale", user_id=current_user.id)); db.commit(); db.refresh(obj); return obj
 
 
 @router.post("/purchases/{document_id}/receive", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.post"))])
 def receive_purchase(document_id: int, company_id: int = Query(..., gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _company_for_user(db, company_id, current_user); obj = _run(lambda: commerce_service.post_inventory(db, company_id, document_id, "purchase", user_id=current_user.id)); db.commit(); db.refresh(obj); return obj
+    _company_for_user(db, company_id, current_user)
+    _assert_document_access(db, company_id, document_id, "purchase", current_user); obj = _run(lambda: commerce_service.post_inventory(db, company_id, document_id, "purchase", user_id=current_user.id)); db.commit(); db.refresh(obj); return obj
 
 
 @router.get("/payments", response_model=list[PaymentResponse])
