@@ -11,6 +11,7 @@ from app.core.context import get_optional_request_context
 from app.core.permissions.checker import can_assign_role, effective_role_id
 from app.modules.audit.service import record_audit_event
 from app.modules.companies.membership import CompanyUserMembership
+from app.modules.companies.models import Company
 from app.modules.identity.models.user import User
 from app.modules.identity.repositories.user_repository import UserRepository, user_repository
 from app.modules.identity.services.password_service import password_service
@@ -78,10 +79,23 @@ class UserService(BaseService[UserRepository]):
             raise ValueError("Email already exists in the system.")
         user_data: dict[str, Any] = {"username": normalized_username, "email": normalized_email, "hashed_password": password_service.hash_password(password), "full_name": full_name, "phone": phone, "role_id": role_id, "tenant_id": effective_tenant_id, "is_active": is_active, "is_superuser": is_superuser, **extra_data}
         user_data = {key: value for key, value in user_data.items() if value is not None}
+        request_context = get_optional_request_context()
+        company_id = request_context.company_id if request_context is not None else None
+        if company_id is not None:
+            company = db.scalar(
+                select(Company).where(
+                    Company.id == company_id,
+                    Company.tenant_id == effective_tenant_id,
+                    Company.is_active.is_(True),
+                )
+            )
+            if company is None:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="The selected company does not belong to the target user tenant.",
+                )
         with self.uow as uow:
             user = repository.create(db, data=user_data)
-            request_context = get_optional_request_context()
-            company_id = request_context.company_id if request_context is not None else None
             membership_role_id = role_id
             if company_id is not None:
                 if membership_role_id is None and not getattr(current_user, "is_platform_admin", False):
