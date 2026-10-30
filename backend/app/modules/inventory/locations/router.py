@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.context import get_effective_tenant_id
+from app.core.context.access import require_company_access, require_branch_access
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
