@@ -53,7 +53,7 @@ class UserRepository(BaseRepository[User]):
         normalized_username = username.strip().lower()
 
         query = select(User).where(
-            func.lower(User.username) == normalized_username,
+            func.lower(func.trim(User.username)) == normalized_username,
         )
 
         if tenant_id is not None:
@@ -81,7 +81,7 @@ class UserRepository(BaseRepository[User]):
         normalized_email = email.strip().lower()
 
         query = select(User).where(
-            func.lower(User.email) == normalized_email,
+            func.lower(func.trim(User.email)) == normalized_email,
         )
 
         if tenant_id is not None:
@@ -122,8 +122,8 @@ class UserRepository(BaseRepository[User]):
             )
             .where(
                 or_(
-                    func.lower(User.email) == normalized_login,
-                    func.lower(User.username) == normalized_login,
+                    func.lower(func.trim(User.email)) == normalized_login,
+                    func.lower(func.trim(User.username)) == normalized_login,
                 ),
                 User.is_deleted.is_(False),
             )
