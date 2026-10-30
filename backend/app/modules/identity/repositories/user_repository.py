@@ -67,7 +67,7 @@ class UserRepository(BaseRepository[User]):
             )
 
         return db.execute(
-            query
+            query.limit(1)
         ).scalar_one_or_none()
 
     def get_by_email(
