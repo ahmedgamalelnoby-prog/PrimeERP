@@ -12,6 +12,7 @@ from app.modules.companies.schemas import CompanyCreate, CompanyResponse, Compan
 from app.modules.audit.service import record_audit_event
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
+from app.modules.roles.models import Role
 from app.modules.saas.entitlements import enforce_company_limit
 
 router = APIRouter(prefix="/companies", tags=["Companies"])
@@ -83,6 +84,7 @@ def list_company_members(
             "full_name": user.full_name,
             "user_is_active": user.is_active and not user.is_deleted,
             "membership_is_active": membership.is_active,
+            "role_id": membership.role_id,
             "created_at": membership.created_at,
         }
         for membership, user in rows
@@ -93,10 +95,15 @@ def list_company_members(
 def grant_company_membership(
     company_id: int,
     user_id: int,
+    role_id: int | None = Query(default=None, gt=0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     company = _get_company(db, company_id, current_user)
+    if role_id is not None:
+        role = db.get(Role, role_id)
+        if role is None or not role.is_active:
+            raise HTTPException(status_code=404, detail="Active role not found")
     member_user = db.scalar(
         select(User).where(
             User.id == user_id,
@@ -126,6 +133,8 @@ def grant_company_membership(
     else:
         membership.is_active = True
         membership.assigned_by = current_user.id
+    if role_id is not None:
+        membership.role_id = role_id
     db.flush()
     record_audit_event(
         db,
@@ -142,6 +151,7 @@ def grant_company_membership(
         "company_id": company.id,
         "user_id": member_user.id,
         "is_active": membership.is_active,
+        "role_id": membership.role_id,
     }
 
 
