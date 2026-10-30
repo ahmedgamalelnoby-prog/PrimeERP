@@ -45,7 +45,10 @@ def _company(db: Session, company_id: int, user: User) -> Company:
 
 
 def _branch_for_membership_admin(db: Session, branch_id: int, user: User) -> Branch:
-    """Allow company members to administer branch grants without branch data access."""
+    """Allow company-level managers to administer branches without branch data access."""
+    context = get_optional_request_context()
+    if context is not None and context.branch_id is not None and context.branch_id != branch_id:
+        raise HTTPException(status_code=403, detail="A branch-scoped role cannot administer another branch")
     branch = db.scalar(select(Branch).where(
         Branch.id == branch_id,
         Branch.tenant_id == _tenant_id(user),
@@ -64,6 +67,13 @@ def _branch_for_membership_admin(db: Session, branch_id: int, user: User) -> Bra
         if company_membership is None:
             raise HTTPException(status_code=404, detail="Branch not found")
     return branch
+
+
+def _branch_for_management(db: Session, branch_id: int, user: User) -> Branch:
+    context = get_optional_request_context()
+    if context is not None and context.branch_id is not None:
+        return _branch(db, branch_id, user)
+    return _branch_for_membership_admin(db, branch_id, user)
 
 
 def _branch(db: Session, branch_id: int, user: User) -> Branch:
@@ -319,7 +329,7 @@ def create_branch(payload: BranchCreate, db: Session = Depends(get_db), current_
 
 @router.patch("/{branch_id}", response_model=BranchResponse, dependencies=[Depends(require_permission("branch.write"))])
 def update_branch(branch_id: int, payload: BranchUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    branch = _branch(db, branch_id, current_user)
+    branch = _branch_for_management(db, branch_id, current_user)
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(branch, field, value.strip() if isinstance(value, str) else value)
     try:
@@ -333,6 +343,6 @@ def update_branch(branch_id: int, payload: BranchUpdate, db: Session = Depends(g
 
 @router.delete("/{branch_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_permission("branch.write"))])
 def deactivate_branch(branch_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    branch = _branch(db, branch_id, current_user)
+    branch = _branch_for_management(db, branch_id, current_user)
     branch.is_active = False
     db.commit()
