@@ -27,7 +27,7 @@ def test_membership_model_is_registered_for_alembic_metadata():
 def test_branch_membership_migration_is_chained_after_current_merge_head():
     migration = source("alembic/versions/20261107_user_branch_memberships.py")
     assert 'revision = "20261107_user_branch_memberships"' in migration
-    assert 'down_revision = "20261106_merge_inventory_approval_heads"' in migration
+    assert 'down_revision = "d8f77511bacb"' in migration
     assert "op.create_table(" in migration
     assert '"user_branch_memberships"' in migration
     assert "uq_user_branch_memberships_tenant_user_branch" in migration
