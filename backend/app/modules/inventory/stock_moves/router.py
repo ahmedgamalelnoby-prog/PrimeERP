@@ -126,6 +126,9 @@ def get_accounting_config(company_id: int = Query(..., gt=0), db: Session = Depe
     config = inventory_stock_move_service.get_accounting_config(db, tenant_id=get_effective_tenant_id(user), company_id=company_id)
     if config is None:
         raise HTTPException(404, "Inventory accounting configuration not found")
+    branch = require_branch_access(db, user, config.branch_id)
+    if branch.company_id != company_id:
+        raise HTTPException(status_code=404, detail="Inventory accounting configuration not found")
     return config
 
 
