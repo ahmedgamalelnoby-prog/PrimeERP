@@ -2,7 +2,7 @@ from app.core.context.access import require_company_access, require_branch_acces
 from app.core.context import get_optional_request_context
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, and_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -323,24 +323,57 @@ def receive_purchase(document_id: int, company_id: int = Query(..., gt=0), curre
 @router.get("/payments", response_model=list[PaymentResponse])
 def list_payments(company_id: int = Query(..., gt=0), document_kind: str | None = Query(default=None, pattern="^(sale|purchase)$"), document_id: int | None = Query(default=None, gt=0), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _company_for_user(db, company_id, current_user)
+    if document_id is not None:
+        if document_kind is None:
+            raise HTTPException(422, "document_kind is required when filtering payments by document_id")
+        _assert_document_access(db, company_id, document_id, document_kind, current_user)
     query = select(CommercePayment).where(CommercePayment.company_id == company_id)
     if document_kind:
         query = query.where(CommercePayment.document_kind == document_kind)
     if document_id:
         query = query.where(CommercePayment.document_id == document_id)
+    if not current_user.is_platform_admin:
+        context = get_optional_request_context()
+        if context is None or context.branch_id is None:
+            raise HTTPException(400, "Select a branch using X-Branch-ID before listing payments")
+        require_branch_access(db, company_id, context.branch_id, current_user)
+        sales_ids = select(SalesDocument.id).outerjoin(
+            InventoryWarehouse, InventoryWarehouse.id == SalesDocument.warehouse_id
+        ).where(
+            SalesDocument.company_id == company_id,
+            or_(
+                SalesDocument.warehouse_id.is_(None),
+                InventoryWarehouse.is_central.is_(True),
+                InventoryWarehouse.branch_id == context.branch_id,
+            ),
+        )
+        purchase_ids = select(PurchaseDocument.id).outerjoin(
+            InventoryWarehouse, InventoryWarehouse.id == PurchaseDocument.warehouse_id
+        ).where(
+            PurchaseDocument.company_id == company_id,
+            or_(
+                PurchaseDocument.warehouse_id.is_(None),
+                InventoryWarehouse.is_central.is_(True),
+                InventoryWarehouse.branch_id == context.branch_id,
+            ),
+        )
+        query = query.where(or_(
+            and_(CommercePayment.document_kind == "sale", CommercePayment.document_id.in_(sales_ids)),
+            and_(CommercePayment.document_kind == "purchase", CommercePayment.document_id.in_(purchase_ids)),
+        ))
     return list(db.scalars(query.order_by(CommercePayment.id.desc()).limit(500)).all())
 
 
 @router.post("/sales/{document_id}/payments", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.payment"))])
 def pay_sale(document_id: int, payload: PaymentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if payload.document_id != document_id: raise HTTPException(400, "Document id mismatch")
-    _company_for_user(db, payload.company_id, current_user); obj, payment = _run(lambda: commerce_service.pay(db, payload, "sale", current_user.id)); db.commit(); db.refresh(obj); return obj
+    _company_for_user(db, payload.company_id, current_user); _assert_document_access(db, payload.company_id, document_id, "sale", current_user); obj, payment = _run(lambda: commerce_service.pay(db, payload, "sale", current_user.id)); db.commit(); db.refresh(obj); return obj
 
 
 @router.post("/purchases/{document_id}/payments", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.payment"))])
 def pay_purchase(document_id: int, payload: PaymentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if payload.document_id != document_id: raise HTTPException(400, "Document id mismatch")
-    _company_for_user(db, payload.company_id, current_user); obj, payment = _run(lambda: commerce_service.pay(db, payload, "purchase", current_user.id)); db.commit(); db.refresh(obj); return obj
+    _company_for_user(db, payload.company_id, current_user); _assert_document_access(db, payload.company_id, document_id, "purchase", current_user); obj, payment = _run(lambda: commerce_service.pay(db, payload, "purchase", current_user.id)); db.commit(); db.refresh(obj); return obj
 
 
 @router.post("/payments/{payment_id}/reverse", response_model=DocumentResponse, dependencies=[Depends(require_permission("commerce.reverse"))])
@@ -348,4 +381,11 @@ def reverse_payment(payment_id: int, payload: PaymentReverse, current_user: User
     _company_for_user(db, payload.company_id, current_user)
     original = db.scalar(select(CommercePayment).where(CommercePayment.id == payment_id, CommercePayment.company_id == payload.company_id))
     if original is None: raise HTTPException(404, "Payment not found")
+    _assert_document_access(
+        db,
+        payload.company_id,
+        original.document_id,
+        "sale" if original.document_kind == "sale" else "purchase",
+        current_user,
+    )
     obj, original, reversal = _run(lambda: commerce_service.reverse_payment(db, payload.company_id, payment_id, payload.reversal_date, payload.notes, current_user.id)); db.commit(); db.refresh(obj); return obj
