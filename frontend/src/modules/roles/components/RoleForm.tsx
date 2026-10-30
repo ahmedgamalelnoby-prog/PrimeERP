@@ -423,8 +423,6 @@ export default function RoleForm({
                             </h4>
 
                             <p className="mt-1 text-xs text-muted-foreground">
-                              {
-                                resourcePermissions.length
                               {t("roleForm.permissionCount", { count: resourcePermissions.length })}
                             </p>
                           </div>
