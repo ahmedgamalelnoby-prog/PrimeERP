@@ -56,7 +56,11 @@ def _assert_warehouse_access(db: Session, company_id: int, warehouse_id: int | N
     if warehouse is None:
         raise HTTPException(404, "Warehouse not found for this company")
     if warehouse.branch_id is not None:
-        require_branch_access(db, company_id, warehouse.branch_id, user)
+        context = get_optional_request_context()
+        if context is None:
+            raise HTTPException(403, "Company context is required")
+        if context.branch_id is not None:
+            require_branch_access(db, company_id, warehouse.branch_id, user)
 
 
 def _assert_document_access(db: Session, company_id: int, document_id: int, kind: str, user: User):
