@@ -36,8 +36,15 @@ async function refreshAccessToken(refreshToken: string | null): Promise<string> 
 client.interceptors.request.use((config) => {
   const token = storage.getAccessToken();
   const tenantId = storage.getTenantId();
+  const companyId = storage.getCompanyId();
+  const branchId = storage.getBranchId();
   if (token) config.headers.Authorization = `Bearer ${token}`;
   if (tenantId) config.headers["X-Tenant-ID"] = tenantId;
+  else delete config.headers["X-Tenant-ID"];
+  if (companyId) config.headers["X-Company-ID"] = companyId;
+  else delete config.headers["X-Company-ID"];
+  if (branchId) config.headers["X-Branch-ID"] = branchId;
+  else delete config.headers["X-Branch-ID"];
   return config;
 });
 
