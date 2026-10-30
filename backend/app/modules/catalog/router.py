@@ -6,6 +6,9 @@ from sqlalchemy.orm import Session
 
 from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
+from app.modules.branches.access import accessible_branch_ids, can_manage_all_branches, require_branch_access
+from app.modules.branches.models import Branch
+from app.modules.catalog.models import Menu
 from app.database.session import get_db
 from app.modules.catalog.schemas import CategoryCreate, CategoryResponse, CostHistoryCreate, MenuCreate, MenuItemCreate, MenuItemResponse, MenuResponse, PriceCreate, PriceListCreate, PriceListResponse, PriceResponse, PricingAnalysis, PricingImpactResponse, RecipeCreate, RecipeResponse
 from app.modules.catalog.service import catalog_service
@@ -42,6 +45,28 @@ def _error(exc: ValueError):
 def _recipe_response(db, company_id, recipe):
     cost = catalog_service.recipe_cost(db, company_id, recipe.id)
     return {**recipe.__dict__, "lines": [{"id": l.id, "line_no": l.line_no, "ingredient_product_id": l.ingredient_product_id, "quantity": l.quantity, "waste_percentage": l.waste_percentage, "uom_id": l.uom_id, "notes": l.notes} for l in recipe.lines], "total_cost": cost * recipe.yield_quantity, "cost_per_yield": cost}
+
+
+def _assert_menu_access(db: Session, user: User, company_id: int, menu: Menu) -> None:
+    if menu.company_id != company_id:
+        raise HTTPException(status_code=404, detail="Menu not found")
+    if menu.branch_id is not None:
+        branch = require_branch_access(db, user, menu.branch_id)
+        if branch.company_id != company_id:
+            raise HTTPException(status_code=404, detail="Menu not found")
+        return
+    if can_manage_all_branches(db, user):
+        return
+    allowed = accessible_branch_ids(db, user)
+    has_company_branch = db.scalar(
+        select(Branch.id).where(
+            Branch.id.in_(allowed),
+            Branch.company_id == company_id,
+            Branch.is_active.is_(True),
+        ).limit(1)
+    ) if allowed else None
+    if has_company_branch is None:
+        raise HTTPException(status_code=403, detail="Branch membership is required to access this company menu")
 
 
 @router.post("/categories", response_model=CategoryResponse, status_code=201, dependencies=WRITE_GUARDS)
@@ -129,25 +154,51 @@ def get_recipe(recipe_id: int, company_id: int = Query(..., gt=0), db: Session =
 @router.post("/menus", response_model=MenuResponse, status_code=201, dependencies=WRITE_GUARDS)
 def create_menu(payload: MenuCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _company_for_user(db, payload.company_id, current_user)
+    if payload.branch_id is not None:
+        branch = require_branch_access(db, current_user, payload.branch_id)
+        if branch.company_id != payload.company_id:
+            raise HTTPException(status_code=404, detail="Branch not found for company")
+    elif not can_manage_all_branches(db, current_user):
+        raise HTTPException(status_code=403, detail="Tenant-wide branch management permission is required for a company-wide menu")
     try: return catalog_service.create_menu(db, payload)
     except ValueError as exc: _error(exc)
 
 @router.get("/menus", response_model=list[MenuResponse], dependencies=GUARDS)
 def list_menus(company_id: int = Query(..., gt=0), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _company_for_user(db, company_id, current_user)
-    try: return catalog_service.list_menus(db, company_id)
+    try:
+        menus = catalog_service.list_menus(db, company_id)
+        allowed = _branch_scope_ids = accessible_branch_ids(db, current_user)
+        if can_manage_all_branches(db, current_user):
+            return menus
+        company_branch_ids = set(db.scalars(
+            select(Branch.id).where(
+                Branch.id.in_(allowed),
+                Branch.company_id == company_id,
+                Branch.is_active.is_(True),
+            )
+        ).all()) if allowed else set()
+        if not company_branch_ids:
+            raise HTTPException(status_code=403, detail="Branch membership is required to access this company menu")
+        return [menu for menu in menus if menu.branch_id is None or menu.branch_id in company_branch_ids]
     except ValueError as exc: _error(exc)
 
 @router.get("/menus/{menu_id}", response_model=MenuResponse, dependencies=GUARDS)
 def get_menu(menu_id: int, company_id: int = Query(..., gt=0), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _company_for_user(db, company_id, current_user)
-    try: return catalog_service.get_menu(db, company_id, menu_id)
+    try:
+        menu = catalog_service.get_menu(db, company_id, menu_id)
+        _assert_menu_access(db, current_user, company_id, menu)
+        return menu
     except ValueError as exc: _error(exc)
 
 @router.post("/menus/{menu_id}/items", response_model=MenuItemResponse, status_code=201, dependencies=WRITE_GUARDS)
 def add_menu_item(menu_id: int, payload: MenuItemCreate, company_id: int = Query(..., gt=0), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _company_for_user(db, company_id, current_user)
-    try: return catalog_service.add_menu_item(db, company_id, menu_id, payload)
+    try:
+        menu = catalog_service.get_menu(db, company_id, menu_id)
+        _assert_menu_access(db, current_user, company_id, menu)
+        return catalog_service.add_menu_item(db, company_id, menu_id, payload)
     except ValueError as exc: _error(exc)
 
 @router.get("/products/{product_id}/pricing-analysis", response_model=PricingAnalysis, dependencies=GUARDS)
