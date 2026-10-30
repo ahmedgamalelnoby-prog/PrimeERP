@@ -182,7 +182,7 @@ def grant_branch_membership(
         entity_id=membership.id,
         user_id=current_user.id,
         tenant_id=branch.tenant_id,
-        metadata={"branch_id": branch.id, "member_user_id": member_user.id},
+        metadata={"branch_id": branch.id, "member_user_id": member_user.id, "role_id": membership.role_id},
     )
     db.commit()
     db.refresh(membership)
