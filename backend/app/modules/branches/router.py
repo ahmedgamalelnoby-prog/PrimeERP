@@ -50,6 +50,16 @@ def _branch(db: Session, branch_id: int, user: User) -> Branch:
     ))
     if branch is None:
         raise HTTPException(status_code=404, detail="Branch not found")
+    if not user.is_platform_admin:
+        membership = db.scalar(
+            select(BranchUserMembership.id).where(
+                BranchUserMembership.branch_id == branch.id,
+                BranchUserMembership.user_id == user.id,
+                BranchUserMembership.is_active.is_(True),
+            )
+        )
+        if membership is None:
+            raise HTTPException(status_code=404, detail="Branch not found")
     return branch
 
 
@@ -119,6 +129,7 @@ def grant_branch_membership(
     else:
         membership.is_active = True
         membership.assigned_by = current_user.id
+    db.flush()
     record_audit_event(
         db,
         action="branch.membership.grant",
@@ -172,7 +183,16 @@ def list_branches(company_id: int | None = Query(default=None, gt=0), active_onl
     stmt = select(Branch).where(
         Branch.tenant_id == _tenant_id(current_user),
         Branch.company_id == selected_company_id,
-    ).order_by(Branch.name, Branch.id)
+    )
+    if not current_user.is_platform_admin:
+        stmt = stmt.join(
+            BranchUserMembership,
+            BranchUserMembership.branch_id == Branch.id,
+        ).where(
+            BranchUserMembership.user_id == current_user.id,
+            BranchUserMembership.is_active.is_(True),
+        )
+    stmt = stmt.order_by(Branch.name, Branch.id)
     if active_only:
         stmt = stmt.where(Branch.is_active.is_(True))
     return list(db.scalars(stmt).all())
@@ -190,6 +210,14 @@ def create_branch(payload: BranchCreate, db: Session = Depends(get_db), current_
     branch = Branch(tenant_id=company.tenant_id, **payload.model_dump())
     db.add(branch)
     try:
+        db.flush()
+        if not current_user.is_platform_admin:
+            db.add(BranchUserMembership(
+                branch_id=branch.id,
+                user_id=current_user.id,
+                is_active=True,
+                assigned_by=current_user.id,
+            ))
         db.commit()
         db.refresh(branch)
     except IntegrityError as exc:
