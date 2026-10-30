@@ -7,6 +7,7 @@ from app.modules.companies.models import Company
 from app.modules.companies.membership import CompanyUserMembership
 from app.modules.companies.industry_models import CompanyIndustryProfile
 from app.modules.branches.models import Branch
+from app.modules.branches.membership import BranchUserMembership
 from app.modules.roles.models import Permission, Role, role_permissions
 from app.modules.legal.models import LegalAcceptance, LegalDocument
 from app.modules.audit.models import AuditEvent
