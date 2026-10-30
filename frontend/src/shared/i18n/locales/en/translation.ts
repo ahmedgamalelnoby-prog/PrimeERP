@@ -134,6 +134,30 @@ const enTranslation = {
     }
   },
 
+  permissions: {
+    title: "Permissions",
+    description: "View and manage system permissions and their role assignments.",
+    catalog: "Permission catalog",
+    refresh: "Refresh",
+    loading: "Loading...",
+    processing: "Processing...",
+    name: "Name",
+    resource: "Resource",
+    action: "Action",
+    descriptionColumn: "Description",
+    status: "Status",
+    actions: "Action",
+    active: "Active",
+    inactive: "Inactive",
+    activate: "Activate",
+    deactivate: "Deactivate",
+    empty: "No permissions found.",
+    errors: {
+      load: "Unable to load permissions.",
+      update: "Unable to update the permission."
+    }
+  },
+
   usersTable: {
     "loading": "Loading users...",
     "active": "Active",
