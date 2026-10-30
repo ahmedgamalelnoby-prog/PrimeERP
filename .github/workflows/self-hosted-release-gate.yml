@@ -348,21 +348,21 @@ jobs:
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
           $ErrorActionPreference = 'Stop'
-          docker compose up -d migrate
+          docker compose --profile manual-migrations up -d migrate
           $deadline = (Get-Date).AddMinutes(10)
-          $migrateContainer = docker compose ps -q migrate
+          $migrateContainer = docker compose --profile manual-migrations ps -q migrate
           if (-not $migrateContainer) { throw 'Migration container was not created.' }
           while ((Get-Date) -lt $deadline) {
             $status = docker inspect -f '{{.State.Status}}' $migrateContainer 2>$null
             if ($status -eq 'exited') {
               $code = docker inspect -f '{{.State.ExitCode}}' $migrateContainer
               if ($code -eq '0') { Write-Host 'Alembic migration: PASS'; exit 0 }
-              docker compose logs migrate
+              docker compose --profile manual-migrations logs migrate
               throw "Migration container exited with code $code"
             }
             Start-Sleep -Seconds 5
           }
-          docker compose logs migrate
+          docker compose --profile manual-migrations logs migrate
           throw 'Migration container did not finish within 10 minutes.'
 
       - name: Execute PostgreSQL effective-date guard tests
