@@ -41,8 +41,13 @@ client.interceptors.request.use((config) => {
   if (token) config.headers.Authorization = `Bearer ${token}`;
   if (tenantId) config.headers["X-Tenant-ID"] = tenantId;
   else delete config.headers["X-Tenant-ID"];
-  if (companyId) config.headers["X-Company-ID"] = companyId;
-  else delete config.headers["X-Company-ID"];
+  if (config.headers["X-Company-ID"] === "") {
+    delete config.headers["X-Company-ID"];
+  } else if (companyId) {
+    config.headers["X-Company-ID"] = companyId;
+  } else {
+    delete config.headers["X-Company-ID"];
+  }
   if (config.headers["X-Branch-ID"] === "") {
     delete config.headers["X-Branch-ID"];
   } else if (branchId) {
