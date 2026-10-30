@@ -49,6 +49,8 @@ def _company_for_tenant(db: Session, company_id: int, tenant_id: int, user: User
     context = get_optional_request_context()
     if context is None or context.company_id != company_id:
         raise HTTPException(403, "Select this company using X-Company-ID before accessing HR data")
+    if context.branch_id is not None:
+        raise HTTPException(400, "HR records are currently company-wide; omit X-Branch-ID to use company-level permissions")
     company = db.scalar(
         select(Company).where(
             Company.id == company_id,
