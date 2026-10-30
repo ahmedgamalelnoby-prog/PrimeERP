@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.context.access import require_company_access, require_branch_access
+from app.core.context.access import require_company_access, require_branch_access, require_branch_or_company_access
 from app.core.context import get_optional_request_context
 from app.core.permissions import require_permission
 from app.database.session import get_db
@@ -34,10 +34,11 @@ def inventory_valuation(
     branch_id = None
     if not current_user.is_platform_admin:
         context = get_optional_request_context()
-        if context is None or context.branch_id is None:
-            raise HTTPException(400, "Select a branch using X-Branch-ID before viewing inventory valuation")
+        if context is None or context.company_id != company_id:
+            raise HTTPException(400, "Select an active company using X-Company-ID")
         branch_id = context.branch_id
-        require_branch_access(db, company_id, branch_id, current_user)
+        if branch_id is not None:
+            require_branch_access(db, company_id, branch_id, current_user)
     if warehouse_id is not None:
         warehouse = db.scalar(select(InventoryWarehouse).where(
             InventoryWarehouse.id == warehouse_id,
@@ -47,5 +48,5 @@ def inventory_valuation(
         if warehouse is None:
             raise HTTPException(404, "Warehouse not found")
         if warehouse.branch_id is not None:
-            require_branch_access(db, company_id, warehouse.branch_id, current_user)
+            require_branch_or_company_access(db, company_id, warehouse.branch_id, current_user)
     return inventory_costing_service.valuation(db, company_id, warehouse_id, item_id, branch_id=branch_id)
