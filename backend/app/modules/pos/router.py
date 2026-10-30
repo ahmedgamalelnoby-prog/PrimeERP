@@ -162,6 +162,9 @@ def _company(db: Session, company_id: int, user: User) -> Company:
 
 
 def _branch(db: Session, company_id: int, branch_id: int, user: User):
+    context = get_optional_request_context()
+    if context is None or context.branch_id != branch_id:
+        raise HTTPException(403, "Select this branch using X-Branch-ID before accessing branch POS data")
     branch = db.scalar(select(Branch).where(
         Branch.id == branch_id,
         Branch.company_id == company_id,
@@ -195,13 +198,16 @@ def _visible_branch_ids(db: Session, company_id: int, user: User) -> list[int] |
 
 
 def _terminal(db: Session, company_id: int, terminal_id: int, user: User) -> PosTerminal:
+    context = get_optional_request_context()
+    if context is None or context.branch_id is None:
+        raise HTTPException(400, "Select a branch using X-Branch-ID before accessing a POS terminal")
     terminal = db.scalar(select(PosTerminal).where(
         PosTerminal.id == terminal_id,
         PosTerminal.company_id == company_id,
         PosTerminal.is_active.is_(True),
     ))
-    if terminal is None:
-        raise HTTPException(404, "POS terminal not found")
+    if terminal is None or terminal.branch_id != context.branch_id:
+        raise HTTPException(404, "POS terminal not found in the selected branch")
     if not user.is_platform_admin and not db.scalar(select(BranchUserMembership.id).where(
         BranchUserMembership.branch_id == terminal.branch_id,
         BranchUserMembership.user_id == user.id,
