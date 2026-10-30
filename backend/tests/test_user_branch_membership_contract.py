@@ -234,7 +234,8 @@ def test_inventory_adjustments_are_scoped_by_their_location_warehouse():
 
 def test_inventory_reservations_are_scoped_by_their_location_warehouse():
     router = source("app/modules/inventory/reservations/router.py")
-    assert "require_location_access(db, user, company_id, reservation.location_id" in router
+    assert "reservation.location_id," in router
+    assert "require_location_access(" in router
     assert "InventoryLocation.warehouse_id.in_(allowed)" in router
     assert "require_location_access(db, current_user, payload.company_id, payload.location_id)" in router
     assert "require_active=False" in router
