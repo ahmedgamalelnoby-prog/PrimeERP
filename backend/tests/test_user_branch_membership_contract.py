@@ -325,3 +325,19 @@ def test_shipping_reports_filter_shipments_to_assigned_carrier_branches():
     assert "require_branch_access(db, user, carrier.branch_id)" in router
     assert "Central carrier access requires tenant-wide branch management permission" in router
     assert router.count("_filtered_shipments(db, company_id, carrier_id, date_from, date_to, date_basis, current_user)") == 2
+
+
+def test_shipping_settlement_batches_are_scoped_by_carrier_branch():
+    router = source("app/modules/shipping/settlement_router.py")
+    assert "def _require_carrier_access(" in router
+    assert "require_branch_access(db, user, carrier.branch_id)" in router
+    assert "ShippingCarrier.branch_id.in_(accessible_branch_ids(db, current_user))" in router
+    assert "_require_carrier_access(db, current_user, payload.company_id, payload.carrier_id)" in router
+    assert "_require_carrier_access(db, current_user, company_id, batch.carrier_id)" in router
+
+
+def test_shipping_settlement_posting_requires_carrier_branch_access():
+    router = source("app/modules/shipping/accounting_router.py")
+    assert "ShippingCarrier.company_id == company_id" in router
+    assert "require_branch_access(db, current_user, carrier.branch_id)" in router
+    assert "Central carrier access requires tenant-wide branch management permission" in router
