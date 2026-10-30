@@ -196,6 +196,7 @@ export default function UserCompanyAccessDialog({
             </div>
 
             {selectedCompany && (
+              <>
               <div className="rounded-xl border p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
@@ -258,6 +259,7 @@ export default function UserCompanyAccessDialog({
                   enabled={active}
                 />
               )}
+              </>
             )}
             {error && !selectedCompany && <p className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
           </div>
