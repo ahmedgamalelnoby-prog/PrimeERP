@@ -1,4 +1,5 @@
 import {
+  ClipboardList,
   Plus,
   Search,
   ShieldCheck,
@@ -14,6 +15,7 @@ import PageHeader from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
+import RoleAccessAuditDialog from "../components/RoleAccessAuditDialog";
 import RoleForm from "../components/RoleForm";
 import RoleTable from "../components/RoleTable";
 import { useRoles } from "../hooks/useRoles";
@@ -39,6 +41,7 @@ export default function RolesPage() {
 
   const [formOpen, setFormOpen] =
     useState(false);
+  const [accessAuditOpen, setAccessAuditOpen] = useState(false);
 
   const [selectedRole, setSelectedRole] =
     useState<Role | null>(null);
@@ -101,13 +104,16 @@ export default function RolesPage() {
         title={t("roles.title")}
         description={t("roles.description")}
         actions={
-          <Button
-            type="button"
-            onClick={handleNewRole}
-          >
-            <Plus className="me-2 h-4 w-4" />
-            {t("roles.newRole")}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" onClick={() => setAccessAuditOpen(true)}>
+              <ClipboardList className="me-2 h-4 w-4" />
+              {t("roles.accessAudit.open")}
+            </Button>
+            <Button type="button" onClick={handleNewRole}>
+              <Plus className="me-2 h-4 w-4" />
+              {t("roles.newRole")}
+            </Button>
+          </div>
         }
       />
 
@@ -193,6 +199,11 @@ export default function RolesPage() {
         onEdit={handleEditRole}
         onDelete={handleDeleteRole}
         onToggleStatus={toggleStatus}
+      />
+
+      <RoleAccessAuditDialog
+        open={accessAuditOpen}
+        onOpenChange={setAccessAuditOpen}
       />
 
       <RoleForm
