@@ -41,8 +41,6 @@ class AuthenticationService:
                 detail="Multiple accounts match this login. Please provide the company name.",
             )
         user = users[0]
-        if not user.is_platform_admin and not payload.tenant_name:
-            self._reject_login(db, login_key, "company_name_required")
         if not password_service.verify_password(payload.password, user.hashed_password):
             self._reject_login(db, login_key, "invalid_password")
         self._validate_user(user)
