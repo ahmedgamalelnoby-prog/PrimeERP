@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { usersApi, type UserCompany } from "../api/users.api";
 import type { User } from "../types/user";
+import { useAuth } from "@/modules/identity/context/AuthContext";
 
 interface Props {
   user: User | null;
@@ -26,6 +27,7 @@ export default function UserCompanyAccessDialog({ user, open, onOpenChange, onSa
   const [defaultId, setDefaultId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const { user: currentUser } = useAuth();
 
   useEffect(() => {
     if (!open || !user) return;
@@ -81,6 +83,11 @@ export default function UserCompanyAccessDialog({ user, open, onOpenChange, onSa
         company_ids: selectedIds,
         default_company_id: defaultId,
       });
+      if (currentUser?.id === user.id) {
+        const currentCompanyId = Number(localStorage.getItem("company_id")) || 0;
+        const nextCompanyId = selectedIds.includes(currentCompanyId) ? currentCompanyId : defaultId;
+        localStorage.setItem("company_id", String(nextCompanyId));
+      }
       toast.success("تم تحديث شركات المستخدم بنجاح.");
       onSaved?.();
       onOpenChange(false);
