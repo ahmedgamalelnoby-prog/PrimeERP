@@ -195,6 +195,62 @@ class UserService(BaseService[UserRepository]):
         repository.refresh(db, user)
         return user
 
+    def restore_user(self, user_id: int, *, tenant_id: int | None = None) -> User:
+        """Restore a soft-deleted user without bypassing tenant or identity constraints."""
+        db = self.require_db()
+        repository = self.require_repository()
+        effective_tenant_id = self._resolve_write_tenant_id(tenant_id)
+        with self.uow as uow:
+            user = repository.get_by_id(
+                db,
+                user_id,
+                tenant_id=effective_tenant_id,
+                include_deleted=True,
+                for_update=True,
+            )
+            if user is None:
+                raise LookupError("User was not found.")
+            if not user.is_deleted:
+                raise ValueError("User is not deleted.")
+
+            duplicate_username_id = db.scalar(
+                select(User.id)
+                .where(
+                    func.lower(User.username) == user.username.strip().lower(),
+                    User.id != user.id,
+                )
+                .limit(1)
+            )
+            if duplicate_username_id is not None:
+                raise ValueError("Cannot restore user because the username is already assigned to another account.")
+
+            duplicate_email_id = db.scalar(
+                select(User.id)
+                .where(
+                    User.tenant_id == user.tenant_id,
+                    func.lower(User.email) == user.email.strip().lower(),
+                    User.id != user.id,
+                )
+                .limit(1)
+            )
+            if duplicate_email_id is not None:
+                raise ValueError("Cannot restore user because the email is already assigned within this tenant.")
+
+            repository.restore(db, user)
+            user.is_active = True
+            record_audit_event(
+                db,
+                action="user.restore",
+                entity_type="user",
+                entity_id=user.id,
+                user_id=getattr(self.current_user, "id", None),
+                tenant_id=user.tenant_id,
+                metadata={"username": user.username},
+            )
+            uow.commit()
+        repository.refresh(db, user)
+        return user
+
     def list_users(self, *, tenant_id: int | None = None, search: str | None = None, is_active: bool | None = None, skip: int = 0, limit: int = 50) -> list[User]:
         return self.require_repository().list_users(self.require_db(), tenant_id=self._resolve_tenant_id(tenant_id), search=search, is_active=is_active, skip=max(skip, 0), limit=min(max(limit, 1), 200))
 
