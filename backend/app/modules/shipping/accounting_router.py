@@ -48,7 +48,9 @@ def post_settlement(
         if not can_manage_all_branches(db, current_user):
             raise HTTPException(403, "Central carrier access requires tenant-wide branch management permission")
     else:
-        require_branch_access(db, current_user, carrier.branch_id)
+        branch = require_branch_access(db, current_user, carrier.branch_id)
+        if branch.company_id != company_id:
+            raise HTTPException(404, "Carrier not found for settlement batch")
     try:
         entry = shipping_accounting_service.post_settlement(db, batch_id=batch.id, user_id=current_user.id, posting_date=posting_date)
         db.commit()
