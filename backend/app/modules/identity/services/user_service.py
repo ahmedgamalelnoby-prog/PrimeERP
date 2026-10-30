@@ -81,6 +81,11 @@ class UserService(BaseService[UserRepository]):
         user_data = {key: value for key, value in user_data.items() if value is not None}
         request_context = get_optional_request_context()
         company_id = request_context.company_id if request_context is not None else None
+        if not getattr(current_user, "is_platform_admin", False) and company_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Select a company before creating a user so the account can be linked to its workspace.",
+            )
         if company_id is not None:
             company = db.scalar(
                 select(Company).where(
