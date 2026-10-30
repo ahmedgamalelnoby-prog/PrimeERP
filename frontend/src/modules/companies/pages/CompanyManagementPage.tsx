@@ -38,7 +38,7 @@ export default function CompanyManagementPage() {
   }, []);
 
   const loadCompanies = useCallback(async () => {
-    const response = await client.get<Company[]>("/companies?active_only=true", { headers: { "X-Branch-ID": "" } });
+    const response = await client.get<Company[]>("/companies?active_only=true", { headers: { "X-Company-ID": "", "X-Branch-ID": "" } });
     setCompanies(response.data);
     setCompanyId((current) => response.data.some((company) => String(company.id) === current) ? current : "");
   }, []);
@@ -62,7 +62,7 @@ export default function CompanyManagementPage() {
           setRows(response.data);
         }
       } else {
-        const response = await client.get<Company[]>("/companies", { headers: { "X-Branch-ID": "" } });
+        const response = await client.get<Company[]>("/companies", { headers: { "X-Company-ID": "", "X-Branch-ID": "" } });
         setRows(response.data);
       }
     } catch (requestError: any) {
@@ -116,7 +116,7 @@ export default function CompanyManagementPage() {
         if (!companyId) throw new Error("اختر الشركة أولاً");
         await client.post("/branches", { company_id: Number(companyId), name, code: code || null, email: email || null }, { headers: { "X-Branch-ID": "" } });
       } else {
-        await client.post("/companies", { name, code: code || null, email: email || null }, { headers: { "X-Branch-ID": "" } });
+        await client.post("/companies", { name, code: code || null, email: email || null }, { headers: { "X-Company-ID": "", "X-Branch-ID": "" } });
       }
       setName("");
       setCode("");
@@ -132,7 +132,7 @@ export default function CompanyManagementPage() {
   async function deactivate(id: number) {
     if (!window.confirm("هل تريد تعطيل هذا السجل؟")) return;
     try {
-      await client.delete(`${branches ? "/branches" : "/companies"}/${id}`, { headers: { "X-Branch-ID": "" } });
+      await client.delete(`${branches ? "/branches" : "/companies"}/${id}`, { headers: { "X-Company-ID": branches ? storage.getCompanyId() || "" : String(id), "X-Branch-ID": "" } });
       await loadRows();
     } catch (requestError: any) {
       setError(requestError?.response?.data?.detail || "تعذر التعطيل");
