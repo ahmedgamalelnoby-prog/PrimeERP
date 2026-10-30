@@ -252,11 +252,12 @@ export default function UserCompanyAccessDialog({
                   )}
                 </div>
               </div>
-              {active && user && (
+              {user && (
                 <UserBranchAccessPanel
                   companyId={selectedCompany.id}
                   user={user}
-                  enabled={active}
+                  enabled={true}
+                  companyMembershipActive={active}
                 />
               )}
               </>
