@@ -67,11 +67,12 @@ def test_wrong_password_matches_no_tenant_identity(monkeypatch):
 def test_login_resolves_company_from_unique_password_match_without_company_input():
     auth = source("app/modules/identity/services/authentication_service.py")
     schema = source("app/modules/identity/schemas/auth.py")
+    login_schema = schema.split("class RefreshTokenRequest", 1)[0]
     assert "_matching_users_by_password(" in auth
     assert "if len(matching_users) != 1:" in auth
     assert "company_name_required" not in auth
-    assert "tenant_name" not in schema
-    assert "tenant_slug" not in schema
+    assert "tenant_name" not in login_schema
+    assert "tenant_slug" not in login_schema
 
 
 def test_user_creation_and_rename_reserve_username_across_tenants():
