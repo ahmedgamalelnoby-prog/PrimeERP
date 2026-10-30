@@ -52,7 +52,7 @@ export default function LoginForm() {
             fontWeight: 600,
           }}
         >
-          اسم المستخدم أو البريد الإلكتروني
+          اسم المستخدم
         </label>
 
         <input
