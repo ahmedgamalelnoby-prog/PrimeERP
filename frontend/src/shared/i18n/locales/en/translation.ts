@@ -58,6 +58,11 @@ const enTranslation = {
   },
 
   common: {
+    loading: "Loading...",
+    processing: "Processing...",
+    close: "Close",
+    refresh: "Refresh",
+    cancel: "Cancel",
     appName: "PrimeERP",
     appDescription: "Business Management Platform",
 
