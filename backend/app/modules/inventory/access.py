@@ -17,15 +17,17 @@ def require_warehouse_access(
     user: User,
     company_id: int,
     warehouse_id: int,
+    *,
+    require_active: bool = True,
 ) -> InventoryWarehouse:
-    warehouse = db.scalar(
-        select(InventoryWarehouse).where(
-            InventoryWarehouse.id == warehouse_id,
-            InventoryWarehouse.company_id == company_id,
-            InventoryWarehouse.tenant_id == get_effective_tenant_id(user),
-            InventoryWarehouse.is_active.is_(True),
-        )
+    statement = select(InventoryWarehouse).where(
+        InventoryWarehouse.id == warehouse_id,
+        InventoryWarehouse.company_id == company_id,
+        InventoryWarehouse.tenant_id == get_effective_tenant_id(user),
     )
+    if require_active:
+        statement = statement.where(InventoryWarehouse.is_active.is_(True))
+    warehouse = db.scalar(statement)
     if warehouse is None:
         raise HTTPException(status_code=404, detail="Warehouse not found for company")
     if warehouse.branch_id is None:
@@ -35,7 +37,7 @@ def require_warehouse_access(
                 detail="Central warehouse access requires tenant-wide branch management permission",
             )
     else:
-        branch = require_branch_access(db, user, warehouse.branch_id)
+        branch = require_branch_access(db, user, warehouse.branch_id, require_active=require_active)
         if branch.company_id != company_id:
             raise HTTPException(status_code=404, detail="Warehouse not found for company")
     return warehouse
@@ -46,17 +48,19 @@ def require_location_access(
     user: User,
     company_id: int,
     location_id: int,
+    *,
+    require_active: bool = True,
 ) -> InventoryLocation:
-    location = db.scalar(
-        select(InventoryLocation).where(
-            InventoryLocation.id == location_id,
-            InventoryLocation.company_id == company_id,
-            InventoryLocation.is_active.is_(True),
-        )
+    statement = select(InventoryLocation).where(
+        InventoryLocation.id == location_id,
+        InventoryLocation.company_id == company_id,
     )
+    if require_active:
+        statement = statement.where(InventoryLocation.is_active.is_(True))
+    location = db.scalar(statement)
     if location is None:
         raise HTTPException(status_code=404, detail="Location not found for company")
-    require_warehouse_access(db, user, company_id, location.warehouse_id)
+    require_warehouse_access(db, user, company_id, location.warehouse_id, require_active=require_active)
     return location
 
 
