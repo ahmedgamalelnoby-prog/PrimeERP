@@ -62,17 +62,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
         const { data: companies } = await client.get<Array<{ id: number }>>(
           "/companies?active_only=true",
         );
-        if (cancelled || companies.length === 0) return;
+        if (cancelled) return;
+        if (companies.length === 0) {
+          storage.clearCompanyContext();
+          return;
+        }
 
-        const storedCompanyId = Number(localStorage.getItem("company_id")) || 0;
+        const storedCompanyId = Number(storage.getCompanyId()) || 0;
         const companyExists = companies.some(
           (company) => company.id === storedCompanyId,
         );
         const companyId = companyExists ? storedCompanyId : companies[0].id;
 
-        if (!companyExists) {
-          localStorage.setItem("company_id", String(companyId));
-        }
+        storage.setCompanyId(companyId);
 
         const { data: settings } = await client.get<{
           settings: Array<{ key: string; value: unknown }>;
