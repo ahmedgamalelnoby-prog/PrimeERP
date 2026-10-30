@@ -19,7 +19,7 @@ export interface CompanyAccessAuditMember {
   username: string;
   full_name: string | null;
   user_is_active: boolean;
-  company_membership_is_active: boolean;
+  company_membership_is_active: boolean | null;
   company_role_id: number | null;
   company_role_name: string | null;
   branch_access: CompanyAccessAuditBranchGrant[];
