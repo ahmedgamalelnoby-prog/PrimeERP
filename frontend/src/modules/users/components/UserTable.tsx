@@ -125,31 +125,31 @@ export default function UserTable({
           <TableHeader>
             <TableRow>
               <TableHead className="min-w-52 text-start">
-                المستخدم
+                {t("usersTable.user")}
               </TableHead>
 
               <TableHead className="min-w-56 text-start">
-                البريد الإلكتروني
+                {t("usersTable.email")}
               </TableHead>
 
               <TableHead className="min-w-32 text-start">
-                الدور
+                {t("usersTable.role")}
               </TableHead>
 
               <TableHead className="min-w-28 text-start">
-                الحالة
+                {t("usersTable.status")}
               </TableHead>
 
               <TableHead className="min-w-40 text-start">
-                آخر تسجيل دخول
+                {t("usersTable.lastLogin")}
               </TableHead>
 
-              <TableHead className="min-w-28 text-right">
-                تفعيل الحساب
+              <TableHead className="min-w-28 text-start">
+                {t("usersTable.accountEnabled")}
               </TableHead>
 
               <TableHead className="min-w-40 text-center">
-                الإجراءات
+                {t("usersTable.actions")}
               </TableHead>
             </TableRow>
           </TableHeader>
@@ -185,7 +185,7 @@ export default function UserTable({
 
                           {user.is_platform_admin && (
                             <span className="rounded-full bg-purple-500/10 px-2 py-0.5 text-xs font-medium text-purple-700">
-                              مدير المنصة
+                              {t("usersTable.platformAdmin")}
                             </span>
                           )}
                         </div>
