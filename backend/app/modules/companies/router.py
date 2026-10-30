@@ -122,14 +122,6 @@ def grant_company_membership(
     current_user: User = Depends(get_current_user),
 ):
     company = _get_company(db, company_id, current_user)
-    assigned_role_id = role_id
-    if assigned_role_id is None and not current_user.is_platform_admin:
-        # New grants inherit the actor's effective company role, never the
-        # target user's global role (which could be more privileged).
-        assigned_role_id = effective_role_id(current_user, db)
-    if assigned_role_id is not None:
-        if not can_assign_role(current_user, assigned_role_id, db):
-            raise HTTPException(status_code=403, detail="You cannot assign a role beyond your own permissions")
     member_user = db.scalar(
         select(User).where(
             User.id == user_id,
@@ -141,8 +133,6 @@ def grant_company_membership(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found in this tenant")
     if not member_user.is_active:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot grant company access to a disabled user")
-    if current_user.is_platform_admin and assigned_role_id is None:
-        assigned_role_id = member_user.role_id
 
     membership = db.scalar(
         select(CompanyUserMembership)
@@ -152,6 +142,17 @@ def grant_company_membership(
         )
         .with_for_update()
     )
+    assigned_role_id = role_id
+    if membership is None and assigned_role_id is None:
+        if current_user.is_platform_admin:
+            assigned_role_id = member_user.role_id
+        else:
+            # New grants inherit the actor's effective company role, never the
+            # target user's global role (which could be more privileged).
+            assigned_role_id = effective_role_id(current_user, db)
+    if assigned_role_id is not None and not can_assign_role(current_user, assigned_role_id, db):
+        raise HTTPException(status_code=403, detail="You cannot assign a role beyond your own permissions")
+
     if membership is None:
         membership = CompanyUserMembership(
             company_id=company.id,
