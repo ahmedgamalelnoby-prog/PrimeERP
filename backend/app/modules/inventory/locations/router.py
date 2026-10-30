@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.context.access import require_company_access, require_branch_access
+from app.core.context.access import require_company_access, require_branch_access, require_branch_or_company_access
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
@@ -30,7 +30,7 @@ def _require_warehouse_access(db: Session, company_id: int, warehouse_id: int, u
     if warehouse is None:
         raise HTTPException(404, "Warehouse not found")
     if warehouse.branch_id is not None:
-        require_branch_access(db, company_id, warehouse.branch_id, user)
+        require_branch_or_company_access(db, company_id, warehouse.branch_id, user)
     return warehouse
 
 
