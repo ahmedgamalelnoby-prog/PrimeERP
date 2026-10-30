@@ -23,6 +23,7 @@ function NavigationNode({ item, pathname, onNavigate, forceExpanded, depth, isAr
   item: NavigationItem; pathname: string; onNavigate: () => void; forceExpanded: boolean; depth: number; isArabic: boolean;
   openTopGroup: string | null; setOpenTopGroup: (id: string | null) => void;
 }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(isNavigationItemActive(item, pathname));
   const Icon = item.icon;
   const hasChildren = Boolean(item.children?.length);
