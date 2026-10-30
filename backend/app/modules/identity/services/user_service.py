@@ -104,9 +104,12 @@ class UserService(BaseService[UserRepository]):
                 self._validate_role_assignment(update_data["role_id"])
             if "username" in update_data:
                 new_username = str(update_data["username"]).strip().lower()
+                db.execute(
+                    select(func.pg_advisory_xact_lock(func.hashtext(f"primeerp:username:{new_username}")))
+                )
                 existing_user = repository.get_by_username(db, new_username, include_deleted=True)
                 if existing_user is not None and existing_user.id != user.id:
-                    raise ValueError("Username already exists for this tenant.")
+                    raise ValueError("Username already exists. Choose a unique username across PrimeERP.")
                 update_data["username"] = new_username
             if "email" in update_data:
                 new_email = str(update_data["email"]).strip().lower()
