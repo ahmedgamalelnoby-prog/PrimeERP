@@ -57,7 +57,7 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
     const loadContext = async () => {
       let available: CompanyOption[];
       try {
-        const response = await client.get<CompanyOption[]>("/companies/accessible", { headers: { "X-Branch-ID": "" } });
+        const response = await client.get<CompanyOption[]>("/companies/accessible", { headers: { "X-Company-ID": "", "X-Branch-ID": "" } });
         if (cancelled) return;
         available = response.data;
       } catch {
