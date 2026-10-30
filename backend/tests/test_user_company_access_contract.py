@@ -35,6 +35,7 @@ def test_user_company_assignment_endpoint_validates_tenant_and_default():
     source = read("app/modules/identity/api/users.py")
     assert 'prefix="/users"' in source
     assert '"/{user_id}/companies"' in source
+    assert '"/{user_id}/companies/available"' in source
     assert "default_company_id not in self.company_ids" in source
     assert "Company.tenant_id == tenant_id" in source
 
