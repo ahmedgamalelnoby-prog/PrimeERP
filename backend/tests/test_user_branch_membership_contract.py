@@ -214,7 +214,7 @@ def test_inventory_locations_are_scoped_to_the_warehouse_branch():
     router = source("app/modules/inventory/locations/router.py")
     assert "require_warehouse_access(db, user, company_id, warehouse_id)" in router
     assert "require_warehouse_access(db, user, payload.company_id, payload.warehouse_id)" in router
-    assert "require_location_access(db, user, company_id, location_id)" in router
+    assert "require_location_access(db, user, company_id, location_id, require_active=False)" in router
 
 
 def test_inventory_transfers_require_access_to_both_warehouse_branches():
