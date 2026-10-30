@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 import ResetPasswordDialog from "../components/ResetPasswordDialog";
+import BranchMembershipDialog from "../components/BranchMembershipDialog";
 import UserForm from "../components/UserForm";
 import UserTable from "../components/UserTable";
 import { useUsers } from "../hooks/useUsers";
@@ -45,6 +46,9 @@ export default function UsersPage() {
     resetPasswordUser,
     setResetPasswordUser,
   ] = useState<User | null>(null);
+
+  const [branchMembershipUser, setBranchMembershipUser] =
+    useState<User | null>(null);
 
   const totalUsers = meta.total;
 
@@ -166,6 +170,9 @@ export default function UsersPage() {
         onResetPassword={(user) =>
           setResetPasswordUser(user)
         }
+        onManageBranches={(user) =>
+          setBranchMembershipUser(user)
+        }
       />
 
       <UserForm
@@ -197,6 +204,14 @@ export default function UsersPage() {
           }
         }}
         onSuccess={reload}
+      />
+
+      <BranchMembershipDialog
+        open={Boolean(branchMembershipUser)}
+        user={branchMembershipUser}
+        onOpenChange={(open) => {
+          if (!open) setBranchMembershipUser(null);
+        }}
       />
     </div>
   );
