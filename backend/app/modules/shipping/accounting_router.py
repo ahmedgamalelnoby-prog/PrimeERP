@@ -33,6 +33,9 @@ def post_settlement(
     company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == current_user.tenant_id))
     if company is None:
         raise HTTPException(403, "Company is outside the current tenant")
+    from app.modules.companies.access import has_company_access
+    if not current_user.is_platform_admin and not has_company_access(db, current_user.id, company.id, company.tenant_id):
+        raise HTTPException(403, "Company is not assigned to the authenticated user")
     batch = db.scalar(select(ShippingSettlementBatch).where(ShippingSettlementBatch.id == batch_id, ShippingSettlementBatch.company_id == company_id))
     if batch is None:
         raise HTTPException(404, "Settlement batch not found")
