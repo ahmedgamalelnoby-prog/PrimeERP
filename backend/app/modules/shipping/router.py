@@ -11,6 +11,7 @@ from app.modules.accounting.chart_of_accounts.models import AccountCombination
 from app.modules.accounting.journals.models import AccountingJournal
 from app.modules.branches.models import Branch
 from app.modules.companies.models import Company
+from app.modules.companies.access import has_company_access
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.saas.entitlements import require_module
@@ -36,6 +37,8 @@ def _company_for_user(db: Session, company_id: int, user: User):
         raise HTTPException(403, "Company is outside the current tenant")
     if not company.is_active:
         raise HTTPException(409, "Company is inactive")
+    if not user.is_platform_admin and not has_company_access(db, user.id, company.id, company.tenant_id):
+        raise HTTPException(403, "Company is not assigned to the authenticated user")
     return company
 
 
