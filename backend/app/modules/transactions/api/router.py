@@ -49,7 +49,7 @@ def require_assigned_company(db: Session, company_id: int, current_user: User) -
 @router.get("/number-sequences", response_model=list[NumberSequenceResponse])
 def list_number_sequences(company_id: Optional[int] = Query(default=None, gt=0), branch_id: Optional[int] = Query(default=None, gt=0), is_active: Optional[bool] = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     tenant_id = require_tenant_user(current_user)
-    allowed_ids = assigned_company_ids(db, current_user.id, tenant_id)
+    allowed_ids = None if current_user.is_platform_admin else assigned_company_ids(db, current_user.id, tenant_id)
     if company_id is not None:
         require_assigned_company(db, company_id, current_user)
     return numbering_service.list_sequences(db=db, current_tenant_id=tenant_id, company_id=company_id, company_ids=allowed_ids if company_id is None else None, branch_id=branch_id, is_active=is_active)
