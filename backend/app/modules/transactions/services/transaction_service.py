@@ -14,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.modules.branches.models import Branch
+from app.core.context import get_effective_tenant_id
 from app.modules.companies.models import Company
 from app.modules.companies.access import assigned_company_ids, has_company_access
 from app.modules.company_settings.service import get_company_setting
@@ -916,29 +917,9 @@ class TransactionService:
     def _get_tenant_id(
         current_user: User,
     ) -> int:
-        if current_user.is_platform_admin:
-            raise HTTPException(
-                status_code=(
-                    status.HTTP_403_FORBIDDEN
-                ),
-                detail=(
-                    "Platform administrator has "
-                    "no tenant context"
-                ),
-            )
-
-        if current_user.tenant_id is None:
-            raise HTTPException(
-                status_code=(
-                    status.HTTP_403_FORBIDDEN
-                ),
-                detail=(
-                    "User is not assigned "
-                    "to a tenant"
-                ),
-            )
-
-        return current_user.tenant_id
+        # Platform administrators operate only within the tenant explicitly
+        # selected for this request; regular users resolve to their own tenant.
+        return get_effective_tenant_id(current_user)
 
     @staticmethod
     def _validate_scope(
