@@ -44,6 +44,7 @@ def test_migration_backfills_existing_tenant_company_access():
     source = read("alembic/versions/20261107_user_company_access.py")
     assert "ROW_NUMBER() OVER (PARTITION BY u.id ORDER BY c.id)" in source
     assert "ranked.position = 1" in source
+    assert 'down_revision = "d8f77511bacb"' in source
 
 
 def test_accounting_treasury_pos_and_hr_enforce_assigned_company_access():
