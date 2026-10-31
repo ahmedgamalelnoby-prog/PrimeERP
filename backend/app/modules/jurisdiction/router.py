@@ -40,6 +40,9 @@ def partner_for_user(db: Session, partner_id: int, user: User):
     )
     if obj is None:
         raise HTTPException(403, "Partner is outside the current tenant")
+    from app.modules.companies.access import has_company_access
+    if not user.is_platform_admin and not has_company_access(db, user.id, obj.company_id, get_effective_tenant_id(user)):
+        raise HTTPException(403, "Partner belongs to a company not assigned to the authenticated user")
     return obj
 
 
