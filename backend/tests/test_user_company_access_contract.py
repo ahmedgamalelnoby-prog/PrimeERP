@@ -89,3 +89,12 @@ def test_hr_company_scoped_endpoints_use_authenticated_user_assignment():
     source = read("app/modules/hr/router.py")
     assert "_company_for_tenant" not in source
     assert source.count("_company_for_user(db, company_id, current_user)") == 17
+
+
+def test_number_sequences_are_limited_to_assigned_companies():
+    router = read("app/modules/transactions/api/router.py")
+    repository = read("app/modules/transactions/repositories/number_sequence_repository.py")
+    assert "require_assigned_company(db, payload.company_id, current_user)" in router
+    assert "allowed_ids = assigned_company_ids(db, current_user.id, tenant_id)" in router
+    assert "company_ids=allowed_ids if company_id is None else None" in router
+    assert "NumberSequence.company_id.in_(company_ids)" in repository
