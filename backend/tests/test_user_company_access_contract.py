@@ -77,7 +77,6 @@ def test_accounting_treasury_pos_and_hr_enforce_assigned_company_access():
         "notifications/router.py": "def _company",
         "platform/developer/router.py": "def company_ok",
         "helpdesk_ai/router.py": "def _company_for_user",
-        "accounting/chart_of_accounts/router.py": "def _authorized_company",
         "catalog/bundle_router.py": "def guard_company",
         "catalog/pricing_engine_router.py": "def _company_for_user",
         "catalog/variant_router.py": "def _company_for_user",
@@ -117,6 +116,9 @@ def test_hr_company_scoped_endpoints_use_authenticated_user_assignment():
     assert source.count("_company_for_user(db, company_id, current_user)") == 17
 
 
+    chart_of_accounts = read("app/modules/accounting/chart_of_accounts/router.py")
+    assert "has_company_access(db, current_user.id, company_id, tenant_id)" in chart_of_accounts
+    assert "not current_user.is_platform_admin" in chart_of_accounts
     fiscal_years = read("app/modules/accounting/fiscal_years/services/fiscal_year_service.py")
     assert "has_company_access(db, current_user.id, company_id, tenant_id)" in fiscal_years
     accounting_reports = read("app/modules/accounting/reports/router.py")
