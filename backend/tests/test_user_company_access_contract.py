@@ -84,6 +84,7 @@ def test_accounting_treasury_pos_and_hr_enforce_assigned_company_access():
 
     jurisdiction = read("app/modules/jurisdiction/router.py")
     assert "has_company_access(db, user.id, obj.id, obj.tenant_id)" in jurisdiction
+    assert "has_company_access(db, user.id, obj.company_id, get_effective_tenant_id(user))" in jurisdiction
 
     bank_reconciliation = read("app/modules/treasury/bank_reconciliation/service.py")
     assert "has_company_access(db, user.id, company.id, company.tenant_id)" in bank_reconciliation
