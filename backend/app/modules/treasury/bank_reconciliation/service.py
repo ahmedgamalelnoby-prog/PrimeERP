@@ -14,10 +14,14 @@ def fingerprint_line(payload) -> str:
 
 def ensure_company(db, company_id, user):
     from app.modules.companies.models import Company
+    from app.modules.companies.access import has_company_access
     tenant_id = get_effective_tenant_id(user)
     if tenant_id is None: raise ValueError("User is not assigned to a tenant")
-    if db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == tenant_id, Company.is_active.is_(True))) is None:
+    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == tenant_id, Company.is_active.is_(True)))
+    if company is None:
         raise ValueError("Company is outside the current tenant or inactive")
+    if not user.is_platform_admin and not has_company_access(db, user.id, company.id, company.tenant_id):
+        raise ValueError("Company is not assigned to the authenticated user")
 
 def create_account(db, payload, user):
     ensure_company(db,payload.company_id,user)
