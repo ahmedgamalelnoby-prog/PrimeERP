@@ -82,7 +82,10 @@ def test_accounting_treasury_pos_and_hr_enforce_assigned_company_access():
         source = read(f"app/modules/{module}")
         assert "from app.modules.companies.access import has_company_access" in source
         assert helper in source
-        assert "has_company_access(db, user.id, company.id, company.tenant_id)" in source
+        assert (
+            "has_company_access(db, user.id, company.id, company.tenant_id)" in source
+            or "has_company_access(db,user.id,company.id,company.tenant_id)" in source
+        )
         assert "not user.is_platform_admin" in source
 
 
