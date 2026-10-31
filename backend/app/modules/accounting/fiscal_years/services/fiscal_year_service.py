@@ -156,6 +156,12 @@ class FiscalYearService:
                 ),
                 detail="Fiscal year not found",
             )
+        self._validate_company(
+            db=db,
+            tenant_id=self._tenant_id(current_user),
+            company_id=fiscal_year.company_id,
+            current_user=current_user,
+        )
 
         return fiscal_year
 
@@ -629,6 +635,12 @@ class FiscalYearService:
         posting_date: date,
         current_user: User,
     ) -> AccountingPeriod:
+        self._validate_company(
+            db=db,
+            tenant_id=self._tenant_id(current_user),
+            company_id=company_id,
+            current_user=current_user,
+        )
         period = (
             fiscal_year_repository
             .get_period_for_date(
@@ -790,6 +802,12 @@ class FiscalYearService:
                 ),
                 detail="Fiscal year not found",
             )
+        self._validate_company(
+            db=db,
+            tenant_id=self._tenant_id(current_user),
+            company_id=fiscal_year.company_id,
+            current_user=current_user,
+        )
 
         return fiscal_year
 
