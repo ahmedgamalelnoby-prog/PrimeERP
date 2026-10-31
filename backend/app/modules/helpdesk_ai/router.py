@@ -51,6 +51,18 @@ class AdvisoryResponse(BaseModel):
     knowledge_version: str
     ai_provider: str
 
+def _company_for_user(db: Session, company_id: int, user: User):
+    from app.modules.companies.access import has_company_access
+    from app.modules.companies.models import Company
+
+    company = db.get(Company, company_id)
+    if company is None or company.tenant_id != get_effective_tenant_id(user) or not company.is_active:
+        raise HTTPException(status_code=404, detail="Company not found")
+    if not user.is_platform_admin and not has_company_access(db, user.id, company.id, company.tenant_id):
+        raise HTTPException(status_code=403, detail="Company is not assigned to the authenticated user")
+    return company
+
+
 def _fallback(question: str, language: str) -> HelpdeskAnswer:
     q = question.lower()
     if any(word in q for word in ("invoice", "فاتورة", "فواتير")):
@@ -117,14 +129,7 @@ def answer_helpdesk(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> HelpdeskAnswer:
-    from app.modules.companies.models import Company
-    company = db.get(Company, request.company_id)
-    if (
-        company is None
-        or getattr(company, "tenant_id", None) != get_effective_tenant_id(current_user)
-        or not getattr(company, "is_active", False)
-    ):
-        raise HTTPException(status_code=404, detail="Company not found")
+    _company_for_user(db, request.company_id, current_user)
     return _ask_ai(request)
 
 
@@ -157,14 +162,7 @@ def business_advice(
     if from_date and to_date and from_date > to_date:
         raise HTTPException(status_code=422, detail="from_date cannot be after to_date")
 
-    from app.modules.companies.models import Company
-    company = db.get(Company, request.company_id)
-    if (
-        company is None
-        or getattr(company, "tenant_id", None) != get_effective_tenant_id(current_user)
-        or not getattr(company, "is_active", False)
-    ):
-        raise HTTPException(status_code=404, detail="Company not found")
+    _company_for_user(db, request.company_id, current_user)
 
     summary = financial_report_service.financial_summary(
         db,
