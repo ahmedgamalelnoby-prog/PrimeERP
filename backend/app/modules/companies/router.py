@@ -60,8 +60,9 @@ def create_company(payload: CompanyCreate, db: Session = Depends(get_db), curren
     company = Company(tenant_id=tenant_id, **payload.model_dump())
     db.add(company)
     try:
-        db.commit()
-        db.refresh(company)
+        # Keep company creation and the creator's access grant in one
+        # transaction so a failed assignment cannot leave an orphaned company.
+        db.flush()
         if not current_user.is_platform_admin:
             has_existing_access = bool(assigned_company_ids(db, current_user.id, tenant_id))
             db.execute(
@@ -71,7 +72,8 @@ def create_company(payload: CompanyCreate, db: Session = Depends(get_db), curren
                     is_default=not has_existing_access,
                 )
             )
-            db.commit()
+        db.commit()
+        db.refresh(company)
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail="Company code already exists for this tenant") from exc
