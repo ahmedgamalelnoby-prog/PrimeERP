@@ -69,6 +69,10 @@ def test_accounting_treasury_pos_and_hr_enforce_assigned_company_access():
         "inventory/items/router.py": "def _company_for_user",
         "inventory/warehouses/router.py": "def _company_for_user",
         "commissions/router.py": "def company_for_user",
+        "integrations/router.py": "def _company_for_user",
+        "notifications/router.py": "def _company",
+        "platform/developer/router.py": "def company_ok",
+        "helpdesk_ai/router.py": "def _company_for_user",
     }
     for module, helper in modules.items():
         source = read(f"app/modules/{module}")
@@ -76,6 +80,10 @@ def test_accounting_treasury_pos_and_hr_enforce_assigned_company_access():
         assert helper in source
         assert "has_company_access(db, user.id, company.id, company.tenant_id)" in source
         assert "not user.is_platform_admin" in source
+
+
+    jurisdiction = read("app/modules/jurisdiction/router.py")
+    assert "has_company_access(db, user.id, obj.id, obj.tenant_id)" in jurisdiction
 
     bank_reconciliation = read("app/modules/treasury/bank_reconciliation/service.py")
     assert "has_company_access(db, user.id, company.id, company.tenant_id)" in bank_reconciliation
