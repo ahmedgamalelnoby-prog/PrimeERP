@@ -11,6 +11,7 @@ from app.database.session import get_db
 from app.modules.accounting.models import TaxRate
 from app.modules.accounting.tax_engine import calculate_taxes
 from app.modules.companies.models import Company
+from app.modules.companies.access import has_company_access
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.saas.entitlements import require_module
@@ -26,6 +27,8 @@ def _company_for_user(db: Session, company_id: int, user: User):
         raise HTTPException(403, "Company is outside the current tenant")
     if not company.is_active:
         raise HTTPException(409, "Company is inactive")
+    if not user.is_platform_admin and not has_company_access(db, user.id, company.id, company.tenant_id):
+        raise HTTPException(403, "Company is not assigned to the authenticated user")
     return company
 
 

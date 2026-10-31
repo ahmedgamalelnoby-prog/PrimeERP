@@ -28,6 +28,9 @@ def _company(db: Session, company_id: int, user: User):
     obj = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == user.tenant_id, Company.is_active.is_(True)))
     if obj is None:
         raise HTTPException(403, "Company is outside the current tenant or inactive")
+    from app.modules.companies.access import has_company_access
+    if not user.is_platform_admin and not has_company_access(db, user.id, obj.id, obj.tenant_id):
+        raise HTTPException(403, "Company is not assigned to the authenticated user")
     return obj
 
 
@@ -60,6 +63,7 @@ def create_rule(payload: PricingRuleCreate, current_user: User = Depends(get_cur
     ))
     if profile is None:
         raise HTTPException(404, "Pricing profile not found")
+    _company(db, profile.company_id, current_user)
     obj = ShippingPricingRule(**payload.model_dump())
     db.add(obj); db.commit(); db.refresh(obj)
     return obj
@@ -74,6 +78,7 @@ def list_rules(profile_id: int = Query(..., gt=0), current_user: User = Depends(
     ))
     if profile is None:
         raise HTTPException(404, "Pricing profile not found")
+    _company(db, profile.company_id, current_user)
     return list(db.scalars(select(ShippingPricingRule).where(ShippingPricingRule.profile_id == profile_id, ShippingPricingRule.is_active.is_(True)).order_by(ShippingPricingRule.priority.asc(), ShippingPricingRule.id.asc())).all())
 
 

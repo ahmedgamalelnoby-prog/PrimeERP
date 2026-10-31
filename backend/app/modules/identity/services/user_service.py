@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.services.base_service import BaseService
 from app.modules.audit.service import record_audit_event
+from app.modules.companies.models import Company, user_company_access
 from app.modules.identity.models.user import User
 from app.modules.identity.repositories.user_repository import UserRepository, user_repository
 from app.modules.identity.services.password_service import password_service
@@ -81,6 +82,21 @@ class UserService(BaseService[UserRepository]):
         user_data = {key: value for key, value in user_data.items() if value is not None}
         with self.uow as uow:
             user = repository.create(db, data=user_data)
+            if effective_tenant_id is not None:
+                default_company_id = db.scalar(
+                    select(Company.id)
+                    .where(Company.tenant_id == effective_tenant_id, Company.is_active.is_(True))
+                    .order_by(Company.id)
+                    .limit(1)
+                )
+                if default_company_id is not None:
+                    db.execute(
+                        user_company_access.insert().values(
+                            user_id=user.id,
+                            company_id=default_company_id,
+                            is_default=True,
+                        )
+                    )
             record_audit_event(db, action="user.create", entity_type="user", entity_id=user.id, user_id=getattr(current_user, "id", None), tenant_id=effective_tenant_id, metadata={"username": user.username, "role_id": user.role_id, "is_active": user.is_active})
             uow.commit()
         repository.refresh(db, user)

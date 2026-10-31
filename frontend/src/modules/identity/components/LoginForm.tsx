@@ -8,7 +8,6 @@ import { useLogin } from "../hooks/useLogin";
 export default function LoginForm() {
   const [loginValue, setLoginValue] = useState("");
   const [password, setPassword] = useState("");
-  const [tenantSlug, setTenantSlug] = useState("");
 
   const {
     isSubmitting,
@@ -29,7 +28,6 @@ export default function LoginForm() {
       await submitLogin({
         login: loginValue,
         password,
-        tenantSlug,
       });
     } catch {
       // يتم عرض الخطأ من خلال errorMessage.
@@ -102,39 +100,6 @@ export default function LoginForm() {
           }
           disabled={isSubmitting}
           required
-          style={{
-            width: "100%",
-            minHeight: "44px",
-            padding: "10px 12px",
-            border: "1px solid #d1d5db",
-            borderRadius: "8px",
-            boxSizing: "border-box",
-          }}
-        />
-      </div>
-
-      <div>
-        <label
-          htmlFor="tenantSlug"
-          style={{
-            display: "block",
-            marginBottom: "6px",
-            fontWeight: 600,
-          }}
-        >
-          كود المؤسسة
-        </label>
-
-        <input
-          id="tenantSlug"
-          name="tenantSlug"
-          type="text"
-          value={tenantSlug}
-          onChange={(event) =>
-            setTenantSlug(event.target.value)
-          }
-          disabled={isSubmitting}
-          placeholder="اختياري"
           style={{
             width: "100%",
             minHeight: "44px",

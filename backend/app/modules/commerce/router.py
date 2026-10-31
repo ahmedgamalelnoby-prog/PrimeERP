@@ -18,6 +18,7 @@ from app.modules.commerce.sales_return_schemas import SalesReturnCreate
 from app.modules.commerce.sales_return_service import sales_return_service
 from app.modules.commerce.service import commerce_service
 from app.modules.companies.models import Company
+from app.modules.companies.access import has_company_access
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.jurisdiction.commerce_guard import capture_document_tax_snapshot, validate_document_tax_snapshot
@@ -29,6 +30,8 @@ def _company_for_user(db: Session, company_id: int, user: User):
     if get_effective_tenant_id(user) is None: raise HTTPException(403, "User is not assigned to a tenant")
     company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == get_effective_tenant_id(user), Company.is_active.is_(True)))
     if company is None: raise HTTPException(403, "Company is outside the current tenant")
+    if not user.is_platform_admin and not has_company_access(db, user.id, company.id, company.tenant_id):
+        raise HTTPException(403, "Company is not assigned to the authenticated user")
     return company
 
 

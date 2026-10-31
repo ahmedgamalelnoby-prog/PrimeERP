@@ -30,6 +30,9 @@ def _company_for_user(db: Session, company_id: int, user: User):
     if not company.is_active:
         raise HTTPException(409, "Company is inactive")
     return company
+    from app.modules.companies.access import has_company_access
+    if not user.is_platform_admin and not has_company_access(db, user.id, company.id, company.tenant_id):
+        raise HTTPException(403, "Company is not assigned to the authenticated user")
 
 
 @router.post("", response_model=SettlementBatchResponse, status_code=201, dependencies=[Depends(require_permission("shipping.write"))])

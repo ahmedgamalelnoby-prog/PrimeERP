@@ -56,9 +56,11 @@ class ProductMappingResponse(BaseModel):
 
 def _check_company(user: User, company_id: int, db: Session) -> int:
     if user.tenant_id is None: raise HTTPException(403, "User is not assigned to a tenant")
-    allowed = db.scalar(select(Company.id).where(Company.id == company_id, Company.tenant_id == user.tenant_id, Company.is_active.is_(True)))
-    if allowed is None: raise HTTPException(404, "Company not found")
-    return allowed
+    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == user.tenant_id, Company.is_active.is_(True)))
+    if company is None: raise HTTPException(404, "Company not found")
+    from app.modules.companies.access import has_company_access
+    if not user.is_platform_admin and not has_company_access(db, user.id, company.id, company.tenant_id): raise HTTPException(403, "Company is not assigned to the authenticated user")
+    return company.id
 
 
 def _errors(exc: ValueError):
@@ -112,9 +114,11 @@ def update(mapping_id: int, payload: ProductMappingUpdate, current_user: User = 
 
 def _company_from_mapping(db: Session, mapping_id: int, user: User) -> int:
     if user.tenant_id is None: raise HTTPException(403, "User is not assigned to a tenant")
-    row = db.scalar(select(IntegrationProductMapping.company_id).join(Company, Company.id == IntegrationProductMapping.company_id).where(IntegrationProductMapping.id == mapping_id, Company.tenant_id == user.tenant_id, Company.is_active.is_(True)))
+    row = db.execute(select(IntegrationProductMapping.company_id, Company.tenant_id).join(Company, Company.id == IntegrationProductMapping.company_id).where(IntegrationProductMapping.id == mapping_id, Company.tenant_id == user.tenant_id, Company.is_active.is_(True))).first()
     if row is None: raise HTTPException(404, "Product mapping not found")
-    return row
+    from app.modules.companies.access import has_company_access
+    if not user.is_platform_admin and not has_company_access(db, user.id, row.company_id, row.tenant_id): raise HTTPException(403, "Company is not assigned to the authenticated user")
+    return row.company_id
 
 
 @router.post("/{mapping_id}/archive", response_model=ProductMappingResponse, dependencies=[Depends(require_permission("integrations.write"))])

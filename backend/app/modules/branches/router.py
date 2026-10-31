@@ -9,6 +9,7 @@ from app.database.session import get_db
 from app.modules.branches.models import Branch
 from app.modules.branches.schemas import BranchCreate, BranchResponse, BranchUpdate
 from app.modules.companies.models import Company
+from app.modules.companies.access import assigned_company_ids, has_company_access
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.saas.entitlements import enforce_branch_limit
@@ -26,6 +27,8 @@ def _company(db: Session, company_id: int, user: User) -> Company:
     company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == _tenant_id(user), Company.is_active.is_(True)))
     if company is None:
         raise HTTPException(status_code=404, detail="Company not found")
+    if not user.is_platform_admin and not has_company_access(db, user.id, company.id, company.tenant_id):
+        raise HTTPException(status_code=403, detail="Company is not assigned to the authenticated user")
     return company
 
 
@@ -33,12 +36,17 @@ def _branch(db: Session, branch_id: int, user: User) -> Branch:
     branch = db.scalar(select(Branch).where(Branch.id == branch_id, Branch.tenant_id == _tenant_id(user)))
     if branch is None:
         raise HTTPException(status_code=404, detail="Branch not found")
+    _company(db, branch.company_id, user)
     return branch
 
 
 @router.get("", response_model=list[BranchResponse], dependencies=[Depends(require_permission("branch.access"))])
 def list_branches(company_id: int | None = Query(default=None, gt=0), active_only: bool = Query(False), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    stmt = select(Branch).where(Branch.tenant_id == _tenant_id(current_user)).order_by(Branch.name, Branch.id)
+    tenant_id = _tenant_id(current_user)
+    stmt = select(Branch).where(Branch.tenant_id == tenant_id)
+    if not current_user.is_platform_admin:
+        stmt = stmt.where(Branch.company_id.in_(assigned_company_ids(db, current_user.id, tenant_id)))
+    stmt = stmt.order_by(Branch.name, Branch.id)
     if company_id is not None:
         _company(db, company_id, current_user)
         stmt = stmt.where(Branch.company_id == company_id)

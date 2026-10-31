@@ -7,6 +7,7 @@ from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
+from app.modules.companies.access import has_company_access
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.saas.entitlements import require_module
@@ -26,6 +27,8 @@ def _company(db: Session, company_id: int, user: User):
         Company.is_active.is_(True),
     ))
     if company is None: raise HTTPException(404, "Company not found")
+    if not user.is_platform_admin and not has_company_access(db, user.id, company.id, company.tenant_id):
+        raise HTTPException(403, "Company is not assigned to the authenticated user")
     return company
 
 

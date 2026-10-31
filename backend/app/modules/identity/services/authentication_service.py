@@ -34,17 +34,27 @@ class AuthenticationService:
             tenant_name=payload.tenant_name,
         )
         if not users:
-            self._reject_login(db, login_key, "unknown_account")
-        if len(users) > 1:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Multiple accounts match this login. Please provide the company name.",
+            self._reject_login(db, login_key, "invalid_credentials")
+
+        # Tenant selection is derived from the username/password pair. Usernames
+        # are unique only inside a tenant, so verify the password against the
+        # bounded candidate set instead of asking the person to enter a company.
+        # More than two matches is treated as ambiguous and fails closed.
+        if len(users) > 2:
+            self._reject_login(db, login_key, "ambiguous_account")
+
+        matching_users = [
+            candidate
+            for candidate in users
+            if password_service.verify_password(
+                payload.password,
+                candidate.hashed_password,
             )
-        user = users[0]
-        if not user.is_platform_admin and not payload.tenant_name:
-            self._reject_login(db, login_key, "company_name_required")
-        if not password_service.verify_password(payload.password, user.hashed_password):
-            self._reject_login(db, login_key, "invalid_password")
+        ]
+        if len(matching_users) != 1:
+            self._reject_login(db, login_key, "invalid_credentials_or_ambiguous_account")
+
+        user = matching_users[0]
         self._validate_user(user)
 
         tenant = None

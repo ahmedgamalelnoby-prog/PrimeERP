@@ -24,6 +24,9 @@ def _company_for_user(db: Session, company_id: int, user: User) -> Company:
     company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == get_effective_tenant_id(user), Company.is_active.is_(True)))
     if company is None:
         raise HTTPException(status_code=403, detail="Company is outside the current tenant")
+    from app.modules.companies.access import has_company_access
+    if not user.is_platform_admin and not has_company_access(db, user.id, company.id, company.tenant_id):
+        raise HTTPException(status_code=403, detail="Company is not assigned to the authenticated user")
     return company
 
 

@@ -1,4 +1,4 @@
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import set_committed_value
@@ -11,6 +11,7 @@ from app.modules.identity.repositories.user_repository import user_repository
 from app.modules.identity.services.token_service import token_service
 from app.modules.platform.subscriptions.service import subscription_service
 from app.modules.saas.models import Tenant
+from app.modules.companies.access import has_company_access
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/identity/login")
 TENANT_CONTEXT_HEADER = "X-Tenant-ID"
@@ -96,11 +97,26 @@ def _authenticate_user(token: str, db: Session, tenant_context_header: str | Non
 
 
 def get_current_user(
+    request: Request,
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
     tenant_context_header: str | None = Header(default=None, alias=TENANT_CONTEXT_HEADER),
+    company_context_header: str | None = Header(default=None, alias="X-Company-ID"),
 ) -> User:
     user = _authenticate_user(token, db, tenant_context_header)
+    query_company_id = request.query_params.get("company_id")
+    requested_company_id = company_context_header or query_company_id
+    if company_context_header and query_company_id and company_context_header.strip() != query_company_id.strip():
+        raise HTTPException(status_code=403, detail="Selected company does not match the requested company")
+    if requested_company_id:
+        try:
+            company_id = int(requested_company_id.strip())
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="X-Company-ID must be a valid company ID") from exc
+        if company_id <= 0:
+            raise HTTPException(status_code=400, detail="X-Company-ID must be a positive company ID")
+        if not user.is_platform_admin and not has_company_access(db, user.id, company_id, user.tenant_id):
+            raise HTTPException(status_code=403, detail="Company context is not assigned to the authenticated user")
     if not user.is_platform_admin:
         tenant_id = user.tenant_id
         if tenant_id is None:
