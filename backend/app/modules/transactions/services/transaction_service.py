@@ -757,8 +757,8 @@ class TransactionService:
         tenant_id = self._get_tenant_id(
             current_user
         )
-        allowed_company_ids = assigned_company_ids(db, current_user.id, tenant_id)
-        if company_id is not None and company_id not in allowed_company_ids:
+        allowed_company_ids = None if current_user.is_platform_admin else assigned_company_ids(db, current_user.id, tenant_id)
+        if company_id is not None and allowed_company_ids is not None and company_id not in allowed_company_ids:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Company is not assigned to the authenticated user")
 
         items, total = (
