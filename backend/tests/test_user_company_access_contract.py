@@ -150,3 +150,25 @@ def test_transaction_cancel_and_reverse_require_company_assignment():
     assert "get_effective_tenant_id(current_user)" in source
     assert "db, current_user.id, transaction.company_id, transaction.tenant_id" in source
     assert "db, current_user.id, original.company_id, original.tenant_id" in source
+
+
+def test_company_creation_and_creator_access_are_atomic():
+    source = read("app/modules/companies/router.py")
+    create_block = source.split("def create_company(", 1)[1].split("@router.patch", 1)[0]
+    assert "db.flush()" in create_block
+    assert create_block.index("db.flush()") < create_block.index("user_company_access.insert()")
+    assert create_block.index("user_company_access.insert()") < create_block.index("db.commit()")
+    assert create_block.count("db.commit()") == 1
+
+
+def test_number_sequence_update_cannot_move_company_or_branch_scope():
+    schema = read("app/modules/transactions/schemas/number_sequence.py")
+    update_schema = schema.split("class NumberSequenceUpdate", 1)[1]
+    assert "company_id" not in update_schema
+    assert "branch_id" not in update_schema
+
+
+def test_transaction_update_rejects_company_or_branch_reassignment():
+    source = read("app/modules/transactions/services/transaction_service.py")
+    assert '"company_id" in update_data or "branch_id" in update_data' in source
+    assert "Transaction company and branch cannot be changed" in source
