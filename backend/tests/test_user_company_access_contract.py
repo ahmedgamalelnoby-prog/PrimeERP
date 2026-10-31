@@ -164,7 +164,9 @@ def test_company_creation_and_creator_access_are_atomic():
 
 def test_number_sequence_update_cannot_move_company_or_branch_scope():
     schema = read("app/modules/transactions/schemas/number_sequence.py")
-    update_schema = schema.split("class NumberSequenceUpdate", 1)[1]
+    update_schema = schema.split("class NumberSequenceUpdate", 1)[1].split(
+        "class NumberSequenceResponse", 1
+    )[0]
     assert "company_id" not in update_schema
     assert "branch_id" not in update_schema
 
