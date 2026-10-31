@@ -737,6 +737,8 @@ class TransactionService:
 
         if transaction is None:
             self._raise_not_found()
+        if not current_user.is_platform_admin and not has_company_access(db, current_user.id, transaction.company_id, transaction.tenant_id):
+            self._raise_not_found()
 
         return transaction
 
@@ -863,6 +865,8 @@ class TransactionService:
         )
 
         if transaction is None:
+            self._raise_not_found()
+        if not current_user.is_platform_admin and not has_company_access(db, current_user.id, transaction.company_id, transaction.tenant_id):
             self._raise_not_found()
 
         return transaction
