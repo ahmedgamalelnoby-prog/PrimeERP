@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.branches.models import Branch
 from app.modules.companies.models import Company
+from app.modules.companies.access import assigned_company_ids, has_company_access
 from app.modules.company_settings.service import get_company_setting
 from app.modules.identity.models import User
 from app.modules.enterprise.models import Project
@@ -67,6 +68,7 @@ class TransactionService:
             tenant_id=tenant_id,
             company_id=payload.company_id,
             branch_id=payload.branch_id,
+            current_user=current_user,
         )
 
         self._validate_project(
@@ -707,6 +709,8 @@ class TransactionService:
 
         if transaction is None:
             self._raise_not_found()
+        if not current_user.is_platform_admin and not has_company_access(db, current_user.id, transaction.company_id, transaction.tenant_id):
+            self._raise_not_found()
 
         return transaction
 
@@ -751,6 +755,9 @@ class TransactionService:
         tenant_id = self._get_tenant_id(
             current_user
         )
+        allowed_company_ids = assigned_company_ids(db, current_user.id, tenant_id)
+        if company_id is not None and company_id not in allowed_company_ids:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Company is not assigned to the authenticated user")
 
         items, total = (
             transaction_repository
@@ -760,6 +767,7 @@ class TransactionService:
                 page=page,
                 page_size=page_size,
                 company_id=company_id,
+                company_ids=allowed_company_ids if company_id is None else None,
                 branch_id=branch_id,
                 transaction_type=(
                     transaction_type
@@ -918,6 +926,7 @@ class TransactionService:
         tenant_id: int,
         company_id: int,
         branch_id: int,
+        current_user: User,
     ) -> None:
         company_exists = (
             db.query(Company.id)
@@ -939,6 +948,9 @@ class TransactionService:
                     "inside current tenant"
                 ),
             )
+
+        if not current_user.is_platform_admin and not has_company_access(db, current_user.id, company_id, tenant_id):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Company is not assigned to the authenticated user")
 
         branch_exists = (
             db.query(Branch.id)
