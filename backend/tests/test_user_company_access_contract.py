@@ -143,3 +143,10 @@ def test_number_sequences_are_limited_to_assigned_companies():
     assert "allowed_ids = None if current_user.is_platform_admin else assigned_company_ids(db, current_user.id, tenant_id)" in router
     assert "company_ids=allowed_ids if company_id is None else None" in router
     assert "NumberSequence.company_id.in_(company_ids)" in repository
+
+
+def test_transaction_cancel_and_reverse_require_company_assignment():
+    source = read("app/modules/transactions/services/transaction_service.py")
+    assert "get_effective_tenant_id(current_user)" in source
+    assert "db, current_user.id, transaction.company_id, transaction.tenant_id" in source
+    assert "db, current_user.id, original.company_id, original.tenant_id" in source
