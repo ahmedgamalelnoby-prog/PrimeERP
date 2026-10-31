@@ -55,6 +55,7 @@ class NumberSequenceRepository:
         db: Session,
         tenant_id: int,
         company_id: Optional[int] = None,
+        company_ids: Optional[list[int]] = None,
         branch_id: Optional[int] = None,
         is_active: Optional[bool] = None,
     ) -> list[NumberSequence]:
@@ -71,6 +72,8 @@ class NumberSequenceRepository:
                 NumberSequence.company_id
                 == company_id
             )
+        elif company_ids is not None:
+            query = query.filter(NumberSequence.company_id.in_(company_ids))
 
         if branch_id is not None:
             query = query.filter(
