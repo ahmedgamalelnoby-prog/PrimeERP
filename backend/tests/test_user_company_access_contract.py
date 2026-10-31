@@ -44,3 +44,24 @@ def test_migration_backfills_existing_tenant_company_access():
     source = read("alembic/versions/20261107_user_company_access.py")
     assert "ROW_NUMBER() OVER (PARTITION BY u.id ORDER BY c.id)" in source
     assert "ranked.position = 1" in source
+
+
+def test_accounting_treasury_pos_and_hr_enforce_assigned_company_access():
+    modules = {
+        "accounting/router.py": "def _company_for_user",
+        "treasury/router.py": "def _company",
+        "pos/router.py": "def _company",
+        "hr/router.py": "def _company_for_user",
+    }
+    for module, helper in modules.items():
+        source = read(f"app/modules/{module}")
+        assert "from app.modules.companies.access import has_company_access" in source
+        assert helper in source
+        assert "has_company_access(db, user.id, company.id, company.tenant_id)" in source
+        assert "not user.is_platform_admin" in source
+
+
+def test_hr_company_scoped_endpoints_use_authenticated_user_assignment():
+    source = read("app/modules/hr/router.py")
+    assert "_company_for_tenant" not in source
+    assert source.count("_company_for_user(db, company_id, current_user)") == 17
