@@ -12,6 +12,18 @@ import type {
 
 const USERS_URL = "/identity/users";
 
+export interface UserCompany {
+  id: number;
+  name: string;
+  code: string | null;
+}
+
+export interface UserCompanyAccess {
+  user_id: number;
+  company_ids: number[];
+  default_company_id: number | null;
+}
+
 function normalizeFilters(filters?: UsersFilters) {
   if (!filters) {
     return undefined;
@@ -36,6 +48,21 @@ export const usersApi = {
     },
   );
 },
+
+  getAvailableCompanies(userId: number) {
+    return apiClient.get<UserCompany[]>(`${USERS_URL}/${userId}/companies/available`);
+  },
+
+  getCompanyAccess(userId: number) {
+    return apiClient.get<UserCompanyAccess>(`${USERS_URL}/${userId}/companies`);
+  },
+
+  updateCompanyAccess(
+    userId: number,
+    payload: { company_ids: number[]; default_company_id: number },
+  ) {
+    return apiClient.put<UserCompanyAccess>(`${USERS_URL}/${userId}/companies`, payload);
+  },
 
   get(id: number) {
     return apiClient.get<User>(`${USERS_URL}/${id}`);

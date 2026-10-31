@@ -193,6 +193,7 @@ class NumberingService:
         db: Session,
         current_tenant_id: int,
         company_id: Optional[int] = None,
+        company_ids: Optional[list[int]] = None,
         branch_id: Optional[int] = None,
         is_active: Optional[bool] = None,
     ) -> list[NumberSequence]:
@@ -202,6 +203,7 @@ class NumberingService:
                 db=db,
                 tenant_id=current_tenant_id,
                 company_id=company_id,
+                company_ids=company_ids,
                 branch_id=branch_id,
                 is_active=is_active,
             )

@@ -14,7 +14,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.modules.branches.models import Branch
+from app.core.context import get_effective_tenant_id
 from app.modules.companies.models import Company
+from app.modules.companies.access import assigned_company_ids, has_company_access
 from app.modules.company_settings.service import get_company_setting
 from app.modules.identity.models import User
 from app.modules.enterprise.models import Project
@@ -67,6 +69,7 @@ class TransactionService:
             tenant_id=tenant_id,
             company_id=payload.company_id,
             branch_id=payload.branch_id,
+            current_user=current_user,
         )
 
         self._validate_project(
@@ -247,6 +250,14 @@ class TransactionService:
         update_data = payload.model_dump(
             exclude_unset=True
         )
+        # Company and branch are immutable after transaction creation. Moving a
+        # transaction would bypass the original company's authorization and
+        # accounting controls.
+        if "company_id" in update_data or "branch_id" in update_data:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Transaction company and branch cannot be changed",
+            )
         effective_project_id = update_data.get("project_id", transaction.project_id)
         self._validate_project(
             db,
@@ -456,6 +467,10 @@ class TransactionService:
 
         if transaction is None:
             self._raise_not_found()
+        if not current_user.is_platform_admin and not has_company_access(
+            db, current_user.id, transaction.company_id, transaction.tenant_id
+        ):
+            self._raise_not_found()
 
         if transaction.status not in {
             "draft",
@@ -531,6 +546,10 @@ class TransactionService:
         )
 
         if original is None:
+            self._raise_not_found()
+        if not current_user.is_platform_admin and not has_company_access(
+            db, current_user.id, original.company_id, original.tenant_id
+        ):
             self._raise_not_found()
 
         if original.status != "posted":
@@ -707,6 +726,8 @@ class TransactionService:
 
         if transaction is None:
             self._raise_not_found()
+        if not current_user.is_platform_admin and not has_company_access(db, current_user.id, transaction.company_id, transaction.tenant_id):
+            self._raise_not_found()
 
         return transaction
 
@@ -733,6 +754,8 @@ class TransactionService:
 
         if transaction is None:
             self._raise_not_found()
+        if not current_user.is_platform_admin and not has_company_access(db, current_user.id, transaction.company_id, transaction.tenant_id):
+            self._raise_not_found()
 
         return transaction
 
@@ -751,6 +774,9 @@ class TransactionService:
         tenant_id = self._get_tenant_id(
             current_user
         )
+        allowed_company_ids = None if current_user.is_platform_admin else assigned_company_ids(db, current_user.id, tenant_id)
+        if company_id is not None and allowed_company_ids is not None and company_id not in allowed_company_ids:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Company is not assigned to the authenticated user")
 
         items, total = (
             transaction_repository
@@ -760,6 +786,7 @@ class TransactionService:
                 page=page,
                 page_size=page_size,
                 company_id=company_id,
+                company_ids=allowed_company_ids if company_id is None else None,
                 branch_id=branch_id,
                 transaction_type=(
                     transaction_type
@@ -856,6 +883,8 @@ class TransactionService:
 
         if transaction is None:
             self._raise_not_found()
+        if not current_user.is_platform_admin and not has_company_access(db, current_user.id, transaction.company_id, transaction.tenant_id):
+            self._raise_not_found()
 
         return transaction
 
@@ -888,29 +917,9 @@ class TransactionService:
     def _get_tenant_id(
         current_user: User,
     ) -> int:
-        if current_user.is_platform_admin:
-            raise HTTPException(
-                status_code=(
-                    status.HTTP_403_FORBIDDEN
-                ),
-                detail=(
-                    "Platform administrator has "
-                    "no tenant context"
-                ),
-            )
-
-        if current_user.tenant_id is None:
-            raise HTTPException(
-                status_code=(
-                    status.HTTP_403_FORBIDDEN
-                ),
-                detail=(
-                    "User is not assigned "
-                    "to a tenant"
-                ),
-            )
-
-        return current_user.tenant_id
+        # Platform administrators operate only within the tenant explicitly
+        # selected for this request; regular users resolve to their own tenant.
+        return get_effective_tenant_id(current_user)
 
     @staticmethod
     def _validate_scope(
@@ -918,6 +927,7 @@ class TransactionService:
         tenant_id: int,
         company_id: int,
         branch_id: int,
+        current_user: User,
     ) -> None:
         company_exists = (
             db.query(Company.id)
@@ -939,6 +949,9 @@ class TransactionService:
                     "inside current tenant"
                 ),
             )
+
+        if not current_user.is_platform_admin and not has_company_access(db, current_user.id, company_id, tenant_id):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Company is not assigned to the authenticated user")
 
         branch_exists = (
             db.query(Branch.id)

@@ -8,6 +8,7 @@ from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
+from app.modules.companies.access import has_company_access
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 
@@ -45,6 +46,8 @@ def _authorized_company(db: Session, company_id: int, current_user: User) -> int
     if company is None:
         # Do not disclose whether a company exists in another tenant.
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
+    if not current_user.is_platform_admin and not has_company_access(db, current_user.id, company_id, tenant_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Company is not assigned to the authenticated user")
     return company
 
 

@@ -1,3 +1,8 @@
+from pydantic import BaseModel, Field, model_validator
+from sqlalchemy import delete, select
+
+from app.modules.audit.service import record_audit_event
+
 from fastapi import (
     APIRouter,
     Depends,
@@ -21,11 +26,28 @@ from app.modules.identity.schemas.user import (
 from app.modules.identity.services.user_service import UserService
 from app.core.schemas.pagination import PaginatedResponse
 from app.modules.saas.entitlements import enforce_user_limit
+from app.modules.companies.models import Company, user_company_access
+from app.modules.companies.access import assigned_company_ids
 
 router = APIRouter(
     prefix="/users",
     tags=["Users"],
 )
+
+
+class UserCompanyAccessUpdate(BaseModel):
+    company_ids: list[int] = Field(min_length=1, max_length=500)
+    default_company_id: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def validate_company_selection(self):
+        if len(self.company_ids) != len(set(self.company_ids)):
+            raise ValueError("Company IDs must be unique")
+        if self.default_company_id not in self.company_ids:
+            raise ValueError("Default company must be included in company_ids")
+        if any(company_id <= 0 for company_id in self.company_ids):
+            raise ValueError("Company IDs must be positive")
+        return self
 
 
 def require_admin(service: UserService) -> User:
@@ -62,6 +84,116 @@ def build_user_response(user: User) -> UserResponse:
         created_at=user.created_at,
         updated_at=user.updated_at,
     )
+
+
+@router.get("/{user_id}/companies/available", dependencies=[Depends(require_permission("users.access"))])
+def get_available_user_companies(user_id: int, service: UserService = Depends(get_user_service)):
+    current_user = require_admin(service)
+    target = service.get_by_id(user_id)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User was not found.")
+    tenant_id = target.tenant_id
+    if tenant_id is None or (not current_user.is_platform_admin and tenant_id != current_user.tenant_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User was not found.")
+    db = service.require_db()
+    companies = db.scalars(
+        select(Company)
+        .where(Company.tenant_id == tenant_id, Company.is_active.is_(True))
+        .order_by(Company.name, Company.id)
+    ).all()
+    return [{"id": company.id, "name": company.name, "code": company.code} for company in companies]
+
+
+@router.get("/{user_id}/companies", dependencies=[Depends(require_permission("users.access"))])
+def get_user_company_access(user_id: int, service: UserService = Depends(get_user_service)):
+    current_user = require_admin(service)
+    target = service.get_by_id(user_id)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User was not found.")
+    if current_user.is_platform_admin:
+        tenant_id = target.tenant_id
+    else:
+        tenant_id = current_user.tenant_id
+    if tenant_id is None or target.tenant_id != tenant_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User was not found.")
+    db = service.require_db()
+    company_ids = assigned_company_ids(db, target.id, tenant_id)
+    default_id = db.scalar(
+        select(user_company_access.c.company_id).where(
+            user_company_access.c.user_id == target.id,
+            user_company_access.c.is_default.is_(True),
+        )
+    )
+    return {"user_id": target.id, "company_ids": company_ids, "default_company_id": default_id}
+
+
+@router.put("/{user_id}/companies", dependencies=[Depends(require_permission("users.write"))])
+def update_user_company_access(
+    user_id: int,
+    payload: UserCompanyAccessUpdate,
+    service: UserService = Depends(get_user_service),
+):
+    current_user = require_admin(service)
+    if not current_user.is_platform_admin and not user_has_permission(
+        current_user, "users.write", service.require_db()
+    ):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User write permission is required.")
+    target = service.get_by_id(user_id)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User was not found.")
+    tenant_id = target.tenant_id
+    if tenant_id is None or (not current_user.is_platform_admin and tenant_id != current_user.tenant_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User was not found.")
+
+    db = service.require_db()
+    companies = list(db.scalars(
+        select(Company).where(
+            Company.id.in_(payload.company_ids),
+            Company.tenant_id == tenant_id,
+            Company.is_active.is_(True),
+        )
+    ).all())
+    if len(companies) != len(payload.company_ids):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Every selected company must be active and belong to the user's tenant.",
+        )
+
+    try:
+        db.execute(delete(user_company_access).where(user_company_access.c.user_id == target.id))
+        db.execute(
+            user_company_access.insert(),
+            [
+                {
+                    "user_id": target.id,
+                    "company_id": company_id,
+                    "is_default": company_id == payload.default_company_id,
+                }
+                for company_id in payload.company_ids
+            ],
+        )
+        record_audit_event(
+            db,
+            action="user.company_access_updated",
+            entity_type="user",
+            entity_id=target.id,
+            user_id=current_user.id,
+            tenant_id=tenant_id,
+            metadata={
+                "company_ids": sorted(payload.company_ids),
+                "default_company_id": payload.default_company_id,
+            },
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    return {
+        "user_id": target.id,
+        "company_ids": payload.company_ids,
+        "default_company_id": payload.default_company_id,
+    }
 
 
 @router.get("/", response_model=PaginatedResponse[UserResponse])

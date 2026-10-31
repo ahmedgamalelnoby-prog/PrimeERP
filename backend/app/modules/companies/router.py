@@ -6,11 +6,12 @@ from sqlalchemy.orm import Session
 from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
-from app.modules.companies.models import Company
+from app.modules.companies.models import Company, user_company_access
 from app.modules.companies.schemas import CompanyCreate, CompanyResponse, CompanyUpdate
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.saas.entitlements import enforce_company_limit
+from app.modules.companies.access import assigned_company_ids, has_company_access
 
 router = APIRouter(prefix="/companies", tags=["Companies"])
 
@@ -23,15 +24,28 @@ def _get_company(db: Session, company_id: int, user: User) -> Company:
     company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == _tenant_id(user)))
     if company is None:
         raise HTTPException(status_code=404, detail="Company not found")
+    if not user.is_platform_admin and not has_company_access(db, user.id, company.id, company.tenant_id):
+        raise HTTPException(status_code=403, detail="Company is not assigned to the authenticated user")
     return company
 
 
 @router.get("", response_model=list[CompanyResponse], dependencies=[Depends(require_permission("company.access"))])
 def list_companies(active_only: bool = Query(False), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    stmt = select(Company).where(Company.tenant_id == _tenant_id(current_user)).order_by(Company.name, Company.id)
+    tenant_id = _tenant_id(current_user)
+    stmt = select(Company).where(Company.tenant_id == tenant_id)
+    if not current_user.is_platform_admin:
+        stmt = (
+            select(Company)
+            .join(user_company_access, user_company_access.c.company_id == Company.id)
+            .where(
+                Company.tenant_id == tenant_id,
+                user_company_access.c.user_id == current_user.id,
+            )
+            .order_by(user_company_access.c.is_default.desc(), Company.name, Company.id)
+        )
     if active_only:
         stmt = stmt.where(Company.is_active.is_(True))
-    return list(db.scalars(stmt).all())
+    return list(db.scalars(stmt.order_by(Company.name, Company.id) if current_user.is_platform_admin else stmt).all())
 
 
 @router.get("/{company_id}", response_model=CompanyResponse, dependencies=[Depends(require_permission("company.access"))])
@@ -46,6 +60,18 @@ def create_company(payload: CompanyCreate, db: Session = Depends(get_db), curren
     company = Company(tenant_id=tenant_id, **payload.model_dump())
     db.add(company)
     try:
+        # Keep company creation and the creator's access grant in one
+        # transaction so a failed assignment cannot leave an orphaned company.
+        db.flush()
+        if not current_user.is_platform_admin:
+            has_existing_access = bool(assigned_company_ids(db, current_user.id, tenant_id))
+            db.execute(
+                user_company_access.insert().values(
+                    user_id=current_user.id,
+                    company_id=company.id,
+                    is_default=not has_existing_access,
+                )
+            )
         db.commit()
         db.refresh(company)
     except IntegrityError as exc:

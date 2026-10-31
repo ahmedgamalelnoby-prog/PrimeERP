@@ -18,7 +18,10 @@ def company_ok(db,company_id,user):
     from app.modules.companies.models import Company
     tenant_id = get_effective_tenant_id(user)
     if tenant_id is None: raise HTTPException(403,"User is not assigned to a tenant")
-    if not db.scalar(select(Company.id).where(Company.id==company_id,Company.tenant_id==tenant_id,Company.is_active.is_(True))): raise HTTPException(404,"Company not found")
+    company = db.scalar(select(Company).where(Company.id==company_id,Company.tenant_id==tenant_id,Company.is_active.is_(True)))
+    if company is None: raise HTTPException(404,"Company not found")
+    from app.modules.companies.access import has_company_access
+    if not user.is_platform_admin and not has_company_access(db,user.id,company.id,company.tenant_id): raise HTTPException(403,"Company is not assigned to the authenticated user")
     return tenant_id
 
 @router.post("/devices",response_model=DeviceResponse,dependencies=[Depends(require_permission("mobile.write"))])

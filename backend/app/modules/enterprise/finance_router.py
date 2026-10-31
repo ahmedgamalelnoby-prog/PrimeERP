@@ -23,14 +23,12 @@ router = APIRouter(
 )
 def company_ok(db, cid, user):
     tenant_id = get_effective_tenant_id(user)
-    if tenant_id is None or not db.scalar(
-        select(Company.id).where(
-            Company.id == cid,
-            Company.tenant_id == tenant_id,
-            Company.is_active.is_(True),
-        )
-    ):
+    company = db.scalar(select(Company).where(Company.id == cid, Company.tenant_id == tenant_id, Company.is_active.is_(True)))
+    if tenant_id is None or company is None:
         raise HTTPException(404, "Company not found")
+    from app.modules.companies.access import has_company_access
+    if not user.is_platform_admin and not has_company_access(db, user.id, company.id, company.tenant_id):
+        raise HTTPException(403, "Company is not assigned to the authenticated user")
 @router.post("/entities",response_model=EntityResponse,status_code=201,dependencies=[Depends(require_permission("enterprise.finance.write"))])
 def entity(p:EntityCreate,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     company_ok(db,p.company_id,user);o=FinanceEntity(**p.model_dump());db.add(o);db.commit();db.refresh(o);return o

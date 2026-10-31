@@ -25,6 +25,9 @@ def _company_for_user(db: Session, company_id: int, user: User) -> None:
         raise HTTPException(status_code=403, detail="Company is outside the current tenant")
     if not company.is_active:
         raise HTTPException(status_code=409, detail="Company is inactive")
+    from app.modules.companies.access import has_company_access
+    if not user.is_platform_admin and not has_company_access(db, user.id, company.id, company.tenant_id):
+        raise HTTPException(status_code=403, detail="Company is not assigned to the authenticated user")
 
 
 def _error(exc: ValueError):

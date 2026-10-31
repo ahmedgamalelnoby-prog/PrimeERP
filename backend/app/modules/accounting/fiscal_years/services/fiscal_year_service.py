@@ -25,6 +25,7 @@ from app.modules.accounting.fiscal_years.schemas import (
     FiscalYearUpdate,
 )
 from app.modules.companies.models import Company
+from app.modules.companies.access import has_company_access
 from app.modules.company_settings.service import get_company_setting
 from app.modules.identity.models import User
 
@@ -44,6 +45,7 @@ class FiscalYearService:
             db=db,
             tenant_id=tenant_id,
             company_id=payload.company_id,
+            current_user=current_user,
         )
         required_start_month = int(get_company_setting(db, payload.company_id, "accounting.fiscal_year_start_month"))
         if payload.start_date.month != required_start_month:
@@ -154,6 +156,12 @@ class FiscalYearService:
                 ),
                 detail="Fiscal year not found",
             )
+        self._validate_company(
+            db=db,
+            tenant_id=self._tenant_id(current_user),
+            company_id=fiscal_year.company_id,
+            current_user=current_user,
+        )
 
         return fiscal_year
 
@@ -171,6 +179,7 @@ class FiscalYearService:
             db=db,
             tenant_id=tenant_id,
             company_id=company_id,
+            current_user=current_user,
         )
 
         return (
@@ -626,6 +635,12 @@ class FiscalYearService:
         posting_date: date,
         current_user: User,
     ) -> AccountingPeriod:
+        self._validate_company(
+            db=db,
+            tenant_id=self._tenant_id(current_user),
+            company_id=company_id,
+            current_user=current_user,
+        )
         period = (
             fiscal_year_repository
             .get_period_for_date(
@@ -787,6 +802,12 @@ class FiscalYearService:
                 ),
                 detail="Fiscal year not found",
             )
+        self._validate_company(
+            db=db,
+            tenant_id=self._tenant_id(current_user),
+            company_id=fiscal_year.company_id,
+            current_user=current_user,
+        )
 
         return fiscal_year
 
@@ -823,6 +844,7 @@ class FiscalYearService:
         db: Session,
         tenant_id: int,
         company_id: int,
+        current_user: User,
     ) -> None:
         company = (
             db.query(Company.id)
@@ -844,6 +866,8 @@ class FiscalYearService:
                     "inside current tenant"
                 ),
             )
+        if not current_user.is_platform_admin and not has_company_access(db, current_user.id, company_id, tenant_id):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Company is not assigned to the authenticated user")
 
 
 fiscal_year_service = FiscalYearService()

@@ -24,7 +24,7 @@ class IntegrationProcessingError(RuntimeError):
 
 
 def _retry_delay(attempt: int) -> int:
-    return min(MAX_RETRY_SECONDS, BASE_RETRY_SECONDS ** min(max(attempt, 1), 8))
+    return min(MAX_RETRY_SECONDS, BASE_RETRY_SECONDS ** min(max(attempt, 1), 9))
 
 
 def claim_next_event(db: Session, *, company_id: int | None = None) -> IntegrationEvent | None:
