@@ -106,7 +106,7 @@ def test_accounting_treasury_pos_and_hr_enforce_assigned_company_access():
 
     transactions = read("app/modules/transactions/services/transaction_service.py")
     assert "has_company_access(db, current_user.id, company_id, tenant_id)" in transactions
-    assert "allowed_company_ids = assigned_company_ids(db, current_user.id, tenant_id)" in transactions
+    assert "allowed_company_ids = None if current_user.is_platform_admin else assigned_company_ids(db, current_user.id, tenant_id)" in transactions
     assert "transaction.company_id, transaction.tenant_id" in transactions
 
 
@@ -116,11 +116,15 @@ def test_hr_company_scoped_endpoints_use_authenticated_user_assignment():
     assert source.count("_company_for_user(db, company_id, current_user)") == 17
 
 
+
+
+def test_extended_company_scopes_are_enforced():
     chart_of_accounts = read("app/modules/accounting/chart_of_accounts/router.py")
     assert "has_company_access(db, current_user.id, company_id, tenant_id)" in chart_of_accounts
     assert "not current_user.is_platform_admin" in chart_of_accounts
     fiscal_years = read("app/modules/accounting/fiscal_years/services/fiscal_year_service.py")
     assert "has_company_access(db, current_user.id, company_id, tenant_id)" in fiscal_years
+    assert "current_user=current_user" in fiscal_years
     accounting_reports = read("app/modules/accounting/reports/router.py")
     assert "has_company_access(db, current_user.id, company_id, tenant_id(current_user))" in accounting_reports
     audit = read("app/modules/audit/router.py")
@@ -135,6 +139,6 @@ def test_number_sequences_are_limited_to_assigned_companies():
     router = read("app/modules/transactions/api/router.py")
     repository = read("app/modules/transactions/repositories/number_sequence_repository.py")
     assert "require_assigned_company(db, payload.company_id, current_user)" in router
-    assert "allowed_ids = assigned_company_ids(db, current_user.id, tenant_id)" in router
+    assert "allowed_ids = None if current_user.is_platform_admin else assigned_company_ids(db, current_user.id, tenant_id)" in router
     assert "company_ids=allowed_ids if company_id is None else None" in router
     assert "NumberSequence.company_id.in_(company_ids)" in repository
