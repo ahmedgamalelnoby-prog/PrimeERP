@@ -249,6 +249,14 @@ class TransactionService:
         update_data = payload.model_dump(
             exclude_unset=True
         )
+        # Company and branch are immutable after transaction creation. Moving a
+        # transaction would bypass the original company's authorization and
+        # accounting controls.
+        if "company_id" in update_data or "branch_id" in update_data:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Transaction company and branch cannot be changed",
+            )
         effective_project_id = update_data.get("project_id", transaction.project_id)
         self._validate_project(
             db,
@@ -458,6 +466,10 @@ class TransactionService:
 
         if transaction is None:
             self._raise_not_found()
+        if not current_user.is_platform_admin and not has_company_access(
+            db, current_user.id, transaction.company_id, transaction.tenant_id
+        ):
+            self._raise_not_found()
 
         if transaction.status not in {
             "draft",
@@ -533,6 +545,10 @@ class TransactionService:
         )
 
         if original is None:
+            self._raise_not_found()
+        if not current_user.is_platform_admin and not has_company_access(
+            db, current_user.id, original.company_id, original.tenant_id
+        ):
             self._raise_not_found()
 
         if original.status != "posted":
