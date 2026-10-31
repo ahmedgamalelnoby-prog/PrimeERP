@@ -10,6 +10,7 @@ from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.catalog.models import Menu, MenuItem, ProductPrice
 from app.modules.companies.models import Company
+from app.modules.companies.access import has_company_access
 from app.modules.company_settings.service import get_company_setting
 from app.modules.branches.models import Branch
 from app.modules.commerce.models import CommercePayment, SalesDocument, SalesLine
@@ -148,6 +149,8 @@ def _company(db: Session, company_id: int, user: User) -> Company:
     ))
     if company is None:
         raise HTTPException(403, "Company is outside the current tenant")
+    if not user.is_platform_admin and not has_company_access(db, user.id, company.id, company.tenant_id):
+        raise HTTPException(403, "Company is not assigned to the authenticated user")
     return company
 
 
