@@ -52,6 +52,12 @@ def test_accounting_treasury_pos_and_hr_enforce_assigned_company_access():
         "treasury/router.py": "def _company",
         "pos/router.py": "def _company",
         "hr/router.py": "def _company_for_user",
+        "commerce/router.py": "def _company_for_user",
+        "reports/router.py": "def _company_for_user",
+        "shipping/router.py": "def _company_for_user",
+        "inventory/transfers/router.py": "def _company_for_user",
+        "inventory/stock_moves/router.py": "def _company_for_user",
+        "enterprise/router.py": "def company_for_user",
     }
     for module, helper in modules.items():
         source = read(f"app/modules/{module}")
@@ -59,6 +65,14 @@ def test_accounting_treasury_pos_and_hr_enforce_assigned_company_access():
         assert helper in source
         assert "has_company_access(db, user.id, company.id, company.tenant_id)" in source
         assert "not user.is_platform_admin" in source
+
+    bank_reconciliation = read("app/modules/treasury/bank_reconciliation/service.py")
+    assert "has_company_access(db, user.id, company.id, company.tenant_id)" in bank_reconciliation
+
+    transactions = read("app/modules/transactions/services/transaction_service.py")
+    assert "has_company_access(db, current_user.id, company_id, tenant_id)" in transactions
+    assert "allowed_company_ids = assigned_company_ids(db, current_user.id, tenant_id)" in transactions
+    assert "transaction.company_id, transaction.tenant_id" in transactions
 
 
 def test_hr_company_scoped_endpoints_use_authenticated_user_assignment():
