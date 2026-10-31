@@ -8,6 +8,7 @@ from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
+from app.modules.companies.access import assigned_company_ids
 from .models import AuditEvent
 
 router = APIRouter(prefix="/audit", tags=["Audit"], dependencies=[Depends(require_permission("audit.access"))])
@@ -28,6 +29,10 @@ def list_audit_events(
     stmt = select(AuditEvent)
     if not current_user.is_platform_admin:
         stmt = stmt.where(AuditEvent.tenant_id == current_user.tenant_id)
+        allowed_company_ids = assigned_company_ids(db, current_user.id, current_user.tenant_id)
+        if company_id is not None and company_id not in allowed_company_ids:
+            raise HTTPException(403, "Company is not assigned to the authenticated user")
+        stmt = stmt.where((AuditEvent.company_id.is_(None)) | (AuditEvent.company_id.in_(allowed_company_ids)))
     if company_id is not None:
         stmt = stmt.where(AuditEvent.company_id == company_id)
     if entity_type:
