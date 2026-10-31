@@ -77,6 +77,15 @@ def test_accounting_treasury_pos_and_hr_enforce_assigned_company_access():
         "notifications/router.py": "def _company",
         "platform/developer/router.py": "def company_ok",
         "helpdesk_ai/router.py": "def _company_for_user",
+        "accounting/chart_of_accounts/router.py": "def _authorized_company",
+        "catalog/bundle_router.py": "def guard_company",
+        "catalog/pricing_engine_router.py": "def _company_for_user",
+        "catalog/variant_router.py": "def _company_for_user",
+        "enterprise/finance_router.py": "def company_ok",
+        "shipping/pricing_router.py": "def _company",
+        "shipping/reports_router.py": "def _company",
+        "shipping/settlement_router.py": "def _company_for_user",
+        "shipping/status_router.py": "def _company",
     }
     for module, helper in modules.items():
         source = read(f"app/modules/{module}")
@@ -106,6 +115,18 @@ def test_hr_company_scoped_endpoints_use_authenticated_user_assignment():
     source = read("app/modules/hr/router.py")
     assert "_company_for_tenant" not in source
     assert source.count("_company_for_user(db, company_id, current_user)") == 17
+
+
+    fiscal_years = read("app/modules/accounting/fiscal_years/services/fiscal_year_service.py")
+    assert "has_company_access(db, current_user.id, company_id, tenant_id)" in fiscal_years
+    accounting_reports = read("app/modules/accounting/reports/router.py")
+    assert "has_company_access(db, current_user.id, company_id, tenant_id(current_user))" in accounting_reports
+    audit = read("app/modules/audit/router.py")
+    assert "allowed_company_ids = assigned_company_ids(db, current_user.id, current_user.tenant_id)" in audit
+    shipping_accounting = read("app/modules/shipping/accounting_router.py")
+    assert "has_company_access(db, current_user.id, company.id, company.tenant_id)" in shipping_accounting
+    product_mapping = read("app/modules/integrations/product_mapping_router.py")
+    assert "has_company_access(db, user.id, row.company_id, row.tenant_id)" in product_mapping
 
 
 def test_number_sequences_are_limited_to_assigned_companies():
