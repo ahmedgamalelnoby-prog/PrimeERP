@@ -81,7 +81,6 @@ def test_accounting_treasury_pos_and_hr_enforce_assigned_company_access():
         "catalog/pricing_engine_router.py": "def _company_for_user",
         "catalog/variant_router.py": "def _company_for_user",
         "enterprise/finance_router.py": "def company_ok",
-        "shipping/pricing_router.py": "def _company",
         "shipping/reports_router.py": "def _company",
         "shipping/settlement_router.py": "def _company_for_user",
         "shipping/status_router.py": "def _company",
@@ -129,6 +128,8 @@ def test_extended_company_scopes_are_enforced():
     assert "has_company_access(db, current_user.id, company_id, tenant_id(current_user))" in accounting_reports
     audit = read("app/modules/audit/router.py")
     assert "allowed_company_ids = assigned_company_ids(db, current_user.id, current_user.tenant_id)" in audit
+    shipping_pricing = read("app/modules/shipping/pricing_router.py")
+    assert "has_company_access(db, user.id, obj.id, obj.tenant_id)" in shipping_pricing
     shipping_accounting = read("app/modules/shipping/accounting_router.py")
     assert "has_company_access(db, current_user.id, company.id, company.tenant_id)" in shipping_accounting
     product_mapping = read("app/modules/integrations/product_mapping_router.py")
