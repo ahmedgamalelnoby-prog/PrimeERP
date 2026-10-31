@@ -35,6 +35,9 @@ def _company(db: Session, company_id: int, user: User) -> Company:
     ))
     if company is None:
         raise HTTPException(404, "Active company not found in current tenant")
+    from app.modules.companies.access import has_company_access
+    if not user.is_platform_admin and not has_company_access(db, user.id, company.id, company.tenant_id):
+        raise HTTPException(403, "Company is not assigned to the authenticated user")
     return company
 
 
