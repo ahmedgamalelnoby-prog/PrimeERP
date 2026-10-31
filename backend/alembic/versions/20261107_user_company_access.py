@@ -8,7 +8,7 @@ import sqlalchemy as sa
 
 
 revision = "20261107_user_company_access"
-down_revision = "20261106_merge_inventory_approval_heads"
+down_revision = "d8f77511bacb"
 branch_labels = None
 depends_on = None
 
