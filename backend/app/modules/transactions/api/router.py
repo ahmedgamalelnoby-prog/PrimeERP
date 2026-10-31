@@ -42,7 +42,7 @@ def require_assigned_company(db: Session, company_id: int, current_user: User) -
     company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == tenant_id, Company.is_active.is_(True)))
     if company is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found in current tenant")
-    if not has_company_access(db, current_user.id, company.id, company.tenant_id):
+    if not current_user.is_platform_admin and not has_company_access(db, current_user.id, company.id, company.tenant_id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Company is not assigned to the authenticated user")
 
 
