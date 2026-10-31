@@ -26,7 +26,7 @@ def upgrade():
 
     op.execute(sa.text("""
         INSERT INTO user_company_access (user_id, company_id, is_default)
-        SELECT ranked.user_id, ranked.company_id, ranked.position = 1
+        SELECT ranked.user_id, ranked.company_id, TRUE
         FROM (
             SELECT u.id AS user_id,
                    c.id AS company_id,
@@ -35,6 +35,7 @@ def upgrade():
             JOIN companies c ON c.tenant_id = u.tenant_id
             WHERE u.tenant_id IS NOT NULL AND c.is_active IS TRUE
         ) AS ranked
+        WHERE ranked.position = 1
         ON CONFLICT (user_id, company_id) DO NOTHING
     """))
 
