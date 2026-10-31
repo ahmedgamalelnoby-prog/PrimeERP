@@ -66,6 +66,8 @@ def test_accounting_treasury_pos_and_hr_enforce_assigned_company_access():
         "crm/api.py": "def _company",
         "uom/router.py": "def _company_for_user",
         "operations/approvals/router.py": "def _company",
+        "inventory/items/router.py": "def _company_for_user",
+        "inventory/warehouses/router.py": "def _company_for_user",
     }
     for module, helper in modules.items():
         source = read(f"app/modules/{module}")
