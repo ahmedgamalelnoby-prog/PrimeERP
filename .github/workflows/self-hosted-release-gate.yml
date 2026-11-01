@@ -383,12 +383,25 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $deadline = (Get-Date).AddMinutes(10)
           while ((Get-Date) -lt $deadline) {
-            $backendContainer = "${env:PRIMEERP_CONTAINER_PREFIX}-backend"
-            $frontendContainer = "${env:PRIMEERP_CONTAINER_PREFIX}-frontend"
-            $workerContainer = "${env:PRIMEERP_CONTAINER_PREFIX}-report-worker"
-            $backendStatus = docker inspect -f '{{.State.Health.Status}}' $backendContainer 2>$null
-            $frontendStatus = docker inspect -f '{{.State.Health.Status}}' $frontendContainer 2>$null
-            $workerStatus = docker inspect -f '{{.State.Status}}' $workerContainer 2>$null
+            # Resolve IDs from Compose; container names include an instance suffix.
+            $backendContainer = (docker compose ps -q backend | Select-Object -First 1)
+            $frontendContainer = (docker compose ps -q frontend | Select-Object -First 1)
+            $workerContainer = (docker compose ps -q report-worker | Select-Object -First 1)
+
+            $backendStatus = 'missing'
+            $frontendStatus = 'missing'
+            $workerStatus = 'missing'
+            if ($backendContainer) {
+              $backendStatus = docker inspect -f '{{.State.Health.Status}}' $backendContainer 2>$null
+            }
+            if ($frontendContainer) {
+              $frontendStatus = docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' $frontendContainer 2>$null
+            }
+            if ($workerContainer) {
+              $workerStatus = docker inspect -f '{{.State.Status}}' $workerContainer 2>$null
+            }
+
+            Write-Host "Runtime states: backend=$backendStatus frontend=$frontendStatus worker=$workerStatus"
             if ($backendStatus -eq 'healthy' -and $frontendStatus -eq 'healthy' -and $workerStatus -eq 'running') {
               Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:$env:FRONTEND_HOST_PORT/" | Out-Null
               Write-Host 'Runtime health: PASS'
