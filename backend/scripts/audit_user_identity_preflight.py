@@ -35,16 +35,64 @@ def _duplicate_groups(connection, column: str) -> list[dict[str, Any]]:
 
 
 def _duplicate_primary_keys(connection) -> list[dict[str, Any]]:
+    # Include the owning relation in the physical locator. ctid is only unique
+    # within one relation, so two inherited tables can legitimately both have
+    # a tuple at (0, 5). A primary key/index on the parent does not protect
+    # rows stored in traditional inheritance children.
     result = connection.execute(
         text(
             """
             SELECT id,
-                   array_agg(ctid::text ORDER BY ctid) AS physical_tuples,
+                   array_agg(
+                       format('%s:%s', tableoid::regclass, ctid::text)
+                       ORDER BY tableoid::regclass::text, ctid
+                   ) AS physical_tuples,
                    count(*) AS row_count
             FROM public.users
             GROUP BY id
             HAVING count(*) > 1
             ORDER BY id
+            """
+        )
+    ).mappings()
+    return [dict(row) for row in result]
+
+
+def _inheritance_relations(connection) -> list[dict[str, Any]]:
+    # PostgreSQL queries against a non-partitioned parent include traditional
+    # inheritance children unless ONLY is specified. Report descendants so
+    # duplicate IDs can be attributed to their actual physical tables.
+    result = connection.execute(
+        text(
+            """
+            WITH RECURSIVE descendants AS (
+                SELECT inhparent, inhrelid, 1 AS depth
+                FROM pg_inherits
+                WHERE inhparent = 'public.users'::regclass
+
+                UNION ALL
+
+                SELECT i.inhparent, i.inhrelid, d.depth + 1
+                FROM pg_inherits AS i
+                JOIN descendants AS d ON i.inhparent = d.inhrelid
+            )
+            SELECT
+                parent_ns.nspname || '.' || parent.relname AS parent_table,
+                child_ns.nspname || '.' || child.relname AS child_table,
+                child.relispartition AS is_partition,
+                d.depth,
+                EXISTS (
+                    SELECT 1
+                    FROM pg_index AS idx
+                    WHERE idx.indrelid = child.oid
+                      AND idx.indisprimary
+                ) AS child_has_primary_key
+            FROM descendants AS d
+            JOIN pg_class AS parent ON parent.oid = d.inhparent
+            JOIN pg_namespace AS parent_ns ON parent_ns.oid = parent.relnamespace
+            JOIN pg_class AS child ON child.oid = d.inhrelid
+            JOIN pg_namespace AS child_ns ON child_ns.oid = child.relnamespace
+            ORDER BY d.depth, child_ns.nspname, child.relname
             """
         )
     ).mappings()
@@ -122,11 +170,6 @@ def main() -> int:
             connection.exec_driver_sql("SET LOCAL enable_indexonlyscan = off")
             connection.exec_driver_sql("SET LOCAL enable_bitmapscan = off")
 
-            # A brand-new database has no application tables yet. The preflight
-            # runs before Alembic in CI/deployment, so absence of users is a
-            # valid not-yet-initialized state, not an identity-integrity failure.
-            # The migration performs its own duplicate checks once the table
-            # exists in the migration sequence.
             if not inspect(connection).has_table("users", schema="public"):
                 report = {
                     "status": "skipped",
@@ -140,6 +183,7 @@ def main() -> int:
             duplicate_usernames = _duplicate_groups(connection, "username")
             duplicate_emails = _duplicate_groups(connection, "email")
             duplicate_primary_keys = _duplicate_primary_keys(connection)
+            inheritance_relations = _inheritance_relations(connection)
 
             duplicate_ids = sorted(
                 {
@@ -154,11 +198,13 @@ def main() -> int:
                 rows = connection.execute(
                     text(
                         """
-                        SELECT ctid::text AS physical_tuple, id, tenant_id,
-                               username, email, xmin::text AS inserting_transaction
+                        SELECT tableoid::regclass::text AS source_relation,
+                               ctid::text AS physical_tuple,
+                               id, tenant_id, username, email,
+                               xmin::text AS inserting_transaction
                         FROM public.users
                         WHERE id = ANY(:user_ids)
-                        ORDER BY id, ctid
+                        ORDER BY id, tableoid::regclass::text, ctid
                         """
                     ),
                     {"user_ids": duplicate_ids},
@@ -175,6 +221,7 @@ def main() -> int:
         "duplicate_emails": duplicate_emails,
         "duplicate_primary_keys": duplicate_primary_keys,
         "physical_user_rows": physical_rows,
+        "users_inheritance_relations": inheritance_relations,
         "foreign_key_references": references,
         "mutations_performed": False,
     }
@@ -182,8 +229,8 @@ def main() -> int:
 
     if report["status"] == "blocked":
         print(
-            "Preflight failed. Review duplicate physical rows and all reported "
-            "dependent records before attempting any repair."
+            "Preflight failed. Review the source_relation for every physical row "
+            "and all reported dependent records before attempting any repair."
         )
         return 1
 
