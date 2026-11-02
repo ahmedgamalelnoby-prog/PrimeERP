@@ -21,7 +21,7 @@ from app.modules.accounting.journals.models import AccountingJournal, JournalEnt
 from app.modules.accounting.journals.services.journal_service import journal_service
 from app.modules.company_settings.service import get_company_setting
 from app.modules.audit.service import record_audit_event
-from app.modules.company_settings.consumers.approvals import payroll_approval_required
+from app.modules.company_settings.consumers.approvals import approval_mode, payroll_approval_required
 from app.modules.operations.approvals.models import ApprovalRequest
 from app.modules.operations.approvals.schemas import ApprovalDecision
 from app.modules.operations.approvals.service import create_approval_request, decide_approval
@@ -226,7 +226,7 @@ def submit_payroll_run(
                 entity_type="payroll_run",
                 entity_id=run.id,
                 title=f"Payroll approval for {run.period}",
-                mode="sequential",
+                mode=approval_mode(db, company_id),
                 approver_ids=payload.approver_ids,
             )
             run.status = "pending_approval"

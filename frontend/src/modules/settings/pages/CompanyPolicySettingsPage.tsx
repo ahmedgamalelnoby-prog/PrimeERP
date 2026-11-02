@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, Building2, Loader2, Save, Search, ShieldCheck, SlidersHorizontal } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import client from "@/shared/api/client";
 import i18n from "@/shared/i18n/i18n";
@@ -25,12 +25,12 @@ const categoryAr:Record<string,string> = {
   Sales:"المبيعات والعملاء", Purchasing:"المشتريات والموردون", Inventory:"المخزون والمستودعات",
   "Human Resources":"الموارد البشرية والحضور والرواتب", Approvals:"الموافقات ودورة العمل",
   "Point of Sale":"نقاط البيع", Manufacturing:"التصنيع", CRM:"إدارة العملاء",
-  Integrations:"التكاملات الخارجية", "Messaging & Notifications":"الرسائل والإشعارات", "Security & Audit":"الأمان والمراجعة"
+  Integrations:"التكاملات الخارجية", "Messaging & Notifications":"الرسائل والإشعارات", Reporting:"التقارير والتصدير", "Security & Audit":"الأمان والمراجعة"
 };
 const moduleAr:Record<string,string> = {
   general:"عام", accounting:"المحاسبة", taxes:"الضرائب", "egyptian-einvoice":"الفاتورة الإلكترونية",
   sales:"المبيعات", purchasing:"المشتريات", inventory:"المخزون", hr:"الموارد البشرية",
-  approvals:"الموافقات", pos:"نقاط البيع", manufacturing:"التصنيع", crm:"إدارة العملاء",
+  approvals:"الموافقات", pos:"نقاط البيع", manufacturing:"التصنيع", crm:"إدارة العملاء", reports:"التقارير",
   integrations:"التكاملات", audit:"المراجعة"
 };
 
@@ -39,7 +39,8 @@ export default function CompanyPolicySettingsPage() {
   const [companyId,setCompanyId] = useState<number>(getInitialCompanyId());
   const [payload,setPayload] = useState<Payload|null>(null);
   const [values,setValues] = useState<Record<string,any>>({});
-  const [activeCategory,setActiveCategory] = useState("General");
+  const [searchParams] = useSearchParams();
+  const [activeCategory,setActiveCategory] = useState(() => searchParams.get("category") || "General");
   const [loading,setLoading] = useState(true);
   const [saving,setSaving] = useState(false);
   const [search,setSearch] = useState("");
@@ -53,6 +54,11 @@ export default function CompanyPolicySettingsPage() {
     }).catch((e:any)=>toast.error(e?.response?.data?.detail ?? "تعذر تحميل الشركات"))
       .finally(()=>setLoading(false));
   }, []);
+
+  useEffect(() => {
+    const requestedCategory = searchParams.get("category");
+    if (requestedCategory) setActiveCategory(requestedCategory);
+  }, [searchParams]);
 
   useEffect(() => {
     if (!companyId) { setPayload(null); return; }

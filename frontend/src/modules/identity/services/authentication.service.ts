@@ -1,109 +1,33 @@
 import client from "@/shared/api/client";
 import { storage } from "@/shared/utils/storage";
 
-export interface LoginRequest {
-  login: string;
-  password: string;
-  tenant_slug?: string | null;
-  tenant_name?: string | null;
-}
+import type { LoginPayload, LoginResponse } from "../types/auth";
+import type { AuthenticatedUser } from "../types/user";
 
-export interface RegisterRequest {
-  business_name: string;
-  owner_name: string;
-  username: string;
-  email: string;
-  mobile: string;
-  password: string;
-}
+export type LoginRequest = LoginPayload;
 
-export interface RegisterResponse {
-  success: boolean;
-  message: string;
-  tenant_id?: number;
-  user_id?: number;
-  tenant_slug?: string;
-}
-
-export interface AuthenticatedUser {
-  id: number;
-  tenant_id: number | null;
-  username: string;
-  email: string;
-  full_name: string | null;
-  role_id: number | null;
-  is_active: boolean;
-  is_superuser: boolean;
-  is_platform_admin: boolean;
-  preferred_language: string | null;
-  tenant_slug: string | null;
-  tenant_name: string | null;
-  tenant_status: string | null;
-  subscription_status: string | null;
-  enabled_modules: string[];
-}
-
-export interface LoginResponse {
-  access_token: string;
-  refresh_token: string;
-  token_type: string;
-  expires_in: number;
-  user: AuthenticatedUser;
-}
-
-async function register(
-  payload: RegisterRequest,
-): Promise<RegisterResponse> {
-  const requestPayload: RegisterRequest = {
-    business_name: payload.business_name.trim(),
-    owner_name: payload.owner_name.trim(),
-    username: payload.username.trim(),
-    email: payload.email.trim().toLowerCase(),
-    mobile: payload.mobile.trim(),
-    password: payload.password,
-  };
-
-  const response =
-    await client.post<RegisterResponse>(
-      "/identity/register",
-      requestPayload,
-    );
-
-  return response.data;
-}
-
-async function login(
-  payload: LoginRequest,
-): Promise<LoginResponse> {
+async function login(payload: LoginPayload): Promise<LoginResponse> {
   const loginValue = payload.login.trim();
 
   if (!loginValue) {
-    throw new Error(
-      "Username or email is required.",
-    );
+    throw new Error("Username or email is required.");
   }
 
   if (!payload.password) {
-    throw new Error(
-      "Password is required.",
-    );
+    throw new Error("Password is required.");
   }
 
-  const tenantSlug = payload.tenant_slug?.trim() || null;
-  const tenantName = payload.tenant_name?.trim() || null;
-
-  const requestPayload: LoginRequest = {
+  const requestPayload: LoginPayload = {
     login: loginValue,
     password: payload.password,
-    tenant_slug: tenantSlug,
-    tenant_name: tenantName,
+    tenant_slug: payload.tenant_slug?.trim() || null,
+    tenant_name: payload.tenant_name?.trim() || null,
   };
 
-  const response =
-    await client.post<LoginResponse>(
-      "/identity/login",
-      requestPayload,
-    );
+  const response = await client.post<LoginResponse>(
+    "/identity/login",
+    requestPayload,
+  );
 
   storage.setTokens(
     response.data.access_token,
@@ -115,20 +39,26 @@ async function login(
 }
 
 async function logout(): Promise<void> {
+  const refreshToken = storage.getRefreshToken();
   storage.clear();
+
+  if (!refreshToken) return;
+
+  try {
+    await client.post("/identity/logout", {
+      refresh_token: refreshToken,
+    });
+  } catch {
+    // The local session is already cleared; server-side expiry remains the fallback.
+  }
 }
 
 async function getCurrentUser(): Promise<AuthenticatedUser> {
-  const response =
-    await client.get<AuthenticatedUser>(
-      "/identity/me",
-    );
-
+  const response = await client.get<AuthenticatedUser>("/identity/me");
   return response.data;
 }
 
 export const authService = {
-  register,
   login,
   logout,
   getCurrentUser,

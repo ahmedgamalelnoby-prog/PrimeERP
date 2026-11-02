@@ -68,7 +68,7 @@ function NavigationNode({
           <ChevronDown className={["h-4 w-4 shrink-0 text-slate-500 transition-transform", forceExpanded || expanded ? "rotate-180" : ""].join(" ")} />
         </button>
         {(forceExpanded || expanded) && (
-          <div className="mr-4 space-y-1 border-r border-white/10 pr-3">
+          <div className="ms-4 space-y-1 border-s border-white/10 ps-3">
             {item.children?.map((child) => (
               <NavigationNode key={child.id} item={child} pathname={pathname} onNavigate={onNavigate} forceExpanded={forceExpanded} />
             ))}
@@ -93,7 +93,7 @@ function NavigationNode({
     >
       {Icon && <Icon className="h-[18px] w-[18px] shrink-0 text-slate-400 transition-colors group-hover:text-cyan-300" />}
       <span className="truncate">{item.labelAr}</span>
-      {item.isNew && <span className="mr-auto rounded-full border border-cyan-300/20 bg-cyan-300/10 px-1.5 py-0.5 text-[9px] font-bold text-cyan-200">جديد</span>}
+      {item.isNew && <span className="ms-auto rounded-full border border-cyan-300/20 bg-cyan-300/10 px-1.5 py-0.5 text-[9px] font-bold text-cyan-200">جديد</span>}
     </NavLink>
   );
 }
@@ -115,14 +115,14 @@ export default function AppSidebar({ open, onClose }: AppSidebarProps) {
     <>
       {open && <button type="button" aria-label="إغلاق القائمة" className="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-sm lg:hidden" onClick={onClose} />}
       <aside className={[
-        "fixed right-0 top-0 z-50 flex h-screen w-[286px] flex-col overflow-hidden",
-        "border-l border-slate-800 bg-[#0b1730] text-white shadow-2xl shadow-slate-950/20",
+        "fixed inset-y-0 end-0 z-50 flex h-screen w-[286px] flex-col overflow-hidden",
+        "border-s border-slate-800 bg-[#0b1730] text-white shadow-2xl shadow-slate-950/20",
         "transition-transform duration-300",
-        open ? "translate-x-0" : "translate-x-full",
+        open ? "translate-x-0" : "translate-x-full rtl:translate-x-full ltr:-translate-x-full",
         "lg:translate-x-0",
       ].join(" ")}>
         <div className="relative overflow-hidden border-b border-white/10 px-5 pb-5 pt-5">
-          <div className="absolute -left-10 -top-14 h-32 w-32 rounded-full bg-cyan-400/10 blur-3xl" />
+          <div className="absolute -start-10 -top-14 h-32 w-32 rounded-full bg-cyan-400/10 blur-3xl" />
           <div className="relative flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-200/20 bg-gradient-to-br from-blue-500 to-cyan-400 shadow-lg shadow-blue-950/40">
@@ -140,22 +140,22 @@ export default function AppSidebar({ open, onClose }: AppSidebarProps) {
           <div className="mt-5 flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2">
             <Activity className="h-4 w-4 text-emerald-300" />
             <span className="text-xs font-medium text-slate-300">مساحة العمل</span>
-            <span className="mr-auto flex items-center gap-1.5 text-[10px] text-emerald-300"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> متصل</span>
+            <span className="ms-auto flex items-center gap-1.5 text-[10px] text-emerald-300"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> متصل</span>
           </div>
         </div>
 
         <div className="px-4 pb-3 pt-4">
           <label htmlFor="primeerp-navigation-search" className="sr-only">ابحث في القائمة</label>
           <div className="relative">
-            <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+            <Search className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
             <Input
               id="primeerp-navigation-search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="ابحث عن شاشة أو موديول..."
-              className="h-10 border-white/10 bg-white/[0.06] pr-9 text-xs text-white placeholder:text-slate-500 focus-visible:ring-cyan-400/50"
+              className="h-10 border-white/10 bg-white/[0.06] pe-9 text-xs text-white placeholder:text-slate-500 focus-visible:ring-cyan-400/50"
             />
-            {search && <button type="button" aria-label="مسح البحث" onClick={() => setSearch("")} className="absolute left-2 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:text-white"><X className="h-3.5 w-3.5" /></button>}
+            {search && <button type="button" aria-label="مسح البحث" onClick={() => setSearch("")} className="absolute start-2 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:text-white"><X className="h-3.5 w-3.5" /></button>}
           </div>
         </div>
 

@@ -281,8 +281,6 @@ export default function RegisterPage() {
     : "Main Branch",
 };
 
-console.log("Registration payload:", payload);
-
     try {
       setIsLoading(true);
 
@@ -305,11 +303,6 @@ console.log("Registration payload:", payload);
     } catch (
       submitError: unknown
     ) {
-      console.error(
-        "Registration failed:",
-        submitError,
-      );
-
       if (
         axios.isAxiosError(
           submitError,

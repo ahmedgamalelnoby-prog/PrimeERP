@@ -54,3 +54,81 @@ def test_manifest_provider_is_deterministic_and_tenant_scoped():
     payload = render_payload(definition, delivery)
     assert '"company_id": 7' in payload
     assert '"branch_id": 2' in payload
+
+
+
+def test_worker_pauses_delivery_when_company_policy_is_disabled(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.modules.reports import worker
+
+    class FakeDB:
+        committed = False
+
+        def commit(self):
+            self.committed = True
+
+        def get(self, *_args, **_kwargs):
+            raise AssertionError("must not load or deliver a report while policy is disabled")
+
+    delivery = SimpleNamespace(
+        company_id=7,
+        report_definition_id=3,
+        last_status=None,
+        last_error=None,
+        next_run_at=datetime(2026, 9, 15, 10, 0, tzinfo=timezone.utc),
+        locked_until=datetime(2026, 9, 15, 10, 5, tzinfo=timezone.utc),
+        locked_by="worker-test",
+    )
+    monkeypatch.setattr(worker, "policy", lambda db, company_id, key: False)
+    monkeypatch.setattr(
+        worker,
+        "create_attempt",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("no delivery attempt expected")),
+    )
+    db = FakeDB()
+
+    worker.process_delivery(db, delivery)
+
+    assert delivery.last_status == "paused_policy"
+    assert delivery.next_run_at is None
+    assert delivery.locked_until is None
+    assert delivery.locked_by is None
+    assert "policy is disabled or invalid" in delivery.last_error
+    assert db.committed is True
+
+
+def test_worker_fails_closed_when_company_policy_cannot_be_read(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.modules.reports import worker
+
+    class FakeDB:
+        committed = False
+
+        def commit(self):
+            self.committed = True
+
+        def get(self, *_args, **_kwargs):
+            raise AssertionError("must not load report after a policy lookup failure")
+
+    delivery = SimpleNamespace(
+        company_id=7,
+        report_definition_id=3,
+        last_status=None,
+        last_error=None,
+        next_run_at=datetime(2026, 9, 15, 10, 0, tzinfo=timezone.utc),
+        locked_until=None,
+        locked_by=None,
+    )
+
+    def broken_policy(*_args, **_kwargs):
+        raise RuntimeError("settings database unavailable")
+
+    monkeypatch.setattr(worker, "policy", broken_policy)
+    db = FakeDB()
+    worker.process_delivery(db, delivery)
+
+    assert delivery.last_status == "paused_policy"
+    assert delivery.next_run_at is None
+    assert db.committed is True
