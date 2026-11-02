@@ -23,52 +23,52 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
     : user?.role_name || user?.role || "مستخدم النظام";
 
   return (
-    <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
+    <header className="sticky top-0 z-30 border-b border-border/80 bg-card/90 backdrop-blur-xl">
       <div className="flex h-[76px] items-center justify-between gap-3 px-4 sm:px-6 xl:px-8">
         <div className="flex min-w-0 items-center gap-3">
-          <Button type="button" variant="outline" size="icon" className="h-10 w-10 shrink-0 rounded-xl border-slate-200 bg-white lg:hidden" onClick={onMenuClick} aria-label="فتح القائمة">
+          <Button type="button" variant="outline" size="icon" className="h-10 w-10 shrink-0 rounded-xl border-border bg-card lg:hidden" onClick={onMenuClick} aria-label="فتح القائمة">
             <Menu className="h-5 w-5" />
           </Button>
           <div className="min-w-0">
-            <div className="mb-1 hidden items-center gap-1.5 text-[11px] font-medium text-slate-400 sm:flex">
+            <div className="mb-1 hidden items-center gap-1.5 text-[11px] font-medium text-muted-foreground sm:flex">
               <Command className="h-3.5 w-3.5" />
               <span>PrimeERP</span>
-              {parentItem && <><ChevronLeft className="h-3 w-3" /><span>{parentItem.labelAr}</span></>}
-              {currentItem && <><ChevronLeft className="h-3 w-3" /><span className="text-slate-600">{currentItem.labelAr}</span></>}
+              {parentItem && <><ChevronLeft className="h-3 w-3 rtl:rotate-180" /><span>{parentItem.labelAr}</span></>}
+              {currentItem && <><ChevronLeft className="h-3 w-3 rtl:rotate-180" /><span className="text-foreground/80">{currentItem.labelAr}</span></>}
             </div>
-            <h1 className="truncate text-base font-extrabold tracking-tight text-slate-900 sm:text-lg">
+            <h1 className="truncate text-base font-extrabold tracking-tight text-foreground sm:text-lg">
               {currentItem?.labelAr || (location.pathname === "/dashboard" ? "لوحة التحكم" : "مساحة العمل")}
             </h1>
-            <p className="mt-0.5 hidden max-w-[44vw] truncate text-xs text-slate-500 md:block">
+            <p className="mt-0.5 hidden max-w-[44vw] truncate text-xs text-muted-foreground md:block">
               {user?.tenant_name || "منصة إدارة الأعمال المتكاملة"} · متابعة مترابطة للأعمال والعمليات
             </p>
           </div>
         </div>
 
         <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-          <Button type="button" variant="outline" size="icon" className="hidden h-10 w-10 rounded-xl border-slate-200 text-slate-600 hover:bg-blue-50 hover:text-blue-700 sm:inline-flex" onClick={() => navigate("/settings")} aria-label="الإعدادات" title="الإعدادات">
+          <Button type="button" variant="outline" size="icon" className="hidden h-10 w-10 rounded-xl border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground sm:inline-flex" onClick={() => navigate("/settings")} aria-label="الإعدادات" title="الإعدادات">
             <Settings2 className="h-4 w-4" />
           </Button>
-          <Button type="button" variant="outline" size="icon" className="relative h-10 w-10 rounded-xl border-slate-200 text-slate-600 hover:bg-blue-50 hover:text-blue-700" onClick={() => navigate("/notifications")} aria-label="الرسائل والإشعارات" title="الرسائل والإشعارات">
+          <Button type="button" variant="outline" size="icon" className="relative h-10 w-10 rounded-xl border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground" onClick={() => navigate("/notifications")} aria-label="الرسائل والإشعارات" title="الرسائل والإشعارات">
             <Bell className="h-4 w-4" />
-            <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-cyan-500 ring-2 ring-white" />
+            <span className="absolute end-2 top-2 h-1.5 w-1.5 rounded-full bg-primary ring-2 ring-card" />
           </Button>
-          <div className="hidden h-9 w-px bg-slate-200 sm:block" />
+          <div className="hidden h-9 w-px bg-border sm:block" />
           <div className="hidden items-center gap-2.5 sm:flex">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-cyan-500 text-white shadow-md shadow-blue-500/20">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary/70 text-primary-foreground shadow-md">
               {user?.is_platform_admin || user?.is_superuser ? <ShieldCheck className="h-5 w-5" /> : <UserCircle2 className="h-5 w-5" />}
             </div>
             <div className="max-w-36">
-              <p className="truncate text-xs font-bold text-slate-800">{userName}</p>
-              <p className="mt-1 truncate text-[10px] text-slate-500">{roleName}</p>
+              <p className="truncate text-xs font-bold text-foreground">{userName}</p>
+              <p className="mt-1 truncate text-[10px] text-muted-foreground">{roleName}</p>
             </div>
           </div>
-          <Button type="button" variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-slate-500 hover:bg-rose-50 hover:text-rose-600" onClick={handleLogout} aria-label="تسجيل الخروج" title="تسجيل الخروج">
+          <Button type="button" variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive" onClick={handleLogout} aria-label="تسجيل الخروج" title="تسجيل الخروج">
             <LogOut className="h-4 w-4" />
           </Button>
         </div>
       </div>
-      <div className="h-[2px] bg-gradient-to-l from-blue-700 via-blue-500 to-cyan-400" />
+      <div className="h-[2px] bg-gradient-to-l rtl:bg-gradient-to-r from-primary via-primary/70 to-accent" />
     </header>
   );
 }
