@@ -70,3 +70,5 @@ release_gate_smoke.db
 *.dump
 forensic_backup_*/
 *.sql
+users_clean.csv
+*.csv
