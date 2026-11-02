@@ -24,12 +24,45 @@ def upgrade() -> None:
     connection.exec_driver_sql("SET LOCAL enable_bitmapscan = off")
 
     duplicate_primary_keys = connection.execute(sa.text("""
-        SELECT id, array_agg(ctid::text ORDER BY ctid) AS physical_tuples,
+        SELECT id,
+               array_agg(
+                   format('%s:%s', tableoid::regclass, ctid::text)
+                   ORDER BY tableoid::regclass::text, ctid
+               ) AS physical_tuples,
                count(*) AS row_count
         FROM users
         GROUP BY id
         HAVING count(*) > 1
         ORDER BY id
+    """)).mappings().all()
+
+    # Traditional PostgreSQL inheritance children are scanned by queries
+    # against the parent, but do not inherit its unique indexes/constraints.
+    # Stop before DDL rather than claiming global uniqueness while descendants
+    # remain outside the parent index.
+    inherited_children = connection.execute(sa.text("""
+        WITH RECURSIVE descendants AS (
+            SELECT inhparent, inhrelid, 1 AS depth
+            FROM pg_inherits
+            WHERE inhparent = 'public.users'::regclass
+
+            UNION ALL
+
+            SELECT i.inhparent, i.inhrelid, d.depth + 1
+            FROM pg_inherits i
+            JOIN descendants d ON i.inhparent = d.inhrelid
+        )
+        SELECT
+            parent_ns.nspname || '.' || parent.relname AS parent_table,
+            child_ns.nspname || '.' || child.relname AS child_table,
+            child.relispartition AS is_partition,
+            d.depth
+        FROM descendants d
+        JOIN pg_class parent ON parent.oid = d.inhparent
+        JOIN pg_namespace parent_ns ON parent_ns.oid = parent.relnamespace
+        JOIN pg_class child ON child.oid = d.inhrelid
+        JOIN pg_namespace child_ns ON child_ns.oid = child.relnamespace
+        ORDER BY d.depth, child_ns.nspname, child.relname
     """)).mappings().all()
 
     duplicate_usernames = connection.execute(sa.text("""
@@ -47,12 +80,18 @@ def upgrade() -> None:
         ORDER BY normalized
     """)).mappings().all()
 
-    if duplicate_primary_keys or duplicate_usernames or duplicate_emails:
+    if duplicate_primary_keys or duplicate_usernames or duplicate_emails or inherited_children:
         details = []
         if duplicate_primary_keys:
             details.append("duplicate primary keys: " + "; ".join(
                 f"user ID {row['id']} at physical tuples {row['physical_tuples']}"
                 for row in duplicate_primary_keys
+            ))
+        if inherited_children:
+            details.append("users inheritance descendants: " + "; ".join(
+                f"{row['parent_table']} -> {row['child_table']} "
+                f"(partition={row['is_partition']}, depth={row['depth']})"
+                for row in inherited_children
             ))
         if duplicate_usernames:
             details.append("duplicate usernames: " + "; ".join(
