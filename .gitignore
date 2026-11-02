@@ -68,3 +68,9 @@ backend/primeerp_new.db
 backend/release_gate_smoke.db
 release_gate_smoke.db
 
+PrimeERP_Navigation_Audit.txt
+*.dump
+forensic_backup_*/
+*.sql
+users_clean.csv
+*.csv
