@@ -69,10 +69,10 @@ _RAW = [
     ("hr.default_work_hours_per_day","hr","Human Resources","number",8,"Daily standard hours deducted from recorded attendance when calculating eligible overtime",None,"runtime"),
     ("hr.biometric_sync_interval_minutes","hr","Human Resources","int",15,"Target sync interval for biometric integrations; scheduler/connector must consume this value",None,"catalog"),
     # Approvals / operations / POS
-    ("workflow.approval_mode","approvals","Approvals","enum","sequential","Approval mode helper exists, but end-to-end workflow consumers are not yet verified",["sequential","parallel","any_one"],"catalog"),
+    ("workflow.approval_mode","approvals","Approvals","enum","sequential","Approval ordering semantics consumed by generic approvals and payroll approval requests",["sequential","parallel","any_one"],"runtime"),
     ("workflow.allow_self_approval","approvals","Approvals","bool",False,"Allow requester to approve their own request",None,"runtime"),
-    ("workflow.escalation_after_hours","approvals","Approvals","int",24,"Escalation threshold helper exists, but end-to-end escalation consumption is not yet verified",None,"catalog"),
-    ("pos.allow_open_cash_drawer","pos","Point of Sale","bool",False,"Allow cash drawer opening without a transaction; no standalone drawer-open endpoint is wired to this policy yet",None,"catalog"),
+    ("workflow.escalation_after_hours","approvals","Approvals","int",24,"Escalation SLA consumed by the approval escalation worker for in-app reminders",None,"runtime"),
+    ("pos.allow_open_cash_drawer","pos","Point of Sale","bool",False,"Authorize standalone cash-drawer opening requests; physical opening still requires a configured terminal driver",None,"catalog"),
     ("pos.require_shift_close","pos","Point of Sale","bool",True,"Require cashier shift closing and reconciliation",None,"runtime"),
     ("pos.allow_discount_without_approval","pos","Point of Sale","bool",False,"Allow cashier discounts without approval",None,"runtime"),
     ("pos.max_discount_pct_without_approval","pos","Point of Sale","number",0,"Maximum discount without approval",None,"runtime"),
@@ -86,7 +86,11 @@ _RAW = [
     ("notifications.email_enabled","notifications","Messaging & Notifications","bool",False,"Enable company email delivery when SMTP is configured",None,"runtime"),
     ("notifications.whatsapp_enabled","notifications","Messaging & Notifications","bool",False,"Enable company WhatsApp delivery when provider credentials are configured",None,"runtime"),
     ("notifications.retry_limit","notifications","Messaging & Notifications","int",3,"Retry count for transient outbound message failures",None,"runtime"),
-    
+    # Reporting preferences remain catalog-only until export endpoints, scheduler, and audit consumers enforce them.
+    ("reports.default_export_format","reports","Reporting","enum","json","Default format for scheduled report manifests; currently supported formats are JSON and text",["json","text"],"runtime"),
+    ("reports.max_export_rows","reports","Reporting","int",10000,"Maximum rows allowed in report exports; enforced by the export endpoint",None,"runtime"),
+    ("reports.include_filters_in_export","reports","Reporting","bool",True,"Include selected report filters in export metadata; enforced by the export renderer",None,"runtime"),
+    ("reports.allow_scheduled_delivery","reports","Reporting","bool",False,"Enable scheduled report delivery for the selected company",None,"runtime"),
 ]
 CATALOG: list[dict[str, Any]] = [
     {"key":key,"module":module,"category":category,"type":kind,"default":default,"label":label,
@@ -125,6 +129,8 @@ def validate_value(key: str, value: Any) -> Any:
         raise ValueError(f"{key} must be between 1 and 12")
     if key == "notifications.retry_limit" and not 0 <= value <= 5:
         raise ValueError(f"{key} must be between 0 and 5")
+    if key == "reports.max_export_rows" and (isinstance(value, bool) or not 100 <= value <= 100000):
+        raise ValueError(f"{key} must be between 100 and 100000")
     if key == "hr.default_work_hours_per_day" and not 0 < float(value) <= 24:
         raise ValueError(f"{key} must be greater than 0 and at most 24")
     if key in {"hr.biometric_sync_interval_minutes", "workflow.escalation_after_hours"} and value < 1:

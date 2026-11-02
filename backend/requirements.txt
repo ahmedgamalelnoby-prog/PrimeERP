@@ -1,4 +1,4 @@
-aiohappyeyeballs==2.6.1
+﻿aiohappyeyeballs==2.6.1
 aiohttp==3.13.2
 aiosignal==1.4.0
 alembic==1.18.5
@@ -66,6 +66,7 @@ propcache==0.4.1
 psutil==7.0.0
 psycopg==3.3.4
 psycopg-binary==3.3.4
+psycopg[binary]==3.3.4
 pyarrow==20.0.0
 pyasn1==0.6.3
 pycparser==2.22
@@ -110,3 +111,4 @@ yarl==1.22.0
 zeep==4.3.1
 zope.event==5.1
 zope.interface==7.2
+

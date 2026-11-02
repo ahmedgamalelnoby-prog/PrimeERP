@@ -14,7 +14,7 @@ export default function PageHeader({
   return (
     <div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">
           {title}
         </h1>
 
@@ -26,7 +26,7 @@ export default function PageHeader({
       </div>
 
       {actions && (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {actions}
         </div>
       )}

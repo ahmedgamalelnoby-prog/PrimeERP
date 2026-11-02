@@ -8,7 +8,7 @@ export interface AuthenticatedUser {
   is_active: boolean;
   is_superuser: boolean;
   is_platform_admin: boolean;
-  preferred_language: string | null;
+  preferred_language: string;
   tenant_slug: string | null;
   tenant_name: string | null;
   tenant_status: string | null;
