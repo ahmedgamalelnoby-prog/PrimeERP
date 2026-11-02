@@ -39,12 +39,54 @@ def _duplicate_primary_keys(connection) -> list[dict[str, Any]]:
         text(
             """
             SELECT id,
-                   array_agg(ctid::text ORDER BY ctid) AS physical_tuples,
+                   array_agg(
+                       format('%s:%s', tableoid::regclass, ctid::text)
+                       ORDER BY tableoid::regclass::text, ctid
+                   ) AS physical_tuples,
                    count(*) AS row_count
             FROM public.users
             GROUP BY id
             HAVING count(*) > 1
             ORDER BY id
+            """
+        )
+    ).mappings()
+    return [dict(row) for row in result]
+
+
+def _inheritance_relations(connection) -> list[dict[str, Any]]:
+    # A normal SELECT from a PostgreSQL inheritance parent includes child rows.
+    # Indexes and primary-key constraints are not inherited by traditional
+    # inheritance children, so identify descendants explicitly.
+    result = connection.execute(
+        text(
+            """
+            WITH RECURSIVE descendants AS (
+                SELECT inhparent, inhrelid, 1 AS depth
+                FROM pg_inherits
+                WHERE inhparent = 'public.users'::regclass
+
+                UNION ALL
+
+                SELECT i.inhparent, i.inhrelid, d.depth + 1
+                FROM pg_inherits AS i
+                JOIN descendants AS d ON i.inhparent = d.inhrelid
+            )
+            SELECT
+                parent_ns.nspname || '.' || parent.relname AS parent_table,
+                child_ns.nspname || '.' || child.relname AS child_table,
+                child.relispartition AS is_partition,
+                d.depth,
+                EXISTS (
+                    SELECT 1 FROM pg_index idx
+                    WHERE idx.indrelid = child.oid AND idx.indisprimary
+                ) AS child_has_primary_key
+            FROM descendants d
+            JOIN pg_class parent ON parent.oid = d.inhparent
+            JOIN pg_namespace parent_ns ON parent_ns.oid = parent.relnamespace
+            JOIN pg_class child ON child.oid = d.inhrelid
+            JOIN pg_namespace child_ns ON child_ns.oid = child.relnamespace
+            ORDER BY d.depth, child_ns.nspname, child.relname
             """
         )
     ).mappings()
@@ -140,6 +182,7 @@ def main() -> int:
             duplicate_usernames = _duplicate_groups(connection, "username")
             duplicate_emails = _duplicate_groups(connection, "email")
             duplicate_primary_keys = _duplicate_primary_keys(connection)
+            inheritance_relations = _inheritance_relations(connection)
 
             duplicate_ids = sorted(
                 {
@@ -154,11 +197,12 @@ def main() -> int:
                 rows = connection.execute(
                     text(
                         """
-                        SELECT ctid::text AS physical_tuple, id, tenant_id,
+                        SELECT tableoid::regclass::text AS source_relation,
+                               ctid::text AS physical_tuple, id, tenant_id,
                                username, email, xmin::text AS inserting_transaction
                         FROM public.users
                         WHERE id = ANY(:user_ids)
-                        ORDER BY id, ctid
+                        ORDER BY id, tableoid::regclass::text, ctid
                         """
                     ),
                     {"user_ids": duplicate_ids},
@@ -175,6 +219,7 @@ def main() -> int:
         "duplicate_emails": duplicate_emails,
         "duplicate_primary_keys": duplicate_primary_keys,
         "physical_user_rows": physical_rows,
+        "users_inheritance_relations": inheritance_relations,
         "foreign_key_references": references,
         "mutations_performed": False,
     }
