@@ -67,3 +67,6 @@ primeerp_new.db
 backend/primeerp_new.db
 backend/release_gate_smoke.db
 release_gate_smoke.db
+*.dump
+forensic_backup_*/
+*.sql
