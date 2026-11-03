@@ -215,6 +215,22 @@ def _send_whatsapp(destination: str, body: str) -> tuple[int, str]:
 
 
 def process_delivery(db: Session, delivery: ReportDelivery) -> None:
+    # Re-check the live company policy at delivery time. A schedule may have
+    # been created while enabled and disabled afterwards; the worker must not
+    # keep sending data after that policy change.
+    try:
+        scheduling_enabled = policy(db, delivery.company_id, "reports.allow_scheduled_delivery")
+    except Exception:
+        scheduling_enabled = False
+    if scheduling_enabled is not True:
+        delivery.last_status = "paused_policy"
+        delivery.last_error = "Scheduled report delivery is paused because company policy is disabled or invalid"
+        delivery.next_run_at = None
+        delivery.locked_until = None
+        delivery.locked_by = None
+        db.commit()
+        return
+
     # Revalidate company and definition after claiming the lease. A company or
     # report can be disabled between claim and delivery.
     company = db.get(Company, delivery.company_id)
@@ -234,24 +250,7 @@ def process_delivery(db: Session, delivery: ReportDelivery) -> None:
         db.commit()
         return
 
-    # Re-check the live company policy at delivery time. A schedule may have
-    # been created while enabled and disabled afterwards; the worker must not
-    # keep sending data after that policy change.
-    try:
-        scheduling_enabled = policy(db, delivery.company_id, "reports.allow_scheduled_delivery")
-    except Exception:
-        scheduling_enabled = False
-    if scheduling_enabled is not True:
-        delivery.last_status = "paused_policy"
-        delivery.last_error = "Scheduled report delivery is paused because company policy is disabled or invalid"
-        delivery.next_run_at = None
-        delivery.locked_until = None
-        delivery.locked_by = None
-        db.commit()
-        return
-
     attempt = create_attempt(db, delivery)
-    definition = db.get(ReportDefinition, delivery.report_definition_id)
     try:
         if definition is None or not definition.is_active or definition.company_id != delivery.company_id:
             raise ReportProviderError("Report definition is missing, inactive, or outside the delivery company")
