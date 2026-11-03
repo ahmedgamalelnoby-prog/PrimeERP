@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.core.context import get_effective_tenant_id
 from app.modules.companies.models import Company
-from app.modules.companies.user_access import UserCompanyAccess
+from app.modules.identity.models.user_company_access import UserCompanyAccess
 from app.modules.identity.models import User
 
 
