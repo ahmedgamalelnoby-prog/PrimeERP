@@ -1,4 +1,3 @@
-from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from app.modules.integrations.processor import _retry_delay, claim_next_event
@@ -7,6 +6,7 @@ from app.modules.integrations.processor import _retry_delay, claim_next_event
 def test_retry_delay_is_bounded():
     assert _retry_delay(1) == 2
     assert _retry_delay(8) == 256
+    assert _retry_delay(9) == 300
     assert _retry_delay(20) == 300
 
 
@@ -14,9 +14,13 @@ def test_claim_next_event_marks_event_processing():
     class FakeScalar:
         def __init__(self, event):
             self.event = event
+            self.flush_count = 0
 
         def scalar(self, _stmt):
             return self.event
+
+        def flush(self):
+            self.flush_count += 1
 
     event = SimpleNamespace(
         status="received",
@@ -29,3 +33,4 @@ def test_claim_next_event_marks_event_processing():
     assert event.status == "processing"
     assert event.attempts == 1
     assert event.next_attempt_at is None
+    assert db.flush_count == 1
