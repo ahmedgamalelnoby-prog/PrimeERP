@@ -110,6 +110,13 @@ class Company(Base):
         foreign_keys="Branch.company_id",
     )
 
+    user_access = relationship(
+        "UserCompanyAccess",
+        back_populates="company",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
     __table_args__ = (
         UniqueConstraint(
             "tenant_id",
