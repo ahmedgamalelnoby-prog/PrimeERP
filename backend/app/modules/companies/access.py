@@ -1,6 +1,5 @@
 from fastapi import HTTPException
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from app.core.context import get_effective_tenant_id
 from app.modules.companies.models import Company
