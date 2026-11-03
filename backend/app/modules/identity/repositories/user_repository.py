@@ -97,6 +97,27 @@ class UserRepository(BaseRepository[User]):
             query
         ).scalar_one_or_none()
 
+    def find_identity_collisions(
+        self,
+        db: Session,
+        *,
+        username: str,
+        email: str,
+        exclude_user_id: int | None = None,
+    ) -> list[User]:
+        """Find global username/email collisions, including cross-field matches."""
+        normalized_username = username.strip().lower()
+        normalized_email = email.strip().lower()
+        query = select(User).where(
+            or_(
+                func.lower(func.trim(User.username)).in_((normalized_username, normalized_email)),
+                func.lower(func.trim(User.email)).in_((normalized_username, normalized_email)),
+            )
+        )
+        if exclude_user_id is not None:
+            query = query.where(User.id != exclude_user_id)
+        return list(db.execute(query.order_by(User.id.asc())).scalars().all())
+
     def find_for_login(self, db: Session, login: str) -> list[User]:
         """Find active accounts by normalized username or email."""
         normalized_login = login.strip().lower()
