@@ -84,6 +84,7 @@ def method(payload: MethodCreate, current_user: User = Depends(get_current_user)
     carrier_obj = db.scalar(select(ShippingCarrier).join(Company, Company.id == ShippingCarrier.company_id).where(ShippingCarrier.id == payload.carrier_id, Company.tenant_id == tenant_id, ShippingCarrier.is_active.is_(True)))
     if carrier_obj is None:
         raise HTTPException(404, "Carrier not found")
+    _company_for_user(db, carrier_obj.company_id, current_user)
     if payload.payment_method not in {"prepaid", "cod", "mixed"}:
         raise HTTPException(422, "Invalid shipping payment method")
     if payload.payment_method == "prepaid" and payload.cod_fee_percent:
@@ -100,6 +101,7 @@ def methods(carrier_id: int = Query(..., gt=0), current_user: User = Depends(get
     carrier_obj = db.scalar(select(ShippingCarrier).join(Company, Company.id == ShippingCarrier.company_id).where(ShippingCarrier.id == carrier_id, Company.tenant_id == tenant_id))
     if carrier_obj is None:
         raise HTTPException(404, "Carrier not found")
+    _company_for_user(db, carrier_obj.company_id, current_user)
     return list(db.scalars(select(ShippingMethod).where(ShippingMethod.carrier_id == carrier_id).order_by(ShippingMethod.name)).all())
 
 
