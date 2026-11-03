@@ -111,7 +111,6 @@ class UserRepository(BaseRepository[User]):
                 User.is_deleted.is_(False),
             )
             .order_by(User.id.asc())
-            .limit(10)
         )
         return list(db.execute(query).scalars().all())
 
