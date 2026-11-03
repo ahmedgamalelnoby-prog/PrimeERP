@@ -532,6 +532,20 @@ def handle_app_event(db: Session, payload: dict[str, Any], event_id: str | None 
     if installation is None:
         result = {"ignored": True, "reason": "installation_not_found", "event": event, "merchant_id": merchant_id}
     else:
+        company = db.scalar(
+            select(Company).where(
+                Company.id == installation.company_id,
+                Company.tenant_id == installation.tenant_id,
+            )
+        )
+        if company is None:
+            raise SallaPublicAppError("Salla installation company does not belong to its tenant")
+        # A signed webhook may still uninstall an inactive company, but it
+        # must not reactivate subscriptions or execute commerce operations for
+        # a company that has been deactivated in PrimeERP.
+        if not company.is_active and event != "app.uninstalled":
+            raise SallaPublicAppError("Salla installation company is inactive")
+
         installation.last_webhook_at = datetime.now(timezone.utc)
         data = _payload_data(payload)
         if event in {"app.uninstalled", "app.subscription.expired", "app.subscription.canceled", "app.trial.expired", "app.trial.canceled"}:
