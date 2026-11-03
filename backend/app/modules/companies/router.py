@@ -25,6 +25,17 @@ def _get_company(db: Session, company_id: int, user: User) -> Company:
     return require_company_access(db, user, company_id)
 
 
+def _get_tenant_company_for_management(db: Session, company_id: int, user: User) -> Company:
+    company = db.scalar(select(Company).where(
+        Company.id == company_id,
+        Company.tenant_id == _tenant_id(user),
+        Company.is_active.is_(True),
+    ))
+    if company is None:
+        raise HTTPException(status_code=404, detail="Company not found")
+    return company
+
+
 @router.get("", response_model=list[CompanyResponse], dependencies=[Depends(require_permission("company.access"))])
 def list_companies(active_only: bool = Query(False), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     stmt = accessible_company_query(current_user, active_only=active_only).order_by(Company.name, Company.id)
@@ -105,7 +116,7 @@ def grant_company_access(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    company = _get_company(db, company_id, current_user)
+    company = _get_tenant_company_for_management(db, company_id, current_user)
     target_user = db.scalar(select(User).where(
         User.id == user_id,
         User.tenant_id == company.tenant_id,
@@ -139,7 +150,7 @@ def revoke_company_access(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    company = _get_company(db, company_id, current_user)
+    company = _get_tenant_company_for_management(db, company_id, current_user)
     target_user = db.scalar(select(User).where(
         User.id == user_id,
         User.tenant_id == company.tenant_id,
@@ -160,3 +171,42 @@ def revoke_company_access(
         if replacement is not None:
             replacement.is_default = True
     db.commit()
+
+
+
+@router.get("/users/{user_id}/access", status_code=status.HTTP_200_OK,
+            dependencies=[Depends(require_permission("company.write"))])
+def list_user_company_access(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    tenant_id = _tenant_id(current_user)
+    target_user = db.scalar(select(User).where(
+        User.id == user_id,
+        User.tenant_id == tenant_id,
+        User.is_deleted.is_(False),
+    ))
+    if target_user is None:
+        raise HTTPException(status_code=404, detail="User not found in this tenant")
+    rows = db.execute(
+        select(Company, UserCompanyAccess.is_default)
+        .outerjoin(
+            UserCompanyAccess,
+            (UserCompanyAccess.company_id == Company.id)
+            & (UserCompanyAccess.user_id == user_id),
+        )
+        .where(Company.tenant_id == tenant_id)
+        .order_by(Company.name, Company.id)
+    ).all()
+    return [
+        {
+            "id": company.id,
+            "name": company.name,
+            "code": company.code,
+            "is_active": company.is_active,
+            "has_access": is_default is not None,
+            "is_default": bool(is_default),
+        }
+        for company, is_default in rows
+    ]
