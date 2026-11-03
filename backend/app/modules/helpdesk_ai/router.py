@@ -15,6 +15,7 @@ from app.modules.identity.models import User
 from app.database.session import get_db
 from sqlalchemy.orm import Session
 from app.core.context import get_effective_tenant_id
+from app.modules.companies.access import require_company_access
 from app.modules.accounting.reports.service import financial_report_service
 from app.modules.platform.module_registry import REGISTRY_VERSION, knowledge_context
 
@@ -117,14 +118,7 @@ def answer_helpdesk(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> HelpdeskAnswer:
-    from app.modules.companies.models import Company
-    company = db.get(Company, request.company_id)
-    if (
-        company is None
-        or getattr(company, "tenant_id", None) != get_effective_tenant_id(current_user)
-        or not getattr(company, "is_active", False)
-    ):
-        raise HTTPException(status_code=404, detail="Company not found")
+    require_company_access(db, current_user, request.company_id)
     return _ask_ai(request)
 
 
