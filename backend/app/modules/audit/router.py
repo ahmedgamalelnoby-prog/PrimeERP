@@ -1,7 +1,7 @@
 import json
 
 from fastapi import APIRouter, Depends, Query, HTTPException
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.permissions import require_permission
@@ -10,7 +10,6 @@ from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.companies.access import accessible_company_query, require_company_access
 from app.modules.companies.models import Company
-from sqlalchemy import or_
 from .models import AuditEvent
 
 router = APIRouter(prefix="/audit", tags=["Audit"], dependencies=[Depends(require_permission("audit.access"))])
