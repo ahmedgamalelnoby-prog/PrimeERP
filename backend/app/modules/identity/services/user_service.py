@@ -10,7 +10,7 @@ from app.core.services.base_service import BaseService
 from app.modules.audit.service import record_audit_event
 from app.modules.identity.models.user import User
 from app.modules.companies.models import Company
-from app.modules.companies.user_access import UserCompanyAccess
+from app.modules.identity.models.user_company_access import UserCompanyAccess
 from app.modules.identity.repositories.user_repository import UserRepository, user_repository
 from app.modules.identity.services.password_service import password_service
 from app.modules.roles.models import Role
