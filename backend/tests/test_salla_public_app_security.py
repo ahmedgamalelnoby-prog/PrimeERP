@@ -63,3 +63,14 @@ def test_salla_authorization_validates_installation_company_tenant_integrity():
     source = handle_authorize_event.__code__
     assert "company_id" in source.co_names
     assert "tenant_id" in source.co_names
+
+def test_sso_exchange_revalidates_live_company_membership():
+    import inspect
+    from app.modules.integrations.salla_public_app_service import consume_sso_ticket
+
+    source = inspect.getsource(consume_sso_ticket)
+    assert "UserCompanyAccess" in source
+    assert "Company.is_active" in source
+    assert "User.is_active" in source
+    assert "User.is_deleted" in source
+    assert "SallaAppInstallation.status" in source
