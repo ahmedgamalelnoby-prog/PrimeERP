@@ -151,14 +151,7 @@ def business_advice(
     if from_date and to_date and from_date > to_date:
         raise HTTPException(status_code=422, detail="from_date cannot be after to_date")
 
-    from app.modules.companies.models import Company
-    company = db.get(Company, request.company_id)
-    if (
-        company is None
-        or getattr(company, "tenant_id", None) != get_effective_tenant_id(current_user)
-        or not getattr(company, "is_active", False)
-    ):
-        raise HTTPException(status_code=404, detail="Company not found")
+    require_company_access(db, current_user, request.company_id)
 
     summary = financial_report_service.financial_summary(
         db,
