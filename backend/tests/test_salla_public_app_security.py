@@ -74,3 +74,12 @@ def test_sso_exchange_revalidates_live_company_membership():
     assert "User.is_active" in source
     assert "User.is_deleted" in source
     assert "SallaAppInstallation.status" in source
+
+def test_salla_webhooks_revalidate_company_tenant_and_active_state():
+    import inspect
+    from app.modules.integrations.salla_public_app_service import handle_app_event
+
+    source = inspect.getsource(handle_app_event)
+    assert "Company.tenant_id == installation.tenant_id" in source
+    assert "company.is_active" in source
+    assert 'event != "app.uninstalled"' in source
