@@ -14,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.modules.branches.models import Branch
+from app.modules.companies.access import accessible_company_query, require_company_access
 from app.modules.companies.models import Company
 from app.modules.company_settings.service import get_company_setting
 from app.modules.identity.models import User
@@ -62,6 +63,7 @@ class TransactionService:
             current_user
         )
 
+        require_company_access(db, current_user, payload.company_id)
         self._validate_scope(
             db=db,
             tenant_id=tenant_id,
@@ -457,6 +459,8 @@ class TransactionService:
         if transaction is None:
             self._raise_not_found()
 
+        require_company_access(db, current_user, transaction.company_id)
+
         if transaction.status not in {
             "draft",
             "pending",
@@ -532,6 +536,8 @@ class TransactionService:
 
         if original is None:
             self._raise_not_found()
+
+        require_company_access(db, current_user, original.company_id)
 
         if original.status != "posted":
             raise HTTPException(
@@ -708,6 +714,7 @@ class TransactionService:
         if transaction is None:
             self._raise_not_found()
 
+        require_company_access(db, current_user, transaction.company_id)
         return transaction
 
     def get_by_number(
@@ -734,6 +741,7 @@ class TransactionService:
         if transaction is None:
             self._raise_not_found()
 
+        require_company_access(db, current_user, transaction.company_id)
         return transaction
 
     def list_transactions(
@@ -751,6 +759,16 @@ class TransactionService:
         tenant_id = self._get_tenant_id(
             current_user
         )
+        company_ids = None
+        if company_id is not None:
+            require_company_access(db, current_user, company_id)
+        else:
+            company_ids = [
+                company.id
+                for company in db.scalars(accessible_company_query(current_user)).all()
+            ]
+            if not company_ids:
+                return {"items": [], "total": 0, "page": page, "page_size": page_size, "pages": 0}
 
         items, total = (
             transaction_repository
@@ -760,6 +778,7 @@ class TransactionService:
                 page=page,
                 page_size=page_size,
                 company_id=company_id,
+                company_ids=company_ids,
                 branch_id=branch_id,
                 transaction_type=(
                     transaction_type
@@ -857,6 +876,7 @@ class TransactionService:
         if transaction is None:
             self._raise_not_found()
 
+        require_company_access(db, current_user, transaction.company_id)
         return transaction
 
     @staticmethod

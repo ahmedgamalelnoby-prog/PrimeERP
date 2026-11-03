@@ -2,10 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
+from app.modules.companies.access import require_company_access
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.inventory.warehouses.schemas import WarehouseCreate, WarehouseResponse, WarehouseUpdate
@@ -16,10 +16,7 @@ router = APIRouter(prefix="/inventory/warehouses", tags=["Inventory - Warehouses
 
 
 def _company_for_user(db: Session, company_id: int, user: User) -> Company:
-    if get_effective_tenant_id(user) is None: raise HTTPException(status_code=403, detail="User is not assigned to a tenant")
-    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == get_effective_tenant_id(user), Company.is_active.is_(True)))
-    if company is None: raise HTTPException(status_code=403, detail="Company is outside the current tenant")
-    return company
+    return require_company_access(db, user, company_id, active_only=True)
 
 
 @router.get("", response_model=list[WarehouseResponse], dependencies=[Depends(require_permission("inventory.access"))])

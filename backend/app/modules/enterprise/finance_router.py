@@ -10,6 +10,7 @@ from app.database.session import get_db
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.companies.models import Company
+from app.modules.companies.access import require_company_access
 from app.modules.company_settings.service import get_company_setting
 from app.modules.enterprise.finance_models import FinanceEntity,ConsolidationGroup,ConsolidationMember,IntercompanyTransaction,ConsolidationRun,ConsolidationLine,ConsolidationElimination,FinanceFxRate,FinanceRevaluation
 from app.modules.enterprise.finance_schemas import *
@@ -22,15 +23,7 @@ router = APIRouter(
     dependencies=[Depends(require_module("enterprise"))],
 )
 def company_ok(db, cid, user):
-    tenant_id = get_effective_tenant_id(user)
-    if tenant_id is None or not db.scalar(
-        select(Company.id).where(
-            Company.id == cid,
-            Company.tenant_id == tenant_id,
-            Company.is_active.is_(True),
-        )
-    ):
-        raise HTTPException(404, "Company not found")
+    return require_company_access(db, user, cid, active_only=True)
 @router.post("/entities",response_model=EntityResponse,status_code=201,dependencies=[Depends(require_permission("enterprise.finance.write"))])
 def entity(p:EntityCreate,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     company_ok(db,p.company_id,user);o=FinanceEntity(**p.model_dump());db.add(o);db.commit();db.refresh(o);return o
@@ -79,6 +72,11 @@ def intercompany(p: IntercompanyCreate, db: Session = Depends(get_db), user: Use
     ).all())
     if tenant_entities != party_ids:
         raise HTTPException(404, "Intercompany entity not found")
+    party_company_ids = db.scalars(
+        select(FinanceEntity.company_id).where(FinanceEntity.id.in_(party_ids))
+    ).all()
+    for party_company_id in party_company_ids:
+        company_ok(db, party_company_id, user)
 
     transaction = IntercompanyTransaction(**p.model_dump())
     db.add(transaction)
@@ -120,6 +118,8 @@ def run(p:ConsolidationRunCreate,db:Session=Depends(get_db),user:User=Depends(ge
     ).all())
     if {entity.id for entity in entities} != member_entity_ids:
         raise HTTPException(409, "Consolidation group contains an inactive or out-of-tenant entity")
+    for entity in entities:
+        company_ok(db, entity.company_id, user)
     entity_by_company = {entity.company_id: entity for entity in entities}
     if len(entity_by_company) != len(entities):
         raise HTTPException(409, "A company can only be represented once in a consolidation group")

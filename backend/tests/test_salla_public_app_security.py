@@ -63,3 +63,33 @@ def test_salla_authorization_validates_installation_company_tenant_integrity():
     source = handle_authorize_event.__code__
     assert "company_id" in source.co_names
     assert "tenant_id" in source.co_names
+
+def test_sso_exchange_revalidates_live_company_membership():
+    import inspect
+    from app.modules.integrations.salla_public_app_service import consume_sso_ticket
+
+    source = inspect.getsource(consume_sso_ticket)
+    assert "UserCompanyAccess" in source
+    assert "Company.is_active" in source
+    assert "User.is_active" in source
+    assert "User.is_deleted" in source
+    assert "SallaAppInstallation.status" in source
+
+def test_salla_webhooks_revalidate_company_tenant_and_active_state():
+    import inspect
+    from app.modules.integrations.salla_public_app_service import handle_app_event
+
+    source = inspect.getsource(handle_app_event)
+    assert "Company.tenant_id == installation.tenant_id" in source
+    assert "company.is_active" in source
+    assert 'event != "app.uninstalled"' in source
+
+def test_automatic_salla_sync_skips_inactive_companies():
+    import inspect
+    from app.modules.integrations.worker import claim_due_connection, run_once
+
+    claim_source = inspect.getsource(claim_due_connection)
+    run_source = inspect.getsource(run_once)
+    assert "Company" in claim_source
+    assert "Company.is_active.is_(True)" in claim_source
+    assert "Company.is_active.is_(True)" in run_source

@@ -10,10 +10,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from app.core.context import get_effective_tenant_id
+from app.modules.companies.access import require_company_access
 from app.core.permissions import require_permission
 from app.database.session import get_db
-from app.modules.companies.models import Company
 from app.modules.company_settings.service import get_company_setting
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
@@ -24,18 +23,8 @@ from app.modules.notifications.service import render_template as _render, send_e
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
 
 
-def _company(db: Session, company_id: int, user: User) -> Company:
-    tenant_id = get_effective_tenant_id(user)
-    if tenant_id is None:
-        raise HTTPException(403, "User is not assigned to a tenant")
-    company = db.scalar(select(Company).where(
-        Company.id == company_id,
-        Company.tenant_id == tenant_id,
-        Company.is_active.is_(True),
-    ))
-    if company is None:
-        raise HTTPException(404, "Active company not found in current tenant")
-    return company
+def _company(db: Session, company_id: int, user: User):
+    return require_company_access(db, user, company_id)
 
 
 

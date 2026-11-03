@@ -11,6 +11,7 @@ from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
+from app.modules.companies.access import require_company_access
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.saas.entitlements import require_module
@@ -28,10 +29,8 @@ router = APIRouter(prefix="/integrations", tags=["Integrations"], dependencies=[
 public_router = APIRouter(prefix="/integrations", tags=["Integrations Webhooks"])
 
 def _company_for_user(db: Session, company_id: int, user: User):
-    if get_effective_tenant_id(user) is None: raise HTTPException(403, "User is not assigned to a tenant")
-    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == get_effective_tenant_id(user), Company.is_active.is_(True)))
-    if company is None: raise HTTPException(403, "Company is outside the current tenant")
-    return company
+    return require_company_access(db, user, company_id, active_only=True)
+
 
 def _get_salla_connection(db: Session, connection_id: int):
     connection = db.scalar(select(IntegrationConnection).join(Company, Company.id == IntegrationConnection.company_id).where(IntegrationConnection.id == connection_id, IntegrationConnection.provider == "salla", IntegrationConnection.is_active.is_(True)))
@@ -151,6 +150,7 @@ async def receive_salla_webhook_public(connection_id: int, request: Request, x_s
 def receive_salla_webhook(connection_id: int, payload: WebhookEventCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     connection = db.scalar(select(IntegrationConnection).join(Company, Company.id == IntegrationConnection.company_id).where(IntegrationConnection.id == connection_id, IntegrationConnection.provider == "salla", IntegrationConnection.is_active.is_(True), Company.tenant_id == get_effective_tenant_id(current_user)))
     if not connection: raise HTTPException(404, "Salla connection not found")
+    _company_for_user(db, connection.company_id, current_user)
     existing = db.scalar(select(IntegrationEvent).where(IntegrationEvent.connection_id == connection_id, IntegrationEvent.external_event_id == payload.external_event_id))
     if existing: return {"accepted": True, "duplicate": True, "event_id": existing.id, "status": existing.status}
     event = IntegrationEvent(company_id=connection.company_id, connection_id=connection_id, external_event_id=payload.external_event_id, event_type=payload.event_type, payload=json.dumps(payload.payload, ensure_ascii=False), status="received", attempts=0); db.add(event)

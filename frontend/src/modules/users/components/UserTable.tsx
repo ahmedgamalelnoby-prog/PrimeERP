@@ -1,4 +1,5 @@
 import {
+  Building2,
   KeyRound,
   Loader2,
   Pencil,
@@ -31,6 +32,7 @@ interface UserTableProps {
   onDelete: (user: User) => void;
   onToggleStatus: (user: User) => void;
   onResetPassword: (user: User) => void;
+  onManageCompanyAccess: (user: User) => void;
 }
 
 function getUserDisplayName(user: User): string {
@@ -71,6 +73,7 @@ export default function UserTable({
   onDelete,
   onToggleStatus,
   onResetPassword,
+  onManageCompanyAccess,
 }: UserTableProps) {
   const dateFormat = useCompanyDateFormat();
 
@@ -250,6 +253,19 @@ export default function UserTable({
 
                   <TableCell>
                     <div className="flex items-center justify-center gap-1">
+                      {!user.is_platform_admin && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          disabled={processing}
+                          onClick={() => onManageCompanyAccess(user)}
+                          title="صلاحيات الشركات"
+                          aria-label="صلاحيات الشركات"
+                        >
+                          <Building2 className="h-4 w-4" />
+                        </Button>
+                      )}
                       <Button
                         type="button"
                         variant="ghost"

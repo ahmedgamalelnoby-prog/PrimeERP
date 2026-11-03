@@ -7,6 +7,8 @@ from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
+from app.modules.identity.models.user_company_access import UserCompanyAccess
+from app.modules.companies.access import accessible_company_query, require_company_access
 from app.modules.companies.schemas import CompanyCreate, CompanyResponse, CompanyUpdate
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
@@ -20,7 +22,15 @@ def _tenant_id(user: User) -> int:
 
 
 def _get_company(db: Session, company_id: int, user: User) -> Company:
-    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == _tenant_id(user)))
+    return require_company_access(db, user, company_id)
+
+
+def _get_tenant_company_for_management(db: Session, company_id: int, user: User) -> Company:
+    company = db.scalar(select(Company).where(
+        Company.id == company_id,
+        Company.tenant_id == _tenant_id(user),
+        Company.is_active.is_(True),
+    ))
     if company is None:
         raise HTTPException(status_code=404, detail="Company not found")
     return company
@@ -28,10 +38,18 @@ def _get_company(db: Session, company_id: int, user: User) -> Company:
 
 @router.get("", response_model=list[CompanyResponse], dependencies=[Depends(require_permission("company.access"))])
 def list_companies(active_only: bool = Query(False), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    stmt = select(Company).where(Company.tenant_id == _tenant_id(current_user)).order_by(Company.name, Company.id)
-    if active_only:
-        stmt = stmt.where(Company.is_active.is_(True))
-    return list(db.scalars(stmt).all())
+    stmt = accessible_company_query(current_user, active_only=active_only).order_by(Company.name, Company.id)
+    companies = list(db.scalars(stmt).all())
+    if current_user.is_platform_admin:
+        return [{**CompanyResponse.model_validate(company).model_dump(), "is_default": False} for company in companies]
+    defaults = set(db.scalars(select(UserCompanyAccess.company_id).where(
+        UserCompanyAccess.user_id == current_user.id,
+        UserCompanyAccess.is_default.is_(True),
+    )).all())
+    return [
+        {**CompanyResponse.model_validate(company).model_dump(), "is_default": company.id in defaults}
+        for company in companies
+    ]
 
 
 @router.get("/{company_id}", response_model=CompanyResponse, dependencies=[Depends(require_permission("company.access"))])
@@ -46,8 +64,22 @@ def create_company(payload: CompanyCreate, db: Session = Depends(get_db), curren
     company = Company(tenant_id=tenant_id, **payload.model_dump())
     db.add(company)
     try:
+        db.flush()
+        is_default = False
+        if not current_user.is_platform_admin:
+            has_default = db.scalar(select(UserCompanyAccess.user_id).where(
+                UserCompanyAccess.user_id == current_user.id,
+                UserCompanyAccess.is_default.is_(True),
+            ).limit(1))
+            is_default = has_default is None
+            db.add(UserCompanyAccess(
+                user_id=current_user.id,
+                company_id=company.id,
+                is_default=is_default,
+            ))
         db.commit()
         db.refresh(company)
+        company.is_default = is_default
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail="Company code already exists for this tenant") from exc
@@ -72,4 +104,138 @@ def update_company(company_id: int, payload: CompanyUpdate, db: Session = Depend
 def deactivate_company(company_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     company = _get_company(db, company_id, current_user)
     company.is_active = False
+    default_assignments = db.scalars(select(UserCompanyAccess).where(
+        UserCompanyAccess.company_id == company.id,
+        UserCompanyAccess.is_default.is_(True),
+    )).all()
+    for assignment in default_assignments:
+        assignment.is_default = False
+    db.flush()
+    for assignment in default_assignments:
+        replacement = db.scalar(
+            select(UserCompanyAccess)
+            .join(Company, Company.id == UserCompanyAccess.company_id)
+            .where(
+                UserCompanyAccess.user_id == assignment.user_id,
+                Company.tenant_id == company.tenant_id,
+                Company.is_active.is_(True),
+            )
+            .order_by(UserCompanyAccess.company_id)
+            .limit(1)
+        )
+        if replacement is not None:
+            replacement.is_default = True
     db.commit()
+
+
+@router.put("/{company_id}/users/{user_id}/access", status_code=status.HTTP_200_OK,
+            dependencies=[Depends(require_permission("company.write"))])
+def grant_company_access(
+    company_id: int,
+    user_id: int,
+    is_default: bool = Query(False),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    company = _get_tenant_company_for_management(db, company_id, current_user)
+    target_user = db.scalar(select(User).where(
+        User.id == user_id,
+        User.tenant_id == company.tenant_id,
+        User.is_deleted.is_(False),
+    ))
+    if target_user is None:
+        raise HTTPException(status_code=404, detail="User not found in this tenant")
+    access = db.get(UserCompanyAccess, (user_id, company_id))
+    if access is None:
+        access = UserCompanyAccess(user_id=user_id, company_id=company_id, is_default=False)
+        db.add(access)
+    if is_default:
+        db.query(UserCompanyAccess).filter(
+            UserCompanyAccess.user_id == user_id
+        ).update({UserCompanyAccess.is_default: False}, synchronize_session=False)
+        access.is_default = True
+    elif db.scalar(select(UserCompanyAccess.user_id).where(
+        UserCompanyAccess.user_id == user_id,
+        UserCompanyAccess.is_default.is_(True),
+    ).limit(1)) is None:
+        access.is_default = True
+    db.commit()
+    return {"user_id": user_id, "company_id": company_id, "is_default": access.is_default}
+
+
+@router.delete("/{company_id}/users/{user_id}/access", status_code=status.HTTP_204_NO_CONTENT,
+               dependencies=[Depends(require_permission("company.write"))])
+def revoke_company_access(
+    company_id: int,
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    company = _get_tenant_company_for_management(db, company_id, current_user)
+    target_user = db.scalar(select(User).where(
+        User.id == user_id,
+        User.tenant_id == company.tenant_id,
+        User.is_deleted.is_(False),
+    ))
+    if target_user is None:
+        raise HTTPException(status_code=404, detail="User not found in this tenant")
+    access = db.get(UserCompanyAccess, (user_id, company_id))
+    if access is None:
+        return
+    was_default = access.is_default
+    db.delete(access)
+    db.flush()
+    if was_default:
+        replacement = db.scalar(
+            select(UserCompanyAccess)
+            .join(Company, Company.id == UserCompanyAccess.company_id)
+            .where(
+                UserCompanyAccess.user_id == user_id,
+                Company.tenant_id == company.tenant_id,
+                Company.is_active.is_(True),
+            )
+            .order_by(UserCompanyAccess.company_id)
+            .limit(1)
+        )
+        if replacement is not None:
+            replacement.is_default = True
+    db.commit()
+
+
+
+@router.get("/users/{user_id}/access", status_code=status.HTTP_200_OK,
+            dependencies=[Depends(require_permission("company.write"))])
+def list_user_company_access(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    tenant_id = _tenant_id(current_user)
+    target_user = db.scalar(select(User).where(
+        User.id == user_id,
+        User.tenant_id == tenant_id,
+        User.is_deleted.is_(False),
+    ))
+    if target_user is None:
+        raise HTTPException(status_code=404, detail="User not found in this tenant")
+    rows = db.execute(
+        select(Company, UserCompanyAccess.is_default)
+        .outerjoin(
+            UserCompanyAccess,
+            (UserCompanyAccess.company_id == Company.id)
+            & (UserCompanyAccess.user_id == user_id),
+        )
+        .where(Company.tenant_id == tenant_id)
+        .order_by(Company.name, Company.id)
+    ).all()
+    return [
+        {
+            "id": company.id,
+            "name": company.name,
+            "code": company.code,
+            "is_active": company.is_active,
+            "has_access": is_default is not None,
+            "is_default": bool(is_default),
+        }
+        for company, is_default in rows
+    ]

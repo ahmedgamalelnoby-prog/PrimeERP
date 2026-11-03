@@ -8,12 +8,12 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.accounting.models import TaxRate
 from app.modules.accounting.tax_engine import calculate_taxes
 from app.modules.companies.models import Company
+from app.modules.companies.access import require_company_access
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.saas.entitlements import require_module
@@ -23,13 +23,7 @@ router = APIRouter(prefix="/taxes", tags=["taxes"], dependencies=[Depends(requir
 
 
 def _company_for_user(db: Session, company_id: int, user: User) -> Company:
-    tenant_id = get_effective_tenant_id(user)
-    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == tenant_id))
-    if company is None:
-        raise HTTPException(403, "Company is outside the current tenant")
-    if not company.is_active:
-        raise HTTPException(409, "Company is inactive")
-    return company
+    return require_company_access(db, user, company_id, active_only=True)
 
 
 def _tax_for_company(db: Session, tax_id: int, company_id: int, user: User) -> TaxRate:

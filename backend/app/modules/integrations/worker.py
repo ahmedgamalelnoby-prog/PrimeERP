@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.company_settings.consumers.integrations import integration_sync_due
 from app.modules.integrations.models import IntegrationConnection
+from app.modules.companies.models import Company
 from app.modules.integrations.salla_sync import full_sync
 
 logger = logging.getLogger(__name__)
@@ -31,9 +32,11 @@ def claim_due_connection(db: Session, *, now: datetime | None = None) -> Integra
     current = now or datetime.now(timezone.utc)
     candidate_ids = db.scalars(
         select(IntegrationConnection.id)
+        .join(Company, Company.id == IntegrationConnection.company_id)
         .where(
             IntegrationConnection.provider == "salla",
             IntegrationConnection.is_active.is_(True),
+            Company.is_active.is_(True),
         )
         .order_by(IntegrationConnection.id)
     ).all()
@@ -43,10 +46,12 @@ def claim_due_connection(db: Session, *, now: datetime | None = None) -> Integra
         # different row instead of waiting on a row already being processed.
         connection = db.scalar(
             select(IntegrationConnection)
+            .join(Company, Company.id == IntegrationConnection.company_id)
             .where(
                 IntegrationConnection.id == connection_id,
                 IntegrationConnection.provider == "salla",
                 IntegrationConnection.is_active.is_(True),
+                Company.is_active.is_(True),
             )
             .with_for_update(skip_locked=True)
         )
@@ -93,10 +98,13 @@ def run_once(session_factory: Callable[[], Session]) -> dict[str, int]:
         # Re-fetch under a fresh session; never hold the claim transaction over
         # external API calls. full_sync uses its own bounded HTTP timeouts.
         connection = db.scalar(
-            select(IntegrationConnection).where(
+            select(IntegrationConnection)
+            .join(Company, Company.id == IntegrationConnection.company_id)
+            .where(
                 IntegrationConnection.id == claimed.id,
                 IntegrationConnection.is_active.is_(True),
                 IntegrationConnection.provider == "salla",
+                Company.is_active.is_(True),
             )
         )
         if connection is None:

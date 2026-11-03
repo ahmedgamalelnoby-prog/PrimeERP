@@ -11,6 +11,7 @@ from app.modules.accounting.chart_of_accounts.models import AccountCombination
 from app.modules.accounting.journals.models import AccountingJournal
 from app.modules.branches.models import Branch
 from app.modules.companies.models import Company
+from app.modules.companies.access import require_company_access
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.saas.entitlements import require_module
@@ -30,13 +31,7 @@ def _tenant_id(user: User) -> int:
 
 
 def _company_for_user(db: Session, company_id: int, user: User):
-    tenant_id = _tenant_id(user)
-    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == tenant_id))
-    if company is None:
-        raise HTTPException(403, "Company is outside the current tenant")
-    if not company.is_active:
-        raise HTTPException(409, "Company is inactive")
-    return company
+    return require_company_access(db, user, company_id, active_only=True)
 
 
 def _validate_account(db: Session, company_id: int, account_id: int | None, label: str):
@@ -89,6 +84,7 @@ def method(payload: MethodCreate, current_user: User = Depends(get_current_user)
     carrier_obj = db.scalar(select(ShippingCarrier).join(Company, Company.id == ShippingCarrier.company_id).where(ShippingCarrier.id == payload.carrier_id, Company.tenant_id == tenant_id, ShippingCarrier.is_active.is_(True)))
     if carrier_obj is None:
         raise HTTPException(404, "Carrier not found")
+    _company_for_user(db, carrier_obj.company_id, current_user)
     if payload.payment_method not in {"prepaid", "cod", "mixed"}:
         raise HTTPException(422, "Invalid shipping payment method")
     if payload.payment_method == "prepaid" and payload.cod_fee_percent:
@@ -105,6 +101,7 @@ def methods(carrier_id: int = Query(..., gt=0), current_user: User = Depends(get
     carrier_obj = db.scalar(select(ShippingCarrier).join(Company, Company.id == ShippingCarrier.company_id).where(ShippingCarrier.id == carrier_id, Company.tenant_id == tenant_id))
     if carrier_obj is None:
         raise HTTPException(404, "Carrier not found")
+    _company_for_user(db, carrier_obj.company_id, current_user)
     return list(db.scalars(select(ShippingMethod).where(ShippingMethod.carrier_id == carrier_id).order_by(ShippingMethod.name)).all())
 
 

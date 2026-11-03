@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.modules.reports.models import ReportDelivery, ReportDeliveryAttempt, ReportDefinition
+from app.modules.companies.models import Company
 from app.modules.company_settings.consumers.common import policy
 
 WORKER_ID = os.getenv("PRIMEERP_REPORT_WORKER_ID", f"report-worker-{uuid.uuid4().hex[:8]}")
@@ -114,7 +115,12 @@ def claim_due_deliveries(db: Session, limit: int = 20) -> list[ReportDelivery]:
     now = datetime.now(timezone.utc)
     rows = list(db.scalars(
         select(ReportDelivery)
+        .join(Company, Company.id == ReportDelivery.company_id)
+        .join(ReportDefinition, ReportDefinition.id == ReportDelivery.report_definition_id)
         .where(
+            Company.is_active.is_(True),
+            ReportDefinition.company_id == ReportDelivery.company_id,
+            ReportDefinition.is_active.is_(True),
             ReportDelivery.is_active.is_(True),
             ReportDelivery.next_run_at.is_not(None),
             ReportDelivery.next_run_at <= now,
@@ -225,8 +231,33 @@ def process_delivery(db: Session, delivery: ReportDelivery) -> None:
         db.commit()
         return
 
-    attempt = create_attempt(db, delivery)
+    # Revalidate company and definition after claiming the lease. A company or
+    # report can be disabled between claim and delivery.
+    company = db.get(Company, delivery.company_id)
+    if company is None or not company.is_active:
+        delivery.last_status = "paused_company_or_definition"
+        delivery.last_error = "Scheduled report delivery is paused because its company is inactive or unavailable"
+        delivery.next_run_at = None
+        delivery.locked_until = None
+        delivery.locked_by = None
+        db.commit()
+        return
+
     definition = db.get(ReportDefinition, delivery.report_definition_id)
+    if (
+        definition is None
+        or not definition.is_active
+        or definition.company_id != delivery.company_id
+    ):
+        delivery.last_status = "paused_company_or_definition"
+        delivery.last_error = "Scheduled report delivery is paused because its report definition is inactive or inconsistent"
+        delivery.next_run_at = None
+        delivery.locked_until = None
+        delivery.locked_by = None
+        db.commit()
+        return
+
+    attempt = create_attempt(db, delivery)
     try:
         if definition is None or not definition.is_active or definition.company_id != delivery.company_id:
             raise ReportProviderError("Report definition is missing, inactive, or outside the delivery company")

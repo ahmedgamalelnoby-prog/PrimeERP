@@ -14,6 +14,7 @@ from sqlalchemy.sql import func
 from app.database.base import Base
 from app.modules.roles.models import Role
 from app.modules.saas.models import Tenant
+from app.modules.identity.models.user_company_access import UserCompanyAccess
 
 
 class User(Base):
@@ -150,6 +151,13 @@ class User(Base):
         Role,
         back_populates="users",
         foreign_keys=[role_id],
+    )
+
+    company_access = relationship(
+        "UserCompanyAccess",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     __table_args__ = (

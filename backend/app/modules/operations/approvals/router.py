@@ -6,6 +6,7 @@ from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.audit.service import record_audit_event
+from app.modules.companies.access import require_company_access
 from app.modules.companies.models import Company
 from app.modules.company_settings.consumers.approvals import approval_mode
 from app.modules.identity.dependencies import get_current_user
@@ -24,15 +25,8 @@ def _tenant_id(user: User) -> int:
     return tenant_id
 
 
-def _company(db: Session, company_id: int, tenant_id: int) -> Company:
-    company = db.scalar(select(Company).where(
-        Company.id == company_id,
-        Company.tenant_id == tenant_id,
-        Company.is_active.is_(True),
-    ))
-    if company is None:
-        raise HTTPException(404, "Active company not found in current tenant")
-    return company
+def _company(db: Session, company_id: int, user: User) -> Company:
+    return require_company_access(db, user, company_id)
 
 
 def _audit(db: Session, *, action: str, request: ApprovalRequest, user: User) -> None:
@@ -54,7 +48,7 @@ def list_approval_requests(
     user: User = Depends(get_current_user),
 ):
     tenant_id = _tenant_id(user)
-    _company(db, company_id, tenant_id)
+    _company(db, company_id, user)
     return list(db.scalars(
         select(ApprovalRequest)
         .options(selectinload(ApprovalRequest.steps))
@@ -75,7 +69,7 @@ def submit_approval_request(
     user: User = Depends(get_current_user),
 ):
     tenant_id = _tenant_id(user)
-    _company(db, payload.company_id, tenant_id)
+    _company(db, payload.company_id, user)
     if user.id in payload.approver_ids:
         raise HTTPException(422, "Requester cannot approve their own request")
     approvers = list(db.scalars(select(User).where(
@@ -120,7 +114,7 @@ def decide_approval_request(
     user: User = Depends(get_current_user),
 ):
     tenant_id = _tenant_id(user)
-    _company(db, company_id, tenant_id)
+    _company(db, company_id, user)
     request = db.scalar(select(ApprovalRequest).options(selectinload(ApprovalRequest.steps)).where(
         ApprovalRequest.id == request_id,
         ApprovalRequest.tenant_id == tenant_id,

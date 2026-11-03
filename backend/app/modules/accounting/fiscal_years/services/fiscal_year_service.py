@@ -24,6 +24,7 @@ from app.modules.accounting.fiscal_years.schemas import (
     FiscalYearCreate,
     FiscalYearUpdate,
 )
+from app.modules.companies.access import require_company_access
 from app.modules.companies.models import Company
 from app.modules.company_settings.service import get_company_setting
 from app.modules.identity.models import User
@@ -45,6 +46,7 @@ class FiscalYearService:
             tenant_id=tenant_id,
             company_id=payload.company_id,
         )
+        require_company_access(db, current_user, payload.company_id)
         required_start_month = int(get_company_setting(db, payload.company_id, "accounting.fiscal_year_start_month"))
         if payload.start_date.month != required_start_month:
             raise HTTPException(
@@ -155,6 +157,7 @@ class FiscalYearService:
                 detail="Fiscal year not found",
             )
 
+        require_company_access(db, current_user, fiscal_year.company_id)
         return fiscal_year
 
     def list_fiscal_years(
@@ -172,6 +175,7 @@ class FiscalYearService:
             tenant_id=tenant_id,
             company_id=company_id,
         )
+        require_company_access(db, current_user, company_id)
 
         return (
             fiscal_year_repository
@@ -463,6 +467,8 @@ class FiscalYearService:
                 detail="Accounting period not found",
             )
 
+        require_company_access(db, current_user, period.company_id)
+
         if period.status != "open":
             raise HTTPException(
                 status_code=(
@@ -626,6 +632,7 @@ class FiscalYearService:
         posting_date: date,
         current_user: User,
     ) -> AccountingPeriod:
+        require_company_access(db, current_user, company_id)
         period = (
             fiscal_year_repository
             .get_period_for_date(
@@ -788,6 +795,7 @@ class FiscalYearService:
                 detail="Fiscal year not found",
             )
 
+        require_company_access(db, current_user, fiscal_year.company_id)
         return fiscal_year
 
     @staticmethod

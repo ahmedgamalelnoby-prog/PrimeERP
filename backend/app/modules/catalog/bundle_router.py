@@ -1,13 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.catalog.bundle_service import product_bundle_service
 from app.modules.catalog.schemas import BundleCreate, BundleResponse
-from app.modules.companies.models import Company
+from app.modules.companies.access import require_company_access
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.saas.entitlements import require_module
@@ -18,10 +16,7 @@ WRITE = [Depends(require_permission("inventory.write")), Depends(require_module(
 
 
 def guard_company(db, company_id, user):
-    tenant_id = get_effective_tenant_id(user)
-    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == tenant_id, Company.is_active.is_(True)))
-    if company is None:
-        raise HTTPException(status_code=403, detail="Company is outside the current tenant or inactive")
+    require_company_access(db, user, company_id)
 
 
 def err(exc):

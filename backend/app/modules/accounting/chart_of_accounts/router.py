@@ -4,10 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
-from app.modules.companies.models import Company
+from app.modules.companies.access import require_company_access
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 
@@ -32,20 +31,8 @@ def _company_id(company_id: int) -> int:
 
 
 def _authorized_company(db: Session, company_id: int, current_user: User) -> int:
-    """Resolve the requested company only inside the user's effective tenant."""
     company_id = _company_id(company_id)
-    tenant_id = get_effective_tenant_id(current_user)
-    company = db.scalar(
-        select(Company.id).where(
-            Company.id == company_id,
-            Company.tenant_id == tenant_id,
-            Company.is_active.is_(True),
-        )
-    )
-    if company is None:
-        # Do not disclose whether a company exists in another tenant.
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
-    return company
+    return require_company_access(db, current_user, company_id, active_only=True).id
 
 
 @router.get(

@@ -3,7 +3,7 @@ import { useLocation } from "react-router-dom";
 import client from "@/shared/api/client";
 import "@/shared/api/interceptors";
 
-type Company = { id: number; tenant_id: number; name: string; code: string | null; email: string | null; tax_id: string | null; is_active: boolean };
+type Company = { id: number; tenant_id: number; name: string; code: string | null; email: string | null; tax_id: string | null; is_active: boolean; is_default?: boolean };
 type Branch = { id: number; tenant_id: number; company_id: number; name: string; code: string | null; email: string | null; is_active: boolean };
 
 export default function CompanyManagementPage() {
@@ -16,9 +16,16 @@ export default function CompanyManagementPage() {
 
   async function loadCompanies() {
     const r = await client.get<Company[]>("/companies?active_only=true");
-    setCompanies(r.data); setCompanyId((current) => current || String(r.data[0]?.id || ""));
-    if (!currentStorageCompany(r.data)) localStorage.removeItem("company_id");
-    if (r.data.length) localStorage.setItem("company_id", String(Number(localStorage.getItem("company_id")) || r.data[0].id));
+    setCompanies(r.data);
+    const storedId = Number(localStorage.getItem("company_id")) || 0;
+    const selected = r.data.find((company) => company.id === storedId)
+      ?? r.data.find((company) => company.is_default)
+      ?? r.data[0];
+    setCompanyId((current) => current && r.data.some((company) => String(company.id) === current)
+      ? current
+      : String(selected?.id || ""));
+    if (selected) localStorage.setItem("company_id", String(selected.id));
+    else localStorage.removeItem("company_id");
   }
   async function load() {
     setLoading(true); setError("");
@@ -47,8 +54,6 @@ export default function CompanyManagementPage() {
     try { await client.delete(`${branches ? "/branches" : "/companies"}/${id}`); await load(); }
     catch (e: any) { setError(e?.response?.data?.detail || "تعذر التعطيل"); }
   }
-  function currentStorageCompany(list: Company[]) { const id = Number(localStorage.getItem("company_id")); return list.some((c) => c.id === id); }
-
   return <section className="space-y-6 p-6" dir="rtl">
     <header><h1 className="text-2xl font-bold">{branches ? "الفروع" : "الشركات"}</h1><p className="mt-1 text-sm text-muted-foreground">إدارة فعلية مع عزل الـ tenant وعدم استخدام شركة افتراضية.</p></header>
     <div className="grid gap-6 lg:grid-cols-[360px_1fr]">

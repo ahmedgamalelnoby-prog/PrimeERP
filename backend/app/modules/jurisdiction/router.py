@@ -6,6 +6,7 @@ from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission, require_platform_admin
 from app.database.session import get_db
 from app.modules.commerce.models import BusinessPartner
+from app.modules.companies.access import require_company_access
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
@@ -23,20 +24,14 @@ _OVERLAP_CONSTRAINTS = {
 
 
 def company_for_user(db: Session, company_id: int, user: User):
-    obj = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == get_effective_tenant_id(user), Company.is_active.is_(True)))
-    if obj is None:
-        raise HTTPException(403, "Company is outside the current tenant")
-    return obj
+    return require_company_access(db, user, company_id)
 
 
 def partner_for_user(db: Session, partner_id: int, user: User):
-    obj = db.scalar(
-        select(BusinessPartner)
-        .join(Company, Company.id == BusinessPartner.company_id)
-        .where(BusinessPartner.id == partner_id, Company.tenant_id == get_effective_tenant_id(user))
-    )
+    obj = db.scalar(select(BusinessPartner).where(BusinessPartner.id == partner_id))
     if obj is None:
-        raise HTTPException(403, "Partner is outside the current tenant")
+        raise HTTPException(404, "Partner not found")
+    company_for_user(db, obj.company_id, user)
     return obj
 
 

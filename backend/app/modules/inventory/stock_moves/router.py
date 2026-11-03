@@ -8,6 +8,7 @@ from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
+from app.modules.companies.access import require_company_access
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.inventory.stock_moves.schemas import InventoryAccountingConfigCreate, InventoryAccountingConfigResponse, StockMoveCreate, StockMoveResponse
@@ -17,12 +18,7 @@ router = APIRouter(prefix="/inventory/stock-moves", tags=["Inventory Stock Moves
 
 
 def _company_for_user(db: Session, company_id: int, user: User):
-    if get_effective_tenant_id(user) is None:
-        raise HTTPException(403, "User is not assigned to a tenant")
-    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == get_effective_tenant_id(user), Company.is_active.is_(True)))
-    if company is None:
-        raise HTTPException(403, "Company is outside the current tenant")
-    return company
+    return require_company_access(db, user, company_id, active_only=True)
 
 
 @router.get("", response_model=list[StockMoveResponse], dependencies=[Depends(require_permission("inventory.access"))])

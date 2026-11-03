@@ -12,6 +12,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.database.base import Base
+from app.modules.identity.models.user_company_access import UserCompanyAccess
 
 
 class Company(Base):
@@ -108,6 +109,13 @@ class Company(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
         foreign_keys="Branch.company_id",
+    )
+
+    user_access = relationship(
+        "UserCompanyAccess",
+        back_populates="company",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     __table_args__ = (

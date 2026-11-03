@@ -132,3 +132,44 @@ def test_worker_fails_closed_when_company_policy_cannot_be_read(monkeypatch):
     assert delivery.last_status == "paused_policy"
     assert delivery.next_run_at is None
     assert db.committed is True
+
+def test_worker_pauses_delivery_when_company_is_inactive(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.modules.reports import worker
+
+    class FakeDB:
+        committed = False
+
+        def get(self, model, _identifier):
+            if model is worker.Company:
+                return SimpleNamespace(is_active=False)
+            raise AssertionError("inactive company must prevent report lookup")
+
+        def commit(self):
+            self.committed = True
+
+    delivery = SimpleNamespace(
+        company_id=7,
+        report_definition_id=3,
+        last_status=None,
+        last_error=None,
+        next_run_at=datetime(2026, 9, 15, 10, 0, tzinfo=timezone.utc),
+        locked_until=datetime(2026, 9, 15, 10, 5, tzinfo=timezone.utc),
+        locked_by="worker-test",
+    )
+    monkeypatch.setattr(worker, "policy", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        worker,
+        "create_attempt",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("inactive company must not send")),
+    )
+    db = FakeDB()
+
+    worker.process_delivery(db, delivery)
+
+    assert delivery.last_status == "paused_company_or_definition"
+    assert delivery.next_run_at is None
+    assert delivery.locked_until is None
+    assert delivery.locked_by is None
+    assert db.committed is True

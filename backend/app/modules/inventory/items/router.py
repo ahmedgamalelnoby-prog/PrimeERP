@@ -2,10 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
+from app.modules.companies.access import require_company_access
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.inventory.items.schemas import InventoryItemCreate, InventoryItemResponse, InventoryItemUpdate
@@ -16,13 +16,7 @@ router = APIRouter(prefix="/inventory/items", tags=["Inventory - Items"])
 
 
 def _company_for_user(db: Session, company_id: int, user: User) -> Company:
-    tenant_id = get_effective_tenant_id(user)
-    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == tenant_id))
-    if company is None:
-        raise HTTPException(status_code=403, detail="Company is outside the current tenant")
-    if not company.is_active:
-        raise HTTPException(status_code=409, detail="Company is inactive")
-    return company
+    return require_company_access(db, user, company_id, active_only=True)
 
 
 @router.get("", response_model=list[InventoryItemResponse], dependencies=[Depends(require_permission("inventory.access")), Depends(require_module("inventory"))])

@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.security import create_access_token
 from app.modules.companies.models import Company
-from app.modules.identity.models import User
+from app.modules.identity.models import User, UserCompanyAccess
 from app.modules.saas.models import Subscription, SubscriptionPlan, Tenant, TenantModule
 from app.modules.saas.schemas import TenantRegistrationRequest
 from app.modules.saas.service import register_trial_tenant, resolve_enabled_modules
@@ -283,6 +283,34 @@ def consume_sso_ticket(db: Session, ticket: str) -> str:
     expires = row.expires_at if row.expires_at.tzinfo else row.expires_at.replace(tzinfo=timezone.utc)
     if expires <= now:
         raise SallaPublicAppError("Salla SSO ticket has expired")
+
+    # A ticket is only a short-lived proof of the original Salla handshake.
+    # Revalidate the live installation, company and user assignment at exchange
+    # time so revocation/deactivation after ticket issuance takes effect.
+    context = db.execute(
+        select(SallaAppInstallation, Company, User)
+        .join(Company, Company.id == SallaAppInstallation.company_id)
+        .join(User, User.id == SallaAppInstallation.user_id)
+        .join(
+            UserCompanyAccess,
+            (UserCompanyAccess.user_id == User.id)
+            & (UserCompanyAccess.company_id == Company.id),
+        )
+        .where(
+            SallaAppInstallation.id == row.installation_id,
+            SallaAppInstallation.tenant_id == row.tenant_id,
+            SallaAppInstallation.user_id == row.user_id,
+            SallaAppInstallation.status == "active",
+            Company.tenant_id == row.tenant_id,
+            Company.is_active.is_(True),
+            User.tenant_id == row.tenant_id,
+            User.is_active.is_(True),
+            User.is_deleted.is_(False),
+        )
+    ).first()
+    if context is None:
+        raise SallaPublicAppError("Salla installation, company, or user access is no longer active")
+
     row.consumed_at = now
     token = create_access_token({"user_id": row.user_id, "sub": str(row.user_id), "tenant_id": row.tenant_id})
     db.commit()
@@ -290,7 +318,18 @@ def consume_sso_ticket(db: Session, ticket: str) -> str:
 
 
 def get_salla_access_token(db: Session, connection: IntegrationConnection) -> str:
-    installation = db.scalar(select(SallaAppInstallation).where(SallaAppInstallation.connection_id == connection.id, SallaAppInstallation.company_id == connection.company_id, SallaAppInstallation.tenant_id == connection.tenant_id).with_for_update())
+    installation = db.scalar(
+        select(SallaAppInstallation)
+        .join(Company, Company.id == SallaAppInstallation.company_id)
+        .where(
+            SallaAppInstallation.connection_id == connection.id,
+            SallaAppInstallation.company_id == connection.company_id,
+            SallaAppInstallation.tenant_id == Company.tenant_id,
+            Company.is_active.is_(True),
+            SallaAppInstallation.status == "active",
+        )
+        .with_for_update()
+    )
     if installation is None:
         raise SallaPublicAppError("Salla public-app installation not found")
     token = decrypt_token(installation.access_token_ciphertext)
@@ -493,6 +532,20 @@ def handle_app_event(db: Session, payload: dict[str, Any], event_id: str | None 
     if installation is None:
         result = {"ignored": True, "reason": "installation_not_found", "event": event, "merchant_id": merchant_id}
     else:
+        company = db.scalar(
+            select(Company).where(
+                Company.id == installation.company_id,
+                Company.tenant_id == installation.tenant_id,
+            )
+        )
+        if company is None:
+            raise SallaPublicAppError("Salla installation company does not belong to its tenant")
+        # A signed webhook may still uninstall an inactive company, but it
+        # must not reactivate subscriptions or execute commerce operations for
+        # a company that has been deactivated in PrimeERP.
+        if not company.is_active and event != "app.uninstalled":
+            raise SallaPublicAppError("Salla installation company is inactive")
+
         installation.last_webhook_at = datetime.now(timezone.utc)
         data = _payload_data(payload)
         if event in {"app.uninstalled", "app.subscription.expired", "app.subscription.canceled", "app.trial.expired", "app.trial.canceled"}:
