@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.context import get_effective_tenant_id
+from sqlalchemy import select
+from app.modules.companies.access import accessible_company_query, require_company_access
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.identity.dependencies import get_current_user
@@ -36,11 +38,31 @@ def require_tenant_user(current_user: User) -> int:
 
 @router.get("/number-sequences", response_model=list[NumberSequenceResponse])
 def list_number_sequences(company_id: Optional[int] = Query(default=None, gt=0), branch_id: Optional[int] = Query(default=None, gt=0), is_active: Optional[bool] = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    return numbering_service.list_sequences(db=db, current_tenant_id=require_tenant_user(current_user), company_id=company_id, branch_id=branch_id, is_active=is_active)
+    tenant_id = require_tenant_user(current_user)
+    if company_id is not None:
+        require_company_access(db, current_user, company_id)
+        return numbering_service.list_sequences(db=db, current_tenant_id=tenant_id, company_id=company_id, branch_id=branch_id, is_active=is_active)
+    companies = list(db.scalars(accessible_company_query(current_user)).all())
+    if branch_id is not None:
+        from app.modules.branches.models import Branch
+        branch = db.scalar(select(Branch).where(Branch.id == branch_id))
+        if branch is None:
+            raise HTTPException(status_code=404, detail="Branch not found")
+        require_company_access(db, current_user, branch.company_id)
+        companies = [company for company in companies if company.id == branch.company_id]
+    return [
+        sequence
+        for company in companies
+        for sequence in numbering_service.list_sequences(
+            db=db, current_tenant_id=tenant_id, company_id=company.id,
+            branch_id=branch_id, is_active=is_active,
+        )
+    ]
 
 
 @router.post("/number-sequences", response_model=NumberSequenceResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("transaction.write"))])
 def create_number_sequence(payload: NumberSequenceCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    require_company_access(db, current_user, payload.company_id)
     return numbering_service.create_sequence(db=db, payload=payload, current_tenant_id=require_tenant_user(current_user))
 
 
@@ -49,16 +71,21 @@ def generate_next_number(payload: GenerateNumberRequest, db: Session = Depends(g
     tenant_id = require_tenant_user(current_user)
     if payload.tenant_id != tenant_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access to another tenant is not allowed")
+    require_company_access(db, current_user, payload.company_id)
     return numbering_service.generate_next_number(db=db, tenant_id=tenant_id, company_id=payload.company_id, branch_id=payload.branch_id, sequence_key=payload.sequence_key)
 
 
 @router.get("/number-sequences/{sequence_id}", response_model=NumberSequenceResponse)
 def get_number_sequence(sequence_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    return numbering_service.get_sequence(db=db, sequence_id=sequence_id, current_tenant_id=require_tenant_user(current_user))
+    sequence = numbering_service.get_sequence(db=db, sequence_id=sequence_id, current_tenant_id=require_tenant_user(current_user))
+    require_company_access(db, current_user, sequence.company_id)
+    return sequence
 
 
 @router.put("/number-sequences/{sequence_id}", response_model=NumberSequenceResponse, dependencies=[Depends(require_permission("transaction.write"))])
 def update_number_sequence(sequence_id: int, payload: NumberSequenceUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    sequence = numbering_service.get_sequence(db=db, sequence_id=sequence_id, current_tenant_id=require_tenant_user(current_user))
+    require_company_access(db, current_user, sequence.company_id)
     return numbering_service.update_sequence(db=db, sequence_id=sequence_id, payload=payload, current_tenant_id=require_tenant_user(current_user))
 
 
