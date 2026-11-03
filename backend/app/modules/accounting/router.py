@@ -11,6 +11,7 @@ from app.database.session import get_db
 from app.modules.accounting.models import TaxRate
 from app.modules.accounting.tax_engine import calculate_taxes
 from app.modules.companies.models import Company
+from app.modules.companies.access import require_company_access
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.saas.entitlements import require_module
@@ -19,14 +20,7 @@ router = APIRouter(prefix="/accounting", tags=["accounting"], dependencies=[Depe
 
 
 def _company_for_user(db: Session, company_id: int, user: User):
-    if get_effective_tenant_id(user) is None:
-        raise HTTPException(403, "User is not assigned to a tenant")
-    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == get_effective_tenant_id(user)))
-    if company is None:
-        raise HTTPException(403, "Company is outside the current tenant")
-    if not company.is_active:
-        raise HTTPException(409, "Company is inactive")
-    return company
+    return require_company_access(db, user, company_id, active_only=True)
 
 
 def _tax_for_company(db: Session, tax_id: int, company_id: int, user: User) -> TaxRate:
