@@ -136,7 +136,14 @@ def revoke_company_access(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _get_company(db, company_id, current_user)
+    company = _get_company(db, company_id, current_user)
+    target_user = db.scalar(select(User).where(
+        User.id == user_id,
+        User.tenant_id == company.tenant_id,
+        User.is_deleted.is_(False),
+    ))
+    if target_user is None:
+        raise HTTPException(status_code=404, detail="User not found in this tenant")
     access = db.get(UserCompanyAccess, (user_id, company_id))
     if access is None:
         return
