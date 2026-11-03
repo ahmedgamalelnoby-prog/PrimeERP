@@ -9,6 +9,7 @@ from app.database.session import get_db
 from app.modules.branches.models import Branch
 from app.modules.branches.schemas import BranchCreate, BranchResponse, BranchUpdate
 from app.modules.companies.models import Company
+from app.modules.companies.access import accessible_company_query, require_company_access
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.saas.entitlements import enforce_branch_limit
@@ -23,22 +24,20 @@ def _tenant_id(user: User) -> int:
 
 
 def _company(db: Session, company_id: int, user: User) -> Company:
-    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == _tenant_id(user), Company.is_active.is_(True)))
-    if company is None:
-        raise HTTPException(status_code=404, detail="Company not found")
-    return company
+    return require_company_access(db, user, company_id, active_only=True)
 
 
 def _branch(db: Session, branch_id: int, user: User) -> Branch:
     branch = db.scalar(select(Branch).where(Branch.id == branch_id, Branch.tenant_id == _tenant_id(user)))
     if branch is None:
         raise HTTPException(status_code=404, detail="Branch not found")
+    require_company_access(db, user, branch.company_id, active_only=False)
     return branch
 
 
 @router.get("", response_model=list[BranchResponse], dependencies=[Depends(require_permission("branch.access"))])
 def list_branches(company_id: int | None = Query(default=None, gt=0), active_only: bool = Query(False), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    stmt = select(Branch).where(Branch.tenant_id == _tenant_id(current_user)).order_by(Branch.name, Branch.id)
+    stmt = select(Branch).where(Branch.tenant_id == _tenant_id(current_user), Branch.company_id.in_(accessible_company_query(current_user, active_only=False).with_only_columns(Company.id))).order_by(Branch.name, Branch.id)
     if company_id is not None:
         _company(db, company_id, current_user)
         stmt = stmt.where(Branch.company_id == company_id)
