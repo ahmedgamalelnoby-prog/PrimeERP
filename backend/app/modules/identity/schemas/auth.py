@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
-
 from pydantic import BaseModel, Field
 
 
@@ -24,18 +22,6 @@ class LoginRequest(BaseModel):
         ...,
         min_length=1,
         max_length=128,
-    )
-
-    tenant_slug: Optional[str] = Field(
-        default=None,
-        min_length=2,
-        max_length=100,
-    )
-
-    tenant_name: Optional[str] = Field(
-        default=None,
-        min_length=2,
-        max_length=200,
     )
 
 
