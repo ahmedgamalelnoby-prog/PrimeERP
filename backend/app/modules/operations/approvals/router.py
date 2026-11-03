@@ -114,7 +114,7 @@ def decide_approval_request(
     user: User = Depends(get_current_user),
 ):
     tenant_id = _tenant_id(user)
-    _company(db, company_id, tenant_id)
+    _company(db, company_id, user)
     request = db.scalar(select(ApprovalRequest).options(selectinload(ApprovalRequest.steps)).where(
         ApprovalRequest.id == request_id,
         ApprovalRequest.tenant_id == tenant_id,
