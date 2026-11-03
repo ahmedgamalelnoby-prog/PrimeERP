@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from app.database.session import SessionLocal
 from app.modules.company_settings.consumers.approvals import approval_escalation_due
 from app.modules.companies.models import Company
+from app.modules.identity.models import User, UserCompanyAccess
 from app.modules.notifications.models import NotificationDelivery
 from app.modules.operations.approvals.models import ApprovalRequest, ApprovalStep
 
@@ -45,10 +46,24 @@ def process_due_approval_escalations(*, now: datetime | None = None) -> int:
                 logger.exception("Invalid escalation policy; request_id=%s", request.id)
                 continue
 
+            # Escalations are system-generated, but the recipient must
+            # still be an active user assigned to this exact company. This
+            # prevents stale approval steps from notifying users after access
+            # has been revoked or the user has been deactivated.
             pending_steps = db.scalars(
-                select(ApprovalStep).where(
+                select(ApprovalStep)
+                .join(User, User.id == ApprovalStep.approver_user_id)
+                .join(
+                    UserCompanyAccess,
+                    (UserCompanyAccess.user_id == User.id)
+                    & (UserCompanyAccess.company_id == request.company_id),
+                )
+                .where(
                     ApprovalStep.request_id == request.id,
                     ApprovalStep.status == "pending",
+                    User.tenant_id == request.tenant_id,
+                    User.is_active.is_(True),
+                    User.is_deleted.is_(False),
                 )
             ).all()
             for step in pending_steps:
