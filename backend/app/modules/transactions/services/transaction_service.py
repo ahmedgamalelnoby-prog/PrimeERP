@@ -14,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.modules.branches.models import Branch
+from app.modules.companies.access import require_company_access
 from app.modules.companies.models import Company
 from app.modules.company_settings.service import get_company_setting
 from app.modules.identity.models import User
@@ -62,6 +63,7 @@ class TransactionService:
             current_user
         )
 
+        require_company_access(db, current_user, payload.company_id)
         self._validate_scope(
             db=db,
             tenant_id=tenant_id,
@@ -457,6 +459,8 @@ class TransactionService:
         if transaction is None:
             self._raise_not_found()
 
+        require_company_access(db, current_user, transaction.company_id)
+
         if transaction.status not in {
             "draft",
             "pending",
@@ -532,6 +536,8 @@ class TransactionService:
 
         if original is None:
             self._raise_not_found()
+
+        require_company_access(db, current_user, original.company_id)
 
         if original.status != "posted":
             raise HTTPException(
@@ -708,6 +714,7 @@ class TransactionService:
         if transaction is None:
             self._raise_not_found()
 
+        require_company_access(db, current_user, transaction.company_id)
         return transaction
 
     def get_by_number(
@@ -734,6 +741,7 @@ class TransactionService:
         if transaction is None:
             self._raise_not_found()
 
+        require_company_access(db, current_user, transaction.company_id)
         return transaction
 
     def list_transactions(
@@ -751,6 +759,9 @@ class TransactionService:
         tenant_id = self._get_tenant_id(
             current_user
         )
+        if company_id is None:
+            raise HTTPException(status_code=422, detail="company_id is required to list transactions")
+        require_company_access(db, current_user, company_id)
 
         items, total = (
             transaction_repository
@@ -857,6 +868,7 @@ class TransactionService:
         if transaction is None:
             self._raise_not_found()
 
+        require_company_access(db, current_user, transaction.company_id)
         return transaction
 
     @staticmethod
