@@ -104,6 +104,27 @@ def update_company(company_id: int, payload: CompanyUpdate, db: Session = Depend
 def deactivate_company(company_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     company = _get_company(db, company_id, current_user)
     company.is_active = False
+    default_assignments = db.scalars(select(UserCompanyAccess).where(
+        UserCompanyAccess.company_id == company.id,
+        UserCompanyAccess.is_default.is_(True),
+    )).all()
+    for assignment in default_assignments:
+        assignment.is_default = False
+    db.flush()
+    for assignment in default_assignments:
+        replacement = db.scalar(
+            select(UserCompanyAccess)
+            .join(Company, Company.id == UserCompanyAccess.company_id)
+            .where(
+                UserCompanyAccess.user_id == assignment.user_id,
+                Company.tenant_id == company.tenant_id,
+                Company.is_active.is_(True),
+            )
+            .order_by(UserCompanyAccess.company_id)
+            .limit(1)
+        )
+        if replacement is not None:
+            replacement.is_default = True
     db.commit()
 
 
@@ -165,9 +186,17 @@ def revoke_company_access(
     db.delete(access)
     db.flush()
     if was_default:
-        replacement = db.scalar(select(UserCompanyAccess).where(
-            UserCompanyAccess.user_id == user_id
-        ).order_by(UserCompanyAccess.company_id).limit(1))
+        replacement = db.scalar(
+            select(UserCompanyAccess)
+            .join(Company, Company.id == UserCompanyAccess.company_id)
+            .where(
+                UserCompanyAccess.user_id == user_id,
+                Company.tenant_id == company.tenant_id,
+                Company.is_active.is_(True),
+            )
+            .order_by(UserCompanyAccess.company_id)
+            .limit(1)
+        )
         if replacement is not None:
             replacement.is_default = True
     db.commit()
