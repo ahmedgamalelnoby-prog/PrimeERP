@@ -35,14 +35,16 @@ def upgrade():
         INSERT INTO user_company_access (user_id, company_id, is_default)
         SELECT user_id, company_id, (company_rank = 1)
         FROM (
-            SELECT u.id AS user_id,
+            SELECT legacy_users.id AS user_id,
                    c.id AS company_id,
-                   row_number() OVER (PARTITION BY u.id ORDER BY c.id) AS company_rank
-            FROM users AS u
-            JOIN companies AS c ON c.tenant_id = u.tenant_id
-            WHERE u.tenant_id IS NOT NULL
-              AND u.is_deleted IS FALSE
-              AND c.is_active IS TRUE
+                   row_number() OVER (PARTITION BY legacy_users.id ORDER BY c.id) AS company_rank
+            FROM (
+                SELECT DISTINCT id, tenant_id
+                FROM users
+                WHERE tenant_id IS NOT NULL AND is_deleted IS FALSE
+            ) AS legacy_users
+            JOIN companies AS c ON c.tenant_id = legacy_users.tenant_id
+            WHERE c.is_active IS TRUE
         ) AS assignments
         ON CONFLICT (user_id, company_id) DO NOTHING
     """))
