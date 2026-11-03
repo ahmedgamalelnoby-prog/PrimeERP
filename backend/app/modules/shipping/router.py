@@ -11,6 +11,7 @@ from app.modules.accounting.chart_of_accounts.models import AccountCombination
 from app.modules.accounting.journals.models import AccountingJournal
 from app.modules.branches.models import Branch
 from app.modules.companies.models import Company
+from app.modules.companies.access import require_company_access
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.saas.entitlements import require_module
@@ -30,13 +31,7 @@ def _tenant_id(user: User) -> int:
 
 
 def _company_for_user(db: Session, company_id: int, user: User):
-    tenant_id = _tenant_id(user)
-    company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == tenant_id))
-    if company is None:
-        raise HTTPException(403, "Company is outside the current tenant")
-    if not company.is_active:
-        raise HTTPException(409, "Company is inactive")
-    return company
+    return require_company_access(db, user, company_id, active_only=True)
 
 
 def _validate_account(db: Session, company_id: int, account_id: int | None, label: str):
