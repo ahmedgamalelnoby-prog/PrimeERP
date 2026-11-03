@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
+from app.modules.companies.access import require_company_access
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.mobile.models import MobileDevice,MobileSession,MobileTask,MobileScanEvent
@@ -15,11 +16,8 @@ from app.modules.branches.models import Branch
 router=APIRouter(prefix="/mobile",tags=["Mobile Execution"])
 
 def company_ok(db,company_id,user):
-    from app.modules.companies.models import Company
-    tenant_id = get_effective_tenant_id(user)
-    if tenant_id is None: raise HTTPException(403,"User is not assigned to a tenant")
-    if not db.scalar(select(Company.id).where(Company.id==company_id,Company.tenant_id==tenant_id,Company.is_active.is_(True))): raise HTTPException(404,"Company not found")
-    return tenant_id
+    require_company_access(db, user, company_id)
+    return get_effective_tenant_id(user)
 
 @router.post("/devices",response_model=DeviceResponse,dependencies=[Depends(require_permission("mobile.write"))])
 def devices(p:DeviceRegister,db:Session=Depends(get_db),user:User=Depends(get_current_user)): company_ok(db,p.company_id,user);return register_device(db,user,p)
@@ -31,6 +29,7 @@ def list_devices(company_id:int=Query(...,gt=0),db:Session=Depends(get_db),user:
 def open_session(p:SessionCreate,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     d=db.scalar(select(MobileDevice).where(MobileDevice.id==p.device_id,MobileDevice.user_id==user.id,MobileDevice.is_active.is_(True)))
     if not d: raise HTTPException(404,"Device not found")
+    company_ok(db,d.company_id,user)
     old=db.scalar(select(MobileSession).where(MobileSession.device_id==d.id,MobileSession.status=="open"))
     if old: old.status="closed";old.closed_at=datetime.now(timezone.utc)
     if p.warehouse_id and not db.scalar(select(InventoryWarehouse.id).where(InventoryWarehouse.id==p.warehouse_id,InventoryWarehouse.company_id==d.company_id,InventoryWarehouse.is_active.is_(True))): raise HTTPException(404,"Warehouse not found")
@@ -41,11 +40,17 @@ def open_session(p:SessionCreate,db:Session=Depends(get_db),user:User=Depends(ge
 def close_session(session_id:int,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     s=db.scalar(select(MobileSession).where(MobileSession.id==session_id,MobileSession.user_id==user.id))
     if not s: raise HTTPException(404,"Session not found")
+    device_company_id=db.scalar(select(MobileDevice.company_id).where(MobileDevice.id==s.device_id))
+    company_ok(db,device_company_id,user)
     if s.status!="open": raise HTTPException(409,"Session is not open")
     s.status="closed";s.closed_at=datetime.now(timezone.utc);db.commit();db.refresh(s);return s
 
 @router.post("/sync",dependencies=[Depends(require_permission("mobile.write"))])
-def sync_batch(p:SyncBatch,db:Session=Depends(get_db),user:User=Depends(get_current_user)): return {"items":sync(db,user,p)}
+def sync_batch(p:SyncBatch,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
+    device=db.scalar(select(MobileDevice).where(MobileDevice.id==p.device_id,MobileDevice.user_id==user.id,MobileDevice.is_active.is_(True)))
+    if not device: raise HTTPException(404,"Mobile device not found")
+    company_ok(db,device.company_id,user)
+    return {"items":sync(db,user,p)}
 
 @router.get("/tasks",response_model=list[TaskResponse],dependencies=[Depends(require_permission("mobile.access"))])
 def tasks(company_id:int=Query(...,gt=0),status:str|None=None,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
@@ -64,6 +69,7 @@ def create_task(p:TaskCreate,db:Session=Depends(get_db),user:User=Depends(get_cu
 def complete_task(task_id:int,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     t=db.scalar(select(MobileTask).where(MobileTask.id==task_id,MobileTask.assigned_user_id==user.id))
     if not t: raise HTTPException(404,"Task not found")
+    company_ok(db,t.company_id,user)
     if t.status not in ("open","in_progress"): raise HTTPException(409,"Task cannot be completed")
     t.status="completed";t.completed_at=datetime.now(timezone.utc);db.commit();db.refresh(t);return t
 
@@ -71,4 +77,4 @@ def complete_task(task_id:int,db:Session=Depends(get_db),user:User=Depends(get_c
 def scan(p:ScanCreate,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     s=db.scalar(select(MobileSession).where(MobileSession.id==p.session_id,MobileSession.user_id==user.id,MobileSession.status=="open"))
     if not s: raise HTTPException(404,"Open mobile session not found")
-    company_id=db.scalar(select(MobileDevice.company_id).where(MobileDevice.id==s.device_id));row=MobileScanEvent(company_id=company_id,device_id=s.device_id,session_id=s.id,**p.model_dump());db.add(row);db.commit();db.refresh(row);return row
+    company_id=db.scalar(select(MobileDevice.company_id).where(MobileDevice.id==s.device_id));company_ok(db,company_id,user);row=MobileScanEvent(company_id=company_id,device_id=s.device_id,session_id=s.id,**p.model_dump());db.add(row);db.commit();db.refresh(row);return row
