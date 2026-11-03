@@ -1,6 +1,9 @@
 name: Identity and company access CI
 
 on:
+  push:
+    branches:
+      - feat/identity-company-access-20261103
   pull_request:
     branches:
       - feature/odoo-sap-gap-audit-20261024
