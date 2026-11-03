@@ -14,7 +14,7 @@ from sqlalchemy.sql import func
 from app.database.base import Base
 from app.modules.roles.models import Role
 from app.modules.saas.models import Tenant
-from app.modules.companies.user_access import UserCompanyAccess
+from app.modules.identity.models.user_company_access import UserCompanyAccess
 
 
 class User(Base):
