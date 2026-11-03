@@ -45,3 +45,22 @@ def test_mobile_company_guard_delegates_to_company_membership(monkeypatch):
 
     assert tenant_id == 42
     assert calls == [(23, 205)]
+
+
+def test_commerce_and_approval_guards_delegate_to_company_membership(monkeypatch):
+    from app.modules.commerce import router as commerce_router
+    from app.modules.operations.approvals import router as approvals_router
+
+    calls = []
+    def require(_db, user, company_id):
+        calls.append((user.id, company_id))
+        return SimpleNamespace(id=company_id, is_active=True)
+
+    monkeypatch.setattr(commerce_router, "require_company_access", require)
+    monkeypatch.setattr(approvals_router, "require_company_access", require)
+
+    user = SimpleNamespace(id=31)
+    commerce_router._company_for_user(object(), 301, user)
+    approvals_router._company(object(), 302, user)
+
+    assert calls == [(31, 301), (31, 302)]
