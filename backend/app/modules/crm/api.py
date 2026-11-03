@@ -3,10 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
-from app.modules.companies.models import Company
 from app.modules.companies.access import require_company_access
 from app.modules.commerce.models import BusinessPartner
 from app.modules.commerce.schemas import PartnerCreate, DocumentCreate
