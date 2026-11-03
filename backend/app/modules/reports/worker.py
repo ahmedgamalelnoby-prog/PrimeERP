@@ -234,16 +234,23 @@ def process_delivery(db: Session, delivery: ReportDelivery) -> None:
     # Revalidate company and definition after claiming the lease. A company or
     # report can be disabled between claim and delivery.
     company = db.get(Company, delivery.company_id)
+    if company is None or not company.is_active:
+        delivery.last_status = "paused_company_or_definition"
+        delivery.last_error = "Scheduled report delivery is paused because its company is inactive or unavailable"
+        delivery.next_run_at = None
+        delivery.locked_until = None
+        delivery.locked_by = None
+        db.commit()
+        return
+
     definition = db.get(ReportDefinition, delivery.report_definition_id)
     if (
-        company is None
-        or not company.is_active
-        or definition is None
+        definition is None
         or not definition.is_active
         or definition.company_id != delivery.company_id
     ):
         delivery.last_status = "paused_company_or_definition"
-        delivery.last_error = "Scheduled report delivery is paused because its company or report definition is inactive or inconsistent"
+        delivery.last_error = "Scheduled report delivery is paused because its report definition is inactive or inconsistent"
         delivery.next_run_at = None
         delivery.locked_until = None
         delivery.locked_by = None
