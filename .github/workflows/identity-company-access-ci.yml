@@ -40,6 +40,8 @@ jobs:
           pip install pytest
       - name: Compile backend modules
         run: python -m compileall -q app
+      - name: Validate Alembic migration graph
+        run: alembic heads
       - name: Test tenant and company access boundaries
         run: pytest -q tests/test_user_company_access.py tests/test_tenant_context.py
 
