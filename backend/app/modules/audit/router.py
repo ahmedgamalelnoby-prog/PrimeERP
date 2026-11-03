@@ -8,6 +8,9 @@ from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
+from app.modules.companies.access import accessible_company_query, require_company_access
+from app.modules.companies.models import Company
+from sqlalchemy import or_
 from .models import AuditEvent
 
 router = APIRouter(prefix="/audit", tags=["Audit"], dependencies=[Depends(require_permission("audit.access"))])
@@ -28,7 +31,16 @@ def list_audit_events(
     stmt = select(AuditEvent)
     if not current_user.is_platform_admin:
         stmt = stmt.where(AuditEvent.tenant_id == current_user.tenant_id)
+        stmt = stmt.where(
+            or_(
+                AuditEvent.company_id.is_(None),
+                AuditEvent.company_id.in_(
+                    accessible_company_query(current_user, active_only=False).with_only_columns(Company.id)
+                ),
+            )
+        )
     if company_id is not None:
+        require_company_access(db, current_user, company_id, active_only=False)
         stmt = stmt.where(AuditEvent.company_id == company_id)
     if entity_type:
         stmt = stmt.where(AuditEvent.entity_type == entity_type)
