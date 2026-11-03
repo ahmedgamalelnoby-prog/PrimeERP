@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.database.session import get_db
 from app.modules.audit.service import record_audit_event
 from app.modules.companies.models import Company
+from app.modules.companies.access import require_company_access
 from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.modules.identity.dependencies import get_current_user
@@ -43,18 +44,8 @@ def _require_manual_attendance_source(db: Session, company_id: int) -> None:
         raise HTTPException(409, "Manual attendance changes are disabled by company policy; use the configured attendance source.")
 
 
-def _company_for_tenant(db: Session, company_id: int, tenant_id: int) -> Company:
-    company = db.scalar(
-        select(Company).where(
-            Company.id == company_id,
-            Company.tenant_id == tenant_id,
-            Company.is_active.is_(True),
-        )
-    )
-    if company is None:
-        # Do not disclose whether a company exists in another tenant.
-        raise HTTPException(404, "Company not found")
-    return company
+def _company_for_tenant(db: Session, company_id: int, user: User) -> Company:
+    return require_company_access(db, user, company_id, active_only=True)
 
 
 class WorkforceUpdate(BaseModel):
@@ -76,7 +67,7 @@ def workforce(
     db: Session = Depends(get_db),
 ):
     tenant_id = _tenant(current_user)
-    _company_for_tenant(db, company_id, tenant_id)
+    _company_for_tenant(db, company_id, current_user)
 
     users = list(
         db.scalars(
