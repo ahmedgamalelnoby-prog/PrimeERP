@@ -6,6 +6,7 @@ from sqlalchemy.dialects import postgresql
 
 from app.core.context import RequestContext, reset_request_context, set_request_context
 from app.modules.companies.access import accessible_company_query, require_company_access
+from app.modules.identity.repositories.user_repository import UserRepository
 
 
 def _compile(statement) -> str:
@@ -62,3 +63,55 @@ def test_require_company_access_fails_closed_for_unassigned_company():
         assert exc.value.status_code == 404
     finally:
         reset_request_context(token)
+
+
+
+def test_login_lookup_is_global_and_normalizes_username_and_email():
+    class Result:
+        def scalars(self):
+            return self
+
+        def all(self):
+            return []
+
+    class CapturingDB:
+        statement = None
+
+        def execute(self, statement):
+            self.statement = statement
+            return Result()
+
+    db = CapturingDB()
+    UserRepository().find_for_login(db, "  Ahmed  ")
+    sql = _compile(db.statement)
+    where = sql.split("WHERE", 1)[1]
+    assert "lower(trim(users.username))" in where
+    assert "lower(trim(users.email))" in where
+    assert "users.tenant_id" not in where
+
+
+def test_identity_collision_lookup_checks_global_cross_field_matches():
+    class Result:
+        def scalars(self):
+            return self
+
+        def all(self):
+            return []
+
+    class CapturingDB:
+        statement = None
+
+        def execute(self, statement):
+            self.statement = statement
+            return Result()
+
+    db = CapturingDB()
+    UserRepository().find_identity_collisions(
+        db, username="Ahmed", email="ahmed@example.com"
+    )
+    sql = _compile(db.statement)
+    where = sql.split("WHERE", 1)[1]
+    assert "lower(trim(users.username))" in where
+    assert "lower(trim(users.email))" in where
+    assert "users.tenant_id" not in where
+    assert "users.is_deleted" not in where
