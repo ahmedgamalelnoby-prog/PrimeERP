@@ -54,18 +54,21 @@ def create_company(payload: CompanyCreate, db: Session = Depends(get_db), curren
     db.add(company)
     try:
         db.flush()
+        is_default = False
         if not current_user.is_platform_admin:
             has_default = db.scalar(select(UserCompanyAccess.user_id).where(
                 UserCompanyAccess.user_id == current_user.id,
                 UserCompanyAccess.is_default.is_(True),
             ).limit(1))
+            is_default = has_default is None
             db.add(UserCompanyAccess(
                 user_id=current_user.id,
                 company_id=company.id,
-                is_default=has_default is None,
+                is_default=is_default,
             ))
         db.commit()
         db.refresh(company)
+        company.is_default = is_default
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail="Company code already exists for this tenant") from exc
