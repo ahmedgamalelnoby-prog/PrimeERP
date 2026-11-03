@@ -7,6 +7,7 @@ from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
+from app.modules.companies.access import require_company_access
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
 from app.modules.saas.entitlements import require_module
@@ -18,15 +19,7 @@ router = APIRouter(prefix="/treasury", tags=["Treasury"], dependencies=[Depends(
 
 
 def _company(db: Session, company_id: int, user: User):
-    tenant_id = get_effective_tenant_id(user)
-    if tenant_id is None: raise HTTPException(403, "User is not assigned to a tenant")
-    company = db.scalar(select(Company).where(
-        Company.id == company_id,
-        Company.tenant_id == tenant_id,
-        Company.is_active.is_(True),
-    ))
-    if company is None: raise HTTPException(404, "Company not found")
-    return company
+    return require_company_access(db, user, company_id, active_only=True)
 
 
 def _get_cheque(db: Session, company_id: int, cheque_id: int):
