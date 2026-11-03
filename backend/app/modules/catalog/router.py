@@ -9,6 +9,7 @@ from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.catalog.schemas import CategoryCreate, CategoryResponse, CostHistoryCreate, MenuCreate, MenuItemCreate, MenuItemResponse, MenuResponse, PriceCreate, PriceListCreate, PriceListResponse, PriceResponse, PricingAnalysis, PricingImpactResponse, RecipeCreate, RecipeResponse
 from app.modules.catalog.service import catalog_service
+from app.modules.companies.access import require_company_access
 from app.modules.companies.models import Company
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.models import User
@@ -20,6 +21,7 @@ WRITE_GUARDS = [Depends(require_permission("inventory.write")), Depends(require_
 
 
 def _company_for_user(db: Session, company_id: int, user: User) -> Company:
+    require_company_access(db, user, company_id)
     tenant_id = get_effective_tenant_id(user)
     company = db.scalar(select(Company).where(Company.id == company_id, Company.tenant_id == tenant_id))
     if company is None:
