@@ -43,8 +43,8 @@ export default function UserCompanyAccessDialog({ user, open, onOpenChange }: Pr
         if (cancelled) return;
         setRows(data);
         setOriginalRows(data);
-        const selected = data.find((row) => row.has_access && row.is_default)
-          ?? data.find((row) => row.has_access);
+        const selected = data.find((row) => row.has_access && row.is_default && row.is_active)
+          ?? data.find((row) => row.has_access && row.is_active);
         setDefaultCompanyId(selected ? String(selected.id) : "");
       })
       .catch((requestError: any) => {
