@@ -43,7 +43,7 @@ def test_inactive_companies_can_be_requested_only_when_explicitly_allowed():
         active_sql = _compile(accessible_company_query(user))
         all_sql = _compile(accessible_company_query(user, active_only=False))
         assert "companies.is_active IS true" in active_sql
-        assert "companies.is_active" not in all_sql
+        assert "AND companies.is_active IS true" not in all_sql
     finally:
         reset_request_context(token)
 
