@@ -27,6 +27,7 @@ interface Props {
 
 export default function UserCompanyAccessDialog({ user, open, onOpenChange }: Props) {
   const [rows, setRows] = useState<CompanyAccessRow[]>([]);
+  const [originalRows, setOriginalRows] = useState<CompanyAccessRow[]>([]);
   const [defaultCompanyId, setDefaultCompanyId] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -41,6 +42,7 @@ export default function UserCompanyAccessDialog({ user, open, onOpenChange }: Pr
       .then(({ data }) => {
         if (cancelled) return;
         setRows(data);
+        setOriginalRows(data);
         const selected = data.find((row) => row.has_access && row.is_default)
           ?? data.find((row) => row.has_access);
         setDefaultCompanyId(selected ? String(selected.id) : "");
@@ -71,14 +73,16 @@ export default function UserCompanyAccessDialog({ user, open, onOpenChange }: Pr
     setSaving(true);
     setError("");
     try {
-      for (const row of rows) {
-        if (row.has_access && !selected.some((item) => item.id === row.id)) {
-          await client.delete(`/companies/${row.id}/users/${user.id}/access`);
+      for (const original of originalRows) {
+        const current = rows.find((row) => row.id === original.id);
+        if (original.has_access && !current?.has_access) {
+          await client.delete(`/companies/${original.id}/users/${user.id}/access`);
         }
       }
       for (const row of selected) {
+        const original = originalRows.find((item) => item.id === row.id);
         const shouldBeDefault = String(row.id) === defaultCompanyId;
-        if (!rows.find((item) => item.id === row.id)?.has_access || (shouldBeDefault && !row.is_default)) {
+        if (!original?.has_access || (shouldBeDefault && !original.is_default)) {
           await client.put(`/companies/${row.id}/users/${user.id}/access`, null, {
             params: { is_default: shouldBeDefault },
           });
