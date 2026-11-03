@@ -7,7 +7,7 @@ from app.core.context import get_effective_tenant_id
 from app.core.permissions import require_permission
 from app.database.session import get_db
 from app.modules.companies.models import Company
-from app.modules.companies.user_access import UserCompanyAccess
+from app.modules.identity.models.user_company_access import UserCompanyAccess
 from app.modules.companies.access import accessible_company_query, require_company_access
 from app.modules.companies.schemas import CompanyCreate, CompanyResponse, CompanyUpdate
 from app.modules.identity.dependencies import get_current_user
