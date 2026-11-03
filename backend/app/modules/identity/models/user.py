@@ -152,6 +152,13 @@ class User(Base):
         foreign_keys=[role_id],
     )
 
+    company_access = relationship(
+        "UserCompanyAccess",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
     __table_args__ = (
         UniqueConstraint(
             "tenant_id",
