@@ -47,7 +47,7 @@ export default function UserCompanyAccessDialog({ user, open, onOpenChange }: Pr
           ?? data.find((row) => row.has_access);
         setDefaultCompanyId(selected ? String(selected.id) : "");
       })
-      .catch((requestError) => {
+      .catch((requestError: any) => {
         if (!cancelled) setError(requestError?.response?.data?.detail || "تعذر تحميل صلاحيات الشركات.");
       })
       .finally(() => { if (!cancelled) setLoading(false); });
