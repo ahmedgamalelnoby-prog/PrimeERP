@@ -54,3 +54,4 @@ class CompanyResponse(BaseModel):
     eta_taxpayer_id: str | None
     eta_last_verified_at: datetime | None
     is_active: bool
+    is_default: bool = False
