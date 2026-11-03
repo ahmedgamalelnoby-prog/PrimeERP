@@ -1,15 +1,48 @@
-import { Bell, ChevronLeft, Command, LogOut, Menu, Settings2, ShieldCheck, UserCircle2 } from "lucide-react";
+import { Bell, Building2, ChevronLeft, Command, LogOut, Menu, Settings2, ShieldCheck, UserCircle2 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/modules/identity/context/AuthContext";
+import client from "@/shared/api/client";
 import { findNavigationItemByPath, findNavigationParent } from "@/app/navigation";
 
 interface AppHeaderProps { onMenuClick: () => void; }
+interface CompanyOption { id: number; name: string; code?: string | null; is_default?: boolean; }
 
 export default function AppHeader({ onMenuClick }: AppHeaderProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuth();
+  const [companies, setCompanies] = useState<CompanyOption[]>([]);
+  const [companyId, setCompanyId] = useState(() => localStorage.getItem("company_id") || "");
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    void client.get<CompanyOption[]>("/companies?active_only=true").then(({ data }) => {
+      if (cancelled) return;
+      setCompanies(data);
+      const stored = Number(localStorage.getItem("company_id")) || 0;
+      const selected = data.find((company) => company.id === stored)
+        ?? data.find((company) => company.is_default)
+        ?? data[0];
+      if (selected) {
+        setCompanyId(String(selected.id));
+        localStorage.setItem("company_id", String(selected.id));
+      } else {
+        setCompanyId("");
+        localStorage.removeItem("company_id");
+      }
+    }).catch(() => {
+      if (!cancelled) setCompanies([]);
+    });
+    return () => { cancelled = true; };
+  }, [user]);
+  const handleCompanyChange = (nextId: string) => {
+    if (!companies.some((company) => String(company.id) === nextId)) return;
+    localStorage.setItem("company_id", nextId);
+    setCompanyId(nextId);
+    window.location.reload();
+  };
   const handleLogout = () => {
     logout();
     navigate("/login", { replace: true });
@@ -46,6 +79,24 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
         </div>
 
         <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+          {companies.length > 1 && (
+            <label className="hidden items-center gap-2 rounded-xl border border-border bg-background px-2.5 py-2 text-xs font-semibold text-foreground md:flex">
+              <Building2 className="h-4 w-4 text-primary" />
+              <span className="sr-only">الشركة الحالية</span>
+              <select
+                aria-label="الشركة الحالية"
+                value={companyId}
+                onChange={(event) => handleCompanyChange(event.target.value)}
+                className="max-w-40 bg-transparent outline-none"
+              >
+                {companies.map((company) => (
+                  <option key={company.id} value={String(company.id)}>
+                    {company.name}{company.code ? " · " + company.code : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <Button type="button" variant="outline" size="icon" className="hidden h-10 w-10 rounded-xl border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground sm:inline-flex" onClick={() => navigate("/settings")} aria-label="الإعدادات" title="الإعدادات">
             <Settings2 className="h-4 w-4" />
           </Button>
