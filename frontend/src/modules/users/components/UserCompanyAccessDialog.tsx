@@ -113,7 +113,7 @@ export default function UserCompanyAccessDialog({ user, open, onOpenChange }: Pr
             {rows.map((row) => (
               <div key={row.id} className="flex items-center justify-between gap-3 rounded-xl border p-3">
                 <label className="flex min-w-0 items-center gap-3">
-                  <input type="checkbox" checked={row.has_access} disabled={!row.is_active || saving}
+                  <input type="checkbox" checked={row.has_access} disabled={(!row.is_active && !row.has_access) || saving}
                     onChange={(event) => toggleAccess(row.id, event.target.checked)} />
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-semibold">{row.name}</span>
