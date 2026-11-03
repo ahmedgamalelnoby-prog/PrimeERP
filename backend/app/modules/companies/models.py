@@ -12,6 +12,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.database.base import Base
+from app.modules.companies.user_access import UserCompanyAccess
 
 
 class Company(Base):
