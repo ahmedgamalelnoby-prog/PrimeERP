@@ -43,7 +43,7 @@ jobs:
       - name: Validate Alembic migration graph
         run: alembic heads
       - name: Test tenant and company access boundaries
-        run: pytest -q tests/test_user_company_access.py tests/test_tenant_context.py
+        run: pytest -q tests/test_user_company_access.py tests/test_tenant_context.py tests/test_company_access_router_guards.py
 
   frontend:
     name: Frontend typecheck, build and auth tests
