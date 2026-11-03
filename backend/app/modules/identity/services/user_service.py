@@ -91,11 +91,14 @@ class UserService(BaseService[UserRepository]):
                         Company.is_active.is_(True),
                     ).order_by(Company.id)
                 ).all()
-                for index, company_id in enumerate(company_ids):
+                # Least privilege: auto-assign only when the tenant has a
+                # single active company. For multi-company tenants, an
+                # administrator explicitly chooses access in the user screen.
+                if len(company_ids) == 1:
                     db.add(UserCompanyAccess(
                         user_id=user.id,
-                        company_id=company_id,
-                        is_default=(index == 0),
+                        company_id=company_ids[0],
+                        is_default=True,
                     ))
             record_audit_event(db, action="user.create", entity_type="user", entity_id=user.id, user_id=getattr(current_user, "id", None), tenant_id=effective_tenant_id, metadata={"username": user.username, "role_id": user.role_id, "is_active": user.is_active})
             uow.commit()
