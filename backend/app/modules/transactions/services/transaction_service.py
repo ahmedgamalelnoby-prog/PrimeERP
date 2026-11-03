@@ -14,7 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.modules.branches.models import Branch
-from app.modules.companies.access import require_company_access
+from app.modules.companies.access import accessible_company_query, require_company_access
 from app.modules.companies.models import Company
 from app.modules.company_settings.service import get_company_setting
 from app.modules.identity.models import User
@@ -759,9 +759,16 @@ class TransactionService:
         tenant_id = self._get_tenant_id(
             current_user
         )
-        if company_id is None:
-            raise HTTPException(status_code=422, detail="company_id is required to list transactions")
-        require_company_access(db, current_user, company_id)
+        company_ids = None
+        if company_id is not None:
+            require_company_access(db, current_user, company_id)
+        else:
+            company_ids = [
+                company.id
+                for company in db.scalars(accessible_company_query(current_user)).all()
+            ]
+            if not company_ids:
+                return {"items": [], "total": 0, "page": page, "page_size": page_size, "pages": 0}
 
         items, total = (
             transaction_repository
@@ -771,6 +778,7 @@ class TransactionService:
                 page=page,
                 page_size=page_size,
                 company_id=company_id,
+                company_ids=company_ids,
                 branch_id=branch_id,
                 transaction_type=(
                     transaction_type
