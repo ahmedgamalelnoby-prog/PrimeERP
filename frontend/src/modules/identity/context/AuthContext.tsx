@@ -22,8 +22,6 @@ interface AuthContextValue {
   login: (
     usernameOrEmail: string,
     password: string,
-    tenantSlug?: string | null,
-    tenantName?: string | null,
   ) => Promise<void>;
   logout: () => void;
   refreshUser: () => Promise<void>;
@@ -57,7 +55,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     let cancelled = false;
     const applyCompanyLanguage = async (): Promise<void> => {
       try {
-        const { data: companies } = await client.get<Array<{ id: number }>>(
+        const { data: companies } = await client.get<Array<{ id: number; is_default?: boolean }>>(
           "/companies?active_only=true",
         );
         if (cancelled || companies.length === 0) return;
@@ -66,7 +64,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
         const companyExists = companies.some(
           (company) => company.id === storedCompanyId,
         );
-        const companyId = companyExists ? storedCompanyId : companies[0].id;
+        const companyId = companyExists
+          ? storedCompanyId
+          : (companies.find((company) => company.is_default)?.id ?? companies[0].id);
 
         if (!companyExists) {
           localStorage.setItem("company_id", String(companyId));
@@ -119,14 +119,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const login = async (
     usernameOrEmail: string,
     password: string,
-    tenantSlug: string | null = null,
-    tenantName: string | null = null,
   ): Promise<void> => {
     const response = await authService.login({
       login: usernameOrEmail.trim(),
       password,
-      tenant_slug: tenantSlug?.trim() || null,
-      tenant_name: tenantName?.trim() || null,
     });
 
     setUser(response.user);
